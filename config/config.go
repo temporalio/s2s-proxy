@@ -24,27 +24,28 @@
 
 package config
 
+import "github.com/urfave/cli/v2"
+
+const (
+	GRPCPortFlag = "port"
+)
+
 type (
-	// RPC contains the rpc config items
-	RPC struct {
-		// GRPCPort is the port on which gRPC will listen
-		GRPCPort int `yaml:"grpcPort"`
-		// Port used for membership listener
-		MembershipPort int `yaml:"membershipPort"`
-		// BindOnLocalHost is true if localhost is the bind address
-		// if neither BindOnLocalHost nor BindOnIP are set then an
-		// an attempt to discover an address is made
-		BindOnLocalHost bool `yaml:"bindOnLocalHost"`
-		// BindOnIP can be used to bind service on specific ip (eg. `0.0.0.0` or `::`)
-		// check net.ParseIP for supported syntax
-		// mutually exclusive with `BindOnLocalHost` option
-		BindOnIP string `yaml:"bindOnIP"`
-		// HTTPPort is the port on which HTTP will listen. If unset/0, HTTP will be
-		// disabled. This setting only applies to the frontend service.
-		HTTPPort int `yaml:"httpPort"`
-		// HTTPAdditionalForwardedHeaders adds additional headers to the default set
-		// forwarded from HTTP to gRPC. Any value with a trailing * will match the prefix before
-		// the asterisk (eg. `x-internal-*`)
-		HTTPAdditionalForwardedHeaders []string `yaml:"httpAdditionalForwardedHeaders"`
+	Config interface {
+		GetGRPCPort() int
+	}
+
+	cliConfigProvider struct {
+		ctx *cli.Context
 	}
 )
+
+func newConfigProvider(ctx *cli.Context) Config {
+	return &cliConfigProvider{
+		ctx: ctx,
+	}
+}
+
+func (c *cliConfigProvider) GetGRPCPort() int {
+	return c.ctx.Int(GRPCPortFlag)
+}
