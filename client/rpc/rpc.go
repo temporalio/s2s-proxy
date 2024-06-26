@@ -6,8 +6,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/temporalio/temporal-proxy/common"
-	"github.com/temporalio/temporal-proxy/config"
+	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/config"
 
 	"go.temporal.io/server/common/convert"
 	"go.temporal.io/server/common/log"

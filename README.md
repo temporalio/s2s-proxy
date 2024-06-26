@@ -1,1 +1,1 @@
-# temporal-proxy
+# s2s-proxy

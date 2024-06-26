@@ -1,4 +1,4 @@
-module github.com/temporalio/temporal-proxy
+module github.com/temporalio/s2s-proxy
 
 go 1.22.4
 

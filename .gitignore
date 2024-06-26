@@ -22,5 +22,5 @@ go.work
 go.work.sum
 
 # Executables produced by temporal repo
-/temporal-*
+/s2s-proxy
 
