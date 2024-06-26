@@ -25,7 +25,6 @@ type ProxyParams struct {
 	Proxy  *proxy.Proxy
 }
 
-// Run executes the saas-agent
 func run(args []string) error {
 	app := buildCLIOptions()
 	return app.Run(args)
@@ -33,7 +32,7 @@ func run(args []string) error {
 
 func buildCLIOptions() *cli.App {
 	app := cli.NewApp()
-	app.Name = "tempora-proxy"
+	app.Name = "temporal-proxy"
 	app.Usage = "Temporal proxy"
 	app.Version = ProxyVersion
 
@@ -100,6 +99,7 @@ func interruptCh() <-chan interface{} {
 		s := <-c
 		ret <- s
 		close(ret)
+		signal.Stop(c)
 	}()
 
 	return ret

@@ -21,3 +21,4 @@ temporal-proxy: $(ALL_SRC)
 	@printf $(COLOR) "Build temporal-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)..."
 	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_TAG_FLAG) -o temporal-proxy ./cmd/proxy
 
+# TODO: linting / static checks

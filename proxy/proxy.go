@@ -45,4 +45,5 @@ func (s *Proxy) Start() error {
 
 func (s *Proxy) Stop() {
 	s.logger.Info("Stopping proxy listener")
+	s.server.GracefulStop()
 }
