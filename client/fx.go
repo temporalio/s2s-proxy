@@ -3,7 +3,7 @@ package client
 import (
 	"net"
 
-	"github.com/temporalio/temporal-proxy/client/rpc"
+	"github.com/temporalio/s2s-proxy/client/rpc"
 
 	"go.uber.org/fx"
 )

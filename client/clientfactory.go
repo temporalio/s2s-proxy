@@ -3,8 +3,8 @@ package client
 import (
 	"time"
 
-	"github.com/temporalio/temporal-proxy/client/admin"
-	"github.com/temporalio/temporal-proxy/client/rpc"
+	"github.com/temporalio/s2s-proxy/client/admin"
+	"github.com/temporalio/s2s-proxy/client/rpc"
 
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common"

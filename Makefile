@@ -10,15 +10,15 @@ CGO_ENABLED ?= 0
 ALL_SRC         := $(shell find . -name "*.go")
 ALL_SRC         += go.mod
 
-bins: temporal-proxy
+bins: s2s-proxy
 clean:  clean-bins
 
 clean-bins:
 	@printf $(COLOR) "Delete old binaries..."
-	@rm -f temporal-proxy
+	@rm -f s2s-proxy
 
-temporal-proxy: $(ALL_SRC)
-	@printf $(COLOR) "Build temporal-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)..."
-	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_TAG_FLAG) -o temporal-proxy ./cmd/proxy
+s2s-proxy: $(ALL_SRC)
+	@printf $(COLOR) "Build s2s-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)..."
+	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_TAG_FLAG) -o s2s-proxy ./cmd/proxy
 
 # TODO: linting / static checks

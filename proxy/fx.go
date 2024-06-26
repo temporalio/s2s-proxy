@@ -4,7 +4,7 @@ import (
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 
-	"github.com/temporalio/temporal-proxy/config"
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 var Module = fx.Provide(

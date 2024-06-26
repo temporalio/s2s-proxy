@@ -3,7 +3,7 @@ package proxy
 import (
 	"net"
 
-	"github.com/temporalio/temporal-proxy/config"
+	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"

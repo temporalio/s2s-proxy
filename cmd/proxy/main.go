@@ -5,9 +5,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/temporalio/temporal-proxy/client"
-	"github.com/temporalio/temporal-proxy/config"
-	"github.com/temporalio/temporal-proxy/proxy"
+	"github.com/temporalio/s2s-proxy/client"
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/proxy"
 
 	"github.com/urfave/cli/v2"
 	"go.temporal.io/server/common/log"
@@ -32,8 +32,8 @@ func run(args []string) error {
 
 func buildCLIOptions() *cli.App {
 	app := cli.NewApp()
-	app.Name = "temporal-proxy"
-	app.Usage = "Temporal proxy"
+	app.Name = "s2s-proxy"
+	app.Usage = "Temporal proxy between servers"
 	app.Version = ProxyVersion
 
 	app.Flags = []cli.Flag{
