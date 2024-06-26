@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/temporalio/temporal-proxy/client/admin"
+	"github.com/temporalio/temporal-proxy/client/rpc"
 
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common"
@@ -42,7 +43,7 @@ type (
 	}
 
 	rpcClientFactory struct {
-		rpcFactory      RPCFactory
+		rpcFactory      rpc.RPCFactory
 		metricsHandler  metrics.Handler
 		logger          log.Logger
 		throttledLogger log.Logger
