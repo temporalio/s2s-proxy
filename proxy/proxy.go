@@ -30,9 +30,9 @@ func NewProxy(
 
 func (s *Proxy) Start() error {
 	go func() {
-		s.logger.Info("Starting to serve on frontend listener")
+		s.logger.Info("Starting proxy listener")
 		if err := s.server.Serve(s.grpcListener); err != nil {
-			s.logger.Fatal("Failed to serve on frontend listener", tag.Error(err))
+			s.logger.Fatal("Failed to start proxy listener", tag.Error(err))
 		}
 	}()
 
@@ -40,4 +40,5 @@ func (s *Proxy) Start() error {
 }
 
 func (s *Proxy) Stop() {
+	s.logger.Info("Stopping proxy listener")
 }

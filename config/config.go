@@ -24,7 +24,10 @@
 
 package config
 
-import "github.com/urfave/cli/v2"
+import (
+	"github.com/urfave/cli/v2"
+	"google.golang.org/grpc"
+)
 
 const (
 	GRPCPortFlag = "port"
@@ -33,6 +36,7 @@ const (
 type (
 	Config interface {
 		GetGRPCPort() int
+		GetGRPCServerOptions() []grpc.ServerOption
 	}
 
 	cliConfigProvider struct {
@@ -48,4 +52,8 @@ func newConfigProvider(ctx *cli.Context) Config {
 
 func (c *cliConfigProvider) GetGRPCPort() int {
 	return c.ctx.Int(GRPCPortFlag)
+}
+
+func (c *cliConfigProvider) GetGRPCServerOptions() []grpc.ServerOption {
+	return nil
 }

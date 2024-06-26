@@ -36,7 +36,6 @@ import (
 	"go.temporal.io/server/common/convert"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
-	"go.temporal.io/server/common/rpc/encryption"
 	"google.golang.org/grpc"
 )
 
@@ -48,11 +47,6 @@ const (
 )
 
 type (
-	GrpcServerOptions struct {
-		Options           []grpc.ServerOption
-		UnaryInterceptors []grpc.UnaryServerInterceptor
-	}
-
 	// RPCFactory creates gRPC listener and connection.
 	RPCFactory interface {
 		CreateRemoteFrontendGRPCConnection(rpcAddress string) *grpc.ClientConn
@@ -65,12 +59,8 @@ type (
 		serviceName string
 		logger      log.Logger
 
-		frontendURL       string
-		frontendTLSConfig *tls.Config
-
 		initListener sync.Once
 		grpcListener net.Listener
-		tlsFactory   TLSConfigProvider
 	}
 )
 
@@ -79,44 +69,18 @@ type (
 func NewRPCFactory(
 	config config.Config,
 	logger log.Logger,
-	tlsProvider encryption.TLSConfigProvider,
-	frontendURL string,
-	frontendTLSConfig *tls.Config,
 ) RPCFactory {
 	return &rpcFactory{
-		serviceName:       "proxy",
-		logger:            logger,
-		frontendURL:       frontendURL,
-		frontendTLSConfig: frontendTLSConfig,
-		tlsFactory:        tlsProvider,
+		serviceName: "proxy",
+		config:      config,
+		logger:      logger,
 	}
-}
-
-func (d *rpcFactory) GetRemoteClusterClientConfig(hostname string) (*tls.Config, error) {
-	if d.tlsFactory != nil {
-		return d.tlsFactory.GetRemoteClusterClientConfig(hostname)
-	}
-
-	return nil, nil
 }
 
 // CreateRemoteFrontendGRPCConnection creates connection for gRPC calls
+// TODO: TLS config
 func (d *rpcFactory) CreateRemoteFrontendGRPCConnection(rpcAddress string) *grpc.ClientConn {
 	var tlsClientConfig *tls.Config
-	var err error
-	if d.tlsFactory != nil {
-		hostname, _, err2 := net.SplitHostPort(rpcAddress)
-		if err2 != nil {
-			d.logger.Fatal("Invalid rpcAddress for remote cluster", tag.Error(err2))
-		}
-		tlsClientConfig, err = d.tlsFactory.GetRemoteClusterClientConfig(hostname)
-
-		if err != nil {
-			d.logger.Fatal("Failed to create tls config for gRPC connection", tag.Error(err))
-			return nil
-		}
-	}
-
 	return d.dial(rpcAddress, tlsClientConfig)
 }
 

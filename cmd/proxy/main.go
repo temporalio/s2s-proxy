@@ -36,7 +36,6 @@ import (
 	"github.com/urfave/cli/v2"
 	"go.temporal.io/server/common/log"
 	"go.uber.org/fx"
-	uberzap "go.uber.org/zap"
 )
 
 const (
@@ -47,7 +46,7 @@ type ProxyParams struct {
 	fx.In
 
 	Config config.Config
-	Proxy  proxy.Proxy
+	Proxy  *proxy.Proxy
 }
 
 // Run executes the saas-agent
@@ -64,9 +63,10 @@ func buildCLIOptions() *cli.App {
 
 	app.Flags = []cli.Flag{
 		&cli.IntFlag{
-			Name:    config.GRPCPortFlag,
-			Usage:   "grpc port listened by proxy.",
-			Aliases: []string{"p"},
+			Name:     config.GRPCPortFlag,
+			Usage:    "grpc port listened by proxy.",
+			Aliases:  []string{"p"},
+			Required: true,
 		},
 	}
 
@@ -86,18 +86,12 @@ func startProxy(c *cli.Context) error {
 
 	app := fx.New(
 		fx.Provide(func() *cli.Context { return c }),
-		fx.Provide(func(zl *uberzap.Logger) log.Logger { return log.NewZapLogger(zl) }),
+		fx.Provide(func() log.Logger { return log.NewCLILogger() }),
 		config.Module,
 		client.Module,
 		proxy.Module,
 		fx.Populate(&proxyParams),
 	)
-
-	// rpcFactory := rpc.NewFactory()
-	// server := grpc.NewServer()
-	// grpcListener := rpcFactory.GetGRPCListener()
-	// proxy := NewProxy(server, grpcListener)
-	// proxy.Start()
 
 	if err := app.Err(); err != nil {
 		return err
