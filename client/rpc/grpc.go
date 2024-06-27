@@ -12,9 +12,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 
-	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
@@ -55,8 +53,6 @@ const (
 	// ResourceExhaustedScopeHeader will be added to rpc response if request returns ResourceExhausted error.
 	// Value of this header will be the scope of exhausted resource.
 	ResourceExhaustedScopeHeader = "X-Resource-Exhausted-Scope"
-
-	shardUnavailableErrorMessage = "shard unavailable, please backoff and retry"
 )
 
 // Dial creates a client connection to the given target with default options.
@@ -94,42 +90,6 @@ func Dial(hostName string, tlsConfig *tls.Config, logger log.Logger) (*grpc.Clie
 		hostName,
 		dialOptions...,
 	)
-}
-
-func errorInterceptor(
-	ctx context.Context,
-	method string,
-	req, reply interface{},
-	cc *grpc.ClientConn,
-	invoker grpc.UnaryInvoker,
-	opts ...grpc.CallOption,
-) error {
-	err := invoker(ctx, method, req, reply, cc, opts...)
-	err = serviceerrors.FromStatus(status.Convert(err))
-	return err
-}
-
-func headersInterceptor(
-	ctx context.Context,
-	method string,
-	req, reply interface{},
-	cc *grpc.ClientConn,
-	invoker grpc.UnaryInvoker,
-	opts ...grpc.CallOption,
-) error {
-	ctx = headers.Propagate(ctx)
-	return invoker(ctx, method, req, reply, cc, opts...)
-}
-
-func ServiceErrorInterceptor(
-	ctx context.Context,
-	req interface{},
-	_ *grpc.UnaryServerInfo,
-	handler grpc.UnaryHandler,
-) (interface{}, error) {
-
-	resp, err := handler(ctx, req)
-	return resp, serviceerror.ToStatus(err).Err()
 }
 
 func NewFrontendServiceErrorInterceptor(
