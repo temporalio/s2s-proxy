@@ -4,6 +4,7 @@ import (
 	"net"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
@@ -15,6 +16,7 @@ type (
 		server       *grpc.Server
 		logger       log.Logger
 		grpcListener net.Listener
+		adminHandler adminservice.AdminServiceServer
 	}
 )
 
@@ -23,16 +25,20 @@ func NewProxy(
 	server *grpc.Server,
 	logger log.Logger,
 	grpcListener net.Listener,
+	adminHandler adminservice.AdminServiceServer,
 ) *Proxy {
 	return &Proxy{
 		config:       config,
 		server:       server,
 		logger:       logger,
 		grpcListener: grpcListener,
+		adminHandler: adminHandler,
 	}
 }
 
 func (s *Proxy) Start() error {
+	adminservice.RegisterAdminServiceServer(s.server, s.adminHandler)
+
 	go func() {
 		s.logger.Info("Starting proxy listener", tag.Port(s.config.GetGRPCPort()))
 		if err := s.server.Serve(s.grpcListener); err != nil {
