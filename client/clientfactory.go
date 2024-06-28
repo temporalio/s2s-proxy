@@ -7,35 +7,29 @@ import (
 	"github.com/temporalio/s2s-proxy/client/rpc"
 
 	"go.temporal.io/server/api/adminservice/v1"
-	"go.temporal.io/server/common"
 	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/metrics"
 )
 
 type (
-	// Factory can be used to create RPC clients for temporal services
-	Factory interface {
+	// ClientFactory can be used to create RPC clients for temporal services
+	ClientFactory interface {
 		NewRemoteAdminClientWithTimeout(rpcAddress string, timeout time.Duration, largeTimeout time.Duration) adminservice.AdminServiceClient
 	}
 
 	rpcClientFactory struct {
-		rpcFactory      rpc.RPCFactory
-		metricsHandler  metrics.Handler
-		logger          log.Logger
-		throttledLogger log.Logger
+		rpcFactory rpc.RPCFactory
+		logger     log.Logger
 	}
 )
 
 // NewFactory creates an instance of client factory that knows how to dispatch RPC calls.
 func NewClientFactory(
-	rpcFactory common.RPCFactory,
+	rpcFactory rpc.RPCFactory,
 	logger log.Logger,
-	throttledLogger log.Logger,
-) Factory {
+) ClientFactory {
 	return &rpcClientFactory{
-		rpcFactory:      rpcFactory,
-		logger:          logger,
-		throttledLogger: throttledLogger,
+		rpcFactory: rpcFactory,
+		logger:     logger,
 	}
 }
 
@@ -54,9 +48,5 @@ func (cf *rpcClientFactory) newAdminClient(
 	timeout time.Duration,
 	longPollTimeout time.Duration,
 ) adminservice.AdminServiceClient {
-	client = admin.NewClient(timeout, longPollTimeout, client)
-	if cf.metricsHandler != nil {
-		client = admin.NewMetricClient(client, cf.metricsHandler, cf.throttledLogger)
-	}
-	return client
+	return admin.NewClient(timeout, longPollTimeout, client)
 }

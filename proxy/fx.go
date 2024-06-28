@@ -9,6 +9,7 @@ import (
 
 var Module = fx.Provide(
 	GRPCServerProvider,
+	NewAdminServiceProxyServer,
 	NewProxy,
 )
 

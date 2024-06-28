@@ -11,6 +11,7 @@ import (
 var Module = fx.Provide(
 	rpc.NewRPCFactory,
 	GrpcListenerProvider,
+	NewClientFactory,
 )
 
 func GrpcListenerProvider(factory rpc.RPCFactory) net.Listener {
