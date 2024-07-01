@@ -63,7 +63,7 @@ func (d *rpcFactory) CreateRemoteFrontendGRPCConnection(rpcAddress string) *grpc
 // GetGRPCListener returns cached dispatcher for gRPC inbound or creates one
 func (d *rpcFactory) GetGRPCListener() net.Listener {
 	d.initListener.Do(func() {
-		hostAddress := net.JoinHostPort(getLocalhostIP(), convert.IntToString(d.config.GetGRPCPort()))
+		hostAddress := net.JoinHostPort(getLocalhostIP(), convert.IntToString(d.config.GetListenPort()))
 		var err error
 		d.grpcListener, err = net.Listen("tcp", hostAddress)
 

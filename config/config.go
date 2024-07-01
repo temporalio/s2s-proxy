@@ -6,13 +6,16 @@ import (
 )
 
 const (
-	GRPCPortFlag = "port"
+	ListenPortFlag         = "listen"
+	RemoteServerRPCAddress = "remote"
 )
 
 type (
 	Config interface {
-		GetGRPCPort() int
 		GetGRPCServerOptions() []grpc.ServerOption
+		GetListenPort() int
+		// RPCAddress indicate the remote service address(Host:Port). Host can be DNS name.
+		GetRemoteServerRPCAddress() string
 	}
 
 	cliConfigProvider struct {
@@ -26,10 +29,14 @@ func newConfigProvider(ctx *cli.Context) Config {
 	}
 }
 
-func (c *cliConfigProvider) GetGRPCPort() int {
-	return c.ctx.Int(GRPCPortFlag)
-}
-
 func (c *cliConfigProvider) GetGRPCServerOptions() []grpc.ServerOption {
 	return nil
+}
+
+func (c *cliConfigProvider) GetListenPort() int {
+	return c.ctx.Int(ListenPortFlag)
+}
+
+func (c *cliConfigProvider) GetRemoteServerRPCAddress() string {
+	return c.ctx.String(RemoteServerRPCAddress)
 }

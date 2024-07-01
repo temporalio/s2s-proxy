@@ -1,9 +1,6 @@
 package client
 
 import (
-	"time"
-
-	"github.com/temporalio/s2s-proxy/client/admin"
 	"github.com/temporalio/s2s-proxy/client/rpc"
 
 	"go.temporal.io/server/api/adminservice/v1"
@@ -13,10 +10,10 @@ import (
 type (
 	// ClientFactory can be used to create RPC clients for temporal services
 	ClientFactory interface {
-		NewRemoteAdminClientWithTimeout(rpcAddress string, timeout time.Duration, largeTimeout time.Duration) adminservice.AdminServiceClient
+		NewRemoteAdminClient(rpcAddress string) adminservice.AdminServiceClient
 	}
 
-	rpcClientFactory struct {
+	clientFactory struct {
 		rpcFactory rpc.RPCFactory
 		logger     log.Logger
 	}
@@ -27,26 +24,15 @@ func NewClientFactory(
 	rpcFactory rpc.RPCFactory,
 	logger log.Logger,
 ) ClientFactory {
-	return &rpcClientFactory{
+	return &clientFactory{
 		rpcFactory: rpcFactory,
 		logger:     logger,
 	}
 }
 
-func (cf *rpcClientFactory) NewRemoteAdminClientWithTimeout(
+func (cf *clientFactory) NewRemoteAdminClient(
 	rpcAddress string,
-	timeout time.Duration,
-	largeTimeout time.Duration,
 ) adminservice.AdminServiceClient {
 	connection := cf.rpcFactory.CreateRemoteFrontendGRPCConnection(rpcAddress)
-	client := adminservice.NewAdminServiceClient(connection)
-	return cf.newAdminClient(client, timeout, largeTimeout)
-}
-
-func (cf *rpcClientFactory) newAdminClient(
-	client adminservice.AdminServiceClient,
-	timeout time.Duration,
-	longPollTimeout time.Duration,
-) adminservice.AdminServiceClient {
-	return admin.NewClient(timeout, longPollTimeout, client)
+	return adminservice.NewAdminServiceClient(connection)
 }
