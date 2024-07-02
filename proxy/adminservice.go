@@ -2,36 +2,39 @@ package proxy
 
 import (
 	"context"
+	"fmt"
+	"io"
 
-	"github.com/temporalio/s2s-proxy/client"
-	"github.com/temporalio/s2s-proxy/config"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
-	grpc "google.golang.org/grpc"
+	"go.temporal.io/server/client/history"
+	"go.temporal.io/server/common/channel"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	status "google.golang.org/grpc/status"
 )
 
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		config                   config.Config
-		clientFactory            client.ClientFactory
+		remoteServerAddress      string
+		logger                   log.Logger
 		remoteAdminServiceClient adminservice.AdminServiceClient
 	}
 )
 
 func NewAdminServiceProxyServer(
-	config config.Config,
-	server *grpc.Server,
-	clientFactory client.ClientFactory,
-) (adminservice.AdminServiceServer, error) {
-
-	client := clientFactory.NewRemoteAdminClient(config.GetRemoteServerRPCAddress())
+	remoteServerAddress string,
+	client adminservice.AdminServiceClient,
+	logger log.Logger,
+) adminservice.AdminServiceServer {
 	return &adminServiceProxyServer{
-		config:                   config,
-		clientFactory:            clientFactory,
+		remoteServerAddress:      remoteServerAddress,
 		remoteAdminServiceClient: client,
-	}, nil
+		logger:                   logger,
+	}
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
@@ -182,6 +185,107 @@ func (s *adminServiceProxyServer) ResendReplicationTasks(ctx context.Context, in
 	return nil, status.Errorf(codes.PermissionDenied, "Calling method ResendReplicationTasks is not allowed.")
 }
 
-func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(in0 adminservice.AdminService_StreamWorkflowReplicationMessagesServer) error {
-	return status.Errorf(codes.PermissionDenied, "Calling method StreamWorkflowReplicationMessages is not allowed.")
+func toString(sd history.ClusterShardID) string {
+	return fmt.Sprintf("(id: %d, shard: %d)", sd.ClusterID, sd.ShardID)
+}
+
+func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
+	clientCluster adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+) (retError error) {
+	defer log.CapturePanic(s.logger, &retError)
+
+	ctxMetadata, ok := metadata.FromIncomingContext(clientCluster.Context())
+	if !ok {
+		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
+	}
+	clientClusterShardID, serverClusterShardID, err := history.DecodeClusterShardMD(ctxMetadata)
+	if err != nil {
+		return err
+	}
+
+	clientInfo := toString(clientClusterShardID)
+	serverInfo := toString(serverClusterShardID)
+
+	logger := s.logger
+	logger.Info(fmt.Sprintf("AdminStreamReplicationMessages started. client:%s, server:%s", clientInfo, serverInfo))
+	defer logger.Info("AdminStreamReplicationMessages stopped.")
+
+	ctx := clientCluster.Context()
+	ctx = metadata.NewOutgoingContext(ctx, history.EncodeClusterShardMD(
+		history.ClusterShardID{
+			ClusterID: clientClusterShardID.ClusterID,
+			ShardID:   clientClusterShardID.ShardID,
+		},
+		history.ClusterShardID{
+			ClusterID: serverClusterShardID.ClusterID,
+			ShardID:   serverClusterShardID.ShardID,
+		},
+	))
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	serverCluster, err := s.remoteAdminServiceClient.StreamWorkflowReplicationMessages(streamCtx)
+	if err != nil {
+		return err
+	}
+
+	shutdownChan := channel.NewShutdownOnce()
+	go func() {
+		defer func() {
+			shutdownChan.Shutdown()
+			err = serverCluster.CloseSend()
+			if err != nil {
+				logger.Error("Failed to close AdminStreamReplicationMessages server", tag.Error(err))
+			}
+
+		}()
+
+		for !shutdownChan.IsShutdown() {
+			req, err := clientCluster.Recv()
+			if err != nil {
+				logger.Error("AdminStreamReplicationMessages client -> server encountered error", tag.Error(err))
+				return
+			}
+			switch attr := req.GetAttributes().(type) {
+			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
+				if err = serverCluster.Send(req); err != nil {
+					logger.Error("AdminStreamReplicationMessages client -> server encountered error", tag.Error(err))
+					return
+				}
+			default:
+				logger.Error("AdminStreamReplicationMessages client -> server encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
+					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
+				))))
+				return
+			}
+		}
+	}()
+	go func() {
+		defer shutdownChan.Shutdown()
+
+		for !shutdownChan.IsShutdown() {
+			resp, err := serverCluster.Recv()
+			if err != nil {
+				logger.Error("AdminStreamReplicationMessages server -> client encountered error", tag.Error(err))
+				return
+			}
+			switch attr := resp.GetAttributes().(type) {
+			case *adminservice.StreamWorkflowReplicationMessagesResponse_Messages:
+				if err = clientCluster.Send(resp); err != nil {
+					if err != io.EOF {
+						logger.Error("AdminStreamReplicationMessages server -> client encountered error", tag.Error(err))
+
+					}
+					return
+				}
+			default:
+				logger.Error("AdminStreamReplicationMessages server -> client encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
+					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
+				))))
+				return
+			}
+		}
+	}()
+	<-shutdownChan.Channel()
+	return nil
 }
