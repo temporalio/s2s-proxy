@@ -40,7 +40,7 @@ func (s *Proxy) Start() error {
 	adminservice.RegisterAdminServiceServer(s.server, s.adminHandler)
 
 	go func() {
-		s.logger.Info("Starting proxy listener", tag.Port(s.config.GetGRPCPort()))
+		s.logger.Info("Starting proxy listener", tag.Port(s.config.GetListenPort()))
 		if err := s.server.Serve(s.grpcListener); err != nil {
 			s.logger.Fatal("Failed to start proxy listener", tag.Error(err))
 		}

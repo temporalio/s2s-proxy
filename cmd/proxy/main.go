@@ -36,19 +36,25 @@ func buildCLIOptions() *cli.App {
 	app.Usage = "Temporal proxy between servers"
 	app.Version = ProxyVersion
 
-	app.Flags = []cli.Flag{
-		&cli.IntFlag{
-			Name:     config.GRPCPortFlag,
-			Usage:    "grpc port listened by proxy.",
-			Aliases:  []string{"p"},
-			Required: true,
-		},
-	}
-
 	app.Commands = []*cli.Command{
 		{
-			Name:   "start",
-			Usage:  "Starts the proxy.",
+			Name:  "start",
+			Usage: "Starts the proxy.",
+			Flags: []cli.Flag{
+				&cli.IntFlag{
+					Name:     config.ListenPortFlag,
+					Usage:    "grpc port listened by proxy.",
+					Aliases:  []string{"l"},
+					Required: true,
+				},
+
+				&cli.StringFlag{
+					Name:     config.RemoteServerRPCAddress,
+					Usage:    "remote service address(Host:Port).",
+					Aliases:  []string{"r"},
+					Required: true,
+				},
+			},
 			Action: startProxy,
 		},
 	}

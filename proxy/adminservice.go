@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/temporalio/s2s-proxy/client"
+	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/api/adminservice/v1"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -13,17 +14,23 @@ import (
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		clientFactory client.ClientFactory
+		config                   config.Config
+		clientFactory            client.ClientFactory
+		remoteAdminServiceClient adminservice.AdminServiceClient
 	}
 )
 
 func NewAdminServiceProxyServer(
+	config config.Config,
 	server *grpc.Server,
 	clientFactory client.ClientFactory,
 ) (adminservice.AdminServiceServer, error) {
 
+	client := clientFactory.NewRemoteAdminClient(config.GetRemoteServerRPCAddress())
 	return &adminServiceProxyServer{
-		clientFactory: clientFactory,
+		config:                   config,
+		clientFactory:            clientFactory,
+		remoteAdminServiceClient: client,
 	}, nil
 }
 
@@ -52,7 +59,7 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 }
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method DescribeCluster is not allowed.")
+	return s.remoteAdminServiceClient.DescribeCluster(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) DescribeDLQJob(ctx context.Context, in0 *adminservice.DescribeDLQJobRequest) (*adminservice.DescribeDLQJobResponse, error) {
@@ -84,7 +91,7 @@ func (s *adminServiceProxyServer) GetNamespace(ctx context.Context, in0 *adminse
 }
 
 func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Context, in0 *adminservice.GetNamespaceReplicationMessagesRequest) (*adminservice.GetNamespaceReplicationMessagesResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method GetNamespaceReplicationMessages is not allowed.")
+	return s.remoteAdminServiceClient.GetNamespaceReplicationMessages(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetReplicationMessages(ctx context.Context, in0 *adminservice.GetReplicationMessagesRequest) (*adminservice.GetReplicationMessagesResponse, error) {
@@ -108,7 +115,7 @@ func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistory(ctx context.Con
 }
 
 func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistoryV2(ctx context.Context, in0 *adminservice.GetWorkflowExecutionRawHistoryV2Request) (*adminservice.GetWorkflowExecutionRawHistoryV2Response, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method GetWorkflowExecutionRawHistoryV2 is not allowed.")
+	return s.remoteAdminServiceClient.GetWorkflowExecutionRawHistoryV2(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) ImportWorkflowExecution(ctx context.Context, in0 *adminservice.ImportWorkflowExecutionRequest) (*adminservice.ImportWorkflowExecutionResponse, error) {
@@ -120,7 +127,7 @@ func (s *adminServiceProxyServer) ListClusterMembers(ctx context.Context, in0 *a
 }
 
 func (s *adminServiceProxyServer) ListClusters(ctx context.Context, in0 *adminservice.ListClustersRequest) (*adminservice.ListClustersResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method ListClusters is not allowed.")
+	return s.remoteAdminServiceClient.ListClusters(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) ListHistoryTasks(ctx context.Context, in0 *adminservice.ListHistoryTasksRequest) (*adminservice.ListHistoryTasksResponse, error) {
