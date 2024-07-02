@@ -15,11 +15,11 @@ import (
 
 type (
 	proxyServer struct {
-		serviceName  string
-		proxyAddress string
-		server       *grpc.Server
-		adminHandler adminservice.AdminServiceServer
-		logger       log.Logger
+		serviceName   string
+		serverAddress string
+		server        *grpc.Server
+		adminHandler  adminservice.AdminServiceServer
+		logger        log.Logger
 	}
 
 	Proxy struct {
@@ -33,34 +33,34 @@ type (
 
 func newProxyServer(
 	serviceName string,
-	proxyAddress string,
+	serverAddress string,
 	adminHandler adminservice.AdminServiceServer,
 	serverOptions []grpc.ServerOption,
 	logger log.Logger,
 ) *proxyServer {
 	server := grpc.NewServer(serverOptions...)
 	return &proxyServer{
-		serviceName:  serviceName,
-		proxyAddress: proxyAddress,
-		server:       server,
-		adminHandler: adminHandler,
-		logger:       logger,
+		serviceName:   serviceName,
+		serverAddress: serverAddress,
+		server:        server,
+		adminHandler:  adminHandler,
+		logger:        logger,
 	}
 }
 
 func (ps *proxyServer) start() error {
 	adminservice.RegisterAdminServiceServer(ps.server, ps.adminHandler)
-	grpcListener, err := net.Listen("tcp", ps.proxyAddress)
+	grpcListener, err := net.Listen("tcp", ps.serverAddress)
 	if err != nil {
-		ps.logger.Fatal("Failed to start gRPC listener", tag.Error(err), common.ServiceTag(ps.serviceName), tag.Address(ps.proxyAddress))
+		ps.logger.Fatal("Failed to start gRPC listener", tag.Error(err), common.ServiceTag(ps.serviceName), tag.Address(ps.serverAddress))
 		return err
 	}
 
-	ps.logger.Info("Created gRPC listener", common.ServiceTag(ps.serviceName), tag.Address(ps.proxyAddress))
+	ps.logger.Info("Created gRPC listener", common.ServiceTag(ps.serviceName), tag.Address(ps.serverAddress))
 	go func() {
-		ps.logger.Info("Starting proxy", common.ServiceTag(ps.serviceName), tag.Address(ps.proxyAddress))
+		ps.logger.Info("Starting proxy", common.ServiceTag(ps.serviceName), tag.Address(ps.serverAddress))
 		if err := ps.server.Serve(grpcListener); err != nil {
-			ps.logger.Fatal("Failed to start proxy", common.ServiceTag(ps.serviceName), tag.Address(ps.proxyAddress), tag.Error(err))
+			ps.logger.Fatal("Failed to start proxy", common.ServiceTag(ps.serviceName), tag.Address(ps.serverAddress), tag.Error(err))
 		}
 	}()
 
@@ -68,14 +68,13 @@ func (ps *proxyServer) start() error {
 }
 
 func (ps *proxyServer) stop() {
-	ps.logger.Info("Stopping proxy", common.ServiceTag(ps.serviceName), tag.Address(ps.proxyAddress))
+	ps.logger.Info("Stopping proxy", common.ServiceTag(ps.serviceName), tag.Address(ps.serverAddress))
 	ps.server.GracefulStop()
 }
 
 func NewProxy(
 	config config.Config,
 	logger log.Logger,
-	rpcFactory rpc.RPCFactory,
 	clientFactory client.ClientFactory,
 ) *Proxy {
 	remoteClient := clientFactory.NewRemoteAdminClient(config.GetRemoteServerRPCAddress())
