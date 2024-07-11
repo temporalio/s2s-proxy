@@ -79,6 +79,14 @@ func NewProxy(
 ) *Proxy {
 	remoteClient := clientFactory.NewRemoteAdminClient(config.GetRemoteServerRPCAddress())
 	localClient := clientFactory.NewRemoteAdminClient(config.GetLocalServerRPCAddress())
+
+	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
+	//    local server -> proxy(outbound) -> remote server
+	//    local server <- proxy(inbound) <- remote server
+	//
+	// Here a remote server can be another proxy as well.
+	//    server-a <-> proxy-a <-> proxy-b <-> server-b
+
 	return &Proxy{
 		config: config,
 		outboundServer: newProxyServer(

@@ -2,8 +2,6 @@ package rpc
 
 import (
 	"crypto/tls"
-	"net"
-	"sync"
 
 	"github.com/temporalio/s2s-proxy/config"
 
@@ -22,9 +20,6 @@ type (
 	rpcFactory struct {
 		config config.Config
 		logger log.Logger
-
-		initListener sync.Once
-		grpcListener net.Listener
 	}
 )
 
