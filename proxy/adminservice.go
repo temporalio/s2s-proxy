@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
@@ -19,6 +20,7 @@ import (
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
+		serviceName              string
 		remoteServerAddress      string
 		logger                   log.Logger
 		remoteAdminServiceClient adminservice.AdminServiceClient
@@ -26,11 +28,13 @@ type (
 )
 
 func NewAdminServiceProxyServer(
+	serviceName string,
 	remoteServerAddress string,
 	client adminservice.AdminServiceClient,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	return &adminServiceProxyServer{
+		serviceName:              serviceName,
 		remoteServerAddress:      remoteServerAddress,
 		remoteAdminServiceClient: client,
 		logger:                   logger,
@@ -203,7 +207,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		return err
 	}
 
-	logger := log.With(s.logger, tag.NewStringTag("incoming", toString(incomingClusterShardID)), tag.NewStringTag("outgoing", toString(outgoingClusterShardID)))
+	logger := log.With(s.logger, common.ServiceTag(s.serviceName), tag.NewStringTag("incoming", toString(incomingClusterShardID)), tag.NewStringTag("outgoing", toString(outgoingClusterShardID)))
 	logger.Info("AdminStreamReplicationMessages started.")
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
