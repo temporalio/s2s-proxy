@@ -42,16 +42,27 @@ func buildCLIOptions() *cli.App {
 			Usage: "Starts the proxy.",
 			Flags: []cli.Flag{
 				&cli.IntFlag{
-					Name:     config.ListenPortFlag,
-					Usage:    "grpc port listened by proxy.",
-					Aliases:  []string{"l"},
+					Name:     config.OutboundPortFlag,
+					Usage:    "the port of outbound server, which forwards local request to remote server.",
+					Aliases:  []string{"ob"},
 					Required: true,
 				},
-
+				&cli.IntFlag{
+					Name:     config.InboundPortFlag,
+					Usage:    "the port of inbound server, which forwards remote request to local server.",
+					Aliases:  []string{"ib"},
+					Required: true,
+				},
 				&cli.StringFlag{
-					Name:     config.RemoteServerRPCAddress,
-					Usage:    "remote service address(Host:Port).",
+					Name:     config.RemoteServerRPCAddressFlag,
+					Usage:    "remote server address(Host:Port).",
 					Aliases:  []string{"r"},
+					Required: true,
+				},
+				&cli.StringFlag{
+					Name:     config.LocalServerRPCAddressFlag,
+					Usage:    "local server address(Host:Port).",
+					Aliases:  []string{"l"},
 					Required: true,
 				},
 			},

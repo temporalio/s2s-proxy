@@ -2,36 +2,36 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/temporalio/s2s-proxy/client"
-	"github.com/temporalio/s2s-proxy/config"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
-	grpc "google.golang.org/grpc"
+	"go.temporal.io/server/client/history"
+	"go.temporal.io/server/common/log"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	status "google.golang.org/grpc/status"
 )
 
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		config                   config.Config
-		clientFactory            client.ClientFactory
+		remoteServerAddress      string
+		logger                   log.Logger
 		remoteAdminServiceClient adminservice.AdminServiceClient
 	}
 )
 
 func NewAdminServiceProxyServer(
-	config config.Config,
-	server *grpc.Server,
-	clientFactory client.ClientFactory,
-) (adminservice.AdminServiceServer, error) {
-
-	client := clientFactory.NewRemoteAdminClient(config.GetRemoteServerRPCAddress())
+	remoteServerAddress string,
+	client adminservice.AdminServiceClient,
+	logger log.Logger,
+) adminservice.AdminServiceServer {
 	return &adminServiceProxyServer{
-		config:                   config,
-		clientFactory:            clientFactory,
+		remoteServerAddress:      remoteServerAddress,
 		remoteAdminServiceClient: client,
-	}, nil
+		logger:                   logger,
+	}
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
@@ -182,6 +182,29 @@ func (s *adminServiceProxyServer) ResendReplicationTasks(ctx context.Context, in
 	return nil, status.Errorf(codes.PermissionDenied, "Calling method ResendReplicationTasks is not allowed.")
 }
 
-func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(in0 adminservice.AdminService_StreamWorkflowReplicationMessagesServer) error {
-	return status.Errorf(codes.PermissionDenied, "Calling method StreamWorkflowReplicationMessages is not allowed.")
+func toString(sd history.ClusterShardID) string {
+	return fmt.Sprintf("(id: %d, shard: %d)", sd.ClusterID, sd.ShardID)
+}
+
+func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
+	clientCluster adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+) (retError error) {
+	defer log.CapturePanic(s.logger, &retError)
+
+	ctxMetadata, ok := metadata.FromIncomingContext(clientCluster.Context())
+	if !ok {
+		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
+	}
+	clientClusterShardID, serverClusterShardID, err := history.DecodeClusterShardMD(ctxMetadata)
+	if err != nil {
+		return err
+	}
+
+	clientInfo := toString(clientClusterShardID)
+	serverInfo := toString(serverClusterShardID)
+
+	logger := s.logger
+	logger.Info(fmt.Sprintf("AdminStreamReplicationMessages started. client:%s, server:%s", clientInfo, serverInfo))
+	defer logger.Info("AdminStreamReplicationMessages stopped.")
+	return nil
 }
