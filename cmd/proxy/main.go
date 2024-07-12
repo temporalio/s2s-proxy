@@ -43,13 +43,13 @@ func buildCLIOptions() *cli.App {
 			Flags: []cli.Flag{
 				&cli.IntFlag{
 					Name:     config.OutboundPortFlag,
-					Usage:    "the port of outbound server, which forwards local requst to remote server.",
+					Usage:    "the port of outbound server, which forwards local request to remote server.",
 					Aliases:  []string{"ob"},
 					Required: true,
 				},
 				&cli.IntFlag{
 					Name:     config.InboundPortFlag,
-					Usage:    "the port of inbound server, which forwards remote requst to local server.",
+					Usage:    "the port of inbound server, which forwards remote request to local server.",
 					Aliases:  []string{"ib"},
 					Required: true,
 				},
