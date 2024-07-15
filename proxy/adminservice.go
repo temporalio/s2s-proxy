@@ -235,17 +235,21 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			shutdownChan.Shutdown()
 			err = outgoingStreamClient.CloseSend()
 			if err != nil {
-				logger.Error("Failed to close AdminStreamReplicationMessages server", tag.Error(err))
+				logger.Error("Failed to close AdminStreamReplicationMessages outgoingStreamClient", tag.Error(err))
 			}
-
 		}()
 
 		for !shutdownChan.IsShutdown() {
 			req, err := incomingStreamServer.Recv()
+			if err == io.EOF {
+				return
+			}
+
 			if err != nil {
 				logger.Error("AdminStreamReplicationMessages incomingStreamServer.Recv encountered error", tag.Error(err))
 				return
 			}
+
 			switch attr := req.GetAttributes().(type) {
 			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
 				if err = outgoingStreamClient.Send(req); err != nil {
@@ -265,6 +269,10 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 		for !shutdownChan.IsShutdown() {
 			resp, err := outgoingStreamClient.Recv()
+			if err == io.EOF {
+				return
+			}
+
 			if err != nil {
 				logger.Error("AdminStreamReplicationMessages outgoingStreamClient.Recv encountered error", tag.Error(err))
 				return
