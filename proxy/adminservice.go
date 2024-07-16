@@ -3,11 +3,15 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"io"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
+	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	codes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	status "google.golang.org/grpc/status"
@@ -16,6 +20,7 @@ import (
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
+		serviceName              string
 		remoteServerAddress      string
 		logger                   log.Logger
 		remoteAdminServiceClient adminservice.AdminServiceClient
@@ -23,11 +28,13 @@ type (
 )
 
 func NewAdminServiceProxyServer(
+	serviceName string,
 	remoteServerAddress string,
 	client adminservice.AdminServiceClient,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	return &adminServiceProxyServer{
+		serviceName:              serviceName,
 		remoteServerAddress:      remoteServerAddress,
 		remoteAdminServiceClient: client,
 		logger:                   logger,
@@ -187,24 +194,106 @@ func toString(sd history.ClusterShardID) string {
 }
 
 func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
-	clientCluster adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	incomingStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 ) (retError error) {
 	defer log.CapturePanic(s.logger, &retError)
 
-	ctxMetadata, ok := metadata.FromIncomingContext(clientCluster.Context())
+	incomingMetadata, ok := metadata.FromIncomingContext(incomingStreamServer.Context())
 	if !ok {
 		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
 	}
-	clientClusterShardID, serverClusterShardID, err := history.DecodeClusterShardMD(ctxMetadata)
+	incomingClusterShardID, outgoingClusterShardID, err := history.DecodeClusterShardMD(incomingMetadata)
 	if err != nil {
 		return err
 	}
 
-	clientInfo := toString(clientClusterShardID)
-	serverInfo := toString(serverClusterShardID)
-
-	logger := s.logger
-	logger.Info(fmt.Sprintf("AdminStreamReplicationMessages started. client:%s, server:%s", clientInfo, serverInfo))
+	logger := log.With(s.logger, common.ServiceTag(s.serviceName), tag.NewStringTag("incoming", toString(incomingClusterShardID)), tag.NewStringTag("outgoing", toString(outgoingClusterShardID)))
+	logger.Info("AdminStreamReplicationMessages started.")
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
+
+	outgoingContext := metadata.NewOutgoingContext(incomingStreamServer.Context(), history.EncodeClusterShardMD(
+		history.ClusterShardID{
+			ClusterID: incomingClusterShardID.ClusterID,
+			ShardID:   incomingClusterShardID.ShardID,
+		},
+		history.ClusterShardID{
+			ClusterID: outgoingClusterShardID.ClusterID,
+			ShardID:   outgoingClusterShardID.ShardID,
+		},
+	))
+	outgoingContext, cancel := context.WithCancel(outgoingContext)
+	defer cancel()
+
+	outgoingStreamClient, err := s.remoteAdminServiceClient.StreamWorkflowReplicationMessages(outgoingContext)
+	if err != nil {
+		return err
+	}
+
+	shutdownChan := channel.NewShutdownOnce()
+	go func() {
+		defer func() {
+			shutdownChan.Shutdown()
+			err = outgoingStreamClient.CloseSend()
+			if err != nil {
+				logger.Error("Failed to close AdminStreamReplicationMessages outgoingStreamClient", tag.Error(err))
+			}
+		}()
+
+		for !shutdownChan.IsShutdown() {
+			req, err := incomingStreamServer.Recv()
+			if err == io.EOF {
+				return
+			}
+
+			if err != nil {
+				logger.Error("AdminStreamReplicationMessages incomingStreamServer.Recv encountered error", tag.Error(err))
+				return
+			}
+
+			switch attr := req.GetAttributes().(type) {
+			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
+				if err = outgoingStreamClient.Send(req); err != nil {
+					logger.Error("AdminStreamReplicationMessages outgoingStreamClient.Send encountered error", tag.Error(err))
+					return
+				}
+			default:
+				logger.Error("AdminStreamReplicationMessages incomingStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
+					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
+				))))
+				return
+			}
+		}
+	}()
+	go func() {
+		defer shutdownChan.Shutdown()
+
+		for !shutdownChan.IsShutdown() {
+			resp, err := outgoingStreamClient.Recv()
+			if err == io.EOF {
+				return
+			}
+
+			if err != nil {
+				logger.Error("AdminStreamReplicationMessages outgoingStreamClient.Recv encountered error", tag.Error(err))
+				return
+			}
+			switch attr := resp.GetAttributes().(type) {
+			case *adminservice.StreamWorkflowReplicationMessagesResponse_Messages:
+				if err = incomingStreamServer.Send(resp); err != nil {
+					if err != io.EOF {
+						logger.Error("AdminStreamReplicationMessages incomingStreamServer.Send encountered error", tag.Error(err))
+
+					}
+					return
+				}
+			default:
+				logger.Error("AdminStreamReplicationMessages outgoingStreamClient.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
+					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
+				))))
+				return
+			}
+		}
+	}()
+	<-shutdownChan.Channel()
 	return nil
 }

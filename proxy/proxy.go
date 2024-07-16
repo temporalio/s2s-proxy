@@ -92,14 +92,24 @@ func NewProxy(
 		outboundServer: newProxyServer(
 			"outbound-server",
 			config.GetOutboundServerAddress(),
-			NewAdminServiceProxyServer(config.GetRemoteServerRPCAddress(), remoteClient, logger),
+			NewAdminServiceProxyServer(
+				"outbound-server",
+				config.GetRemoteServerRPCAddress(),
+				remoteClient,
+				logger,
+			),
 			nil, // grpc server options
 			logger,
 		),
 		inboundServer: newProxyServer(
 			"inbound-server",
 			config.GetInboundServerAddress(),
-			NewAdminServiceProxyServer(config.GetLocalServerRPCAddress(), localClient, logger),
+			NewAdminServiceProxyServer(
+				"inbound-server",
+				config.GetLocalServerRPCAddress(),
+				localClient,
+				logger,
+			),
 			nil, // grpc server options
 			logger,
 		),
