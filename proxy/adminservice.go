@@ -194,38 +194,48 @@ func toString(sd history.ClusterShardID) string {
 }
 
 func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
-	incomingStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 ) (retError error) {
 	defer log.CapturePanic(s.logger, &retError)
 
-	incomingMetadata, ok := metadata.FromIncomingContext(incomingStreamServer.Context())
+	targetMetadata, ok := metadata.FromIncomingContext(targetStreamServer.Context())
 	if !ok {
 		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
 	}
-	incomingClusterShardID, outgoingClusterShardID, err := history.DecodeClusterShardMD(incomingMetadata)
+	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(targetMetadata)
 	if err != nil {
 		return err
 	}
 
-	logger := log.With(s.logger, common.ServiceTag(s.serviceName), tag.NewStringTag("incoming", toString(incomingClusterShardID)), tag.NewStringTag("outgoing", toString(outgoingClusterShardID)))
-	logger.Info("AdminStreamReplicationMessages started.")
-	defer logger.Info("AdminStreamReplicationMessages stopped.")
+	recvLogger := log.With(s.logger,
+		common.ServiceTag(s.serviceName+"-recv"),
+		tag.NewStringTag("target", toString(targetClusterShardID)),
+		tag.NewStringTag("source", toString(sourceClusterShardID)))
 
-	outgoingContext := metadata.NewOutgoingContext(incomingStreamServer.Context(), history.EncodeClusterShardMD(
+	sendLogger := log.With(s.logger,
+		common.ServiceTag(s.serviceName+"-send"),
+		tag.NewStringTag("target", toString(targetClusterShardID)),
+		tag.NewStringTag("source", toString(sourceClusterShardID)))
+
+	recvLogger.Info("AdminStreamReplicationMessages started.")
+	defer recvLogger.Info("AdminStreamReplicationMessages stopped.")
+
+	outgoingContext := metadata.NewOutgoingContext(targetStreamServer.Context(), history.EncodeClusterShardMD(
 		history.ClusterShardID{
-			ClusterID: incomingClusterShardID.ClusterID,
-			ShardID:   incomingClusterShardID.ShardID,
+			ClusterID: targetClusterShardID.ClusterID,
+			ShardID:   targetClusterShardID.ShardID,
 		},
 		history.ClusterShardID{
-			ClusterID: outgoingClusterShardID.ClusterID,
-			ShardID:   outgoingClusterShardID.ShardID,
+			ClusterID: sourceClusterShardID.ClusterID,
+			ShardID:   sourceClusterShardID.ShardID,
 		},
 	))
 	outgoingContext, cancel := context.WithCancel(outgoingContext)
 	defer cancel()
 
-	outgoingStreamClient, err := s.remoteAdminServiceClient.StreamWorkflowReplicationMessages(outgoingContext)
+	sourceStreamClient, err := s.remoteAdminServiceClient.StreamWorkflowReplicationMessages(outgoingContext)
 	if err != nil {
+		recvLogger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err
 	}
 
@@ -233,31 +243,33 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	go func() {
 		defer func() {
 			shutdownChan.Shutdown()
-			err = outgoingStreamClient.CloseSend()
+			err = sourceStreamClient.CloseSend()
 			if err != nil {
-				logger.Error("Failed to close AdminStreamReplicationMessages outgoingStreamClient", tag.Error(err))
+				recvLogger.Error("Failed to close sourceStreamClient", tag.Error(err))
 			}
 		}()
 
 		for !shutdownChan.IsShutdown() {
-			req, err := incomingStreamServer.Recv()
+			req, err := targetStreamServer.Recv()
 			if err == io.EOF {
 				return
 			}
 
 			if err != nil {
-				logger.Error("AdminStreamReplicationMessages incomingStreamServer.Recv encountered error", tag.Error(err))
+				recvLogger.Error("targetStreamServer.Recv encountered error", tag.Error(err))
 				return
 			}
 
 			switch attr := req.GetAttributes().(type) {
 			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
-				if err = outgoingStreamClient.Send(req); err != nil {
-					logger.Error("AdminStreamReplicationMessages outgoingStreamClient.Send encountered error", tag.Error(err))
+				recvLogger.Debug(fmt.Sprintf("SyncReplicationState: inclusive %v", attr.SyncReplicationState.InclusiveLowWatermark))
+
+				if err = sourceStreamClient.Send(req); err != nil {
+					recvLogger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
 					return
 				}
 			default:
-				logger.Error("AdminStreamReplicationMessages incomingStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
+				recvLogger.Error("targetStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
 					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
 				))))
 				return
@@ -268,26 +280,27 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		defer shutdownChan.Shutdown()
 
 		for !shutdownChan.IsShutdown() {
-			resp, err := outgoingStreamClient.Recv()
+			resp, err := sourceStreamClient.Recv()
 			if err == io.EOF {
 				return
 			}
 
 			if err != nil {
-				logger.Error("AdminStreamReplicationMessages outgoingStreamClient.Recv encountered error", tag.Error(err))
+				sendLogger.Error("sourceStreamClient.Recv encountered error", tag.Error(err))
 				return
 			}
 			switch attr := resp.GetAttributes().(type) {
 			case *adminservice.StreamWorkflowReplicationMessagesResponse_Messages:
-				if err = incomingStreamServer.Send(resp); err != nil {
+				sendLogger.Debug(fmt.Sprintf("ReplicationMessages: exclusive %v", attr.Messages.ExclusiveHighWatermark))
+				if err = targetStreamServer.Send(resp); err != nil {
 					if err != io.EOF {
-						logger.Error("AdminStreamReplicationMessages incomingStreamServer.Send encountered error", tag.Error(err))
+						sendLogger.Error("targetStreamServer.Send encountered error", tag.Error(err))
 
 					}
 					return
 				}
 			default:
-				logger.Error("AdminStreamReplicationMessages outgoingStreamClient.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
+				sendLogger.Error("sourceStreamClient.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
 					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
 				))))
 				return
