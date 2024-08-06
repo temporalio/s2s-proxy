@@ -215,16 +215,8 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	logger.Info("AdminStreamReplicationMessages started.")
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
-	outgoingContext := metadata.NewOutgoingContext(targetStreamServer.Context(), history.EncodeClusterShardMD(
-		history.ClusterShardID{
-			ClusterID: targetClusterShardID.ClusterID,
-			ShardID:   targetClusterShardID.ShardID,
-		},
-		history.ClusterShardID{
-			ClusterID: sourceClusterShardID.ClusterID,
-			ShardID:   sourceClusterShardID.ShardID,
-		},
-	))
+	// simply forwarding target metadata
+	outgoingContext := metadata.NewOutgoingContext(targetStreamServer.Context(), targetMetadata)
 	outgoingContext, cancel := context.WithCancel(outgoingContext)
 	defer cancel()
 
