@@ -207,18 +207,13 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		return err
 	}
 
-	recvLogger := log.With(s.logger,
-		common.ServiceTag(s.serviceName+"-recv"),
+	logger := log.With(s.logger,
+		common.ServiceTag(s.serviceName),
 		tag.NewStringTag("target", toString(targetClusterShardID)),
 		tag.NewStringTag("source", toString(sourceClusterShardID)))
 
-	sendLogger := log.With(s.logger,
-		common.ServiceTag(s.serviceName+"-send"),
-		tag.NewStringTag("target", toString(targetClusterShardID)),
-		tag.NewStringTag("source", toString(sourceClusterShardID)))
-
-	recvLogger.Info("AdminStreamReplicationMessages started.")
-	defer recvLogger.Info("AdminStreamReplicationMessages stopped.")
+	logger.Info("AdminStreamReplicationMessages started.")
+	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
 	outgoingContext := metadata.NewOutgoingContext(targetStreamServer.Context(), history.EncodeClusterShardMD(
 		history.ClusterShardID{
@@ -235,7 +230,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	sourceStreamClient, err := s.remoteAdminServiceClient.StreamWorkflowReplicationMessages(outgoingContext)
 	if err != nil {
-		recvLogger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
+		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err
 	}
 
@@ -245,7 +240,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			shutdownChan.Shutdown()
 			err = sourceStreamClient.CloseSend()
 			if err != nil {
-				recvLogger.Error("Failed to close sourceStreamClient", tag.Error(err))
+				logger.Error("Failed to close sourceStreamClient", tag.Error(err))
 			}
 		}()
 
@@ -256,20 +251,20 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			}
 
 			if err != nil {
-				recvLogger.Error("targetStreamServer.Recv encountered error", tag.Error(err))
+				logger.Error("targetStreamServer.Recv encountered error", tag.Error(err))
 				return
 			}
 
 			switch attr := req.GetAttributes().(type) {
 			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
-				recvLogger.Debug(fmt.Sprintf("SyncReplicationState: inclusive %v", attr.SyncReplicationState.InclusiveLowWatermark))
+				logger.Debug(fmt.Sprintf("forwarding SyncReplicationState: inclusive %v", attr.SyncReplicationState.InclusiveLowWatermark))
 
 				if err = sourceStreamClient.Send(req); err != nil {
-					recvLogger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
+					logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
 					return
 				}
 			default:
-				recvLogger.Error("targetStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
+				logger.Error("targetStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
 					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
 				))))
 				return
@@ -286,21 +281,21 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			}
 
 			if err != nil {
-				sendLogger.Error("sourceStreamClient.Recv encountered error", tag.Error(err))
+				logger.Error("sourceStreamClient.Recv encountered error", tag.Error(err))
 				return
 			}
 			switch attr := resp.GetAttributes().(type) {
 			case *adminservice.StreamWorkflowReplicationMessagesResponse_Messages:
-				sendLogger.Debug(fmt.Sprintf("ReplicationMessages: exclusive %v", attr.Messages.ExclusiveHighWatermark))
+				logger.Debug(fmt.Sprintf("forwarding ReplicationMessages: exclusive %v", attr.Messages.ExclusiveHighWatermark))
 				if err = targetStreamServer.Send(resp); err != nil {
 					if err != io.EOF {
-						sendLogger.Error("targetStreamServer.Send encountered error", tag.Error(err))
+						logger.Error("targetStreamServer.Send encountered error", tag.Error(err))
 
 					}
 					return
 				}
 			default:
-				sendLogger.Error("sourceStreamClient.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
+				logger.Error("sourceStreamClient.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
 					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
 				))))
 				return
