@@ -7,7 +7,27 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
-	"google.golang.org/grpc"
+)
+
+const (
+	echoServerAddress          = "localhost:7266"
+	serverProxyInboundAddress  = "localhost:7366"
+	serverProxyOutboundAddress = "localhost:7466"
+	echoClientAddress          = "localhost:8266"
+	clientProxyInboundAddress  = "localhost:8366"
+	clientProxyOutboundAddress = "localhost:8466"
+	invalidAddress             = ""
+)
+
+var (
+	serverClusterShard = history.ClusterShardID{
+		ClusterID: 1,
+		ShardID:   2,
+	}
+	clientClusterShard = history.ClusterShardID{
+		ClusterID: 2,
+		ShardID:   4,
+	}
 )
 
 type (
@@ -15,40 +35,7 @@ type (
 		suite.Suite
 		ctrl *gomock.Controller
 	}
-
-	proxyConfig struct {
-		localServerAddress    string
-		remoteServerAddress   string
-		inboundServerAddress  string
-		outboundServerAddress string
-	}
-
-	clusterInfo struct {
-		serverAddress  string
-		clusterShardID history.ClusterShardID
-		proxyConfig    *proxyConfig
-	}
 )
-
-func (pc *proxyConfig) GetGRPCServerOptions() []grpc.ServerOption {
-	return nil
-}
-
-func (pc *proxyConfig) GetOutboundServerAddress() string {
-	return pc.outboundServerAddress
-}
-
-func (pc *proxyConfig) GetInboundServerAddress() string {
-	return pc.inboundServerAddress
-}
-
-func (pc *proxyConfig) GetRemoteServerRPCAddress() string {
-	return pc.remoteServerAddress
-}
-
-func (pc *proxyConfig) GetLocalServerRPCAddress() string {
-	return pc.localServerAddress
-}
 
 func TestProxyTestSuite(t *testing.T) {
 	suite.Run(t, new(proxyTestSuite))
@@ -75,112 +62,112 @@ func verifyEcho(sequence []int64, echoed map[int64]bool) bool {
 	return true
 }
 
-func (s *proxyTestSuite) Test_NoProxy() {
-	echoServerInfo := clusterInfo{
-		serverAddress: "localhost:7266",
-		clusterShardID: history.ClusterShardID{
-			ClusterID: 1,
-			ShardID:   2,
-		},
-		// proxyConfig: &proxyConfig{
-		// 	inboundServerAddress:  "localhost:7366",
-		// 	outboundServerAddress: "localhost:7466",
-		// 	remoteServerAddress:   testTargetServerAddress,
-		// 	localServerAddress:    testSourceServerAddress,
-		// },
+func genSequence(initial int64, n int) []int64 {
+	var sequence []int64
+	for i := 0; i < n; i++ {
+		sequence = append(sequence, initial)
+		initial++
 	}
 
-	echoClientInfo := clusterInfo{
-		clusterShardID: history.ClusterShardID{
-			ClusterID: 2,
-			ShardID:   4,
-		},
-	}
-
-	logger := log.NewTestLogger()
-	echoServer := newEchoServer(echoServerInfo.serverAddress, logger)
-	echoServer.start()
-	defer echoServer.stop()
-
-	echoClient := newEchoClient(
-		echoServerInfo.serverAddress,
-		echoServerInfo.clusterShardID,
-		echoClientInfo.clusterShardID,
-		echoClientInfo.proxyConfig,
-		logger,
-	)
-
-	sequence := []int64{1, 2, 3, 4, 5}
-	echoed, err := echoClient.sendAndRecv(sequence)
-	s.NoError(err)
-	s.True(verifyEcho(sequence, echoed))
+	return sequence
 }
 
-// func (s *proxyTestSuite) Test_StartStop() {
-// 	sourceClusterInfo := clusterInfo{
-// 		serverAddress: testSourceServerAddress,
-// 		clusterShardID: history.ClusterShardID{
-// 			ClusterID: 1,
-// 			ShardID:   2,
-// 		},
-// 		proxyConfig: &proxyConfig{
-// 			inboundServerAddress:  "localhost:7366",
-// 			outboundServerAddress: "localhost:7466",
-// 			remoteServerAddress:   testTargetServerAddress,
-// 			localServerAddress:    testSourceServerAddress,
-// 		},
-// 	}
+func (s *proxyTestSuite) Test_Echo_Success() {
+	tests := []struct {
+		echoServerInfo clusterInfo
+		echoClientInfo clusterInfo
+	}{
+		{
+			// 0: No proxy
+			// echo_server <- - -> echo_client
+			echoServerInfo: clusterInfo{
+				serverAddress:  echoServerAddress,
+				clusterShardID: serverClusterShard,
+			},
+			echoClientInfo: clusterInfo{
+				serverAddress:  echoClientAddress,
+				clusterShardID: clientClusterShard,
+			},
+		},
+		{
+			// 1: server only proxy
+			// echo_server <-> proxy.inbound <- - -> echo_client
+			echoServerInfo: clusterInfo{
+				serverAddress:  echoServerAddress,
+				clusterShardID: serverClusterShard,
+				proxyConfig: &proxyConfig{
+					inboundServerAddress:  serverProxyInboundAddress,
+					localServerAddress:    echoServerAddress,
+					outboundServerAddress: serverProxyOutboundAddress,
+					remoteServerAddress:   echoClientAddress,
+				},
+			},
+			echoClientInfo: clusterInfo{
+				serverAddress:  echoClientAddress,
+				clusterShardID: clientClusterShard,
+			},
+		},
+		{
+			// 2: client only proxy
+			// echo_server <- - -> proxy.outbound <-> echo_client
+			echoServerInfo: clusterInfo{
+				serverAddress:  echoServerAddress,
+				clusterShardID: serverClusterShard,
+			},
+			echoClientInfo: clusterInfo{
+				serverAddress:  echoClientAddress,
+				clusterShardID: clientClusterShard,
+				proxyConfig: &proxyConfig{
+					inboundServerAddress:  clientProxyInboundAddress,
+					localServerAddress:    echoClientAddress,
+					outboundServerAddress: clientProxyOutboundAddress,
+					remoteServerAddress:   echoServerAddress,
+				},
+			},
+		},
+		{
+			// 3. server & client proxy
+			// echo_server <-> proxy.inbound <- - -> proxy.outbound <-> echo_client
+			echoServerInfo: clusterInfo{
+				serverAddress:  echoServerAddress,
+				clusterShardID: serverClusterShard,
+				proxyConfig: &proxyConfig{
+					inboundServerAddress:  serverProxyInboundAddress,
+					localServerAddress:    echoServerAddress,
+					outboundServerAddress: serverProxyOutboundAddress,
+					remoteServerAddress:   clientProxyInboundAddress,
+				},
+			},
+			echoClientInfo: clusterInfo{
+				serverAddress:  echoClientAddress,
+				clusterShardID: clientClusterShard,
+				proxyConfig: &proxyConfig{
+					inboundServerAddress:  clientProxyInboundAddress,
+					localServerAddress:    echoClientAddress,
+					outboundServerAddress: clientProxyOutboundAddress,
+					remoteServerAddress:   serverProxyInboundAddress,
+				},
+			},
+		},
+	}
 
-// 	targetClusterInfo := clusterInfo{
-// 		serverAddress: testTargetServerAddress,
-// 		clusterShardID: history.ClusterShardID{
-// 			ClusterID: 2,
-// 			ShardID:   4,
-// 		},
-// 	}
+	for _, ts := range tests {
+		logger := log.NewTestLogger()
+		echoServer := newEchoServer(ts.echoServerInfo, logger)
+		echoClient := newEchoClient(ts.echoServerInfo, ts.echoClientInfo, logger)
+		echoServer.start()
+		echoClient.start()
 
-// 	logger := log.NewTestLogger()
-// 	config := sourceClusterInfo.proxyConfig
-// 	rpcFactory := rpc.NewRPCFactory(config, logger)
-// 	clientFactory := client.NewClientFactory(rpcFactory, logger)
-// 	proxy := NewProxy(
-// 		config,
-// 		logger,
-// 		clientFactory,
-// 	)
+		func() {
+			defer func() {
+				echoClient.stop()
+				echoServer.stop()
+			}()
 
-// 	sender := newProxyServer("sender", sourceClusterInfo.serverAddress, mockproxy.NewMockSenderService("sender", logger), nil, logger)
-// 	sender.start()
-// 	proxy.Start()
-
-// 	defer func() {
-// 		// proxy.Stop()
-// 		// sender.stop()
-// 	}()
-
-// 	metaData := history.EncodeClusterShardMD(sourceClusterInfo.clusterShardID, targetClusterInfo.clusterShardID)
-// 	targetConext := metadata.NewOutgoingContext(context.TODO(), metaData)
-// 	remoteClient := clientFactory.NewRemoteAdminClient(config.inboundServerAddress)
-// 	remoteServer, err := remoteClient.StreamWorkflowReplicationMessages(targetConext)
-// 	s.NoError(err)
-
-// 	highWatermarkInfo := &watermarkInfo{
-// 		Watermark: 10,
-// 	}
-
-// 	req := &adminservice.StreamWorkflowReplicationMessagesRequest{
-// 		Attributes: &adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState{
-// 			SyncReplicationState: &repicationpb.SyncReplicationState{
-// 				HighPriorityState: &repicationpb.ReplicationState{
-// 					InclusiveLowWatermark:     highWatermarkInfo.Watermark,
-// 					InclusiveLowWatermarkTime: timestamppb.New(highWatermarkInfo.Timestamp),
-// 				},
-// 			},
-// 		}}
-
-// 	remoteServer.Send(req)
-// 	resp, err := remoteServer.Recv()
-// 	s.NoError(err)
-// 	_, ok := resp.GetAttributes().(*adminservice.StreamWorkflowReplicationMessagesResponse_Messages)
-// 	s.True(ok)
-// }
+			sequence := genSequence(1, 100)
+			echoed, err := echoClient.sendAndRecv(sequence)
+			s.NoError(err)
+			s.True(verifyEcho(sequence, echoed))
+		}()
+	}
+}

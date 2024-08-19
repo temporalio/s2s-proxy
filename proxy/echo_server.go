@@ -12,18 +12,30 @@ import (
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
+	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	status "google.golang.org/grpc/status"
 
+	"github.com/temporalio/s2s-proxy/client"
+	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/common"
 )
 
-const (
-	serviceName = "EchoServer"
-)
-
 type (
+	proxyConfig struct {
+		localServerAddress    string
+		remoteServerAddress   string
+		inboundServerAddress  string
+		outboundServerAddress string
+	}
+
+	clusterInfo struct {
+		serverAddress  string
+		clusterShardID history.ClusterShardID
+		proxyConfig    *proxyConfig
+	}
+
 	echoService struct {
 		adminservice.UnimplementedAdminServiceServer
 		serviceName string
@@ -31,33 +43,75 @@ type (
 	}
 
 	echoServer struct {
-		server *proxyServer
+		server      *proxyServer
+		proxy       *Proxy
+		clusterInfo clusterInfo
 	}
 )
 
+func (pc *proxyConfig) GetGRPCServerOptions() []grpc.ServerOption {
+	return nil
+}
+
+func (pc *proxyConfig) GetOutboundServerAddress() string {
+	return pc.outboundServerAddress
+}
+
+func (pc *proxyConfig) GetInboundServerAddress() string {
+	return pc.inboundServerAddress
+}
+
+func (pc *proxyConfig) GetRemoteServerRPCAddress() string {
+	return pc.remoteServerAddress
+}
+
+func (pc *proxyConfig) GetLocalServerRPCAddress() string {
+	return pc.localServerAddress
+}
+
 func newEchoServer(
-	serverAddress string,
+	clusterInfo clusterInfo,
 	logger log.Logger,
 ) *echoServer {
 	senderService := &echoService{
-		serviceName: serviceName,
+		serviceName: "EchoServer",
 		logger:      logger,
+	}
+
+	var proxy *Proxy
+	if clusterInfo.proxyConfig != nil {
+		rpcFactory := rpc.NewRPCFactory(clusterInfo.proxyConfig, logger)
+		clientFactory := client.NewClientFactory(rpcFactory, logger)
+		proxy = NewProxy(
+			clusterInfo.proxyConfig,
+			logger,
+			clientFactory,
+		)
 	}
 
 	return &echoServer{
 		server: newProxyServer(
-			"sender",
-			serverAddress, senderService,
+			"EchoServer",
+			clusterInfo.serverAddress,
+			senderService,
 			nil,
 			logger),
+		proxy:       proxy,
+		clusterInfo: clusterInfo,
 	}
 }
 
 func (s *echoServer) start() {
 	s.server.start()
+	if s.proxy != nil {
+		s.proxy.Start()
+	}
 }
 
 func (s *echoServer) stop() {
+	if s.proxy != nil {
+		s.proxy.Stop()
+	}
 	s.server.stop()
 }
 

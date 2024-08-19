@@ -21,6 +21,7 @@ type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
 		serviceName              string
+		serverAddress            string
 		remoteServerAddress      string
 		logger                   log.Logger
 		remoteAdminServiceClient adminservice.AdminServiceClient
@@ -29,15 +30,17 @@ type (
 
 func NewAdminServiceProxyServer(
 	serviceName string,
+	serverAddress string,
 	remoteServerAddress string,
 	client adminservice.AdminServiceClient,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	return &adminServiceProxyServer{
 		serviceName:              serviceName,
+		serverAddress:            serverAddress,
 		remoteServerAddress:      remoteServerAddress,
 		remoteAdminServiceClient: client,
-		logger:                   logger,
+		logger:                   log.With(logger, common.ServiceTag(serviceName), tag.Address(serverAddress)),
 	}
 }
 
@@ -207,11 +210,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		return err
 	}
 
-	logger := log.With(s.logger,
-		common.ServiceTag(s.serviceName),
-		tag.NewStringTag("target", toString(targetClusterShardID)),
-		tag.NewStringTag("source", toString(sourceClusterShardID)))
-
+	logger := log.With(s.logger, tag.NewStringTag("target", toString(targetClusterShardID)), tag.NewStringTag("source", toString(sourceClusterShardID)))
 	logger.Info("AdminStreamReplicationMessages started.")
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
