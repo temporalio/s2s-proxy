@@ -24,7 +24,7 @@ clean-bins:
 # Binary target
 s2s-proxy: $(ALL_SRC)
 	@printf $(COLOR) "Build s2s-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)..."
-	CGO_ENABLED=$(CGO_ENABLED) go build $(BUILD_TAG_FLAG) -o s2s-proxy ./cmd/proxy
+	CGO_ENABLED=$(CGO_ENABLED) go build -o s2s-proxy ./cmd/proxy
 
 # Lint target
 lint:
@@ -40,7 +40,7 @@ mocks: clean-mocks
 
 # Tests
 test:
-	go test $(TEST_TAG_FLAG) $(TEST_ARG) ./...
+	go test $(TEST_ARG) ./...
 
 cover:
-	go test $(TEST_TAG_FLAG) $(TEST_ARG) -cover ./...
+	go test $(TEST_ARG) -cover ./...
