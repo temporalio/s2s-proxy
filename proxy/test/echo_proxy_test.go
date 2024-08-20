@@ -83,7 +83,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 	}{
 		{
 			// echo_server <- - -> echo_client
-			name: "No proxy",
+			name: "no-proxy",
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
@@ -95,7 +95,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 		},
 		{
 			// echo_server <-> proxy.inbound <- - -> echo_client
-			name: "server-side only proxy",
+			name: "server-side-only-proxy",
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
@@ -113,7 +113,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 		},
 		{
 			// echo_server <- - -> proxy.outbound <-> echo_client
-			name: "client-side only proxy",
+			name: "client-side-only-proxy",
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
@@ -131,7 +131,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 		},
 		{
 			// echo_server <-> proxy.inbound <- - -> proxy.outbound <-> echo_client
-			name: "server & client-side proxy",
+			name: "server-and-client-side-proxy",
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
