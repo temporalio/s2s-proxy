@@ -151,8 +151,9 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 		},
 	}
 
+	sequence := genSequence(1, 100)
+	logger := log.NewTestLogger()
 	for _, ts := range tests {
-		logger := log.NewTestLogger()
 		echoServer := newEchoServer(ts.echoServerInfo, logger)
 		echoClient := newEchoClient(ts.echoServerInfo, ts.echoClientInfo, logger)
 		echoServer.start()
@@ -164,7 +165,6 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				echoServer.stop()
 			}()
 
-			sequence := genSequence(1, 100)
 			echoed, err := echoClient.sendAndRecv(sequence)
 			s.NoError(err)
 			s.True(verifyEcho(sequence, echoed))
