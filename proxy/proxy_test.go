@@ -159,6 +159,8 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 		echoServer.start()
 		echoClient.start()
 
+		// Anonymous Function is needed because deferred calls execute only when the surrounding
+		// function exits, not after each loop iteration.
 		func() {
 			defer func() {
 				echoClient.stop()

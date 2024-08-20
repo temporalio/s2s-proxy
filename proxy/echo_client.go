@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"go.temporal.io/server/api/adminservice/v1"
-	repicationpb "go.temporal.io/server/api/replication/v1"
+	replicationpb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -51,14 +51,17 @@ func newEchoClient(
 	var proxy *Proxy
 	var adminClient adminservice.AdminServiceClient
 	if clientInfo.proxyConfig != nil {
-		// Setup EchoClient's proxy
+		// Setup EchoClient's proxy and connect EchoClient to the proxy (via outbound server).
+		// 	<- - -> proxy <-> EchoClient
 		proxy = NewProxy(clientInfo.proxyConfig, logger, clientFactory)
 		adminClient = clientFactory.NewRemoteAdminClient(clientInfo.proxyConfig.GetOutboundServerAddress())
 	} else if serverInfo.proxyConfig != nil {
-		// Connect to EchoServer's proxy
+		// Connect EchoClient to EchoServer's proxy (via InboundServer).
+		// 	EchoServer <-> proxy <- - -> EchoClient
 		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.proxyConfig.GetInboundServerAddress())
 	} else {
-		// Connect directly to EchoServer
+		// Connect EchoClient directly to EchoServer.
+		// 	EchoServer <- - -> EchoClient
 		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.serverAddress)
 	}
 
@@ -131,8 +134,8 @@ func (r *echoClient) sendAndRecv(sequence []int64) (map[int64]bool, error) {
 
 		req := &adminservice.StreamWorkflowReplicationMessagesRequest{
 			Attributes: &adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState{
-				SyncReplicationState: &repicationpb.SyncReplicationState{
-					HighPriorityState: &repicationpb.ReplicationState{
+				SyncReplicationState: &replicationpb.SyncReplicationState{
+					HighPriorityState: &replicationpb.ReplicationState{
 						InclusiveLowWatermark:     highWatermarkInfo.Watermark,
 						InclusiveLowWatermarkTime: timestamppb.New(highWatermarkInfo.Timestamp),
 					},

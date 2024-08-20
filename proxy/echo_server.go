@@ -8,7 +8,7 @@ import (
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
-	repicationpb "go.temporal.io/server/api/replication/v1"
+	replicationpb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -299,6 +299,7 @@ func (s *echoService) StreamWorkflowReplicationMessages(
 
 			if err != nil {
 				logger.Error("targetStreamServer.Recv encountered error", tag.Error(err))
+				retError = err
 				return
 			}
 
@@ -306,12 +307,14 @@ func (s *echoService) StreamWorkflowReplicationMessages(
 			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
 				req := &adminservice.StreamWorkflowReplicationMessagesResponse{
 					Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
-						Messages: &repicationpb.WorkflowReplicationMessages{
+						Messages: &replicationpb.WorkflowReplicationMessages{
 							ExclusiveHighWatermark: attr.SyncReplicationState.HighPriorityState.InclusiveLowWatermark,
 						},
 					}}
 
 				if err = targetStreamServer.Send(req); err != nil {
+					logger.Error("targetStreamServer.Send encountered error", tag.Error(err))
+					retError = err
 					return
 				}
 
@@ -319,6 +322,7 @@ func (s *echoService) StreamWorkflowReplicationMessages(
 				logger.Error("targetStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
 					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
 				))))
+				retError = fmt.Errorf("targetStreamServer.Recv unknown type")
 				return
 			}
 		}
