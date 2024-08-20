@@ -20,6 +20,7 @@ import (
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/common"
+	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 )
 
 type (
@@ -43,8 +44,8 @@ type (
 	}
 
 	echoServer struct {
-		server      *proxyServer
-		proxy       *Proxy
+		server      *s2sproxy.TemporalAPIServer
+		proxy       *s2sproxy.Proxy
 		clusterInfo clusterInfo
 	}
 )
@@ -81,11 +82,11 @@ func newEchoServer(
 		logger:      log.With(logger, common.ServiceTag("EchoServer"), tag.Address(clusterInfo.serverAddress)),
 	}
 
-	var proxy *Proxy
+	var proxy *s2sproxy.Proxy
 	if clusterInfo.proxyConfig != nil {
 		rpcFactory := rpc.NewRPCFactory(clusterInfo.proxyConfig, logger)
 		clientFactory := client.NewClientFactory(rpcFactory, logger)
-		proxy = NewProxy(
+		proxy = s2sproxy.NewProxy(
 			clusterInfo.proxyConfig,
 			logger,
 			clientFactory,
@@ -93,7 +94,7 @@ func newEchoServer(
 	}
 
 	return &echoServer{
-		server: newProxyServer(
+		server: s2sproxy.NewTemporalAPIServer(
 			"EchoServer",
 			clusterInfo.serverAddress,
 			senderService,
@@ -105,7 +106,7 @@ func newEchoServer(
 }
 
 func (s *echoServer) start() {
-	s.server.start()
+	s.server.Start()
 	if s.proxy != nil {
 		s.proxy.Start()
 	}
@@ -115,7 +116,7 @@ func (s *echoServer) stop() {
 	if s.proxy != nil {
 		s.proxy.Stop()
 	}
-	s.server.stop()
+	s.server.Stop()
 }
 
 func (s *echoService) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
@@ -280,7 +281,9 @@ func (s *echoService) StreamWorkflowReplicationMessages(
 		return err
 	}
 
-	logger := log.With(s.logger, tag.NewStringTag("target", toString(targetClusterShardID)), tag.NewStringTag("source", toString(sourceClusterShardID)))
+	logger := log.With(s.logger,
+		tag.NewStringTag("target", s2sproxy.ClusterShardIDtoString(targetClusterShardID)),
+		tag.NewStringTag("source", s2sproxy.ClusterShardIDtoString(sourceClusterShardID)))
 
 	logger.Info("AdminStreamReplicationMessages started.")
 	defer logger.Info("AdminStreamReplicationMessages stopped.")

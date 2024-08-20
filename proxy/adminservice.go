@@ -193,7 +193,7 @@ func (s *adminServiceProxyServer) ResendReplicationTasks(ctx context.Context, in
 	return nil, status.Errorf(codes.PermissionDenied, "Calling method ResendReplicationTasks is not allowed.")
 }
 
-func toString(sd history.ClusterShardID) string {
+func ClusterShardIDtoString(sd history.ClusterShardID) string {
 	return fmt.Sprintf("(id: %d, shard: %d)", sd.ClusterID, sd.ShardID)
 }
 
@@ -212,8 +212,8 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 
 	logger := log.With(s.logger,
-		tag.NewStringTag("source", toString(sourceClusterShardID)),
-		tag.NewStringTag("target", toString(targetClusterShardID)))
+		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
+		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
 
 	logger.Info("AdminStreamReplicationMessages started.")
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
