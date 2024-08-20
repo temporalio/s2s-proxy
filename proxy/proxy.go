@@ -94,6 +94,7 @@ func NewProxy(
 			config.GetOutboundServerAddress(),
 			NewAdminServiceProxyServer(
 				"outbound-server",
+				config.GetOutboundServerAddress(),
 				config.GetRemoteServerRPCAddress(),
 				remoteClient,
 				logger,
@@ -106,6 +107,7 @@ func NewProxy(
 			config.GetInboundServerAddress(),
 			NewAdminServiceProxyServer(
 				"inbound-server",
+				config.GetInboundServerAddress(),
 				config.GetLocalServerRPCAddress(),
 				localClient,
 				logger,

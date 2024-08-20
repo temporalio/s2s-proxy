@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/temporalio/s2s-proxy/common"
 	"go.temporal.io/api/serviceerror"
@@ -21,6 +22,7 @@ type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
 		serviceName              string
+		serverAddress            string
 		remoteServerAddress      string
 		logger                   log.Logger
 		remoteAdminServiceClient adminservice.AdminServiceClient
@@ -29,15 +31,17 @@ type (
 
 func NewAdminServiceProxyServer(
 	serviceName string,
+	serverAddress string,
 	remoteServerAddress string,
 	client adminservice.AdminServiceClient,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	return &adminServiceProxyServer{
 		serviceName:              serviceName,
+		serverAddress:            serverAddress,
 		remoteServerAddress:      remoteServerAddress,
 		remoteAdminServiceClient: client,
-		logger:                   logger,
+		logger:                   log.With(logger, common.ServiceTag(serviceName), tag.Address(serverAddress)),
 	}
 }
 
@@ -208,9 +212,8 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 
 	logger := log.With(s.logger,
-		common.ServiceTag(s.serviceName),
-		tag.NewStringTag("target", toString(targetClusterShardID)),
-		tag.NewStringTag("source", toString(sourceClusterShardID)))
+		tag.NewStringTag("source", toString(sourceClusterShardID)),
+		tag.NewStringTag("target", toString(targetClusterShardID)))
 
 	logger.Info("AdminStreamReplicationMessages started.")
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
@@ -227,9 +230,13 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 
 	shutdownChan := channel.NewShutdownOnce()
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
 		defer func() {
 			shutdownChan.Shutdown()
+			wg.Done()
+
 			err = sourceStreamClient.CloseSend()
 			if err != nil {
 				logger.Error("Failed to close sourceStreamClient", tag.Error(err))
@@ -264,7 +271,10 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		}
 	}()
 	go func() {
-		defer shutdownChan.Shutdown()
+		defer func() {
+			shutdownChan.Shutdown()
+			wg.Done()
+		}()
 
 		for !shutdownChan.IsShutdown() {
 			resp, err := sourceStreamClient.Recv()
@@ -294,6 +304,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			}
 		}
 	}()
-	<-shutdownChan.Channel()
+
+	wg.Wait()
 	return nil
 }
