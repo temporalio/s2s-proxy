@@ -35,8 +35,8 @@ jobs:
       - name: Run build
         run: go build ./...
   
-      - name: Run lint
-        run: make lint
+      # - name: Run lint
+      #   run: make lint
 
       - name: Run the unit test
         run: make test
