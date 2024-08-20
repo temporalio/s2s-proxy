@@ -329,5 +329,5 @@ func (s *echoService) StreamWorkflowReplicationMessages(
 	}()
 
 	wg.Wait()
-	return nil
+	return
 }
