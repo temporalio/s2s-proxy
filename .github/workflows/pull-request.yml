@@ -1,0 +1,42 @@
+name: s2s-proxy PR Pipeline
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - main
+
+# this ensures that the old run is abandoned when we have a new push to the PR branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: sanity checks - pull request
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Use setup-go with a custom read-only cache of what it creates, because we only want
+      # to cache builds from main to ensure we stay under the 10GB cache limit in GitHub while
+      # ensuring that PRs can use the cache from main.
+      #
+      # See https://github.com/actions/setup-go/issues/316 for more info.
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
+          cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.          
+
+      - name: Run build
+        run: go build ./...
+  
+      # - name: Run lint
+      #   run: make lint
+
+      - name: Run the unit test
+        run: make test
