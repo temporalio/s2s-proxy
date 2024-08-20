@@ -36,6 +36,10 @@ type (
 	}
 )
 
+// Echo client for testing stream replication. It acts as stream receiver.
+// It starts a bi-directional stream by connecting to Echo server (which acts as stream sender).
+// It sends a sequence of numbers as SyncReplicationState message and then wait for Echo server
+// to reply.
 func newEchoClient(
 	serverInfo clusterInfo,
 	clientInfo clusterInfo,
@@ -47,11 +51,14 @@ func newEchoClient(
 	var proxy *Proxy
 	var adminClient adminservice.AdminServiceClient
 	if clientInfo.proxyConfig != nil {
+		// Setup EchoClient's proxy
 		proxy = NewProxy(clientInfo.proxyConfig, logger, clientFactory)
 		adminClient = clientFactory.NewRemoteAdminClient(clientInfo.proxyConfig.GetOutboundServerAddress())
 	} else if serverInfo.proxyConfig != nil {
+		// Connect to EchoServer's proxy
 		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.proxyConfig.GetInboundServerAddress())
 	} else {
+		// Connect directly to EchoServer
 		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.serverAddress)
 	}
 
@@ -81,6 +88,7 @@ const (
 	retryInterval = 1 * time.Second // Interval between retries
 )
 
+// Retry in case that EchoServer or Proxy might be ready when calling stream API.
 func (r *echoClient) retryStreamWorkflowReplicationMessages(maxRetries int) (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
 	var lastErr error
 	metaData := history.EncodeClusterShardMD(r.echoClientClusterShard, r.echoServerClusterShard)
@@ -92,7 +100,7 @@ func (r *echoClient) retryStreamWorkflowReplicationMessages(maxRetries int) (adm
 			lastErr = err
 			// Check if the error is a gRPC Unavailable error
 			if status.Code(err) == codes.Unavailable {
-				r.logger.Warn("Retrying due to Unavailable error", tag.Error(err))
+				r.logger.Warn("Retry StreamWorkflowReplicationMessages due to Unavailable error", tag.Error(err))
 				time.Sleep(retryInterval)
 				continue
 			}
@@ -106,6 +114,7 @@ func (r *echoClient) retryStreamWorkflowReplicationMessages(maxRetries int) (adm
 	return nil, fmt.Errorf("failed to establish stream after %d retries: %w", maxRetries, lastErr)
 }
 
+// Send a sequence of numbers and return which numbers have been echoed back.
 func (r *echoClient) sendAndRecv(sequence []int64) (map[int64]bool, error) {
 	echoed := make(map[int64]bool)
 	stream, err := r.retryStreamWorkflowReplicationMessages(5)
@@ -130,7 +139,9 @@ func (r *echoClient) sendAndRecv(sequence []int64) (map[int64]bool, error) {
 				},
 			}}
 
-		stream.Send(req)
+		if err = stream.Send(req); err != nil {
+			return echoed, err
+		}
 	}
 
 	for i := 0; i < len(sequence); i++ {

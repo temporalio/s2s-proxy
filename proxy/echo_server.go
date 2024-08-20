@@ -33,7 +33,7 @@ type (
 	clusterInfo struct {
 		serverAddress  string
 		clusterShardID history.ClusterShardID
-		proxyConfig    *proxyConfig
+		proxyConfig    *proxyConfig // if provided, used for setting up proxy
 	}
 
 	echoService struct {
@@ -69,13 +69,16 @@ func (pc *proxyConfig) GetLocalServerRPCAddress() string {
 	return pc.localServerAddress
 }
 
+// Echo server for testing stream replication. It acts as stream sender.
+// It handles StreamWorkflowReplicationMessages call from Echo client (acts as stream receiver) by
+// echoing back InclusiveLowWatermark in SyncReplicationState message.
 func newEchoServer(
 	clusterInfo clusterInfo,
 	logger log.Logger,
 ) *echoServer {
 	senderService := &echoService{
 		serviceName: "EchoServer",
-		logger:      logger,
+		logger:      log.With(logger, common.ServiceTag("EchoServer"), tag.Address(clusterInfo.serverAddress)),
 	}
 
 	var proxy *Proxy
@@ -277,10 +280,7 @@ func (s *echoService) StreamWorkflowReplicationMessages(
 		return err
 	}
 
-	logger := log.With(s.logger,
-		common.ServiceTag(s.serviceName),
-		tag.NewStringTag("target", toString(targetClusterShardID)),
-		tag.NewStringTag("source", toString(sourceClusterShardID)))
+	logger := log.With(s.logger, tag.NewStringTag("target", toString(targetClusterShardID)), tag.NewStringTag("source", toString(sourceClusterShardID)))
 
 	logger.Info("AdminStreamReplicationMessages started.")
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
