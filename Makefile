@@ -8,6 +8,7 @@ GOLANGCI_LINT ?= $(shell which golangci-lint)
 
 # Disable cgo by default.
 CGO_ENABLED ?= 0
+TEST_ARG ?= -race -timeout=5m 
 
 ALL_SRC         := $(shell find . -name "*.go")
 ALL_SRC         += go.mod
@@ -30,8 +31,16 @@ lint:
 	@printf $(COLOR) "Running golangci-lint..."
 	@$(GOLANGCI_LINT) run 
 
+# Mocks
 clean-mocks:
 	@find . -name '*_mock.go' -delete
 
 mocks: clean-mocks
 	@mockgen -source config/config.go -destination mocks/config/config_mock.go -package config
+
+# Tests
+test:
+	go test $(TEST_TAG_FLAG) $(TEST_ARG) ./...
+
+cover:
+	go test $(TEST_TAG_FLAG) $(TEST_ARG) -cover ./...

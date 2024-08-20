@@ -4,7 +4,6 @@ import (
 	"net"
 
 	"github.com/temporalio/s2s-proxy/client"
-	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -23,9 +22,7 @@ type (
 	}
 
 	Proxy struct {
-		config     config.Config
-		rpcFactory rpc.RPCFactory
-
+		config         config.Config
 		outboundServer *proxyServer
 		inboundServer  *proxyServer
 	}
