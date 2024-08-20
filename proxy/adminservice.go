@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/temporalio/s2s-proxy/common"
 	"go.temporal.io/api/serviceerror"
@@ -210,7 +211,10 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		return err
 	}
 
-	logger := log.With(s.logger, tag.NewStringTag("target", toString(targetClusterShardID)), tag.NewStringTag("source", toString(sourceClusterShardID)))
+	logger := log.With(s.logger,
+		tag.NewStringTag("source", toString(sourceClusterShardID)),
+		tag.NewStringTag("target", toString(targetClusterShardID)))
+
 	logger.Info("AdminStreamReplicationMessages started.")
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
@@ -226,9 +230,13 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 
 	shutdownChan := channel.NewShutdownOnce()
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
 		defer func() {
 			shutdownChan.Shutdown()
+			wg.Done()
+
 			err = sourceStreamClient.CloseSend()
 			if err != nil {
 				logger.Error("Failed to close sourceStreamClient", tag.Error(err))
@@ -263,7 +271,10 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		}
 	}()
 	go func() {
-		defer shutdownChan.Shutdown()
+		defer func() {
+			shutdownChan.Shutdown()
+			wg.Done()
+		}()
 
 		for !shutdownChan.IsShutdown() {
 			resp, err := sourceStreamClient.Recv()
@@ -293,6 +304,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			}
 		}
 	}()
-	<-shutdownChan.Channel()
+
+	wg.Wait()
 	return nil
 }
