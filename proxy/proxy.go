@@ -4,48 +4,21 @@ import (
 	"net"
 
 	"github.com/temporalio/s2s-proxy/client"
-	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
-	"google.golang.org/grpc"
 )
 
 type (
-	proxyServer struct {
-		serviceName   string
-		serverAddress string
-		server        *grpc.Server
-		adminHandler  adminservice.AdminServiceServer
-		logger        log.Logger
-	}
-
 	Proxy struct {
 		config         config.Config
-		outboundServer *proxyServer
-		inboundServer  *proxyServer
+		outboundServer *TemporalAPIServer
+		inboundServer  *TemporalAPIServer
 	}
 )
 
-func newProxyServer(
-	serviceName string,
-	serverAddress string,
-	adminHandler adminservice.AdminServiceServer,
-	serverOptions []grpc.ServerOption,
-	logger log.Logger,
-) *proxyServer {
-	server := grpc.NewServer(serverOptions...)
-	return &proxyServer{
-		serviceName:   serviceName,
-		serverAddress: serverAddress,
-		server:        server,
-		adminHandler:  adminHandler,
-		logger:        log.With(logger, common.ServiceTag(serviceName), tag.Address(serverAddress)),
-	}
-}
-
-func (ps *proxyServer) start() error {
+func (ps *TemporalAPIServer) Start() error {
 	adminservice.RegisterAdminServiceServer(ps.server, ps.adminHandler)
 	grpcListener, err := net.Listen("tcp", ps.serverAddress)
 	if err != nil {
@@ -55,7 +28,7 @@ func (ps *proxyServer) start() error {
 
 	ps.logger.Info("Created gRPC listener")
 	go func() {
-		ps.logger.Info("Starting proxy")
+		ps.logger.Info("Starting proxy server")
 		if err := ps.server.Serve(grpcListener); err != nil {
 			ps.logger.Fatal("Failed to start proxy", tag.Error(err))
 		}
@@ -64,8 +37,8 @@ func (ps *proxyServer) start() error {
 	return nil
 }
 
-func (ps *proxyServer) stop() {
-	ps.logger.Info("Stopping proxy")
+func (ps *TemporalAPIServer) Stop() {
+	ps.logger.Info("Stopping proxy server")
 	ps.server.GracefulStop()
 }
 
@@ -86,7 +59,7 @@ func NewProxy(
 
 	return &Proxy{
 		config: config,
-		outboundServer: newProxyServer(
+		outboundServer: NewTemporalAPIServer(
 			"outbound-server",
 			config.GetOutboundServerAddress(),
 			NewAdminServiceProxyServer(
@@ -99,7 +72,7 @@ func NewProxy(
 			nil, // grpc server options
 			logger,
 		),
-		inboundServer: newProxyServer(
+		inboundServer: NewTemporalAPIServer(
 			"inbound-server",
 			config.GetInboundServerAddress(),
 			NewAdminServiceProxyServer(
@@ -116,11 +89,11 @@ func NewProxy(
 }
 
 func (s *Proxy) Start() error {
-	if err := s.outboundServer.start(); err != nil {
+	if err := s.outboundServer.Start(); err != nil {
 		return err
 	}
 
-	if err := s.inboundServer.start(); err != nil {
+	if err := s.inboundServer.Start(); err != nil {
 		return err
 	}
 
@@ -128,6 +101,6 @@ func (s *Proxy) Start() error {
 }
 
 func (s *Proxy) Stop() {
-	s.inboundServer.stop()
-	s.outboundServer.stop()
+	s.inboundServer.Stop()
+	s.outboundServer.Stop()
 }

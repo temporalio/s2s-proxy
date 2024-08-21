@@ -3,7 +3,6 @@ package proxy
 import (
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
@@ -33,7 +32,6 @@ var (
 type (
 	proxyTestSuite struct {
 		suite.Suite
-		ctrl *gomock.Controller
 	}
 )
 
@@ -42,7 +40,12 @@ func TestProxyTestSuite(t *testing.T) {
 }
 
 func (s *proxyTestSuite) SetupTest() {
-	s.ctrl = gomock.NewController(s.T())
+}
+
+func (s *proxyTestSuite) TearDownTest() {
+}
+
+func (s *proxyTestSuite) SetupSubTest() {
 }
 
 func (s *proxyTestSuite) AfterTest(suiteName, testName string) {
@@ -74,12 +77,13 @@ func genSequence(initial int64, n int) []int64 {
 
 func (s *proxyTestSuite) Test_Echo_Success() {
 	tests := []struct {
+		name           string
 		echoServerInfo clusterInfo
 		echoClientInfo clusterInfo
 	}{
 		{
-			// 0: No proxy
 			// echo_server <- - -> echo_client
+			name: "no-proxy",
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
@@ -90,8 +94,8 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			},
 		},
 		{
-			// 1: server only proxy
 			// echo_server <-> proxy.inbound <- - -> echo_client
+			name: "server-side-only-proxy",
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
@@ -108,8 +112,8 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			},
 		},
 		{
-			// 2: client only proxy
 			// echo_server <- - -> proxy.outbound <-> echo_client
+			name: "client-side-only-proxy",
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
@@ -126,8 +130,8 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			},
 		},
 		{
-			// 3. server & client proxy
 			// echo_server <-> proxy.inbound <- - -> proxy.outbound <-> echo_client
+			name: "server-and-client-side-proxy",
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
@@ -159,17 +163,18 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 		echoServer.start()
 		echoClient.start()
 
-		// Anonymous Function is needed because deferred calls execute only when the surrounding
-		// function exits, not after each loop iteration.
-		func() {
-			defer func() {
-				echoClient.stop()
-				echoServer.stop()
-			}()
+		s.Run(
+			ts.name,
+			func() {
+				defer func() {
+					echoClient.stop()
+					echoServer.stop()
+				}()
 
-			echoed, err := echoClient.sendAndRecv(sequence)
-			s.NoError(err)
-			s.True(verifyEcho(sequence, echoed))
-		}()
+				echoed, err := echoClient.sendAndRecv(sequence)
+				s.NoError(err)
+				s.True(verifyEcho(sequence, echoed))
+			},
+		)
 	}
 }

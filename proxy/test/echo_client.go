@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gogo/status"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/client/history"
@@ -14,10 +15,10 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/gogo/status"
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/common"
+	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 )
 
 type (
@@ -27,7 +28,7 @@ type (
 		echoClientClusterShard history.ClusterShardID
 		serviceName            string
 		logger                 log.Logger
-		proxy                  *Proxy
+		proxy                  *s2sproxy.Proxy
 	}
 
 	watermarkInfo struct {
@@ -48,12 +49,12 @@ func newEchoClient(
 	rpcFactory := rpc.NewRPCFactory(clientInfo.proxyConfig, logger)
 	clientFactory := client.NewClientFactory(rpcFactory, logger)
 
-	var proxy *Proxy
+	var proxy *s2sproxy.Proxy
 	var adminClient adminservice.AdminServiceClient
 	if clientInfo.proxyConfig != nil {
 		// Setup EchoClient's proxy and connect EchoClient to the proxy (via outbound server).
 		// 	<- - -> proxy <-> EchoClient
-		proxy = NewProxy(clientInfo.proxyConfig, logger, clientFactory)
+		proxy = s2sproxy.NewProxy(clientInfo.proxyConfig, logger, clientFactory)
 		adminClient = clientFactory.NewRemoteAdminClient(clientInfo.proxyConfig.GetOutboundServerAddress())
 	} else if serverInfo.proxyConfig != nil {
 		// Connect EchoClient to EchoServer's proxy (via InboundServer).
