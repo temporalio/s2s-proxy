@@ -20,6 +20,7 @@ import (
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/encryption"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 )
 
@@ -85,7 +86,8 @@ func newEchoServer(
 	var proxy *s2sproxy.Proxy
 	if clusterInfo.proxyConfig != nil {
 		rpcFactory := rpc.NewRPCFactory(clusterInfo.proxyConfig, logger)
-		clientFactory := client.NewClientFactory(rpcFactory, logger)
+		tlsConfigProvider := encryption.NewTLSConfigProfilder(logger)
+		clientFactory := client.NewClientFactory(rpcFactory, tlsConfigProvider, logger)
 		proxy = s2sproxy.NewProxy(
 			clusterInfo.proxyConfig,
 			logger,

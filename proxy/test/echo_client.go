@@ -18,6 +18,7 @@ import (
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/encryption"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 )
 
@@ -47,7 +48,8 @@ func newEchoClient(
 	logger log.Logger,
 ) *echoClient {
 	rpcFactory := rpc.NewRPCFactory(clientInfo.proxyConfig, logger)
-	clientFactory := client.NewClientFactory(rpcFactory, logger)
+	tlsConfigProvider := encryption.NewTLSConfigProfilder(logger)
+	clientFactory := client.NewClientFactory(rpcFactory, tlsConfigProvider, logger)
 
 	var proxy *s2sproxy.Proxy
 	var adminClient adminservice.AdminServiceClient
@@ -55,15 +57,15 @@ func newEchoClient(
 		// Setup EchoClient's proxy and connect EchoClient to the proxy (via outbound server).
 		// 	<- - -> proxy <-> EchoClient
 		proxy = s2sproxy.NewProxy(clientInfo.proxyConfig, logger, clientFactory)
-		adminClient = clientFactory.NewRemoteAdminClient(clientInfo.proxyConfig.GetOutboundServerAddress())
+		adminClient = clientFactory.NewRemoteAdminClient(clientInfo.proxyConfig.GetOutboundServerAddress(), nil)
 	} else if serverInfo.proxyConfig != nil {
 		// Connect EchoClient to EchoServer's proxy (via InboundServer).
 		// 	EchoServer <-> proxy <- - -> EchoClient
-		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.proxyConfig.GetInboundServerAddress())
+		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.proxyConfig.GetInboundServerAddress(), nil)
 	} else {
 		// Connect EchoClient directly to EchoServer.
 		// 	EchoServer <- - -> EchoClient
-		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.serverAddress)
+		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.serverAddress, nil)
 	}
 
 	return &echoClient{
