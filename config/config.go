@@ -3,6 +3,7 @@ package config
 import (
 	"net"
 
+	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/urfave/cli/v2"
 	"go.temporal.io/server/common/convert"
 	"google.golang.org/grpc"
@@ -15,6 +16,13 @@ const (
 	LocalServerRPCAddressFlag  = "local"
 	// Localhost default hostname
 	LocalhostIPDefault = "127.0.0.1"
+
+	// tls
+	TlsLocalClientCertPathFlag  = "tls-local-client-cert-path"
+	TlsLocalClientKeyPathFlag   = "tls-local-client-key-path"
+	TlsLocalServerCAPathFlag    = "tls-local-server-ca-path"
+	TlsLocalServerNameFlag      = "tls-local-server-name"
+	TlsLocalIsHostVerifyEnabled = "tls-local-is-host-verify-enabled"
 )
 
 type (
@@ -32,6 +40,10 @@ type (
 
 		// RPCAddress indicate the local service address(Host:Port). Host can be DNS name.
 		GetLocalServerRPCAddress() string
+
+		GetLocalClientTLSConfig() encryption.ClientTLSConfig
+
+		GetRemoteClientTLSConfig() encryption.ClientTLSConfig
 	}
 
 	cliConfigProvider struct {
@@ -65,4 +77,20 @@ func (c *cliConfigProvider) GetRemoteServerRPCAddress() string {
 
 func (c *cliConfigProvider) GetLocalServerRPCAddress() string {
 	return c.ctx.String(LocalServerRPCAddressFlag)
+}
+
+func (c *cliConfigProvider) GetLocalClientTLSConfig() encryption.ClientTLSConfig {
+	tlsConfig := &cliClientTlsConfigProvider{
+		ctx: c.ctx,
+	}
+
+	if !tlsConfig.validate() {
+		return nil
+	}
+
+	return tlsConfig
+}
+
+func (c *cliConfigProvider) GetRemoteClientTLSConfig() encryption.ClientTLSConfig {
+	return nil
 }

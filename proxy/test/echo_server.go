@@ -25,7 +25,7 @@ import (
 )
 
 type (
-	proxyConfig struct {
+	mockProxyConfig struct {
 		localServerAddress    string
 		remoteServerAddress   string
 		inboundServerAddress  string
@@ -35,7 +35,7 @@ type (
 	clusterInfo struct {
 		serverAddress  string
 		clusterShardID history.ClusterShardID
-		proxyConfig    *proxyConfig // if provided, used for setting up proxy
+		proxyConfig    *mockProxyConfig // if provided, used for setting up proxy
 	}
 
 	echoService struct {
@@ -51,24 +51,32 @@ type (
 	}
 )
 
-func (pc *proxyConfig) GetGRPCServerOptions() []grpc.ServerOption {
+func (pc *mockProxyConfig) GetGRPCServerOptions() []grpc.ServerOption {
 	return nil
 }
 
-func (pc *proxyConfig) GetOutboundServerAddress() string {
+func (pc *mockProxyConfig) GetOutboundServerAddress() string {
 	return pc.outboundServerAddress
 }
 
-func (pc *proxyConfig) GetInboundServerAddress() string {
+func (pc *mockProxyConfig) GetInboundServerAddress() string {
 	return pc.inboundServerAddress
 }
 
-func (pc *proxyConfig) GetRemoteServerRPCAddress() string {
+func (pc *mockProxyConfig) GetRemoteServerRPCAddress() string {
 	return pc.remoteServerAddress
 }
 
-func (pc *proxyConfig) GetLocalServerRPCAddress() string {
+func (pc *mockProxyConfig) GetLocalServerRPCAddress() string {
 	return pc.localServerAddress
+}
+
+func (c *mockProxyConfig) GetLocalClientTLSConfig() encryption.ClientTLSConfig {
+	return nil
+}
+
+func (c *mockProxyConfig) GetRemoteClientTLSConfig() encryption.ClientTLSConfig {
+	return nil
 }
 
 // Echo server for testing stream replication. It acts as stream sender.

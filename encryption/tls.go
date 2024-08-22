@@ -22,7 +22,6 @@ type (
 		GetKeyPath() string
 
 		// For server authentication.
-		IsHostVerificationEnabled() bool
 		GetServerName() string
 		GetServerCAPath() string
 	}
@@ -57,7 +56,7 @@ func (t *tlsConfigProvider) GetClientTLSConfig(clientConfig ClientTLSConfig) (*t
 	keyPath := clientConfig.GetKeyPath()
 	caPath := clientConfig.GetServerCAPath()
 	serverName := clientConfig.GetServerName()
-	enableHostVerification := clientConfig.IsHostVerificationEnabled() && serverName != ""
+	enableHostVerification := serverName != "" && caPath != ""
 
 	var cert *tls.Certificate
 	var caPool *x509.CertPool
