@@ -13,7 +13,7 @@ import (
 type (
 	// RPCFactory creates gRPC listener and connection.
 	RPCFactory interface {
-		CreateRemoteFrontendGRPCConnection(rpcAddress string) *grpc.ClientConn
+		CreateRemoteFrontendGRPCConnection(rpcAddress string, tlsConfig *tls.Config) *grpc.ClientConn
 	}
 
 	// rpcFactory is an implementation of common.rpcFactory interface
@@ -36,14 +36,8 @@ func NewRPCFactory(
 }
 
 // CreateRemoteFrontendGRPCConnection creates connection for gRPC calls
-// TODO: TLS config
-func (d *rpcFactory) CreateRemoteFrontendGRPCConnection(rpcAddress string) *grpc.ClientConn {
-	var tlsClientConfig *tls.Config
-	return d.dial(rpcAddress, tlsClientConfig)
-}
-
-func (d *rpcFactory) dial(hostName string, tlsClientConfig *tls.Config) *grpc.ClientConn {
-	connection, err := Dial(hostName, tlsClientConfig, d.logger)
+func (d *rpcFactory) CreateRemoteFrontendGRPCConnection(rpcAddress string, tlsConfig *tls.Config) *grpc.ClientConn {
+	connection, err := dial(rpcAddress, tlsConfig, d.logger)
 	if err != nil {
 		d.logger.Fatal("Failed to create gRPC connection", tag.Error(err))
 		return nil

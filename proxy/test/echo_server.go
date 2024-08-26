@@ -20,11 +20,12 @@ import (
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/encryption"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 )
 
 type (
-	proxyConfig struct {
+	mockProxyConfig struct {
 		localServerAddress    string
 		remoteServerAddress   string
 		inboundServerAddress  string
@@ -34,7 +35,7 @@ type (
 	clusterInfo struct {
 		serverAddress  string
 		clusterShardID history.ClusterShardID
-		proxyConfig    *proxyConfig // if provided, used for setting up proxy
+		proxyConfig    *mockProxyConfig // if provided, used for setting up proxy
 	}
 
 	echoService struct {
@@ -50,24 +51,32 @@ type (
 	}
 )
 
-func (pc *proxyConfig) GetGRPCServerOptions() []grpc.ServerOption {
+func (pc *mockProxyConfig) GetGRPCServerOptions() []grpc.ServerOption {
 	return nil
 }
 
-func (pc *proxyConfig) GetOutboundServerAddress() string {
+func (pc *mockProxyConfig) GetOutboundServerAddress() string {
 	return pc.outboundServerAddress
 }
 
-func (pc *proxyConfig) GetInboundServerAddress() string {
+func (pc *mockProxyConfig) GetInboundServerAddress() string {
 	return pc.inboundServerAddress
 }
 
-func (pc *proxyConfig) GetRemoteServerRPCAddress() string {
+func (pc *mockProxyConfig) GetRemoteServerRPCAddress() string {
 	return pc.remoteServerAddress
 }
 
-func (pc *proxyConfig) GetLocalServerRPCAddress() string {
+func (pc *mockProxyConfig) GetLocalServerRPCAddress() string {
 	return pc.localServerAddress
+}
+
+func (c *mockProxyConfig) GetLocalClientTLSConfig() encryption.ClientTLSConfig {
+	return encryption.ClientTLSConfig{}
+}
+
+func (c *mockProxyConfig) GetRemoteClientTLSConfig() encryption.ClientTLSConfig {
+	return encryption.ClientTLSConfig{}
 }
 
 // Echo server for testing stream replication. It acts as stream sender.
@@ -85,7 +94,8 @@ func newEchoServer(
 	var proxy *s2sproxy.Proxy
 	if clusterInfo.proxyConfig != nil {
 		rpcFactory := rpc.NewRPCFactory(clusterInfo.proxyConfig, logger)
-		clientFactory := client.NewClientFactory(rpcFactory, logger)
+		tlsConfigProvider := encryption.NewTLSConfigProfilder(logger)
+		clientFactory := client.NewClientFactory(rpcFactory, tlsConfigProvider, logger)
 		proxy = s2sproxy.NewProxy(
 			clusterInfo.proxyConfig,
 			logger,

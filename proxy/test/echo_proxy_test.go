@@ -99,7 +99,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
-				proxyConfig: &proxyConfig{
+				proxyConfig: &mockProxyConfig{
 					inboundServerAddress:  serverProxyInboundAddress,
 					localServerAddress:    echoServerAddress,
 					outboundServerAddress: serverProxyOutboundAddress,
@@ -121,7 +121,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoClientInfo: clusterInfo{
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
-				proxyConfig: &proxyConfig{
+				proxyConfig: &mockProxyConfig{
 					inboundServerAddress:  clientProxyInboundAddress,
 					localServerAddress:    echoClientAddress,
 					outboundServerAddress: clientProxyOutboundAddress,
@@ -135,7 +135,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
-				proxyConfig: &proxyConfig{
+				proxyConfig: &mockProxyConfig{
 					inboundServerAddress:  serverProxyInboundAddress,
 					localServerAddress:    echoServerAddress,
 					outboundServerAddress: serverProxyOutboundAddress,
@@ -145,7 +145,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoClientInfo: clusterInfo{
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
-				proxyConfig: &proxyConfig{
+				proxyConfig: &mockProxyConfig{
 					inboundServerAddress:  clientProxyInboundAddress,
 					localServerAddress:    echoClientAddress,
 					outboundServerAddress: clientProxyOutboundAddress,

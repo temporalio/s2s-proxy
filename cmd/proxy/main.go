@@ -7,6 +7,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/proxy"
 
 	"github.com/urfave/cli/v2"
@@ -65,6 +66,18 @@ func buildCLIOptions() *cli.App {
 					Aliases:  []string{"l"},
 					Required: true,
 				},
+				&cli.StringFlag{
+					Name: config.TLSLocalClientCertPathFlag,
+				},
+				&cli.StringFlag{
+					Name: config.TLSLocalClientKeyPathFlag,
+				},
+				&cli.StringFlag{
+					Name: config.TLSLocalServerCAPathFlag,
+				},
+				&cli.StringFlag{
+					Name: config.TLSLocalServerNameFlag,
+				},
 			},
 			Action: startProxy,
 		},
@@ -82,6 +95,7 @@ func startProxy(c *cli.Context) error {
 		config.Module,
 		client.Module,
 		proxy.Module,
+		encryption.Module,
 		fx.Populate(&proxyParams),
 	)
 
