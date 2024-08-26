@@ -53,19 +53,22 @@ func newEchoClient(
 
 	var proxy *s2sproxy.Proxy
 	var adminClient adminservice.AdminServiceClient
+
+	var emptyConfig encryption.ClientTLSConfig
+
 	if clientInfo.proxyConfig != nil {
 		// Setup EchoClient's proxy and connect EchoClient to the proxy (via outbound server).
 		// 	<- - -> proxy <-> EchoClient
 		proxy = s2sproxy.NewProxy(clientInfo.proxyConfig, logger, clientFactory)
-		adminClient = clientFactory.NewRemoteAdminClient(clientInfo.proxyConfig.GetOutboundServerAddress(), nil)
+		adminClient = clientFactory.NewRemoteAdminClient(clientInfo.proxyConfig.GetOutboundServerAddress(), emptyConfig)
 	} else if serverInfo.proxyConfig != nil {
 		// Connect EchoClient to EchoServer's proxy (via InboundServer).
 		// 	EchoServer <-> proxy <- - -> EchoClient
-		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.proxyConfig.GetInboundServerAddress(), nil)
+		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.proxyConfig.GetInboundServerAddress(), emptyConfig)
 	} else {
 		// Connect EchoClient directly to EchoServer.
 		// 	EchoServer <- - -> EchoClient
-		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.serverAddress, nil)
+		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.serverAddress, emptyConfig)
 	}
 
 	return &echoClient{

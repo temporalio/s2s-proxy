@@ -72,11 +72,11 @@ func (pc *mockProxyConfig) GetLocalServerRPCAddress() string {
 }
 
 func (c *mockProxyConfig) GetLocalClientTLSConfig() encryption.ClientTLSConfig {
-	return nil
+	return encryption.ClientTLSConfig{}
 }
 
 func (c *mockProxyConfig) GetRemoteClientTLSConfig() encryption.ClientTLSConfig {
-	return nil
+	return encryption.ClientTLSConfig{}
 }
 
 // Echo server for testing stream replication. It acts as stream sender.
