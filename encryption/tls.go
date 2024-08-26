@@ -36,7 +36,7 @@ type (
 	}
 )
 
-func (c ClientTLSConfig) IsTlsEnabled() bool {
+func (c ClientTLSConfig) IsEnabled() bool {
 	if c.CertificatePath != "" && c.KeyPath != "" {
 		// has valid config for client auth.
 		return true
@@ -67,7 +67,6 @@ func (t *tlsConfigProvider) GetClientTLSConfig(tlsConfig ClientTLSConfig) (*tls.
 	keyPath := tlsConfig.KeyPath
 	caPath := tlsConfig.ServerCAPath
 	serverName := tlsConfig.ServerName
-	enableHostVerification := serverName != "" && caPath != ""
 
 	var cert *tls.Certificate
 	var caPool *x509.CertPool
@@ -91,7 +90,8 @@ func (t *tlsConfigProvider) GetClientTLSConfig(tlsConfig ClientTLSConfig) (*tls.
 	}
 
 	// If we are given arguments to verify either server or client, configure TLS
-	if caPool != nil || cert != nil {
+	if caPool != nil || cert != nil || serverName != "" {
+		enableHostVerification := serverName != "" && caPath != ""
 		tlsConfig := auth.NewTLSConfigForServer(serverName, enableHostVerification)
 		if caPool != nil {
 			tlsConfig.RootCAs = caPool
@@ -100,12 +100,6 @@ func (t *tlsConfigProvider) GetClientTLSConfig(tlsConfig ClientTLSConfig) (*tls.
 			tlsConfig.Certificates = []tls.Certificate{*cert}
 		}
 
-		return tlsConfig, nil
-	}
-
-	// If we are given a server name, set the TLS server name for DNS resolution
-	if serverName != "" {
-		tlsConfig := auth.NewTLSConfigForServer(serverName, enableHostVerification)
 		return tlsConfig, nil
 	}
 

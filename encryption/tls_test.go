@@ -12,7 +12,7 @@ type (
 	}
 )
 
-func TestTlsTestSuite(t *testing.T) {
+func TestTLSTestSuite(t *testing.T) {
 	suite.Run(t, new(tlsTestSuite))
 }
 
@@ -73,7 +73,7 @@ func (s *tlsTestSuite) Test_ClientTLSConfig() {
 		s.Run(
 			ts.name,
 			func() {
-				s.Equal(ts.isEnabled, ts.tlsConfig.IsTlsEnabled())
+				s.Equal(ts.isEnabled, ts.tlsConfig.IsEnabled())
 			},
 		)
 	}

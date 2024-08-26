@@ -17,11 +17,10 @@ const (
 	// Localhost default hostname
 	LocalhostIPDefault = "127.0.0.1"
 
-	// tls
-	TlsLocalClientCertPathFlag = "tls-local-client-cert-path"
-	TlsLocalClientKeyPathFlag  = "tls-local-client-key-path"
-	TlsLocalServerCAPathFlag   = "tls-local-server-ca-path"
-	TlsLocalServerNameFlag     = "tls-local-server-name"
+	TLSLocalClientCertPathFlag = "tls-local-client-cert-path"
+	TLSLocalClientKeyPathFlag  = "tls-local-client-key-path"
+	TLSLocalServerCAPathFlag   = "tls-local-server-ca-path"
+	TLSLocalServerNameFlag     = "tls-local-server-name"
 )
 
 type (
@@ -80,10 +79,10 @@ func (c *cliConfigProvider) GetLocalServerRPCAddress() string {
 
 func (c *cliConfigProvider) GetLocalClientTLSConfig() encryption.ClientTLSConfig {
 	return encryption.ClientTLSConfig{
-		CertificatePath: c.ctx.String(TlsLocalClientCertPathFlag),
-		KeyPath:         c.ctx.String(TlsLocalClientKeyPathFlag),
-		ServerCAPath:    c.ctx.String(TlsLocalServerCAPathFlag),
-		ServerName:      c.ctx.String(TlsLocalServerNameFlag),
+		CertificatePath: c.ctx.String(TLSLocalClientCertPathFlag),
+		KeyPath:         c.ctx.String(TLSLocalClientKeyPathFlag),
+		ServerCAPath:    c.ctx.String(TLSLocalServerCAPathFlag),
+		ServerName:      c.ctx.String(TLSLocalServerNameFlag),
 	}
 }
 

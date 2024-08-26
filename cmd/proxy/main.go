@@ -67,16 +67,16 @@ func buildCLIOptions() *cli.App {
 					Required: true,
 				},
 				&cli.StringFlag{
-					Name: config.TlsLocalClientCertPathFlag,
+					Name: config.TLSLocalClientCertPathFlag,
 				},
 				&cli.StringFlag{
-					Name: config.TlsLocalClientKeyPathFlag,
+					Name: config.TLSLocalClientKeyPathFlag,
 				},
 				&cli.StringFlag{
-					Name: config.TlsLocalServerCAPathFlag,
+					Name: config.TLSLocalServerCAPathFlag,
 				},
 				&cli.StringFlag{
-					Name: config.TlsLocalServerNameFlag,
+					Name: config.TLSLocalServerNameFlag,
 				},
 			},
 			Action: startProxy,

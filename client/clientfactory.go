@@ -46,13 +46,13 @@ func (cf *clientFactory) NewRemoteAdminClient(
 	var err error
 
 	if data, err := json.Marshal(clientConfig); err == nil {
-		cf.logger.Info(fmt.Sprintf("AdminClientConfig: address: %s, tlsConfig(enabled=%v): %s", rpcAddress, clientConfig.IsTlsEnabled(), string(data)))
+		cf.logger.Info(fmt.Sprintf("AdminClientConfig: address: %s, tlsConfig(enabled=%v): %s", rpcAddress, clientConfig.IsEnabled(), string(data)))
 	} else {
 		cf.logger.Error(fmt.Sprintf("AdminClientConfig: address: %s, tlsConfig error: %v", rpcAddress, err))
 		return nil
 	}
 
-	if clientConfig.IsTlsEnabled() {
+	if clientConfig.IsEnabled() {
 		tlsConfig, err = cf.tlsConfigProvider.GetClientTLSConfig(clientConfig)
 		if err != nil {
 			cf.logger.Fatal("Failed to get client TLS config")
