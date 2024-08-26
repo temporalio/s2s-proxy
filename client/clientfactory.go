@@ -2,6 +2,8 @@ package client
 
 import (
 	"crypto/tls"
+	"encoding/json"
+	"fmt"
 
 	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/encryption"
@@ -43,7 +45,14 @@ func (cf *clientFactory) NewRemoteAdminClient(
 	var tlsConfig *tls.Config
 	var err error
 
-	if clientConfig != nil {
+	if data, err := json.Marshal(clientConfig); err == nil {
+		cf.logger.Info(fmt.Sprintf("AdminClientConfig: address: %s, tlsConfig(enabled=%v): %s", rpcAddress, clientConfig.IsTlsEnabled(), string(data)))
+	} else {
+		cf.logger.Error(fmt.Sprintf("AdminClientConfig: address: %s, tlsConfig error: %v", rpcAddress, err))
+		return nil
+	}
+
+	if clientConfig.IsTlsEnabled() {
 		tlsConfig, err = cf.tlsConfigProvider.GetClientTLSConfig(clientConfig)
 		if err != nil {
 			cf.logger.Fatal("Failed to get client TLS config")

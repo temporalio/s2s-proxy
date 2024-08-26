@@ -18,11 +18,10 @@ const (
 	LocalhostIPDefault = "127.0.0.1"
 
 	// tls
-	TlsLocalClientCertPathFlag  = "tls-local-client-cert-path"
-	TlsLocalClientKeyPathFlag   = "tls-local-client-key-path"
-	TlsLocalServerCAPathFlag    = "tls-local-server-ca-path"
-	TlsLocalServerNameFlag      = "tls-local-server-name"
-	TlsLocalIsHostVerifyEnabled = "tls-local-is-host-verify-enabled"
+	TlsLocalClientCertPathFlag = "tls-local-client-cert-path"
+	TlsLocalClientKeyPathFlag  = "tls-local-client-key-path"
+	TlsLocalServerCAPathFlag   = "tls-local-server-ca-path"
+	TlsLocalServerNameFlag     = "tls-local-server-name"
 )
 
 type (
@@ -80,17 +79,14 @@ func (c *cliConfigProvider) GetLocalServerRPCAddress() string {
 }
 
 func (c *cliConfigProvider) GetLocalClientTLSConfig() encryption.ClientTLSConfig {
-	tlsConfig := &cliClientTlsConfigProvider{
-		ctx: c.ctx,
+	return encryption.ClientTLSConfig{
+		CertificatePath: c.ctx.String(TlsLocalClientCertPathFlag),
+		KeyPath:         c.ctx.String(TlsLocalClientKeyPathFlag),
+		ServerCAPath:    c.ctx.String(TlsLocalServerCAPathFlag),
+		ServerName:      c.ctx.String(TlsLocalServerNameFlag),
 	}
-
-	if !tlsConfig.validate() {
-		return nil
-	}
-
-	return tlsConfig
 }
 
 func (c *cliConfigProvider) GetRemoteClientTLSConfig() encryption.ClientTLSConfig {
-	return nil
+	return encryption.ClientTLSConfig{}
 }

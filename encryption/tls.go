@@ -16,14 +16,11 @@ import (
 )
 
 type (
-	ClientTLSConfig interface {
-		// For client authentication.
-		GetCertificatePath() string
-		GetKeyPath() string
-
-		// For server authentication.
-		GetServerName() string
-		GetServerCAPath() string
+	ClientTLSConfig struct {
+		CertificatePath string `json:"cert_path,omitempty"`
+		KeyPath         string `json:"key_path,omitempty"`
+		ServerName      string `json:"server_name,omitempty"`
+		ServerCAPath    string `json:"server_ca_path,omitempty"`
 	}
 
 	HttpGetter interface {
@@ -39,6 +36,20 @@ type (
 	}
 )
 
+func (c ClientTLSConfig) IsTlsEnabled() bool {
+	if c.CertificatePath != "" && c.KeyPath != "" {
+		// has valid config for client auth.
+		return true
+	}
+
+	if c.ServerName != "" && c.ServerCAPath != "" {
+		// has valid config for server auth.
+		return true
+	}
+
+	return false
+}
+
 var netClient HttpGetter = &http.Client{
 	Timeout: time.Second * 10,
 }
@@ -51,11 +62,11 @@ func NewTLSConfigProfilder(
 	}
 }
 
-func (t *tlsConfigProvider) GetClientTLSConfig(clientConfig ClientTLSConfig) (*tls.Config, error) {
-	certPath := clientConfig.GetCertificatePath()
-	keyPath := clientConfig.GetKeyPath()
-	caPath := clientConfig.GetServerCAPath()
-	serverName := clientConfig.GetServerName()
+func (t *tlsConfigProvider) GetClientTLSConfig(tlsConfig ClientTLSConfig) (*tls.Config, error) {
+	certPath := tlsConfig.CertificatePath
+	keyPath := tlsConfig.KeyPath
+	caPath := tlsConfig.ServerCAPath
+	serverName := tlsConfig.ServerName
 	enableHostVerification := serverName != "" && caPath != ""
 
 	var cert *tls.Certificate
