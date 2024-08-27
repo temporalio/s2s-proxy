@@ -9,11 +9,7 @@ import (
 )
 
 const (
-	ConfigPathFlag             = "config"
-	OutboundPortFlag           = "outbound-port"
-	InboundPortFlag            = "inbound-port"
-	RemoteServerRPCAddressFlag = "remote"
-	LocalServerRPCAddressFlag  = "local"
+	ConfigPathFlag = "config"
 	// Localhost default hostname
 	LocalhostIPDefault = "127.0.0.1"
 )
@@ -47,35 +43,35 @@ type (
 	}
 
 	cliConfigProvider struct {
-		ctx    *cli.Context
-		config S2SProxyConfig
+		ctx       *cli.Context
+		s2sConfig S2SProxyConfig
 	}
 )
 
 func newConfigProvider(ctx *cli.Context) (ConfigProvider, error) {
-	config := &cliConfigProvider{
+	provider := &cliConfigProvider{
 		ctx: ctx,
 	}
 
-	if err := config.load(); err != nil {
+	if err := provider.loadConfig(); err != nil {
 		return nil, err
 	}
 
-	return config, nil
+	return provider, nil
 }
 
 func (c *cliConfigProvider) GetS2SProxyConfig() S2SProxyConfig {
-	return c.config
+	return c.s2sConfig
 }
 
-func (c *cliConfigProvider) load() error {
+func (c *cliConfigProvider) loadConfig() error {
 	configFilePath := c.ctx.String(ConfigPathFlag)
 	data, err := os.ReadFile(configFilePath)
 	if err != nil {
 		return err
 	}
 
-	err = yaml.Unmarshal(data, &c.config)
+	err = yaml.Unmarshal(data, &c.s2sConfig)
 	if err != nil {
 		return err
 	}

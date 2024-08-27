@@ -42,26 +42,6 @@ func buildCLIOptions() *cli.App {
 			Name:  "start",
 			Usage: "Starts the proxy.",
 			Flags: []cli.Flag{
-				&cli.IntFlag{
-					Name:    config.OutboundPortFlag,
-					Usage:   "the port of outbound server, which forwards local request to remote server.",
-					Aliases: []string{"ob"},
-				},
-				&cli.IntFlag{
-					Name:    config.InboundPortFlag,
-					Usage:   "the port of inbound server, which forwards remote request to local server.",
-					Aliases: []string{"ib"},
-				},
-				&cli.StringFlag{
-					Name:    config.RemoteServerRPCAddressFlag,
-					Usage:   "remote server address(Host:Port).",
-					Aliases: []string{"r"},
-				},
-				&cli.StringFlag{
-					Name:    config.LocalServerRPCAddressFlag,
-					Usage:   "local server address(Host:Port).",
-					Aliases: []string{"l"},
-				},
 				&cli.StringFlag{
 					Name:  config.ConfigPathFlag,
 					Usage: "path to proxy config yaml file",

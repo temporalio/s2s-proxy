@@ -80,42 +80,7 @@ func NewTLSConfigProfilder(
 }
 
 func (t *tlsConfigProvider) GetServerTLSConfig(serverConfig ServerTLSConfig) (*tls.Config, error) {
-	certPath := serverConfig.CertificatePath
-	keyPath := serverConfig.KeyPath
-	clientCAPath := serverConfig.ClientCAPath
-
-	if !serverConfig.IsEnabled() {
-		return nil, nil
-	}
-
-	var serverCert *tls.Certificate
-	var clientCAPool *x509.CertPool
-
-	clientAuthType := tls.NoClientCert
-	if serverConfig.RequireClientAuth {
-		clientAuthType = tls.RequireAndVerifyClientCert
-		caCertPool, err := fetchCACert(clientCAPath)
-		if err != nil {
-			t.logger.Fatal("Failed to load client CA certificate", tag.Error(err))
-			return nil, err
-		}
-		clientCAPool = caCertPool
-	}
-
-	if certPath != "" {
-		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-		if err != nil {
-			t.logger.Fatal("Failed to load server certificate", tag.Error(err))
-			return nil, err
-		}
-		serverCert = &cert
-	}
-
-	return auth.NewTLSConfigWithCertsAndCAs(
-		clientAuthType,
-		[]tls.Certificate{*serverCert},
-		clientCAPool,
-		t.logger), nil
+	return nil, nil
 }
 
 func (t *tlsConfigProvider) GetClientTLSConfig(clientConfig ClientTLSConfig) (*tls.Config, error) {
@@ -128,7 +93,7 @@ func (t *tlsConfigProvider) GetClientTLSConfig(clientConfig ClientTLSConfig) (*t
 		return nil, nil
 	}
 
-	var clientCert *tls.Certificate
+	var cert *tls.Certificate
 	var caPool *x509.CertPool
 
 	if caPath != "" {
@@ -141,23 +106,23 @@ func (t *tlsConfigProvider) GetClientTLSConfig(clientConfig ClientTLSConfig) (*t
 	}
 
 	if certPath != "" {
-		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+		myCert, err := tls.LoadX509KeyPair(certPath, keyPath)
 		if err != nil {
 			t.logger.Fatal("Failed to load client certificate", tag.Error(err))
 			return nil, err
 		}
-		clientCert = &cert
+		cert = &myCert
 	}
 
 	// If we are given arguments to verify either server or client, configure TLS
-	if caPool == nil || clientCert != nil || serverName != "" {
+	if caPool != nil || cert != nil || serverName != "" {
 		enableHostVerification := serverName != "" && caPath != ""
 		tlsConfig := auth.NewTLSConfigForServer(serverName, enableHostVerification)
 		if caPool != nil {
 			tlsConfig.RootCAs = caPool
 		}
-		if clientCert != nil {
-			tlsConfig.Certificates = []tls.Certificate{*clientCert}
+		if cert != nil {
+			tlsConfig.Certificates = []tls.Certificate{*cert}
 		}
 
 		return tlsConfig, nil
