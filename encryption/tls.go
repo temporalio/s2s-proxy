@@ -44,15 +44,6 @@ type (
 	}
 )
 
-func (s ServerTLSConfig) IsEnabled() bool {
-	if s.CertificatePath != "" && s.KeyPath != "" {
-		// has valid config for client auth.
-		return true
-	}
-
-	return false
-}
-
 func (c ClientTLSConfig) IsEnabled() bool {
 	if c.CertificatePath != "" && c.KeyPath != "" {
 		// has valid config for client auth.
@@ -88,10 +79,6 @@ func (t *tlsConfigProvider) GetClientTLSConfig(clientConfig ClientTLSConfig) (*t
 	keyPath := clientConfig.KeyPath
 	caPath := clientConfig.ServerCAPath
 	serverName := clientConfig.ServerName
-
-	if !clientConfig.IsEnabled() {
-		return nil, nil
-	}
 
 	var cert *tls.Certificate
 	var caPool *x509.CertPool

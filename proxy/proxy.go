@@ -8,7 +8,7 @@ import (
 
 type (
 	Proxy struct {
-		config         config.ConfigProvider
+		configProvider config.ConfigProvider
 		outboundServer *TemporalAPIServer
 		inboundServer  *TemporalAPIServer
 	}
@@ -29,7 +29,7 @@ func NewProxy(
 	//    server-a <-> proxy-a <-> proxy-b <-> server-b
 
 	return &Proxy{
-		config: configProvider,
+		configProvider: configProvider,
 		outboundServer: NewTemporalAPIServer(
 			s2sConfig.Outbound,
 			NewAdminServiceProxyServer(s2sConfig.Outbound, clientFactory, logger),

@@ -10,8 +10,6 @@ import (
 
 const (
 	ConfigPathFlag = "config"
-	// Localhost default hostname
-	LocalhostIPDefault = "127.0.0.1"
 )
 
 type (
