@@ -22,7 +22,7 @@ type (
 )
 
 func NewTemporalAPIServer(
-	serverName string,
+	serviceName string,
 	serverConfig config.ServerConfig,
 	adminHandler adminservice.AdminServiceServer,
 	serverOptions []grpc.ServerOption,
@@ -30,10 +30,11 @@ func NewTemporalAPIServer(
 ) *TemporalAPIServer {
 	server := grpc.NewServer(serverOptions...)
 	return &TemporalAPIServer{
+		serviceName:  serviceName,
 		serverConfig: serverConfig,
 		server:       server,
 		adminHandler: adminHandler,
-		logger:       log.With(logger, common.ServiceTag(serverName), tag.Address(serverConfig.ListenAddress)),
+		logger:       log.With(logger, common.ServiceTag(serviceName), tag.Address(serverConfig.ListenAddress)),
 	}
 }
 
