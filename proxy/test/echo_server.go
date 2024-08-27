@@ -20,22 +20,18 @@ import (
 	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 )
 
 type (
-	mockProxyConfig struct {
-		localServerAddress    string
-		remoteServerAddress   string
-		inboundServerAddress  string
-		outboundServerAddress string
+	mockConfigProvider struct {
+		proxyConfig config.S2SProxyConfig
 	}
 
 	clusterInfo struct {
 		serverAddress  string
 		clusterShardID history.ClusterShardID
-		proxyConfig    *mockProxyConfig // if provided, used for setting up proxy
+		s2sProxyConfig *config.S2SProxyConfig // if provided, used for setting up proxy
 	}
 
 	echoService struct {
@@ -51,46 +47,39 @@ type (
 	}
 )
 
-func (pc *mockProxyConfig) GetS2SProxyConfig() config.S2SProxyConfig {
-	return config.S2SProxyConfig{
-		Inbound: config.ProxyConfig{
-			Server: config.ServerConfig{
-				ListenAddress: pc.inboundServerAddress,
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: pc.localServerAddress,
-			},
-		},
-		Outbound: config.ProxyConfig{
-			Server: config.ServerConfig{
-				ListenAddress: pc.outboundServerAddress,
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: pc.remoteServerAddress,
-			},
-		},
-	}
+func (mc *mockConfigProvider) GetS2SProxyConfig() config.S2SProxyConfig {
+	return mc.proxyConfig
 }
 
 // Echo server for testing stream replication. It acts as stream sender.
 // It handles StreamWorkflowReplicationMessages call from Echo client (acts as stream receiver) by
 // echoing back InclusiveLowWatermark in SyncReplicationState message.
 func newEchoServer(
-	clusterInfo clusterInfo,
+	localClusterInfo clusterInfo,
+	remoteClusterInfo clusterInfo,
 	logger log.Logger,
 ) *echoServer {
 	senderService := &echoService{
 		serviceName: "EchoServer",
-		logger:      log.With(logger, common.ServiceTag("EchoServer"), tag.Address(clusterInfo.serverAddress)),
+		logger:      log.With(logger, common.ServiceTag("EchoServer"), tag.Address(localClusterInfo.serverAddress)),
 	}
 
 	var proxy *s2sproxy.Proxy
-	if clusterInfo.proxyConfig != nil {
-		rpcFactory := rpc.NewRPCFactory(clusterInfo.proxyConfig, logger)
-		tlsConfigProvider := encryption.NewTLSConfigProfilder(logger)
-		clientFactory := client.NewClientFactory(rpcFactory, tlsConfigProvider, logger)
+	if localClusterInfo.s2sProxyConfig != nil {
+		if remoteClusterInfo.s2sProxyConfig != nil {
+			localClusterInfo.s2sProxyConfig.Outbound.Client.ForwardAddress = remoteClusterInfo.s2sProxyConfig.Inbound.Server.ListenAddress
+		} else {
+			localClusterInfo.s2sProxyConfig.Outbound.Client.ForwardAddress = remoteClusterInfo.serverAddress
+		}
+
+		configProvider := &mockConfigProvider{
+			proxyConfig: *localClusterInfo.s2sProxyConfig,
+		}
+
+		rpcFactory := rpc.NewRPCFactory(configProvider, logger)
+		clientFactory := client.NewClientFactory(rpcFactory, logger)
 		proxy = s2sproxy.NewProxy(
-			clusterInfo.proxyConfig,
+			configProvider,
 			logger,
 			clientFactory,
 		)
@@ -100,13 +89,13 @@ func newEchoServer(
 		server: s2sproxy.NewTemporalAPIServer(
 			"EchoServer",
 			config.ServerConfig{
-				ListenAddress: clusterInfo.serverAddress,
+				ListenAddress: localClusterInfo.serverAddress,
 			},
 			senderService,
 			nil,
 			logger),
 		proxy:       proxy,
-		clusterInfo: clusterInfo,
+		clusterInfo: localClusterInfo,
 	}
 }
 
@@ -122,6 +111,10 @@ func (s *echoServer) stop() {
 		s.proxy.Stop()
 	}
 	s.server.Stop()
+}
+
+func (s *echoServer) DescribeCluster() {
+
 }
 
 func (s *echoService) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {

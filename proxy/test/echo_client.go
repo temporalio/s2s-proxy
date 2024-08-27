@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gogo/status"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/client/history"
@@ -15,10 +14,11 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/gogo/status"
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/common"
-	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/config"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 )
 
@@ -43,37 +43,51 @@ type (
 // It sends a sequence of numbers as SyncReplicationState message and then wait for Echo server
 // to reply.
 func newEchoClient(
-	serverInfo clusterInfo,
-	clientInfo clusterInfo,
+	localClusterInfo clusterInfo,
+	remoteClusterInfo clusterInfo,
 	logger log.Logger,
 ) *echoClient {
-	rpcFactory := rpc.NewRPCFactory(clientInfo.proxyConfig, logger)
-	tlsConfigProvider := encryption.NewTLSConfigProfilder(logger)
-	clientFactory := client.NewClientFactory(rpcFactory, tlsConfigProvider, logger)
+
+	rpcFactory := rpc.NewRPCFactory(&mockConfigProvider{}, logger)
+	clientFactory := client.NewClientFactory(rpcFactory, logger)
 
 	var proxy *s2sproxy.Proxy
-	var adminClient adminservice.AdminServiceClient
-	var emptyConfig encryption.ClientTLSConfig
+	var clientConfig config.ClientConfig
 
-	if clientInfo.proxyConfig != nil {
+	if localClusterInfo.s2sProxyConfig != nil {
 		// Setup EchoClient's proxy and connect EchoClient to the proxy (via outbound server).
-		// 	<- - -> proxy <-> EchoClient
-		proxy = s2sproxy.NewProxy(clientInfo.proxyConfig, logger, clientFactory)
-		adminClient = clientFactory.NewRemoteAdminClient(clientInfo.proxyConfig.GetS2SProxyConfig().Outbound.Server.ListenAddress, emptyConfig)
-	} else if serverInfo.proxyConfig != nil {
-		// Connect EchoClient to EchoServer's proxy (via InboundServer).
-		// 	EchoServer <-> proxy <- - -> EchoClient
-		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.proxyConfig.GetS2SProxyConfig().Inbound.Server.ListenAddress, emptyConfig)
+		if remoteClusterInfo.s2sProxyConfig != nil {
+			// remote.proxy.Inbound	<- - -> local.proxy <-> EchoClient
+			localClusterInfo.s2sProxyConfig.Outbound.Client.ForwardAddress = remoteClusterInfo.s2sProxyConfig.Inbound.Server.ListenAddress
+		} else {
+			// remote.server <- - -> local.proxy <-> EchoClient
+			localClusterInfo.s2sProxyConfig.Outbound.Client.ForwardAddress = remoteClusterInfo.serverAddress
+		}
+
+		configProvider := &mockConfigProvider{
+			proxyConfig: *localClusterInfo.s2sProxyConfig,
+		}
+		proxy = s2sproxy.NewProxy(configProvider, logger, clientFactory)
+		clientConfig = config.ClientConfig{
+			ForwardAddress: localClusterInfo.s2sProxyConfig.Outbound.Server.ListenAddress,
+		}
+	} else if remoteClusterInfo.s2sProxyConfig != nil {
+		// 	remote.proxy.Inbound <- - -> EchoClient
+		clientConfig = config.ClientConfig{
+			ForwardAddress: remoteClusterInfo.s2sProxyConfig.Inbound.Server.ListenAddress,
+		}
 	} else {
-		// Connect EchoClient directly to EchoServer.
-		// 	EchoServer <- - -> EchoClient
-		adminClient = clientFactory.NewRemoteAdminClient(serverInfo.serverAddress, emptyConfig)
+		// 	remote.server <- - -> EchoClient
+		clientConfig = config.ClientConfig{
+			ForwardAddress: remoteClusterInfo.serverAddress,
+		}
 	}
 
+	adminClient := clientFactory.NewRemoteAdminClient(clientConfig)
 	return &echoClient{
 		adminClient:            adminClient,
-		echoServerClusterShard: serverInfo.clusterShardID,
-		echoClientClusterShard: clientInfo.clusterShardID,
+		echoServerClusterShard: remoteClusterInfo.clusterShardID,
+		echoClientClusterShard: localClusterInfo.clusterShardID,
 		serviceName:            "EchoClient",
 		logger:                 log.With(logger, common.ServiceTag("EchoClient")),
 		proxy:                  proxy,
@@ -96,36 +110,37 @@ const (
 	retryInterval = 1 * time.Second // Interval between retries
 )
 
-// Retry in case that EchoServer or Proxy might be ready when calling stream API.
-func (r *echoClient) retryStreamWorkflowReplicationMessages(maxRetries int) (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
-	var lastErr error
-	metaData := history.EncodeClusterShardMD(r.echoClientClusterShard, r.echoServerClusterShard)
-	targetConext := metadata.NewOutgoingContext(context.TODO(), metaData)
-
+func retry[T interface{}](f func() (T, error), maxRetries int, logger log.Logger) (T, error) {
+	var err error
+	var output T
 	for i := 0; i < maxRetries; i++ {
-		stream, err := r.adminClient.StreamWorkflowReplicationMessages(targetConext)
+		output, err = f()
 		if err != nil {
-			lastErr = err
 			// Check if the error is a gRPC Unavailable error
 			if status.Code(err) == codes.Unavailable {
-				r.logger.Warn("Retry StreamWorkflowReplicationMessages due to Unavailable error", tag.Error(err))
+				logger.Warn("Retry due to Unavailable error", tag.Error(err))
 				time.Sleep(retryInterval)
 				continue
 			}
 
-			return nil, err
+			return output, err
 		}
 
-		return stream, nil
+		return output, nil
 	}
 
-	return nil, fmt.Errorf("failed to establish stream after %d retries: %w", maxRetries, lastErr)
+	return output, fmt.Errorf("failed to call method after %d retries: %w", maxRetries, err)
 }
 
 // Send a sequence of numbers and return which numbers have been echoed back.
 func (r *echoClient) sendAndRecv(sequence []int64) (map[int64]bool, error) {
 	echoed := make(map[int64]bool)
-	stream, err := r.retryStreamWorkflowReplicationMessages(5)
+	metaData := history.EncodeClusterShardMD(r.echoClientClusterShard, r.echoServerClusterShard)
+	targetConext := metadata.NewOutgoingContext(context.TODO(), metaData)
+
+	stream, err := retry(func() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
+		return r.adminClient.StreamWorkflowReplicationMessages(targetConext)
+	}, 5, r.logger)
 	if err != nil {
 		return echoed, err
 	}

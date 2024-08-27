@@ -28,7 +28,17 @@ func NewTemporalAPIServer(
 	serverOptions []grpc.ServerOption,
 	logger log.Logger,
 ) *TemporalAPIServer {
+<<<<<<< HEAD
 	server := grpc.NewServer(serverOptions...)
+=======
+	// TODO: Add TLS option
+
+	opts := []grpc.ServerOption{}
+	opts = append(opts, grpcServerOptions.Options...)
+	opts = append(opts, grpc.ChainUnaryInterceptor(grpcServerOptions.UnaryInterceptors...))
+	server := grpc.NewServer(opts...)
+
+>>>>>>> d21446d (Update code to support server-side TLS)
 	return &TemporalAPIServer{
 		serviceName:  serviceName,
 		serverConfig: serverConfig,
