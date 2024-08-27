@@ -6,7 +6,9 @@ import (
 	"io"
 	"sync"
 
+	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
@@ -21,27 +23,22 @@ import (
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		serviceName              string
-		serverAddress            string
-		remoteServerAddress      string
+		proxyConfig              config.ProxyConfig
 		logger                   log.Logger
 		remoteAdminServiceClient adminservice.AdminServiceClient
 	}
 )
 
 func NewAdminServiceProxyServer(
-	serviceName string,
-	serverAddress string,
-	remoteServerAddress string,
-	client adminservice.AdminServiceClient,
+	proxyConfig config.ProxyConfig,
+	clientFactory client.ClientFactory,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
+	adminClient := clientFactory.NewRemoteAdminClient(proxyConfig.Client.ForwardAddress, proxyConfig.Client.TLS)
 	return &adminServiceProxyServer{
-		serviceName:              serviceName,
-		serverAddress:            serverAddress,
-		remoteServerAddress:      remoteServerAddress,
-		remoteAdminServiceClient: client,
-		logger:                   log.With(logger, common.ServiceTag(serviceName), tag.Address(serverAddress)),
+		proxyConfig:              proxyConfig,
+		remoteAdminServiceClient: adminClient,
+		logger:                   log.With(logger, common.ServiceTag(proxyConfig.Name), tag.Address(proxyConfig.Server.ListenAddress)),
 	}
 }
 

@@ -1,0 +1,33 @@
+inbound:
+  name: "inbound-server"
+  server:
+    listenAddress:
+    tls:
+      certificatePath: ""
+      keyPath: ""
+      clientCAPath: ""
+      requireClientAuth: true
+  client:
+    forwardAddress:
+    tls:
+      certificatePath: ""
+      keyPath: ""
+      serverCAPath: ""
+      serverName: ""
+
+outbound:
+  name: "outbound-server"
+  server:
+    listenAddress:
+    tls:
+      certificatePath: ""
+      keyPath: ""
+      clientCAPath: ""
+      requireClientAuth: true
+  client:
+    forwardAddress:
+    tls:
+      certificatePath: ""
+      keyPath: ""
+      serverCAPath: ""
+      serverName: ""

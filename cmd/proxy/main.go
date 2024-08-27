@@ -22,8 +22,8 @@ const (
 type ProxyParams struct {
 	fx.In
 
-	Config config.Config
-	Proxy  *proxy.Proxy
+	ConfigProvider config.ConfigProvider
+	Proxy          *proxy.Proxy
 }
 
 func run(args []string) error {
@@ -42,41 +42,9 @@ func buildCLIOptions() *cli.App {
 			Name:  "start",
 			Usage: "Starts the proxy.",
 			Flags: []cli.Flag{
-				&cli.IntFlag{
-					Name:     config.OutboundPortFlag,
-					Usage:    "the port of outbound server, which forwards local request to remote server.",
-					Aliases:  []string{"ob"},
-					Required: true,
-				},
-				&cli.IntFlag{
-					Name:     config.InboundPortFlag,
-					Usage:    "the port of inbound server, which forwards remote request to local server.",
-					Aliases:  []string{"ib"},
-					Required: true,
-				},
 				&cli.StringFlag{
-					Name:     config.RemoteServerRPCAddressFlag,
-					Usage:    "remote server address(Host:Port).",
-					Aliases:  []string{"r"},
-					Required: true,
-				},
-				&cli.StringFlag{
-					Name:     config.LocalServerRPCAddressFlag,
-					Usage:    "local server address(Host:Port).",
-					Aliases:  []string{"l"},
-					Required: true,
-				},
-				&cli.StringFlag{
-					Name: config.TLSLocalClientCertPathFlag,
-				},
-				&cli.StringFlag{
-					Name: config.TLSLocalClientKeyPathFlag,
-				},
-				&cli.StringFlag{
-					Name: config.TLSLocalServerCAPathFlag,
-				},
-				&cli.StringFlag{
-					Name: config.TLSLocalServerNameFlag,
+					Name:  config.ConfigPathFlag,
+					Usage: "path to proxy config yaml file",
 				},
 			},
 			Action: startProxy,

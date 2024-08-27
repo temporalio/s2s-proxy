@@ -16,11 +16,18 @@ import (
 )
 
 type (
+	ServerTLSConfig struct {
+		CertificatePath   string `yaml:"certificatePath"`
+		KeyPath           string `yaml:"keyPath"`
+		ClientCAPath      string `yaml:"clientCAPath"`
+		RequireClientAuth bool   `yaml:"requireClientAuth"`
+	}
+
 	ClientTLSConfig struct {
-		CertificatePath string `json:"cert_path,omitempty"`
-		KeyPath         string `json:"key_path,omitempty"`
-		ServerName      string `json:"server_name,omitempty"`
-		ServerCAPath    string `json:"server_ca_path,omitempty"`
+		CertificatePath string `yaml:"certificatePath"`
+		KeyPath         string `yaml:"keyPath"`
+		ServerName      string `yaml:"serverName"`
+		ServerCAPath    string `yaml:"serverCAPath"`
 	}
 
 	HttpGetter interface {
@@ -28,6 +35,7 @@ type (
 	}
 
 	TLSConfigProvider interface {
+		GetServerTLSConfig(serverConfig ServerTLSConfig) (*tls.Config, error)
 		GetClientTLSConfig(clientConfig ClientTLSConfig) (*tls.Config, error)
 	}
 
@@ -62,11 +70,15 @@ func NewTLSConfigProfilder(
 	}
 }
 
-func (t *tlsConfigProvider) GetClientTLSConfig(tlsConfig ClientTLSConfig) (*tls.Config, error) {
-	certPath := tlsConfig.CertificatePath
-	keyPath := tlsConfig.KeyPath
-	caPath := tlsConfig.ServerCAPath
-	serverName := tlsConfig.ServerName
+func (t *tlsConfigProvider) GetServerTLSConfig(serverConfig ServerTLSConfig) (*tls.Config, error) {
+	return nil, nil
+}
+
+func (t *tlsConfigProvider) GetClientTLSConfig(clientConfig ClientTLSConfig) (*tls.Config, error) {
+	certPath := clientConfig.CertificatePath
+	keyPath := clientConfig.KeyPath
+	caPath := clientConfig.ServerCAPath
+	serverName := clientConfig.ServerName
 
 	var cert *tls.Certificate
 	var caPool *x509.CertPool
