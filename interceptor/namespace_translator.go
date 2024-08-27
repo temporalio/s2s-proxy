@@ -11,22 +11,22 @@ import (
 )
 
 type (
-	NamespaceTranslator struct {
+	NamespaceNameTranslator struct {
 		logger log.Logger
 	}
 )
 
-func NewNamespaceTranslator(
+func NewNamespaceNameTranslator(
 	logger log.Logger,
-) *NamespaceTranslator {
-	return &NamespaceTranslator{
+) *NamespaceNameTranslator {
+	return &NamespaceNameTranslator{
 		logger: logger,
 	}
 }
 
-var _ grpc.UnaryServerInterceptor = (*NamespaceTranslator)(nil).Intercept
+var _ grpc.UnaryServerInterceptor = (*NamespaceNameTranslator)(nil).Intercept
 
-func (i *NamespaceTranslator) Intercept(
+func (i *NamespaceNameTranslator) Intercept(
 	ctx context.Context,
 	req any,
 	info *grpc.UnaryServerInfo,

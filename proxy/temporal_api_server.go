@@ -29,11 +29,11 @@ type (
 
 func GrpcServerOptionsProvider(
 	logger log.Logger,
-	namespaceTranslatorInterceptor *interceptor.NamespaceTranslator,
+	namespaceNameTranslatorInterceptor *interceptor.NamespaceNameTranslator,
 ) GrpcServerOptions {
 	return GrpcServerOptions{
 		UnaryInterceptors: []grpc.UnaryServerInterceptor{
-			namespaceTranslatorInterceptor.Intercept,
+			namespaceNameTranslatorInterceptor.Intercept,
 		},
 	}
 }

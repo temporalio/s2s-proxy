@@ -5,5 +5,5 @@ import (
 )
 
 var Module = fx.Provide(
-	NewNamespaceTranslator,
+	NewNamespaceNameTranslator,
 )
