@@ -22,8 +22,8 @@ const (
 type ProxyParams struct {
 	fx.In
 
-	Config config.ConfigProvider
-	Proxy  *proxy.Proxy
+	ConfigProvider config.ConfigProvider
+	Proxy          *proxy.Proxy
 }
 
 func run(args []string) error {

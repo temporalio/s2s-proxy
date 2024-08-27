@@ -13,7 +13,8 @@ import (
 
 type (
 	TemporalAPIServer struct {
-		proxyConfig  config.ProxyConfig
+		serviceName  string
+		serverConfig config.ServerConfig
 		server       *grpc.Server
 		adminHandler adminservice.AdminServiceServer
 		logger       log.Logger
@@ -21,23 +22,24 @@ type (
 )
 
 func NewTemporalAPIServer(
-	proxyConfig config.ProxyConfig,
+	serverName string,
+	serverConfig config.ServerConfig,
 	adminHandler adminservice.AdminServiceServer,
 	serverOptions []grpc.ServerOption,
 	logger log.Logger,
 ) *TemporalAPIServer {
 	server := grpc.NewServer(serverOptions...)
 	return &TemporalAPIServer{
-		proxyConfig:  proxyConfig,
+		serverConfig: serverConfig,
 		server:       server,
 		adminHandler: adminHandler,
-		logger:       log.With(logger, common.ServiceTag(proxyConfig.Name), tag.Address(proxyConfig.Server.ListenAddress)),
+		logger:       log.With(logger, common.ServiceTag(serverName), tag.Address(serverConfig.ListenAddress)),
 	}
 }
 
 func (ps *TemporalAPIServer) Start() error {
 	adminservice.RegisterAdminServiceServer(ps.server, ps.adminHandler)
-	grpcListener, err := net.Listen("tcp", ps.proxyConfig.Server.ListenAddress)
+	grpcListener, err := net.Listen("tcp", ps.serverConfig.ListenAddress)
 	if err != nil {
 		ps.logger.Fatal("Failed to start gRPC listener", tag.Error(err))
 		return err

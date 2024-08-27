@@ -31,13 +31,15 @@ func NewProxy(
 	return &Proxy{
 		configProvider: configProvider,
 		outboundServer: NewTemporalAPIServer(
-			s2sConfig.Outbound,
+			s2sConfig.Outbound.Name,
+			s2sConfig.Outbound.Server,
 			NewAdminServiceProxyServer(s2sConfig.Outbound, clientFactory, logger),
 			nil, // grpc server options
 			logger,
 		),
 		inboundServer: NewTemporalAPIServer(
-			s2sConfig.Inbound,
+			s2sConfig.Inbound.Name,
+			s2sConfig.Inbound.Server,
 			NewAdminServiceProxyServer(s2sConfig.Inbound, clientFactory, logger),
 			nil, // grpc server options
 			logger,

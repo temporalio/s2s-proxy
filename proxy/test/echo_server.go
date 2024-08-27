@@ -98,11 +98,9 @@ func newEchoServer(
 
 	return &echoServer{
 		server: s2sproxy.NewTemporalAPIServer(
-			config.ProxyConfig{
-				Name: "EchoServer",
-				Server: config.ServerConfig{
-					ListenAddress: clusterInfo.serverAddress,
-				},
+			"EchoServer",
+			config.ServerConfig{
+				ListenAddress: clusterInfo.serverAddress,
 			},
 			senderService,
 			nil,
