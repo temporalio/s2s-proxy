@@ -6,7 +6,7 @@ inbound:
       certificatePath: ""
       keyPath: ""
       clientCAPath: ""
-      RequireClientAuth: true
+      requireClientAuth: true
   client:
     forwardAddress:
     tls:
@@ -23,7 +23,7 @@ outbound:
       certificatePath: ""
       keyPath: ""
       clientCAPath: ""
-      RequireClientAuth: true
+      requireClientAuth: true
   client:
     forwardAddress:
     tls:
