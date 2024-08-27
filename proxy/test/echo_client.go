@@ -58,7 +58,7 @@ func newEchoClient(
 	if clientInfo.proxyConfig != nil {
 		// Setup EchoClient's proxy and connect EchoClient to the proxy (via outbound server).
 		// 	<- - -> proxy <-> EchoClient
-		proxy = s2sproxy.NewProxy(clientInfo.proxyConfig, logger, clientFactory)
+		proxy = s2sproxy.NewProxy(clientInfo.proxyConfig, logger, clientFactory, s2sproxy.GrpcServerOptions{})
 		adminClient = clientFactory.NewRemoteAdminClient(clientInfo.proxyConfig.GetS2SProxyConfig().Outbound.Server.ListenAddress, emptyConfig)
 	} else if serverInfo.proxyConfig != nil {
 		// Connect EchoClient to EchoServer's proxy (via InboundServer).
@@ -82,7 +82,7 @@ func newEchoClient(
 
 func (r *echoClient) start() {
 	if r.proxy != nil {
-		r.proxy.Start()
+		_ = r.proxy.Start()
 	}
 }
 
@@ -167,7 +167,7 @@ func (r *echoClient) sendAndRecv(sequence []int64) (map[int64]bool, error) {
 		}
 	}
 
-	stream.CloseSend()
+	_ = stream.CloseSend()
 	r.logger.Info("==== sendAndRecv completed ====")
 	return echoed, nil
 }

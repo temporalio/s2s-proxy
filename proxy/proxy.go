@@ -18,6 +18,7 @@ func NewProxy(
 	configProvider config.ConfigProvider,
 	logger log.Logger,
 	clientFactory client.ClientFactory,
+	grpcServerOptions GrpcServerOptions,
 ) *Proxy {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 
@@ -34,14 +35,14 @@ func NewProxy(
 			s2sConfig.Outbound.Name,
 			s2sConfig.Outbound.Server,
 			NewAdminServiceProxyServer(s2sConfig.Outbound, clientFactory, logger),
-			nil, // grpc server options
+			grpcServerOptions,
 			logger,
 		),
 		inboundServer: NewTemporalAPIServer(
 			s2sConfig.Inbound.Name,
 			s2sConfig.Inbound.Server,
 			NewAdminServiceProxyServer(s2sConfig.Inbound, clientFactory, logger),
-			nil, // grpc server options
+			grpcServerOptions,
 			logger,
 		),
 	}

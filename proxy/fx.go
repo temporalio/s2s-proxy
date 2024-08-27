@@ -1,9 +1,12 @@
 package proxy
 
 import (
+	"github.com/temporalio/s2s-proxy/interceptor"
 	"go.uber.org/fx"
 )
 
-var Module = fx.Provide(
-	NewProxy,
+var Module = fx.Options(
+	interceptor.Module,
+	fx.Provide(GrpcServerOptionsProvider),
+	fx.Provide(NewProxy),
 )
