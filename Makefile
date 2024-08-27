@@ -18,17 +18,17 @@ bins: s2s-proxy
 clean:  clean-bins
 
 clean-bins:
-	@printf $(COLOR) "Delete old binaries..."
+	@printf $(COLOR) "Delete old binaries...\n"
 	@rm -f s2s-proxy
 
 # Binary target
 s2s-proxy: $(ALL_SRC)
-	@printf $(COLOR) "Build s2s-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)..."
+	@printf $(COLOR) "Build s2s-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)...\n"
 	CGO_ENABLED=$(CGO_ENABLED) go build -o s2s-proxy ./cmd/proxy
 
 # Lint target
 lint:
-	@printf $(COLOR) "Running golangci-lint..."
+	@printf $(COLOR) "Running golangci-lint...\n"
 	@$(GOLANGCI_LINT) run 
 
 # Mocks
