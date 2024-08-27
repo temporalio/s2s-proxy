@@ -12,7 +12,6 @@ import (
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
-	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	status "google.golang.org/grpc/status"
@@ -20,6 +19,7 @@ import (
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 )
@@ -51,32 +51,25 @@ type (
 	}
 )
 
-func (pc *mockProxyConfig) GetGRPCServerOptions() []grpc.ServerOption {
-	return nil
-}
-
-func (pc *mockProxyConfig) GetOutboundServerAddress() string {
-	return pc.outboundServerAddress
-}
-
-func (pc *mockProxyConfig) GetInboundServerAddress() string {
-	return pc.inboundServerAddress
-}
-
-func (pc *mockProxyConfig) GetRemoteServerRPCAddress() string {
-	return pc.remoteServerAddress
-}
-
-func (pc *mockProxyConfig) GetLocalServerRPCAddress() string {
-	return pc.localServerAddress
-}
-
-func (c *mockProxyConfig) GetLocalClientTLSConfig() encryption.ClientTLSConfig {
-	return encryption.ClientTLSConfig{}
-}
-
-func (c *mockProxyConfig) GetRemoteClientTLSConfig() encryption.ClientTLSConfig {
-	return encryption.ClientTLSConfig{}
+func (pc *mockProxyConfig) GetS2SProxyConfig() config.S2SProxyConfig {
+	return config.S2SProxyConfig{
+		Inbound: config.ProxyConfig{
+			Server: config.ServerConfig{
+				ListenAddress: pc.inboundServerAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: pc.localServerAddress,
+			},
+		},
+		Outbound: config.ProxyConfig{
+			Server: config.ServerConfig{
+				ListenAddress: pc.outboundServerAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: pc.remoteServerAddress,
+			},
+		},
+	}
 }
 
 // Echo server for testing stream replication. It acts as stream sender.
@@ -105,8 +98,12 @@ func newEchoServer(
 
 	return &echoServer{
 		server: s2sproxy.NewTemporalAPIServer(
-			"EchoServer",
-			clusterInfo.serverAddress,
+			config.ProxyConfig{
+				Name: "EchoServer",
+				Server: config.ServerConfig{
+					ListenAddress: clusterInfo.serverAddress,
+				},
+			},
 			senderService,
 			nil,
 			logger),

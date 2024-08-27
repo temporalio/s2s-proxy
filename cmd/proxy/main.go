@@ -22,7 +22,7 @@ const (
 type ProxyParams struct {
 	fx.In
 
-	Config config.Config
+	Config config.ConfigProvider
 	Proxy  *proxy.Proxy
 }
 
@@ -43,40 +43,28 @@ func buildCLIOptions() *cli.App {
 			Usage: "Starts the proxy.",
 			Flags: []cli.Flag{
 				&cli.IntFlag{
-					Name:     config.OutboundPortFlag,
-					Usage:    "the port of outbound server, which forwards local request to remote server.",
-					Aliases:  []string{"ob"},
-					Required: true,
+					Name:    config.OutboundPortFlag,
+					Usage:   "the port of outbound server, which forwards local request to remote server.",
+					Aliases: []string{"ob"},
 				},
 				&cli.IntFlag{
-					Name:     config.InboundPortFlag,
-					Usage:    "the port of inbound server, which forwards remote request to local server.",
-					Aliases:  []string{"ib"},
-					Required: true,
+					Name:    config.InboundPortFlag,
+					Usage:   "the port of inbound server, which forwards remote request to local server.",
+					Aliases: []string{"ib"},
 				},
 				&cli.StringFlag{
-					Name:     config.RemoteServerRPCAddressFlag,
-					Usage:    "remote server address(Host:Port).",
-					Aliases:  []string{"r"},
-					Required: true,
+					Name:    config.RemoteServerRPCAddressFlag,
+					Usage:   "remote server address(Host:Port).",
+					Aliases: []string{"r"},
 				},
 				&cli.StringFlag{
-					Name:     config.LocalServerRPCAddressFlag,
-					Usage:    "local server address(Host:Port).",
-					Aliases:  []string{"l"},
-					Required: true,
+					Name:    config.LocalServerRPCAddressFlag,
+					Usage:   "local server address(Host:Port).",
+					Aliases: []string{"l"},
 				},
 				&cli.StringFlag{
-					Name: config.TLSLocalClientCertPathFlag,
-				},
-				&cli.StringFlag{
-					Name: config.TLSLocalClientKeyPathFlag,
-				},
-				&cli.StringFlag{
-					Name: config.TLSLocalServerCAPathFlag,
-				},
-				&cli.StringFlag{
-					Name: config.TLSLocalServerNameFlag,
+					Name:  config.ConfigPathFlag,
+					Usage: "path to proxy config yaml file",
 				},
 			},
 			Action: startProxy,

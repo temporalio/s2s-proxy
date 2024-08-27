@@ -18,7 +18,7 @@ type (
 
 	// rpcFactory is an implementation of common.rpcFactory interface
 	rpcFactory struct {
-		config config.Config
+		config config.ConfigProvider
 		logger log.Logger
 	}
 )
@@ -26,7 +26,7 @@ type (
 // NewFactory builds a new RPCFactory
 // conforming to the underlying configuration
 func NewRPCFactory(
-	config config.Config,
+	config config.ConfigProvider,
 	logger log.Logger,
 ) RPCFactory {
 	return &rpcFactory{

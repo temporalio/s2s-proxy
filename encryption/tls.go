@@ -16,11 +16,18 @@ import (
 )
 
 type (
+	ServerTLSConfig struct {
+		CertificatePath   string `yaml:"certificatePath"`
+		KeyPath           string `yaml:"keyPath"`
+		ClientCAPath      string `yaml:"clientCAPath"`
+		RequireClientAuth bool   `yaml:"requireClientAuth"`
+	}
+
 	ClientTLSConfig struct {
-		CertificatePath string `json:"cert_path,omitempty"`
-		KeyPath         string `json:"key_path,omitempty"`
-		ServerName      string `json:"server_name,omitempty"`
-		ServerCAPath    string `json:"server_ca_path,omitempty"`
+		CertificatePath string `yaml:"certificatePath"`
+		KeyPath         string `yaml:"keyPath"`
+		ServerName      string `yaml:"serverName"`
+		ServerCAPath    string `yaml:"serverCAPath"`
 	}
 
 	HttpGetter interface {
@@ -28,6 +35,7 @@ type (
 	}
 
 	TLSConfigProvider interface {
+		GetServerTLSConfig(serverConfig ServerTLSConfig) (*tls.Config, error)
 		GetClientTLSConfig(clientConfig ClientTLSConfig) (*tls.Config, error)
 	}
 
@@ -35,6 +43,15 @@ type (
 		logger log.Logger
 	}
 )
+
+func (s ServerTLSConfig) IsEnabled() bool {
+	if s.CertificatePath != "" && s.KeyPath != "" {
+		// has valid config for client auth.
+		return true
+	}
+
+	return false
+}
 
 func (c ClientTLSConfig) IsEnabled() bool {
 	if c.CertificatePath != "" && c.KeyPath != "" {
@@ -62,13 +79,56 @@ func NewTLSConfigProfilder(
 	}
 }
 
-func (t *tlsConfigProvider) GetClientTLSConfig(tlsConfig ClientTLSConfig) (*tls.Config, error) {
-	certPath := tlsConfig.CertificatePath
-	keyPath := tlsConfig.KeyPath
-	caPath := tlsConfig.ServerCAPath
-	serverName := tlsConfig.ServerName
+func (t *tlsConfigProvider) GetServerTLSConfig(serverConfig ServerTLSConfig) (*tls.Config, error) {
+	certPath := serverConfig.CertificatePath
+	keyPath := serverConfig.KeyPath
+	clientCAPath := serverConfig.ClientCAPath
 
-	var cert *tls.Certificate
+	if !serverConfig.IsEnabled() {
+		return nil, nil
+	}
+
+	var serverCert *tls.Certificate
+	var clientCAPool *x509.CertPool
+
+	clientAuthType := tls.NoClientCert
+	if serverConfig.RequireClientAuth {
+		clientAuthType = tls.RequireAndVerifyClientCert
+		caCertPool, err := fetchCACert(clientCAPath)
+		if err != nil {
+			t.logger.Fatal("Failed to load client CA certificate", tag.Error(err))
+			return nil, err
+		}
+		clientCAPool = caCertPool
+	}
+
+	if certPath != "" {
+		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			t.logger.Fatal("Failed to load server certificate", tag.Error(err))
+			return nil, err
+		}
+		serverCert = &cert
+	}
+
+	return auth.NewTLSConfigWithCertsAndCAs(
+		clientAuthType,
+		[]tls.Certificate{*serverCert},
+		clientCAPool,
+		t.logger), nil
+}
+
+func (t *tlsConfigProvider) GetClientTLSConfig(clientConfig ClientTLSConfig) (*tls.Config, error) {
+	certPath := clientConfig.CertificatePath
+	keyPath := clientConfig.KeyPath
+	caPath := clientConfig.ServerCAPath
+	serverName := clientConfig.ServerName
+
+	if !clientConfig.IsEnabled() {
+		return nil, nil
+	}
+
+	var clientCert *tls.Certificate
 	var caPool *x509.CertPool
 
 	if caPath != "" {
@@ -81,23 +141,23 @@ func (t *tlsConfigProvider) GetClientTLSConfig(tlsConfig ClientTLSConfig) (*tls.
 	}
 
 	if certPath != "" {
-		myCert, err := tls.LoadX509KeyPair(certPath, keyPath)
+		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 		if err != nil {
 			t.logger.Fatal("Failed to load client certificate", tag.Error(err))
 			return nil, err
 		}
-		cert = &myCert
+		clientCert = &cert
 	}
 
 	// If we are given arguments to verify either server or client, configure TLS
-	if caPool != nil || cert != nil || serverName != "" {
+	if caPool == nil || clientCert != nil || serverName != "" {
 		enableHostVerification := serverName != "" && caPath != ""
 		tlsConfig := auth.NewTLSConfigForServer(serverName, enableHostVerification)
 		if caPool != nil {
 			tlsConfig.RootCAs = caPool
 		}
-		if cert != nil {
-			tlsConfig.Certificates = []tls.Certificate{*cert}
+		if clientCert != nil {
+			tlsConfig.Certificates = []tls.Certificate{*clientCert}
 		}
 
 		return tlsConfig, nil

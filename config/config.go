@@ -1,92 +1,84 @@
 package config
 
 import (
-	"net"
+	"os"
 
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/urfave/cli/v2"
-	"go.temporal.io/server/common/convert"
-	"google.golang.org/grpc"
+	"gopkg.in/yaml.v3"
 )
 
 const (
+	ConfigPathFlag             = "config"
 	OutboundPortFlag           = "outbound-port"
 	InboundPortFlag            = "inbound-port"
 	RemoteServerRPCAddressFlag = "remote"
 	LocalServerRPCAddressFlag  = "local"
 	// Localhost default hostname
 	LocalhostIPDefault = "127.0.0.1"
-
-	TLSLocalClientCertPathFlag = "tls-local-client-cert-path"
-	TLSLocalClientKeyPathFlag  = "tls-local-client-key-path"
-	TLSLocalServerCAPathFlag   = "tls-local-server-ca-path"
-	TLSLocalServerNameFlag     = "tls-local-server-name"
 )
 
 type (
-	Config interface {
-		GetGRPCServerOptions() []grpc.ServerOption
+	ConfigProvider interface {
+		GetS2SProxyConfig() S2SProxyConfig
+	}
 
-		// RPCAddress indicate the server address(Host:Port) serving outbound traffic from local server.
-		GetOutboundServerAddress() string
+	ServerConfig struct {
+		// RPCAddress indicate the server address(Host:Port) for listening requests
+		ListenAddress string                     `yaml:"listenAddress"`
+		TLS           encryption.ServerTLSConfig `yaml:"tls"`
+	}
 
-		// RPCAddress indicate the server address(Host:Port) serving inbound traffic from remote server.
-		GetInboundServerAddress() string
+	ClientConfig struct {
+		// RPCAddress indicate the address(Host:Port) for forwarding requests
+		ForwardAddress string                     `yaml:"forwardAddress"`
+		TLS            encryption.ClientTLSConfig `yaml:"tls"`
+	}
 
-		// RPCAddress indicate the remote service address(Host:Port). Host can be DNS name.
-		GetRemoteServerRPCAddress() string
+	ProxyConfig struct {
+		Name   string       `yaml:"name"`
+		Server ServerConfig `yaml:"server"`
+		Client ClientConfig `yaml:"client"`
+	}
 
-		// RPCAddress indicate the local service address(Host:Port). Host can be DNS name.
-		GetLocalServerRPCAddress() string
-
-		GetLocalClientTLSConfig() encryption.ClientTLSConfig
-
-		GetRemoteClientTLSConfig() encryption.ClientTLSConfig
+	S2SProxyConfig struct {
+		Inbound  ProxyConfig `yaml:"inbound"`
+		Outbound ProxyConfig `yaml:"outbound"`
 	}
 
 	cliConfigProvider struct {
-		ctx *cli.Context
+		ctx    *cli.Context
+		config S2SProxyConfig
 	}
 )
 
-func newConfigProvider(ctx *cli.Context) Config {
-	return &cliConfigProvider{
+func newConfigProvider(ctx *cli.Context) (ConfigProvider, error) {
+	config := &cliConfigProvider{
 		ctx: ctx,
 	}
-}
 
-func (c *cliConfigProvider) GetGRPCServerOptions() []grpc.ServerOption {
-	return nil
-}
-
-func (c *cliConfigProvider) GetOutboundServerAddress() string {
-	port := convert.IntToString(c.ctx.Int(OutboundPortFlag))
-	return net.JoinHostPort(LocalhostIPDefault, port)
-}
-
-func (c *cliConfigProvider) GetInboundServerAddress() string {
-	port := convert.IntToString(c.ctx.Int(InboundPortFlag))
-	return net.JoinHostPort(LocalhostIPDefault, port)
-}
-
-func (c *cliConfigProvider) GetRemoteServerRPCAddress() string {
-	return c.ctx.String(RemoteServerRPCAddressFlag)
-}
-
-func (c *cliConfigProvider) GetLocalServerRPCAddress() string {
-	return c.ctx.String(LocalServerRPCAddressFlag)
-}
-
-func (c *cliConfigProvider) GetLocalClientTLSConfig() encryption.ClientTLSConfig {
-	return encryption.ClientTLSConfig{
-		CertificatePath: c.ctx.String(TLSLocalClientCertPathFlag),
-		KeyPath:         c.ctx.String(TLSLocalClientKeyPathFlag),
-		ServerCAPath:    c.ctx.String(TLSLocalServerCAPathFlag),
-		ServerName:      c.ctx.String(TLSLocalServerNameFlag),
+	if err := config.load(); err != nil {
+		return nil, err
 	}
+
+	return config, nil
 }
 
-// TODO
-func (c *cliConfigProvider) GetRemoteClientTLSConfig() encryption.ClientTLSConfig {
-	return encryption.ClientTLSConfig{}
+func (c *cliConfigProvider) GetS2SProxyConfig() S2SProxyConfig {
+	return c.config
+}
+
+func (c *cliConfigProvider) load() error {
+	configFilePath := c.ctx.String(ConfigPathFlag)
+	data, err := os.ReadFile(configFilePath)
+	if err != nil {
+		return err
+	}
+
+	err = yaml.Unmarshal(data, &c.config)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
