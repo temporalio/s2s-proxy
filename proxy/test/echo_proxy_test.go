@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 )
@@ -130,6 +131,13 @@ func genSequence(initial int64, n int) []int64 {
 	return sequence
 }
 
+func addProxyTLSConfig(s2sConfig config.S2SProxyConfig, serverConfig encryption.ServerTLSConfig, clientConfig encryption.ClientTLSConfig) *config.S2SProxyConfig {
+	c := s2sConfig
+	c.Inbound.Server.TLS = serverConfig
+	c.Outbound.Client.TLS = clientConfig
+	return &c
+}
+
 func (s *proxyTestSuite) Test_Echo_Success() {
 	tests := []struct {
 		name           string
@@ -186,6 +194,36 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
 				s2sProxyConfig: &clientProxyConfig,
+			},
+		},
+		{
+			// echo_server <-> proxy.inbound <- mTLS -> proxy.outbound <-> echo_client
+			name: "server-and-client-side-proxy-mTLS",
+			echoServerInfo: clusterInfo{
+				serverAddress:  echoServerAddress,
+				clusterShardID: serverClusterShard,
+				s2sProxyConfig: addProxyTLSConfig(serverProxyConfig,
+					encryption.ServerTLSConfig{
+						CertificatePath:   filepath.Join("certificates", "proxy1.pem"),
+						KeyPath:           filepath.Join("certificates", "proxy1.key"),
+						ClientCAPath:      filepath.Join("certificates", "proxy2.pem"),
+						RequireClientAuth: true,
+					},
+					encryption.ClientTLSConfig{},
+				),
+			},
+			echoClientInfo: clusterInfo{
+				serverAddress:  echoClientAddress,
+				clusterShardID: clientClusterShard,
+				s2sProxyConfig: addProxyTLSConfig(clientProxyConfig,
+					encryption.ServerTLSConfig{},
+					encryption.ClientTLSConfig{
+						CertificatePath: filepath.Join("certificates", "proxy2.pem"),
+						KeyPath:         filepath.Join("certificates", "proxy2.key"),
+						ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
+						ServerCAPath:    filepath.Join("certificates", "proxy1.pem"),
+					},
+				),
 			},
 		},
 	}
