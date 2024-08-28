@@ -98,13 +98,14 @@ func newEchoClient(
 }
 
 func (r *echoClient) start() {
-	r.logger.Info(fmt.Sprintf("Start %s", r.serviceName))
+	r.logger.Info(fmt.Sprintf("Starting %s", r.serviceName))
 	if r.proxy != nil {
 		_ = r.proxy.Start()
 	}
 }
 
 func (r *echoClient) stop() {
+	r.logger.Info(fmt.Sprintf("Stopping %s", r.serviceName))
 	if r.proxy != nil {
 		r.proxy.Stop()
 	}
