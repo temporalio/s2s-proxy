@@ -48,6 +48,7 @@ func NewProxy(
 			s2sConfig.Outbound.Name,
 			s2sConfig.Outbound.Server,
 			NewAdminServiceProxyServer(*s2sConfig.Outbound, clientFactory, logger),
+			NewWorkflowServiceProxyServer(*s2sConfig.Outbound, clientFactory, logger),
 			serverOpts,
 			logger,
 		)
@@ -64,6 +65,7 @@ func NewProxy(
 			s2sConfig.Inbound.Name,
 			s2sConfig.Inbound.Server,
 			NewAdminServiceProxyServer(*s2sConfig.Inbound, clientFactory, logger),
+			NewWorkflowServiceProxyServer(*s2sConfig.Inbound, clientFactory, logger),
 			serverOpts,
 			logger,
 		)
