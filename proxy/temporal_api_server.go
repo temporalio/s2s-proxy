@@ -1,11 +1,9 @@
 package proxy
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 
-	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -33,14 +31,6 @@ func NewTemporalAPIServer(
 	serverOptions []grpc.ServerOption,
 	logger log.Logger,
 ) *TemporalAPIServer {
-	logger = log.With(logger, common.ServiceTag(serviceName), tag.Address(serverConfig.ListenAddress))
-	if data, err := json.Marshal(serverConfig); err == nil {
-		logger.Info(fmt.Sprintf("TemporalAPIServer Config: %s", string(data)))
-	} else {
-		logger.Error(fmt.Sprintf("TemporalAPIServer: failed to marshal config: %v", err))
-		return nil
-	}
-
 	server := grpc.NewServer(serverOptions...)
 	return &TemporalAPIServer{
 		serviceName:            serviceName,
@@ -52,28 +42,27 @@ func NewTemporalAPIServer(
 	}
 }
 
-func (ps *TemporalAPIServer) Start() error {
-	adminservice.RegisterAdminServiceServer(ps.server, ps.adminHandler)
-	workflowservice.RegisterWorkflowServiceServer(ps.server, ps.workflowserviceHandler)
+func (s *TemporalAPIServer) Start() error {
+	adminservice.RegisterAdminServiceServer(s.server, s.adminHandler)
+	workflowservice.RegisterWorkflowServiceServer(s.server, s.workflowserviceHandler)
 
-	grpcListener, err := net.Listen("tcp", ps.serverConfig.ListenAddress)
+	grpcListener, err := net.Listen("tcp", s.serverConfig.ListenAddress)
 	if err != nil {
-		ps.logger.Fatal("Failed to start gRPC listener", tag.Error(err))
+		s.logger.Fatal("Failed to start gRPC listener", tag.Error(err))
 		return err
 	}
 
-	ps.logger.Info("Created gRPC listener")
+	s.logger.Info(fmt.Sprintf("Start %s with config: %v", s.serviceName, s.serverConfig))
 	go func() {
-		ps.logger.Info("Starting proxy server")
-		if err := ps.server.Serve(grpcListener); err != nil {
-			ps.logger.Fatal("Failed to start proxy", tag.Error(err))
+		if err := s.server.Serve(grpcListener); err != nil {
+			s.logger.Fatal("Failed to start proxy", tag.Error(err))
 		}
 	}()
 
 	return nil
 }
 
-func (ps *TemporalAPIServer) Stop() {
-	ps.logger.Info("Stopping proxy server")
-	ps.server.GracefulStop()
+func (s *TemporalAPIServer) Stop() {
+	s.logger.Info("Stopping proxy server")
+	s.server.GracefulStop()
 }

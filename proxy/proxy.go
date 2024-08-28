@@ -6,7 +6,6 @@ import (
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
 	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -19,12 +18,38 @@ type (
 	}
 )
 
+func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client.ClientFactory) (*TemporalAPIServer, error) {
+	serverOpts, err := makeServerOptions(logger, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	adminHandler := NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewTemporalAPIServer(
+		cfg.Name,
+		cfg.Server,
+		adminHandler,
+		NewWorkflowServiceProxyServer(cfg, clientFactory, logger),
+		serverOpts,
+		logger,
+	), nil
+}
+
 func NewProxy(
 	configProvider config.ConfigProvider,
 	logger log.Logger,
 	clientFactory client.ClientFactory,
-) *Proxy {
+) (*Proxy, error) {
 	s2sConfig := configProvider.GetS2SProxyConfig()
+	var err error
+
+	proxy := Proxy{
+		configProvider: configProvider,
+	}
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
 	//    local server -> proxy(outbound) -> remote server
@@ -32,46 +57,19 @@ func NewProxy(
 	//
 	// Here a remote server can be another proxy as well.
 	//    server-a <-> proxy-a <-> proxy-b <-> server-b
-
-	proxy := Proxy{
-		configProvider: configProvider,
-	}
-
 	if s2sConfig.Outbound != nil {
-		serverOpts, err := makeServerOptions(logger, *s2sConfig.Outbound)
-		if err != nil {
-			logger.Fatal("Failed to construct grpc server options", tag.Error(err), tag.NewStringTag("name", s2sConfig.Outbound.Name))
-			return nil
+		if proxy.outboundServer, err = createProxy(*s2sConfig.Outbound, logger, clientFactory); err != nil {
+			return nil, err
 		}
-
-		proxy.outboundServer = NewTemporalAPIServer(
-			s2sConfig.Outbound.Name,
-			s2sConfig.Outbound.Server,
-			NewAdminServiceProxyServer(*s2sConfig.Outbound, clientFactory, logger),
-			NewWorkflowServiceProxyServer(*s2sConfig.Outbound, clientFactory, logger),
-			serverOpts,
-			logger,
-		)
 	}
 
 	if s2sConfig.Inbound != nil {
-		serverOpts, err := makeServerOptions(logger, *s2sConfig.Inbound)
-		if err != nil {
-			logger.Fatal("Failed to construct grpc server options", tag.Error(err), tag.NewStringTag("name", s2sConfig.Inbound.Name))
-			return nil
+		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory); err != nil {
+			return nil, err
 		}
-
-		proxy.inboundServer = NewTemporalAPIServer(
-			s2sConfig.Inbound.Name,
-			s2sConfig.Inbound.Server,
-			NewAdminServiceProxyServer(*s2sConfig.Inbound, clientFactory, logger),
-			NewWorkflowServiceProxyServer(*s2sConfig.Inbound, clientFactory, logger),
-			serverOpts,
-			logger,
-		)
 	}
 
-	return &proxy
+	return &proxy, nil
 }
 
 func makeServerOptions(logger log.Logger, cfg config.ProxyConfig) ([]grpc.ServerOption, error) {

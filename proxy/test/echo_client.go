@@ -24,12 +24,12 @@ import (
 
 type (
 	echoClient struct {
-		adminClient            adminservice.AdminServiceClient
 		echoServerClusterShard history.ClusterShardID
 		echoClientClusterShard history.ClusterShardID
 		serviceName            string
 		logger                 log.Logger
 		proxy                  *s2sproxy.Proxy
+		clientProvider         client.ClientProvider
 	}
 
 	watermarkInfo struct {
@@ -47,11 +47,11 @@ func newEchoClient(
 	remoteClusterInfo clusterInfo,
 	logger log.Logger,
 ) *echoClient {
-
 	rpcFactory := rpc.NewRPCFactory(&mockConfigProvider{}, logger)
 	clientFactory := client.NewClientFactory(rpcFactory, logger)
 
 	var proxy *s2sproxy.Proxy
+	var err error
 	var clientConfig config.ClientConfig
 
 	if localClusterInfo.s2sProxyConfig != nil {
@@ -67,7 +67,10 @@ func newEchoClient(
 		configProvider := &mockConfigProvider{
 			proxyConfig: *localClusterInfo.s2sProxyConfig,
 		}
-		proxy = s2sproxy.NewProxy(configProvider, logger, clientFactory)
+		proxy, err = s2sproxy.NewProxy(configProvider, logger, clientFactory)
+		if err != nil {
+			logger.Fatal("Failed to create proxy")
+		}
 		clientConfig = config.ClientConfig{
 			ForwardAddress: localClusterInfo.s2sProxyConfig.Outbound.Server.ListenAddress,
 		}
@@ -83,18 +86,19 @@ func newEchoClient(
 		}
 	}
 
-	adminClient := clientFactory.NewRemoteAdminClient(clientConfig)
+	logger = log.With(logger, common.ServiceTag("EchoClient"))
 	return &echoClient{
-		adminClient:            adminClient,
 		echoServerClusterShard: remoteClusterInfo.clusterShardID,
 		echoClientClusterShard: localClusterInfo.clusterShardID,
 		serviceName:            "EchoClient",
-		logger:                 log.With(logger, common.ServiceTag("EchoClient")),
+		logger:                 logger,
 		proxy:                  proxy,
+		clientProvider:         client.NewClientProvider(clientConfig, clientFactory, logger),
 	}
 }
 
 func (r *echoClient) start() {
+	r.logger.Info(fmt.Sprintf("Start %s", r.serviceName))
 	if r.proxy != nil {
 		_ = r.proxy.Start()
 	}
@@ -138,8 +142,13 @@ func (r *echoClient) sendAndRecv(sequence []int64) (map[int64]bool, error) {
 	metaData := history.EncodeClusterShardMD(r.echoClientClusterShard, r.echoServerClusterShard)
 	targetContext := metadata.NewOutgoingContext(context.TODO(), metaData)
 
+	adminClient, err := r.clientProvider.GetAdminClient()
+	if err != nil {
+		return echoed, err
+	}
+
 	stream, err := retry(func() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
-		return r.adminClient.StreamWorkflowReplicationMessages(targetContext)
+		return adminClient.StreamWorkflowReplicationMessages(targetContext)
 	}, 5, r.logger)
 	if err != nil {
 		return echoed, err

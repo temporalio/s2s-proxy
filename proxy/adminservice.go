@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
@@ -24,30 +23,23 @@ import (
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		proxyConfig              config.ProxyConfig
-		logger                   log.Logger
-		remoteAdminServiceClient adminservice.AdminServiceClient
+		clientConfig   config.ClientConfig
+		logger         log.Logger
+		clientProvider client.ClientProvider
 	}
 )
 
 func NewAdminServiceProxyServer(
-	proxyConfig config.ProxyConfig,
+	serviceName string,
+	clientConfig config.ClientConfig,
 	clientFactory client.ClientFactory,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
-	logger = log.With(logger, common.ServiceTag(proxyConfig.Name), tag.Address(proxyConfig.Server.ListenAddress))
-	if data, err := json.Marshal(proxyConfig.Client); err == nil {
-		logger.Info(fmt.Sprintf("RemoteAdminClient Config: %s", string(data)))
-	} else {
-		logger.Error(fmt.Sprintf("RemoteAdminClient: failed to marshal config: %v", err))
-		return nil
-	}
-
-	adminClient := clientFactory.NewRemoteAdminClient(proxyConfig.Client)
+	logger = log.With(logger, common.ServiceTag(serviceName))
 	return &adminServiceProxyServer{
-		proxyConfig:              proxyConfig,
-		remoteAdminServiceClient: adminClient,
-		logger:                   logger,
+		clientConfig:   clientConfig,
+		clientProvider: client.NewClientProvider(clientConfig, clientFactory, logger),
+		logger:         logger,
 	}
 }
 
@@ -76,7 +68,12 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 }
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
-	return s.remoteAdminServiceClient.DescribeCluster(ctx, in0)
+	adminClient, err := s.clientProvider.GetAdminClient()
+	if err != nil {
+		return nil, err
+	}
+
+	return adminClient.DescribeCluster(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) DescribeDLQJob(ctx context.Context, in0 *adminservice.DescribeDLQJobRequest) (*adminservice.DescribeDLQJobResponse, error) {
@@ -108,7 +105,12 @@ func (s *adminServiceProxyServer) GetNamespace(ctx context.Context, in0 *adminse
 }
 
 func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Context, in0 *adminservice.GetNamespaceReplicationMessagesRequest) (*adminservice.GetNamespaceReplicationMessagesResponse, error) {
-	return s.remoteAdminServiceClient.GetNamespaceReplicationMessages(ctx, in0)
+	adminClient, err := s.clientProvider.GetAdminClient()
+	if err != nil {
+		return nil, err
+	}
+
+	return adminClient.GetNamespaceReplicationMessages(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetReplicationMessages(ctx context.Context, in0 *adminservice.GetReplicationMessagesRequest) (*adminservice.GetReplicationMessagesResponse, error) {
@@ -132,7 +134,12 @@ func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistory(ctx context.Con
 }
 
 func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistoryV2(ctx context.Context, in0 *adminservice.GetWorkflowExecutionRawHistoryV2Request) (*adminservice.GetWorkflowExecutionRawHistoryV2Response, error) {
-	return s.remoteAdminServiceClient.GetWorkflowExecutionRawHistoryV2(ctx, in0)
+	adminClient, err := s.clientProvider.GetAdminClient()
+	if err != nil {
+		return nil, err
+	}
+
+	return adminClient.GetWorkflowExecutionRawHistoryV2(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) ImportWorkflowExecution(ctx context.Context, in0 *adminservice.ImportWorkflowExecutionRequest) (*adminservice.ImportWorkflowExecutionResponse, error) {
@@ -144,7 +151,11 @@ func (s *adminServiceProxyServer) ListClusterMembers(ctx context.Context, in0 *a
 }
 
 func (s *adminServiceProxyServer) ListClusters(ctx context.Context, in0 *adminservice.ListClustersRequest) (*adminservice.ListClustersResponse, error) {
-	return s.remoteAdminServiceClient.ListClusters(ctx, in0)
+	adminClient, err := s.clientProvider.GetAdminClient()
+	if err != nil {
+		return nil, err
+	}
+	return adminClient.ListClusters(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) ListHistoryTasks(ctx context.Context, in0 *adminservice.ListHistoryTasksRequest) (*adminservice.ListHistoryTasksResponse, error) {
@@ -229,7 +240,12 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	outgoingContext, cancel := context.WithCancel(outgoingContext)
 	defer cancel()
 
-	sourceStreamClient, err := s.remoteAdminServiceClient.StreamWorkflowReplicationMessages(outgoingContext)
+	adminClient, err := s.clientProvider.GetAdminClient()
+	if err != nil {
+		return err
+	}
+
+	sourceStreamClient, err := adminClient.StreamWorkflowReplicationMessages(outgoingContext)
 	if err != nil {
 		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err

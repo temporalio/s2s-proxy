@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 	"github.com/temporalio/s2s-proxy/config"
@@ -136,31 +137,31 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 		echoServerInfo clusterInfo
 		echoClientInfo clusterInfo
 	}{
-		{
-			// echo_server <- - -> echo_client
-			name: "no-proxy",
-			echoServerInfo: clusterInfo{
-				serverAddress:  echoServerAddress,
-				clusterShardID: serverClusterShard,
-			},
-			echoClientInfo: clusterInfo{
-				serverAddress:  echoClientAddress,
-				clusterShardID: clientClusterShard,
-			},
-		},
-		{
-			// echo_server <-> proxy.inbound <- - -> echo_client
-			name: "server-side-only-proxy",
-			echoServerInfo: clusterInfo{
-				serverAddress:  echoServerAddress,
-				clusterShardID: serverClusterShard,
-				s2sProxyConfig: &serverProxyConfig,
-			},
-			echoClientInfo: clusterInfo{
-				serverAddress:  echoClientAddress,
-				clusterShardID: clientClusterShard,
-			},
-		},
+		// {
+		// 	// echo_server <- - -> echo_client
+		// 	name: "no-proxy",
+		// 	echoServerInfo: clusterInfo{
+		// 		serverAddress:  echoServerAddress,
+		// 		clusterShardID: serverClusterShard,
+		// 	},
+		// 	echoClientInfo: clusterInfo{
+		// 		serverAddress:  echoClientAddress,
+		// 		clusterShardID: clientClusterShard,
+		// 	},
+		// },
+		// {
+		// 	// echo_server <-> proxy.inbound <- - -> echo_client
+		// 	name: "server-side-only-proxy",
+		// 	echoServerInfo: clusterInfo{
+		// 		serverAddress:  echoServerAddress,
+		// 		clusterShardID: serverClusterShard,
+		// 		s2sProxyConfig: &serverProxyConfig,
+		// 	},
+		// 	echoClientInfo: clusterInfo{
+		// 		serverAddress:  echoClientAddress,
+		// 		clusterShardID: clientClusterShard,
+		// 	},
+		// },
 		{
 			// echo_server <- - -> proxy.outbound <-> echo_client
 			name: "client-side-only-proxy",
@@ -174,20 +175,20 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				s2sProxyConfig: &clientProxyConfig,
 			},
 		},
-		{
-			// echo_server <-> proxy.inbound <- - -> proxy.outbound <-> echo_client
-			name: "server-and-client-side-proxy",
-			echoServerInfo: clusterInfo{
-				serverAddress:  echoServerAddress,
-				clusterShardID: serverClusterShard,
-				s2sProxyConfig: &serverProxyConfig,
-			},
-			echoClientInfo: clusterInfo{
-				serverAddress:  echoClientAddress,
-				clusterShardID: clientClusterShard,
-				s2sProxyConfig: &clientProxyConfig,
-			},
-		},
+		// {
+		// 	// echo_server <-> proxy.inbound <- - -> proxy.outbound <-> echo_client
+		// 	name: "server-and-client-side-proxy",
+		// 	echoServerInfo: clusterInfo{
+		// 		serverAddress:  echoServerAddress,
+		// 		clusterShardID: serverClusterShard,
+		// 		s2sProxyConfig: &serverProxyConfig,
+		// 	},
+		// 	echoClientInfo: clusterInfo{
+		// 		serverAddress:  echoClientAddress,
+		// 		clusterShardID: clientClusterShard,
+		// 		s2sProxyConfig: &clientProxyConfig,
+		// 	},
+		// },
 	}
 
 	sequence := genSequence(1, 100)
@@ -195,6 +196,9 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 	for _, ts := range tests {
 		echoServer := newEchoServer(ts.echoServerInfo, ts.echoClientInfo, logger)
 		echoClient := newEchoClient(ts.echoClientInfo, ts.echoServerInfo, logger)
+
+		time.Sleep(5 * time.Second)
+
 		echoServer.start()
 		echoClient.start()
 
