@@ -38,8 +38,8 @@ type (
 	}
 
 	S2SProxyConfig struct {
-		Inbound  ProxyConfig `yaml:"inbound"`
-		Outbound ProxyConfig `yaml:"outbound"`
+		Inbound  *ProxyConfig `yaml:"inbound"`
+		Outbound *ProxyConfig `yaml:"outbound"`
 	}
 
 	NamespaceNameTranslationConfig struct {

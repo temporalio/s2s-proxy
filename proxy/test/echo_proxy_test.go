@@ -32,7 +32,7 @@ var (
 	}
 
 	serverProxyConfig = config.S2SProxyConfig{
-		Inbound: config.ProxyConfig{
+		Inbound: &config.ProxyConfig{
 			Name: "proxy1-inbound-server",
 			Server: config.ServerConfig{
 				ListenAddress: serverProxyInboundAddress,
@@ -41,7 +41,7 @@ var (
 				ForwardAddress: echoServerAddress,
 			},
 		},
-		Outbound: config.ProxyConfig{
+		Outbound: &config.ProxyConfig{
 			Name: "proxy1-outbound-server",
 			Server: config.ServerConfig{
 				ListenAddress: serverProxyOutboundAddress,
@@ -53,7 +53,7 @@ var (
 	}
 
 	clientProxyConfig = config.S2SProxyConfig{
-		Inbound: config.ProxyConfig{
+		Inbound: &config.ProxyConfig{
 			Name: "proxy2-inbound-server",
 			Server: config.ServerConfig{
 				ListenAddress: clientProxyInboundAddress,
@@ -62,7 +62,7 @@ var (
 				ForwardAddress: echoClientAddress,
 			},
 		},
-		Outbound: config.ProxyConfig{
+		Outbound: &config.ProxyConfig{
 			Name: "proxy2-outbound-server",
 			Server: config.ServerConfig{
 				ListenAddress: clientProxyOutboundAddress,
