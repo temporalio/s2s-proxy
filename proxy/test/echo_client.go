@@ -58,7 +58,7 @@ func newEchoClient(
 	if clientInfo.proxyConfig != nil {
 		// Setup EchoClient's proxy and connect EchoClient to the proxy (via outbound server).
 		// 	<- - -> proxy <-> EchoClient
-		proxy = s2sproxy.NewProxy(clientInfo.proxyConfig, logger, clientFactory, s2sproxy.GrpcServerOptions{})
+		proxy = s2sproxy.NewProxy(clientInfo.proxyConfig, logger, clientFactory)
 		adminClient = clientFactory.NewRemoteAdminClient(clientInfo.proxyConfig.GetS2SProxyConfig().Outbound.Server.ListenAddress, emptyConfig)
 	} else if serverInfo.proxyConfig != nil {
 		// Connect EchoClient to EchoServer's proxy (via InboundServer).

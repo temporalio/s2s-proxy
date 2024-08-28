@@ -29,6 +29,11 @@ func TestSetNamespaceBasedOnCluster(t *testing.T) {
 			Other  string
 			Nested []*StructWithNamespaceField
 		}
+
+		StructWithCircularPointer struct {
+			Link      *StructWithCircularPointer
+			Namespace string
+		}
 	)
 
 	permutations := []struct {
@@ -65,7 +70,8 @@ func TestSetNamespaceBasedOnCluster(t *testing.T) {
 
 	cases := []struct {
 		testName string
-		makeType func(namespace string) any
+		makeType func(ns string) any
+		expError string
 	}{
 		{
 			testName: "Namespace field",
@@ -91,7 +97,7 @@ func TestSetNamespaceBasedOnCluster(t *testing.T) {
 			},
 		},
 		{
-			testName: "List of structs",
+			testName: "list of structs",
 			makeType: func(ns string) any {
 				return &StructWithListOfNestedNamespaceField{
 					Other: "do not change",
@@ -104,7 +110,7 @@ func TestSetNamespaceBasedOnCluster(t *testing.T) {
 			},
 		},
 		{
-			testName: "List of ptrs",
+			testName: "list of ptrs",
 			makeType: func(ns string) any {
 				return &StructWithListOfNestedPtrs{
 					Other: "do not change",
@@ -147,6 +153,21 @@ func TestSetNamespaceBasedOnCluster(t *testing.T) {
 
 			},
 		},
+		{
+			testName: "circular pointer",
+			makeType: func(ns string) any {
+				a := &StructWithCircularPointer{
+					Namespace: ns,
+				}
+				b := &StructWithCircularPointer{
+					Namespace: ns,
+				}
+				a.Link = b
+				b.Link = a
+				return a
+			},
+			expError: "max depth reached",
+		},
 	}
 
 	for _, c := range cases {
@@ -157,10 +178,14 @@ func TestSetNamespaceBasedOnCluster(t *testing.T) {
 					expOutput := c.makeType(perm.outputNSName)
 					expChanged := perm.inputNSName != perm.outputNSName
 
-					changed, err := translateNamespace(input, perm.mapping)
-					require.NoError(t, err)
-					require.Equal(t, expOutput, input)
-					require.Equal(t, expChanged, changed)
+					changed, err := translateNamespace(input, perm.mapping, 0)
+					if len(c.expError) != 0 {
+						require.ErrorContains(t, err, c.expError)
+					} else {
+						require.NoError(t, err)
+						require.Equal(t, expOutput, input)
+						require.Equal(t, expChanged, changed)
+					}
 				})
 			}
 		})

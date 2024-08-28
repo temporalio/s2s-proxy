@@ -93,7 +93,6 @@ func newEchoServer(
 			clusterInfo.proxyConfig,
 			logger,
 			clientFactory,
-			s2sproxy.GrpcServerOptions{},
 		)
 	}
 
@@ -104,7 +103,7 @@ func newEchoServer(
 				ListenAddress: clusterInfo.serverAddress,
 			},
 			senderService,
-			s2sproxy.GrpcServerOptions{},
+			nil,
 			logger),
 		proxy:       proxy,
 		clusterInfo: clusterInfo,

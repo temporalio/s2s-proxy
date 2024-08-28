@@ -13,37 +13,39 @@ import (
 	"google.golang.org/grpc"
 )
 
+const (
+	// Currently, name translation relies on reflection to recursively find namespace name fields
+	// in request and response objects. This is the default max depth allowed for that recursion
+	// to protect against circular pointers or etc. It is configurable.
+	defaultReflectionRecursionMaxDepth int = 20
+)
+
 type (
 	NamespaceNameTranslator struct {
-		logger log.Logger
-
-		localToRemote map[string]string
-		remoteToLocal map[string]string
+		logger                      log.Logger
+		localToRemote               map[string]string
+		remoteToLocal               map[string]string
+		reflectionRecursionMaxDepth int
 	}
 )
 
 func NewNamespaceNameTranslator(
 	logger log.Logger,
-	configProvider config.ConfigProvider,
-) (*NamespaceNameTranslator, error) {
-	cfg := configProvider.GetS2SProxyConfig().NamespaceTranslation
-
+	cfg config.ProxyConfig,
+) *NamespaceNameTranslator {
 	localToRemote := map[string]string{}
 	remoteToLocal := map[string]string{}
-	for _, tr := range cfg {
-		if tr.LocalName == "" || tr.RemoteName == "" {
-			return nil, fmt.Errorf("invalid namespace translation config: localName=%q remoteName=%q",
-				tr.LocalName, tr.RemoteName)
-		}
+	for _, tr := range cfg.NamespaceNameTranslation.Mappings {
 		localToRemote[tr.LocalName] = tr.RemoteName
 		remoteToLocal[tr.RemoteName] = tr.LocalName
 	}
 
 	return &NamespaceNameTranslator{
-		logger:        logger,
-		localToRemote: localToRemote,
-		remoteToLocal: remoteToLocal,
-	}, nil
+		logger:                      logger,
+		localToRemote:               localToRemote,
+		remoteToLocal:               remoteToLocal,
+		reflectionRecursionMaxDepth: cfg.NamespaceNameTranslation.ReflectionRecursionMaxDepth,
+	}
 }
 
 var _ grpc.UnaryServerInterceptor = (*NamespaceNameTranslator)(nil).Intercept
@@ -61,13 +63,13 @@ func (i *NamespaceNameTranslator) Intercept(
 	methodName := api.MethodName(info.FullMethod)
 	if strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) {
 		// Translate local namespace name to remote namespace name before sending the request.
-		changed, trErr := translateNamespace(req, i.localToRemote)
+		changed, trErr := translateNamespace(req, i.localToRemote, i.reflectionRecursionMaxDepth)
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Request", req)
 
 		resp, err := handler(ctx, req)
 
 		// Translate remote namespace name to local namespace name in the response.
-		changed, trErr = translateNamespace(resp, i.remoteToLocal)
+		changed, trErr = translateNamespace(resp, i.remoteToLocal, i.reflectionRecursionMaxDepth)
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Response", resp)
 		return resp, err
 	} else if strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
@@ -81,22 +83,25 @@ func (i *NamespaceNameTranslator) Intercept(
 	}
 }
 
-func translateNamespace(req any, mapping map[string]string) (bool, error) {
-	val := reflect.ValueOf(req)
-	return translateNamespaceRecursive(val, mapping, 0)
+func translateNamespace(obj any, mapping map[string]string, maxDepth int) (bool, error) {
+	if maxDepth <= 0 {
+		maxDepth = defaultReflectionRecursionMaxDepth
+	}
+	val := reflect.ValueOf(obj)
+	return translateNamespaceRecursive(val, mapping, 0, maxDepth)
 }
 
-func translateNamespaceRecursive(val reflect.Value, mapping map[string]string, depth int) (bool, error) {
-	if depth > 20 {
+func translateNamespaceRecursive(val reflect.Value, mapping map[string]string, depth, maxDepth int) (bool, error) {
+	if depth > maxDepth {
 		// Protect against potential circular pointer.
-		return false, fmt.Errorf("translateNamespaceRecursive max depth reached (circular pointers in type?)")
+		return false, fmt.Errorf("translateNamespaceRecursive max depth reached")
 	}
 
 	var changed bool
 
 	switch val.Kind() {
 	case reflect.Ptr, reflect.Interface:
-		c, err := translateNamespaceRecursive(val.Elem(), mapping, depth+1)
+		c, err := translateNamespaceRecursive(val.Elem(), mapping, depth+1, maxDepth)
 		changed = changed || c
 		if err != nil {
 			return changed, err
@@ -111,7 +116,7 @@ func translateNamespaceRecursive(val reflect.Value, mapping map[string]string, d
 			}
 
 			if field.Kind() != reflect.String {
-				c, err := translateNamespaceRecursive(field, mapping, depth+1)
+				c, err := translateNamespaceRecursive(field, mapping, depth+1, maxDepth)
 				changed = changed || c
 				if err != nil {
 					return changed, err
@@ -140,7 +145,7 @@ func translateNamespaceRecursive(val reflect.Value, mapping map[string]string, d
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < val.Len(); i++ {
 			el := val.Index(i)
-			c, err := translateNamespaceRecursive(el, mapping, depth+1)
+			c, err := translateNamespaceRecursive(el, mapping, depth+1, maxDepth)
 			changed = changed || c
 			if err != nil {
 				return changed, err
