@@ -38,8 +38,8 @@ type (
 	}
 
 	S2SProxyConfig struct {
-		Inbound  ProxyConfig `yaml:"inbound"`
-		Outbound ProxyConfig `yaml:"outbound"`
+		Inbound  *ProxyConfig `yaml:"inbound"`
+		Outbound *ProxyConfig `yaml:"outbound"`
 	}
 
 	NamespaceNameTranslationConfig struct {
@@ -59,31 +59,47 @@ type (
 )
 
 func newConfigProvider(ctx *cli.Context) (ConfigProvider, error) {
-	provider := &cliConfigProvider{
-		ctx: ctx,
-	}
-
-	if err := provider.loadConfig(); err != nil {
+	s2sConfig, err := LoadConfig(ctx.String(ConfigPathFlag))
+	if err != nil {
 		return nil, err
 	}
 
-	return provider, nil
+	return &cliConfigProvider{
+		ctx:       ctx,
+		s2sConfig: s2sConfig,
+	}, nil
 }
 
 func (c *cliConfigProvider) GetS2SProxyConfig() S2SProxyConfig {
 	return c.s2sConfig
 }
 
-func (c *cliConfigProvider) loadConfig() error {
-	configFilePath := c.ctx.String(ConfigPathFlag)
+func LoadConfig(configFilePath string) (S2SProxyConfig, error) {
+	var proxyConfig S2SProxyConfig
 	data, err := os.ReadFile(configFilePath)
 	if err != nil {
-		return err
+		return proxyConfig, err
 	}
 
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
-	err = decoder.Decode(&c.s2sConfig)
+	err = decoder.Decode(&proxyConfig)
+	if err != nil {
+		return proxyConfig, err
+	}
+
+	return proxyConfig, nil
+}
+
+func WriteConfig(s2sConfig S2SProxyConfig, filePath string) error {
+	// Marshal the struct to YAML
+	data, err := yaml.Marshal(&s2sConfig)
+	if err != nil {
+		return err
+	}
+
+	// Write the YAML to a file
+	err = os.WriteFile(filePath, data, 0644)
 	if err != nil {
 		return err
 	}

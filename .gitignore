@@ -7,7 +7,6 @@
 *.dll
 *.so
 *.dylib
-*.yaml
 
 # Test binary, built with `go test -c`
 *.test
@@ -25,3 +24,8 @@ go.work.sum
 # Executables produced by temporal repo
 /s2s-proxy
 
+# misc file
+*.yaml
+*.yml
+*.pem
+*.key

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
@@ -34,11 +35,19 @@ func NewAdminServiceProxyServer(
 	clientFactory client.ClientFactory,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
-	adminClient := clientFactory.NewRemoteAdminClient(proxyConfig.Client.ForwardAddress, proxyConfig.Client.TLS)
+	logger = log.With(logger, common.ServiceTag(proxyConfig.Name), tag.Address(proxyConfig.Server.ListenAddress))
+	if data, err := json.Marshal(proxyConfig.Client); err == nil {
+		logger.Info(fmt.Sprintf("RemoteAdminClient Config: %s", string(data)))
+	} else {
+		logger.Error(fmt.Sprintf("RemoteAdminClient: failed to marshal config: %v", err))
+		return nil
+	}
+
+	adminClient := clientFactory.NewRemoteAdminClient(proxyConfig.Client)
 	return &adminServiceProxyServer{
 		proxyConfig:              proxyConfig,
 		remoteAdminServiceClient: adminClient,
-		logger:                   log.With(logger, common.ServiceTag(proxyConfig.Name), tag.Address(proxyConfig.Server.ListenAddress)),
+		logger:                   logger,
 	}
 }
 

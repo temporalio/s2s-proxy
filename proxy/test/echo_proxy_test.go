@@ -1,9 +1,12 @@
 package proxy
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 )
@@ -27,11 +30,55 @@ var (
 		ClusterID: 2,
 		ShardID:   4,
 	}
+
+	serverProxyConfig = config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy1-inbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: serverProxyInboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: echoServerAddress,
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy1-outbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: serverProxyOutboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: "to-be-added",
+			},
+		},
+	}
+
+	clientProxyConfig = config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy2-inbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: clientProxyInboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: echoClientAddress,
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy2-outbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: clientProxyOutboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: "to-be-added",
+			},
+		},
+	}
 )
 
 type (
 	proxyTestSuite struct {
 		suite.Suite
+		originalPath string
+		developPath  string
 	}
 )
 
@@ -40,9 +87,17 @@ func TestProxyTestSuite(t *testing.T) {
 }
 
 func (s *proxyTestSuite) SetupTest() {
+	var err error
+	s.originalPath, err = os.Getwd()
+	s.NoError(err)
+	s.developPath = filepath.Join("..", "..", "develop")
+	err = os.Chdir(s.developPath)
+	s.NoError(err)
 }
 
 func (s *proxyTestSuite) TearDownTest() {
+	err := os.Chdir(s.originalPath)
+	s.NoError(err)
 }
 
 func (s *proxyTestSuite) SetupSubTest() {
@@ -99,12 +154,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
-				proxyConfig: &mockProxyConfig{
-					inboundServerAddress:  serverProxyInboundAddress,
-					localServerAddress:    echoServerAddress,
-					outboundServerAddress: serverProxyOutboundAddress,
-					remoteServerAddress:   echoClientAddress,
-				},
+				s2sProxyConfig: &serverProxyConfig,
 			},
 			echoClientInfo: clusterInfo{
 				serverAddress:  echoClientAddress,
@@ -121,12 +171,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoClientInfo: clusterInfo{
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
-				proxyConfig: &mockProxyConfig{
-					inboundServerAddress:  clientProxyInboundAddress,
-					localServerAddress:    echoClientAddress,
-					outboundServerAddress: clientProxyOutboundAddress,
-					remoteServerAddress:   echoServerAddress,
-				},
+				s2sProxyConfig: &clientProxyConfig,
 			},
 		},
 		{
@@ -135,22 +180,12 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
-				proxyConfig: &mockProxyConfig{
-					inboundServerAddress:  serverProxyInboundAddress,
-					localServerAddress:    echoServerAddress,
-					outboundServerAddress: serverProxyOutboundAddress,
-					remoteServerAddress:   clientProxyInboundAddress,
-				},
+				s2sProxyConfig: &serverProxyConfig,
 			},
 			echoClientInfo: clusterInfo{
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
-				proxyConfig: &mockProxyConfig{
-					inboundServerAddress:  clientProxyInboundAddress,
-					localServerAddress:    echoClientAddress,
-					outboundServerAddress: clientProxyOutboundAddress,
-					remoteServerAddress:   serverProxyInboundAddress,
-				},
+				s2sProxyConfig: &clientProxyConfig,
 			},
 		},
 	}
@@ -158,8 +193,8 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 	sequence := genSequence(1, 100)
 	logger := log.NewTestLogger()
 	for _, ts := range tests {
-		echoServer := newEchoServer(ts.echoServerInfo, logger)
-		echoClient := newEchoClient(ts.echoServerInfo, ts.echoClientInfo, logger)
+		echoServer := newEchoServer(ts.echoServerInfo, ts.echoClientInfo, logger)
+		echoClient := newEchoClient(ts.echoClientInfo, ts.echoServerInfo, logger)
 		echoServer.start()
 		echoClient.start()
 

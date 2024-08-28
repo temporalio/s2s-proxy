@@ -39,6 +39,9 @@ mocks: clean-mocks
 	@mockgen -source config/config.go -destination mocks/config/config_mock.go -package config
 
 # Tests
+generate-certs:
+	./scripts/generate-certs.sh 
+
 test:
 	go test $(TEST_ARG) ./...
 

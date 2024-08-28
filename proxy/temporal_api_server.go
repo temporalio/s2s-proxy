@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"encoding/json"
+	"fmt"
 	"net"
 
 	"github.com/temporalio/s2s-proxy/common"
@@ -28,13 +30,21 @@ func NewTemporalAPIServer(
 	serverOptions []grpc.ServerOption,
 	logger log.Logger,
 ) *TemporalAPIServer {
+	logger = log.With(logger, common.ServiceTag(serviceName), tag.Address(serverConfig.ListenAddress))
+	if data, err := json.Marshal(serverConfig); err == nil {
+		logger.Info(fmt.Sprintf("TemporalAPIServer Config: %s", string(data)))
+	} else {
+		logger.Error(fmt.Sprintf("TemporalAPIServer: failed to marshal config: %v", err))
+		return nil
+	}
+
 	server := grpc.NewServer(serverOptions...)
 	return &TemporalAPIServer{
 		serviceName:  serviceName,
 		serverConfig: serverConfig,
 		server:       server,
 		adminHandler: adminHandler,
-		logger:       log.With(logger, common.ServiceTag(serviceName), tag.Address(serverConfig.ListenAddress)),
+		logger:       logger,
 	}
 }
 
