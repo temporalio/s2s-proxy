@@ -46,7 +46,9 @@ var (
 			Server: config.ServerConfig{
 				ListenAddress: serverProxyOutboundAddress,
 			},
-			Client: config.ClientConfig{}, // to be updated
+			Client: config.ClientConfig{
+				ForwardAddress: "to-be-added",
+			},
 		},
 	}
 
@@ -65,7 +67,9 @@ var (
 			Server: config.ServerConfig{
 				ListenAddress: clientProxyOutboundAddress,
 			},
-			Client: config.ClientConfig{}, // to be updated
+			Client: config.ClientConfig{
+				ForwardAddress: "to-be-added",
+			},
 		},
 	}
 )

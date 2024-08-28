@@ -113,10 +113,6 @@ func (s *echoServer) stop() {
 	s.server.Stop()
 }
 
-func (s *echoServer) DescribeCluster() {
-
-}
-
 func (s *echoService) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
 	return nil, status.Errorf(codes.PermissionDenied, "Calling method AddOrUpdateRemoteCluster is not allowed.")
 }
