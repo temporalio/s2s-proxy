@@ -31,3 +31,7 @@ outbound:
       keyPath: ""
       serverCAPath: ""
       serverName: ""
+
+namespaceNameTranslation:
+  - localName: "example"
+    remoteName: "example.cloud"
