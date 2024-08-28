@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"os"
 
 	"github.com/temporalio/s2s-proxy/encryption"
@@ -18,30 +19,35 @@ type (
 	}
 
 	ServerConfig struct {
-		// RPCAddress indicate the server address(Host:Port) for listening requests
+		// ListenAddress indicates the server address (Host:Port) for listening requests
 		ListenAddress string                     `yaml:"listenAddress"`
 		TLS           encryption.ServerTLSConfig `yaml:"tls"`
 	}
 
 	ClientConfig struct {
-		// RPCAddress indicate the address(Host:Port) for forwarding requests
+		// ForwardAddress indicates the address (Host:Port) for forwarding requests
 		ForwardAddress string                     `yaml:"forwardAddress"`
 		TLS            encryption.ClientTLSConfig `yaml:"tls"`
 	}
 
 	ProxyConfig struct {
-		Name   string       `yaml:"name"`
-		Server ServerConfig `yaml:"server"`
-		Client ClientConfig `yaml:"client"`
+		Name                     string                         `yaml:"name"`
+		Server                   ServerConfig                   `yaml:"server"`
+		Client                   ClientConfig                   `yaml:"client"`
+		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
 	}
 
 	S2SProxyConfig struct {
-		Inbound              ProxyConfig                      `yaml:"inbound"`
-		Outbound             ProxyConfig                      `yaml:"outbound"`
-		NamespaceTranslation []NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
+		Inbound  ProxyConfig `yaml:"inbound"`
+		Outbound ProxyConfig `yaml:"outbound"`
 	}
 
 	NamespaceNameTranslationConfig struct {
+		Mappings                    []NameMappingConfig `yaml:"mappings"`
+		ReflectionRecursionMaxDepth int                 `yaml:"reflectionRecursionMaxDepth"`
+	}
+
+	NameMappingConfig struct {
 		LocalName  string `yaml:"localName"`
 		RemoteName string `yaml:"remoteName"`
 	}
@@ -75,7 +81,9 @@ func (c *cliConfigProvider) loadConfig() error {
 		return err
 	}
 
-	err = yaml.Unmarshal(data, &c.s2sConfig)
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	err = decoder.Decode(&c.s2sConfig)
 	if err != nil {
 		return err
 	}

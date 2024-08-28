@@ -3,7 +3,9 @@ package proxy
 import (
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/interceptor"
 	"go.temporal.io/server/common/log"
+	"google.golang.org/grpc"
 )
 
 type (
@@ -18,7 +20,6 @@ func NewProxy(
 	configProvider config.ConfigProvider,
 	logger log.Logger,
 	clientFactory client.ClientFactory,
-	grpcServerOptions GrpcServerOptions,
 ) *Proxy {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 
@@ -35,17 +36,28 @@ func NewProxy(
 			s2sConfig.Outbound.Name,
 			s2sConfig.Outbound.Server,
 			NewAdminServiceProxyServer(s2sConfig.Outbound, clientFactory, logger),
-			grpcServerOptions,
+			makeServerOptions(logger, s2sConfig.Outbound),
 			logger,
 		),
 		inboundServer: NewTemporalAPIServer(
 			s2sConfig.Inbound.Name,
 			s2sConfig.Inbound.Server,
 			NewAdminServiceProxyServer(s2sConfig.Inbound, clientFactory, logger),
-			grpcServerOptions,
+			makeServerOptions(logger, s2sConfig.Outbound),
 			logger,
 		),
 	}
+}
+
+func makeServerOptions(logger log.Logger, cfg config.ProxyConfig) []grpc.ServerOption {
+	interceptors := []grpc.UnaryServerInterceptor{}
+	if len(cfg.NamespaceNameTranslation.Mappings) > 0 {
+		interceptors = append(interceptors, interceptor.NewNamespaceNameTranslator(logger, cfg).Intercept)
+	}
+	opts := []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(interceptors...),
+	}
+	return opts
 }
 
 func (s *Proxy) Start() error {

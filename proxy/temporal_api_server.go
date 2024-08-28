@@ -5,7 +5,6 @@ import (
 
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/interceptor"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -20,36 +19,16 @@ type (
 		adminHandler adminservice.AdminServiceServer
 		logger       log.Logger
 	}
-
-	GrpcServerOptions struct {
-		Options           []grpc.ServerOption
-		UnaryInterceptors []grpc.UnaryServerInterceptor
-	}
 )
-
-func GrpcServerOptionsProvider(
-	logger log.Logger,
-	namespaceNameTranslatorInterceptor *interceptor.NamespaceNameTranslator,
-) GrpcServerOptions {
-	return GrpcServerOptions{
-		UnaryInterceptors: []grpc.UnaryServerInterceptor{
-			namespaceNameTranslatorInterceptor.Intercept,
-		},
-	}
-}
 
 func NewTemporalAPIServer(
 	serviceName string,
 	serverConfig config.ServerConfig,
 	adminHandler adminservice.AdminServiceServer,
-	grpcServerOptions GrpcServerOptions,
+	serverOptions []grpc.ServerOption,
 	logger log.Logger,
 ) *TemporalAPIServer {
-	opts := []grpc.ServerOption{}
-	opts = append(opts, grpcServerOptions.Options...)
-	opts = append(opts, grpc.ChainUnaryInterceptor(grpcServerOptions.UnaryInterceptors...))
-	server := grpc.NewServer(opts...)
-
+	server := grpc.NewServer(serverOptions...)
 	return &TemporalAPIServer{
 		serviceName:  serviceName,
 		serverConfig: serverConfig,

@@ -31,7 +31,8 @@ outbound:
       keyPath: ""
       serverCAPath: ""
       serverName: ""
-
-namespaceNameTranslation:
-  - localName: "example"
-    remoteName: "example.cloud"
+  namespaceNameTranslation:
+    mappings:
+      - localName: "example"
+        remoteName: "example.cloud"
+    reflectionRecursionMaxDepth: 0
