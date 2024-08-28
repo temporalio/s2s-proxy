@@ -92,6 +92,7 @@ func newEchoServer(
 				ListenAddress: localClusterInfo.serverAddress,
 			},
 			senderService,
+			nil, // TODO: have senderService implement workflowservice
 			nil,
 			logger),
 		proxy:       proxy,

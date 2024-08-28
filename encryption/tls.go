@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"go.temporal.io/server/common/auth"
-	"go.temporal.io/server/common/log"
 )
 
 type (
@@ -31,10 +30,6 @@ type (
 
 	HttpGetter interface {
 		Get(url string) (resp *http.Response, err error)
-	}
-
-	tlsConfigProvider struct {
-		logger log.Logger
 	}
 )
 

@@ -62,6 +62,9 @@ func (i *NamespaceNameTranslator) Intercept(
 
 	methodName := api.MethodName(info.FullMethod)
 	if strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) {
+		i.logger.Debug("intercepted workflowservice request",
+			tag.NewStringTag("method", info.FullMethod),
+		)
 		// Translate local namespace name to remote namespace name before sending the request.
 		changed, trErr := translateNamespace(req, i.localToRemote, i.reflectionRecursionMaxDepth)
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Request", req)
