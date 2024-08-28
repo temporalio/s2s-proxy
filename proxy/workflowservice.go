@@ -41,7 +41,12 @@ func NewWorkflowServiceProxyServer(
 		return nil
 	}
 
-	worklowclient := clientFactory.NewRemoteWorkflowServiceClient(proxyConfig.Client)
+	// TODO: Switch to use ClientProvider to late bind the client.
+	worklowclient, err := clientFactory.NewRemoteWorkflowServiceClient(proxyConfig.Client)
+	if err != nil {
+		logger.Fatal("Failed to create workflowclient")
+	}
+
 	return &workflowServiceProxyServer{
 		proxyConfig:                 proxyConfig,
 		logger:                      logger,
