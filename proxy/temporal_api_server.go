@@ -52,7 +52,7 @@ func (s *TemporalAPIServer) Start() error {
 		return err
 	}
 
-	s.logger.Info(fmt.Sprintf("Start %s with config: %v", s.serviceName, s.serverConfig))
+	s.logger.Info(fmt.Sprintf("Starting %s with config: %v", s.serviceName, s.serverConfig))
 	go func() {
 		if err := s.server.Serve(grpcListener); err != nil {
 			s.logger.Fatal("Failed to start proxy", tag.Error(err))
@@ -63,6 +63,6 @@ func (s *TemporalAPIServer) Start() error {
 }
 
 func (s *TemporalAPIServer) Stop() {
-	s.logger.Info("Stopping proxy server")
+	s.logger.Info(fmt.Sprintf("Stopping %s", s.serviceName))
 	s.server.GracefulStop()
 }

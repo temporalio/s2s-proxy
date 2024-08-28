@@ -23,9 +23,8 @@ import (
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		clientConfig   config.ClientConfig
-		logger         log.Logger
 		clientProvider client.ClientProvider
+		logger         log.Logger
 	}
 )
 
@@ -37,7 +36,6 @@ func NewAdminServiceProxyServer(
 ) adminservice.AdminServiceServer {
 	logger = log.With(logger, common.ServiceTag(serviceName))
 	return &adminServiceProxyServer{
-		clientConfig:   clientConfig,
 		clientProvider: client.NewClientProvider(clientConfig, clientFactory, logger),
 		logger:         logger,
 	}

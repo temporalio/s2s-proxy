@@ -24,15 +24,10 @@ func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client
 		return nil, err
 	}
 
-	adminHandler := NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, logger)
-	if err != nil {
-		return nil, err
-	}
-
 	return NewTemporalAPIServer(
 		cfg.Name,
 		cfg.Server,
-		adminHandler,
+		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, logger),
 		NewWorkflowServiceProxyServer(cfg, clientFactory, logger),
 		serverOpts,
 		logger,

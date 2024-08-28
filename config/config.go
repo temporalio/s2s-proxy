@@ -109,19 +109,19 @@ func WriteConfig(s2sConfig S2SProxyConfig, filePath string) error {
 	return nil
 }
 
-func toStringIgnoreError(v any) string {
+func marshalWitNoError(v any) string {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return fmt.Sprintf("TemporalAPIServer: failed to marshal config: %v", err)
+		return fmt.Sprintf("Failed to marshal data: %v", err)
 	}
 
 	return string(data)
 }
 
 func (cfg ClientConfig) String() string {
-	return toStringIgnoreError(cfg)
+	return marshalWitNoError(cfg)
 }
 
 func (cfg ServerConfig) String() string {
-	return toStringIgnoreError(cfg)
+	return marshalWitNoError(cfg)
 }
