@@ -65,11 +65,11 @@ func newEchoServer(
 	}
 
 	var proxy *s2sproxy.Proxy
-	if localClusterInfo.s2sProxyConfig != nil {
-		if remoteClusterInfo.s2sProxyConfig != nil {
-			localClusterInfo.s2sProxyConfig.Outbound.Client.ForwardAddress = remoteClusterInfo.s2sProxyConfig.Inbound.Server.ListenAddress
+	if localCfg := localClusterInfo.s2sProxyConfig; localCfg != nil {
+		if remoteCfg := remoteClusterInfo.s2sProxyConfig; remoteCfg != nil {
+			localCfg.Outbound.Client.ForwardAddress = remoteCfg.Inbound.Server.ListenAddress
 		} else {
-			localClusterInfo.s2sProxyConfig.Outbound.Client.ForwardAddress = remoteClusterInfo.serverAddress
+			localCfg.Outbound.Client.ForwardAddress = remoteClusterInfo.serverAddress
 		}
 
 		configProvider := &mockConfigProvider{

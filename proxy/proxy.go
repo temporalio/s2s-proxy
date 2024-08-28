@@ -38,21 +38,33 @@ func NewProxy(
 	}
 
 	if s2sConfig.Outbound != nil {
+		serverOpts, err := makeServerOptions(logger, *s2sConfig.Outbound)
+		if err != nil {
+			logger.Fatal("Failed to construct grpc server options", tag.Error(err), tag.NewStringTag("name", s2sConfig.Outbound.Name))
+			return nil
+		}
+
 		proxy.outboundServer = NewTemporalAPIServer(
 			s2sConfig.Outbound.Name,
 			s2sConfig.Outbound.Server,
 			NewAdminServiceProxyServer(*s2sConfig.Outbound, clientFactory, logger),
-			makeServerOptions(logger, *s2sConfig.Outbound),
+			serverOpts,
 			logger,
 		)
 	}
 
 	if s2sConfig.Inbound != nil {
+		serverOpts, err := makeServerOptions(logger, *s2sConfig.Inbound)
+		if err != nil {
+			logger.Fatal("Failed to construct grpc server options", tag.Error(err), tag.NewStringTag("name", s2sConfig.Inbound.Name))
+			return nil
+		}
+
 		proxy.inboundServer = NewTemporalAPIServer(
 			s2sConfig.Inbound.Name,
 			s2sConfig.Inbound.Server,
 			NewAdminServiceProxyServer(*s2sConfig.Inbound, clientFactory, logger),
-			makeServerOptions(logger, *s2sConfig.Inbound),
+			serverOpts,
 			logger,
 		)
 	}
@@ -60,7 +72,7 @@ func NewProxy(
 	return &proxy
 }
 
-func makeServerOptions(logger log.Logger, cfg config.ProxyConfig) []grpc.ServerOption {
+func makeServerOptions(logger log.Logger, cfg config.ProxyConfig) ([]grpc.ServerOption, error) {
 	interceptors := []grpc.UnaryServerInterceptor{}
 	if len(cfg.NamespaceNameTranslation.Mappings) > 0 {
 		interceptors = append(interceptors, interceptor.NewNamespaceNameTranslator(logger, cfg).Intercept)
@@ -73,13 +85,12 @@ func makeServerOptions(logger log.Logger, cfg config.ProxyConfig) []grpc.ServerO
 	if cfg.Server.TLS.IsEnabled() {
 		tlsConfig, err := encryption.GetServerTLSConfig(cfg.Server.TLS)
 		if err != nil {
-			logger.Error("Failed to get server TLS config", tag.Error(err))
-			return nil
+			return opts, err
 		}
 		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
 	}
 
-	return opts
+	return opts, nil
 }
 
 func (s *Proxy) Start() error {

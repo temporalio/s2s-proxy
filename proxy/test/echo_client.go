@@ -136,10 +136,10 @@ func retry[T interface{}](f func() (T, error), maxRetries int, logger log.Logger
 func (r *echoClient) sendAndRecv(sequence []int64) (map[int64]bool, error) {
 	echoed := make(map[int64]bool)
 	metaData := history.EncodeClusterShardMD(r.echoClientClusterShard, r.echoServerClusterShard)
-	targetConext := metadata.NewOutgoingContext(context.TODO(), metaData)
+	targetContext := metadata.NewOutgoingContext(context.TODO(), metaData)
 
 	stream, err := retry(func() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
-		return r.adminClient.StreamWorkflowReplicationMessages(targetConext)
+		return r.adminClient.StreamWorkflowReplicationMessages(targetContext)
 	}, 5, r.logger)
 	if err != nil {
 		return echoed, err
