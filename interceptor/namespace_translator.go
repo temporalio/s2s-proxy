@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"go.temporal.io/server/api/adminservice/v1"
+	replicationspb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -76,11 +78,31 @@ func (i *NamespaceNameTranslator) Intercept(
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Response", resp)
 		return resp, err
 	} else if strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
-		i.logger.Debug("intercepted adminservice request",
-			tag.NewStringTag("method", info.FullMethod),
-		)
-		// TODO: Modify namespace sync message.
-		return handler(ctx, req)
+		resp, err := handler(ctx, req)
+		if resp == nil {
+			return resp, err
+		}
+
+		// Translate the namespace name in GetNamespaceReplicationMessagesResponse.
+		// We change the remote namespace name to local name.
+		switch rt := resp.(type) {
+		case *adminservice.GetNamespaceReplicationMessagesResponse:
+			for _, task := range rt.Messages.ReplicationTasks {
+				switch attr := task.Attributes.(type) {
+				case *replicationspb.ReplicationTask_NamespaceTaskAttributes:
+					oldName := attr.NamespaceTaskAttributes.Info.Name
+					if newName, ok := i.remoteToLocal[oldName]; ok {
+						attr.NamespaceTaskAttributes.Info.Name = newName
+						i.logger.Debug("translated NamespaceReplicationMessage NamespaceTaskAttributes",
+							tag.NewAnyTag("resp", resp),
+							tag.NewStringTag("old", oldName),
+							tag.NewStringTag("new", newName),
+						)
+					}
+				}
+			}
+		}
+		return resp, err
 	} else {
 		return handler(ctx, req)
 	}
