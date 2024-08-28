@@ -43,7 +43,7 @@ func NewProxy(
 			s2sConfig.Inbound.Name,
 			s2sConfig.Inbound.Server,
 			NewAdminServiceProxyServer(s2sConfig.Inbound, clientFactory, logger),
-			makeServerOptions(logger, s2sConfig.Outbound),
+			makeServerOptions(logger, s2sConfig.Inbound),
 			logger,
 		),
 	}
