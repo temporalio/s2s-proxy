@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"encoding/json"
+	"fmt"
 	"net"
 
 	"github.com/temporalio/s2s-proxy/common"
@@ -28,23 +30,21 @@ func NewTemporalAPIServer(
 	serverOptions []grpc.ServerOption,
 	logger log.Logger,
 ) *TemporalAPIServer {
-<<<<<<< HEAD
+	logger = log.With(logger, common.ServiceTag(serviceName), tag.Address(serverConfig.ListenAddress))
+	if data, err := json.Marshal(serverConfig); err == nil {
+		logger.Info(fmt.Sprintf("TemporalAPIServer Config: %s", string(data)))
+	} else {
+		logger.Error(fmt.Sprintf("TemporalAPIServer: failed to marshal config: %v", err))
+		return nil
+	}
+
 	server := grpc.NewServer(serverOptions...)
-=======
-	// TODO: Add TLS option
-
-	opts := []grpc.ServerOption{}
-	opts = append(opts, grpcServerOptions.Options...)
-	opts = append(opts, grpc.ChainUnaryInterceptor(grpcServerOptions.UnaryInterceptors...))
-	server := grpc.NewServer(opts...)
-
->>>>>>> d21446d (Update code to support server-side TLS)
 	return &TemporalAPIServer{
 		serviceName:  serviceName,
 		serverConfig: serverConfig,
 		server:       server,
 		adminHandler: adminHandler,
-		logger:       log.With(logger, common.ServiceTag(serviceName), tag.Address(serverConfig.ListenAddress)),
+		logger:       logger,
 	}
 }
 
