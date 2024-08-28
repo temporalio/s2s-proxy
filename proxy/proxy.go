@@ -3,9 +3,12 @@ package proxy
 import (
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
 	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 type (
@@ -62,9 +65,20 @@ func makeServerOptions(logger log.Logger, cfg config.ProxyConfig) []grpc.ServerO
 	if len(cfg.NamespaceNameTranslation.Mappings) > 0 {
 		interceptors = append(interceptors, interceptor.NewNamespaceNameTranslator(logger, cfg).Intercept)
 	}
+
 	opts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(interceptors...),
 	}
+
+	if cfg.Server.TLS.IsEnabled() {
+		tlsConfig, err := encryption.GetServerTLSConfig(cfg.Server.TLS)
+		if err != nil {
+			logger.Error("Failed to get server TLS config", tag.Error(err))
+			return nil
+		}
+		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	}
+
 	return opts
 }
 
