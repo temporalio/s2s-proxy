@@ -73,6 +73,72 @@ var (
 			},
 		},
 	}
+
+	serverProxyConfigWithTLS = config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy1-inbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: serverProxyInboundAddress,
+				TLS: encryption.ServerTLSConfig{
+					CertificatePath:   filepath.Join("certificates", "proxy1.pem"),
+					KeyPath:           filepath.Join("certificates", "proxy1.key"),
+					ClientCAPath:      filepath.Join("certificates", "proxy2.pem"),
+					RequireClientAuth: true,
+				},
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: echoServerAddress,
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy1-outbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: serverProxyOutboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: "to-be-added",
+				TLS: encryption.ClientTLSConfig{
+					CertificatePath: filepath.Join("certificates", "proxy1.pem"),
+					KeyPath:         filepath.Join("certificates", "proxy1.key"),
+					ServerName:      "onebox-proxy2.cluster.tmprl.cloud",
+					ServerCAPath:    filepath.Join("certificates", "proxy2.pem"),
+				},
+			},
+		},
+	}
+
+	clientProxyConfigWithTLS = config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy2-inbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: clientProxyInboundAddress,
+				TLS: encryption.ServerTLSConfig{
+					CertificatePath:   filepath.Join("certificates", "proxy2.pem"),
+					KeyPath:           filepath.Join("certificates", "proxy2.key"),
+					ClientCAPath:      filepath.Join("certificates", "proxy1.pem"),
+					RequireClientAuth: true,
+				},
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: echoClientAddress,
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy2-outbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: clientProxyOutboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: "to-be-added",
+				TLS: encryption.ClientTLSConfig{
+					CertificatePath: filepath.Join("certificates", "proxy2.pem"),
+					KeyPath:         filepath.Join("certificates", "proxy2.key"),
+					ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
+					ServerCAPath:    filepath.Join("certificates", "proxy1.pem"),
+				},
+			},
+		},
+	}
 )
 
 type (
@@ -129,13 +195,6 @@ func genSequence(initial int64, n int) []int64 {
 	}
 
 	return sequence
-}
-
-func addProxyTLSConfig(s2sConfig config.S2SProxyConfig, serverConfig encryption.ServerTLSConfig, clientConfig encryption.ClientTLSConfig) *config.S2SProxyConfig {
-	c := s2sConfig
-	c.Inbound.Server.TLS = serverConfig
-	c.Outbound.Client.TLS = clientConfig
-	return &c
 }
 
 func (s *proxyTestSuite) Test_Echo_Success() {
@@ -202,28 +261,12 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
-				s2sProxyConfig: addProxyTLSConfig(serverProxyConfig,
-					encryption.ServerTLSConfig{
-						CertificatePath:   filepath.Join("certificates", "proxy1.pem"),
-						KeyPath:           filepath.Join("certificates", "proxy1.key"),
-						ClientCAPath:      filepath.Join("certificates", "proxy2.pem"),
-						RequireClientAuth: true,
-					},
-					encryption.ClientTLSConfig{},
-				),
+				s2sProxyConfig: &serverProxyConfigWithTLS,
 			},
 			echoClientInfo: clusterInfo{
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
-				s2sProxyConfig: addProxyTLSConfig(clientProxyConfig,
-					encryption.ServerTLSConfig{},
-					encryption.ClientTLSConfig{
-						CertificatePath: filepath.Join("certificates", "proxy2.pem"),
-						KeyPath:         filepath.Join("certificates", "proxy2.key"),
-						ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
-						ServerCAPath:    filepath.Join("certificates", "proxy1.pem"),
-					},
-				),
+				s2sProxyConfig: &clientProxyConfigWithTLS,
 			},
 		},
 	}
