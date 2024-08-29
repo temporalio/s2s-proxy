@@ -294,13 +294,12 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				s.True(verifyEcho(sequence, echoed))
 
 				// Test workflowservice
-				_, _ = echoClient.pollActivityTaskQueue(&workflowservice.PollActivityTaskQueueRequest{
+				resp, err := echoClient.pollActivityTaskQueue(&workflowservice.PollActivityTaskQueueRequest{
 					Namespace: "example-ns",
 				})
-				// TODO: Re-enable these checks when we have late binding for workflowservice.
-				//s.NoError(err)
-				//s.Require().NotNil(resp)
-				//s.Equal("example-ns", resp.WorkflowNamespace)
+				s.NoError(err)
+				s.Require().NotNil(resp)
+				s.Equal("example-ns", resp.WorkflowNamespace)
 			},
 		)
 	}
