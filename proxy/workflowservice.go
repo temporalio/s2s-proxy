@@ -15,9 +15,8 @@ import (
 type (
 	workflowServiceProxyServer struct {
 		workflowservice.UnimplementedWorkflowServiceServer
-		proxyConfig           config.ProxyConfig
-		logger                log.Logger
 		workflowServiceClient workflowservice.WorkflowServiceClient
+		logger                log.Logger
 	}
 )
 
