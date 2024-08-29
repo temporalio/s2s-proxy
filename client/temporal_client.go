@@ -28,6 +28,7 @@ type (
 
 	ClientProvider interface {
 		GetAdminClient() (adminservice.AdminServiceClient, error)
+		GetWorkflowServiceClient() (workflowservice.WorkflowServiceClient, error)
 	}
 
 	clientProvider struct {
@@ -37,6 +38,9 @@ type (
 
 		adminClientsLock sync.Mutex
 		adminClient      adminservice.AdminServiceClient
+
+		workflowserviceClientsLock sync.Mutex
+		workflowserviceClient      workflowservice.WorkflowServiceClient
 	}
 )
 
@@ -68,6 +72,24 @@ func (c *clientProvider) GetAdminClient() (adminservice.AdminServiceClient, erro
 	}
 
 	return c.adminClient, nil
+}
+
+func (c *clientProvider) GetWorkflowServiceClient() (workflowservice.WorkflowServiceClient, error) {
+	if c.workflowserviceClient == nil {
+		// Create admin client
+		c.workflowserviceClientsLock.Lock()
+		defer c.workflowserviceClientsLock.Unlock()
+
+		c.logger.Info(fmt.Sprintf("Create workflowservice client with config: %v", c.clientConfig))
+		workflowserviceClient, err := c.clientFactory.NewRemoteWorkflowServiceClient(c.clientConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		c.workflowserviceClient = workflowserviceClient
+	}
+
+	return c.workflowserviceClient, nil
 }
 
 // NewFactory creates an instance of client factory that knows how to dispatch RPC calls.

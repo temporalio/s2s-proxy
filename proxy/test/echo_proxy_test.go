@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 )
@@ -287,6 +288,15 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 					echoServer.stop()
 				}()
 
+				// Test workflowservice
+				resp, err := echoClient.pollActivityTaskQueue(&workflowservice.PollActivityTaskQueueRequest{
+					Namespace: "example-ns",
+				})
+				s.NoError(err)
+				s.NotNil(resp)
+				s.Equal("example-ns", resp.WorkflowNamespace)
+
+				// Test adminservice
 				echoed, err := echoClient.sendAndRecv(sequence)
 				s.NoError(err)
 				s.True(verifyEcho(sequence, echoed))

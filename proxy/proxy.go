@@ -28,7 +28,7 @@ func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client
 		cfg.Name,
 		cfg.Server,
 		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, logger),
-		NewWorkflowServiceProxyServer(cfg, clientFactory, logger),
+		NewWorkflowServiceProxyServer(cfg.Name, cfg.Client, clientFactory, logger),
 		serverOpts,
 		logger,
 	), nil
