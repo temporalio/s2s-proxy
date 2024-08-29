@@ -98,28 +98,39 @@ func (i *NamespaceNameTranslator) Intercept(
 		// in order to support namespace replication (create, update).
 		switch rt := resp.(type) {
 		case *adminservice.GetNamespaceReplicationMessagesResponse:
-			if rt == nil || rt.Messages == nil {
-				return resp, err
-			}
-			for _, task := range rt.Messages.ReplicationTasks {
-				switch attr := task.Attributes.(type) {
-				case *replicationspb.ReplicationTask_NamespaceTaskAttributes:
-					if attr == nil || attr.NamespaceTaskAttributes == nil || attr.NamespaceTaskAttributes.Info == nil {
-						continue
-					}
-					oldName := attr.NamespaceTaskAttributes.Info.Name
-					newName, found := i.responseNameMapping[oldName]
-					if found {
-						attr.NamespaceTaskAttributes.Info.Name = newName
-					}
-					logTranslateNamespaceResult(i.logger, found, nil, methodName+"Response", resp)
-				}
-			}
+			changed := translateNamespaceReplicationMessages(rt, i.responseNameMapping)
+			logTranslateNamespaceResult(i.logger, changed, nil, methodName+"Response", resp)
 		}
 		return resp, err
 	} else {
 		return handler(ctx, req)
 	}
+}
+
+func translateNamespaceReplicationMessages(rt *adminservice.GetNamespaceReplicationMessagesResponse, mapping map[string]string) bool {
+	var changed bool
+	if rt == nil || rt.Messages == nil {
+		return changed
+	}
+
+	for _, task := range rt.Messages.ReplicationTasks {
+		if task == nil || task.Attributes == nil {
+			continue
+		}
+		switch attr := task.Attributes.(type) {
+		case *replicationspb.ReplicationTask_NamespaceTaskAttributes:
+			if attr == nil || attr.NamespaceTaskAttributes == nil || attr.NamespaceTaskAttributes.Info == nil {
+				continue
+			}
+			oldName := attr.NamespaceTaskAttributes.Info.Name
+			newName, found := mapping[oldName]
+			if found {
+				attr.NamespaceTaskAttributes.Info.Name = newName
+				changed = true
+			}
+		}
+	}
+	return changed
 }
 
 func translateNamespace(obj any, mapping map[string]string, maxDepth int) (bool, error) {
