@@ -39,17 +39,19 @@ func NewNamespaceNameTranslator(
 	requestNameMapping := map[string]string{}
 	responseNameMapping := map[string]string{}
 	for _, tr := range cfg.NamespaceNameTranslation.Mappings {
-		// For outbound listener,
-		//   - incoming requests from local server are modifed to match remote server
-		//   - outgoing responses from remote server are modified to match local server
-		requestNameMapping[tr.LocalName] = tr.RemoteName
-		responseNameMapping[tr.RemoteName] = tr.LocalName
-	}
-	if isInbound {
-		// For inbound listener, we invert the mapping:
-		//   - incoming requests from remote server are modifed to match local server
-		//   - outgoing responses from local server are modified to match remote server
-		requestNameMapping, responseNameMapping = responseNameMapping, requestNameMapping
+		if isInbound {
+			// For inbound listener,
+			//   - incoming requests from remote server are modifed to match local server
+			//   - outgoing responses to local server are modified to match remote server
+			requestNameMapping[tr.RemoteName] = tr.LocalName
+			responseNameMapping[tr.LocalName] = tr.RemoteName
+		} else {
+			// For outbound listener,
+			//   - incoming requests from local server are modifed to match remote server
+			//   - outgoing responses to remote server are modified to match local server
+			requestNameMapping[tr.LocalName] = tr.RemoteName
+			responseNameMapping[tr.RemoteName] = tr.LocalName
+		}
 	}
 
 	return &NamespaceNameTranslator{
