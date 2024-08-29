@@ -351,7 +351,7 @@ func TestTranslateNamespaceReplicationMessages(t *testing.T) {
 			} else {
 				expOutput = c.makeType("orig")
 			}
-			changed := translateNamespaceReplicationMessages(input, c.mapping)
+			changed := translate_GetNamespaceReplicationMessagesResponse(input, c.mapping)
 			require.Equal(t, c.expChanged, changed)
 			require.Equal(t, expOutput, input)
 		})

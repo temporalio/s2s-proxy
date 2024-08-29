@@ -98,7 +98,7 @@ func (i *NamespaceNameTranslator) Intercept(
 		// in order to support namespace replication (create, update).
 		switch rt := resp.(type) {
 		case *adminservice.GetNamespaceReplicationMessagesResponse:
-			changed := translateNamespaceReplicationMessages(rt, i.responseNameMapping)
+			changed := translate_GetNamespaceReplicationMessagesResponse(rt, i.responseNameMapping)
 			logTranslateNamespaceResult(i.logger, changed, nil, methodName+"Response", resp)
 		}
 		return resp, err
@@ -107,7 +107,7 @@ func (i *NamespaceNameTranslator) Intercept(
 	}
 }
 
-func translateNamespaceReplicationMessages(rt *adminservice.GetNamespaceReplicationMessagesResponse, mapping map[string]string) bool {
+func translate_GetNamespaceReplicationMessagesResponse(rt *adminservice.GetNamespaceReplicationMessagesResponse, mapping map[string]string) bool {
 	var changed bool
 	if rt == nil || rt.Messages == nil {
 		return changed
