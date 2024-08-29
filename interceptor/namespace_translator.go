@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"go.temporal.io/server/api/adminservice/v1"
+	replicationspb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -23,8 +25,8 @@ const (
 type (
 	NamespaceNameTranslator struct {
 		logger                      log.Logger
-		localToRemote               map[string]string
-		remoteToLocal               map[string]string
+		requestNameMapping          map[string]string
+		responseNameMapping         map[string]string
 		reflectionRecursionMaxDepth int
 	}
 )
@@ -32,18 +34,28 @@ type (
 func NewNamespaceNameTranslator(
 	logger log.Logger,
 	cfg config.ProxyConfig,
+	isInbound bool,
 ) *NamespaceNameTranslator {
-	localToRemote := map[string]string{}
-	remoteToLocal := map[string]string{}
+	requestNameMapping := map[string]string{}
+	responseNameMapping := map[string]string{}
 	for _, tr := range cfg.NamespaceNameTranslation.Mappings {
-		localToRemote[tr.LocalName] = tr.RemoteName
-		remoteToLocal[tr.RemoteName] = tr.LocalName
+		// For outbound listener,
+		//   - incoming requests from local server are modifed to match remote server
+		//   - outgoing responses from remote server are modified to match local server
+		requestNameMapping[tr.LocalName] = tr.RemoteName
+		responseNameMapping[tr.RemoteName] = tr.LocalName
+	}
+	if isInbound {
+		// For inbound listener, we invert the mapping:
+		//   - incoming requests from remote server are modifed to match local server
+		//   - outgoing responses from local server are modified to match remote server
+		requestNameMapping, responseNameMapping = responseNameMapping, requestNameMapping
 	}
 
 	return &NamespaceNameTranslator{
 		logger:                      logger,
-		localToRemote:               localToRemote,
-		remoteToLocal:               remoteToLocal,
+		requestNameMapping:          requestNameMapping,
+		responseNameMapping:         responseNameMapping,
 		reflectionRecursionMaxDepth: cfg.NamespaceNameTranslation.ReflectionRecursionMaxDepth,
 	}
 }
@@ -56,31 +68,55 @@ func (i *NamespaceNameTranslator) Intercept(
 	info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler,
 ) (any, error) {
-	if len(i.localToRemote) == 0 {
+	if len(i.requestNameMapping) == 0 {
 		return handler(ctx, req)
 	}
 
 	methodName := api.MethodName(info.FullMethod)
 	if strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) {
-		i.logger.Debug("intercepted workflowservice request",
-			tag.NewStringTag("method", info.FullMethod),
-		)
-		// Translate local namespace name to remote namespace name before sending the request.
-		changed, trErr := translateNamespace(req, i.localToRemote, i.reflectionRecursionMaxDepth)
+		i.logger.Debug("intercepted workflowservice request", tag.NewStringTag("method", methodName))
+
+		// Translate namespace name in request.
+		changed, trErr := translateNamespace(req, i.requestNameMapping, i.reflectionRecursionMaxDepth)
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Request", req)
 
 		resp, err := handler(ctx, req)
 
-		// Translate remote namespace name to local namespace name in the response.
-		changed, trErr = translateNamespace(resp, i.remoteToLocal, i.reflectionRecursionMaxDepth)
+		// Translate namespace name in response.
+		changed, trErr = translateNamespace(resp, i.responseNameMapping, i.reflectionRecursionMaxDepth)
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Response", resp)
 		return resp, err
 	} else if strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
-		i.logger.Debug("intercepted adminservice request",
-			tag.NewStringTag("method", info.FullMethod),
-		)
-		// TODO: Modify namespace sync message.
-		return handler(ctx, req)
+		i.logger.Debug("intercepted adminservice request", tag.NewStringTag("method", methodName))
+
+		resp, err := handler(ctx, req)
+		if resp == nil {
+			return resp, err
+		}
+
+		// Translate the namespace name in GetNamespaceReplicationMessagesResponse
+		// in order to support namespace replication (create, update).
+		switch rt := resp.(type) {
+		case *adminservice.GetNamespaceReplicationMessagesResponse:
+			if rt == nil || rt.Messages == nil {
+				return resp, err
+			}
+			for _, task := range rt.Messages.ReplicationTasks {
+				switch attr := task.Attributes.(type) {
+				case *replicationspb.ReplicationTask_NamespaceTaskAttributes:
+					if attr == nil || attr.NamespaceTaskAttributes == nil || attr.NamespaceTaskAttributes.Info == nil {
+						continue
+					}
+					oldName := attr.NamespaceTaskAttributes.Info.Name
+					newName, found := i.responseNameMapping[oldName]
+					if found {
+						attr.NamespaceTaskAttributes.Info.Name = newName
+					}
+					logTranslateNamespaceResult(i.logger, found, nil, methodName+"Response", resp)
+				}
+			}
+		}
+		return resp, err
 	} else {
 		return handler(ctx, req)
 	}

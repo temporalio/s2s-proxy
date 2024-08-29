@@ -18,8 +18,8 @@ type (
 	}
 )
 
-func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client.ClientFactory) (*TemporalAPIServer, error) {
-	serverOpts, err := makeServerOptions(logger, cfg)
+func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client.ClientFactory, isInbound bool) (*TemporalAPIServer, error) {
+	serverOpts, err := makeServerOptions(logger, cfg, isInbound)
 	if err != nil {
 		return nil, err
 	}
@@ -53,13 +53,13 @@ func NewProxy(
 	// Here a remote server can be another proxy as well.
 	//    server-a <-> proxy-a <-> proxy-b <-> server-b
 	if s2sConfig.Outbound != nil {
-		if proxy.outboundServer, err = createProxy(*s2sConfig.Outbound, logger, clientFactory); err != nil {
+		if proxy.outboundServer, err = createProxy(*s2sConfig.Outbound, logger, clientFactory, false); err != nil {
 			return nil, err
 		}
 	}
 
 	if s2sConfig.Inbound != nil {
-		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory); err != nil {
+		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory, true); err != nil {
 			return nil, err
 		}
 	}
@@ -67,10 +67,10 @@ func NewProxy(
 	return &proxy, nil
 }
 
-func makeServerOptions(logger log.Logger, cfg config.ProxyConfig) ([]grpc.ServerOption, error) {
+func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool) ([]grpc.ServerOption, error) {
 	interceptors := []grpc.UnaryServerInterceptor{}
 	if len(cfg.NamespaceNameTranslation.Mappings) > 0 {
-		interceptors = append(interceptors, interceptor.NewNamespaceNameTranslator(logger, cfg).Intercept)
+		interceptors = append(interceptors, interceptor.NewNamespaceNameTranslator(logger, cfg, isInbound).Intercept)
 	}
 
 	opts := []grpc.ServerOption{
