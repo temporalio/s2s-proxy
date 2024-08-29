@@ -22,6 +22,8 @@ func NewLazyClient(
 	}
 }
 
+// rpcwrappers (https://github.com/temporalio/temporal/blob/main/cmd/tools/rpcwrappers/main.go) doesn't
+// support gRPC stream API. Add it manually.
 func (c *lazyClient) StreamWorkflowReplicationMessages(
 	ctx context.Context,
 	opts ...grpc.CallOption,
