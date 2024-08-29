@@ -109,19 +109,19 @@ func WriteConfig(s2sConfig S2SProxyConfig, filePath string) error {
 	return nil
 }
 
-func marshalWitNoError(v any) string {
+func marshalWithoutError(v any) string {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return fmt.Sprintf("Failed to marshal data: %v", err)
+		return fmt.Sprintf("%+v", v)
 	}
 
 	return string(data)
 }
 
 func (cfg ClientConfig) String() string {
-	return marshalWitNoError(cfg)
+	return marshalWithoutError(cfg)
 }
 
 func (cfg ServerConfig) String() string {
-	return marshalWitNoError(cfg)
+	return marshalWithoutError(cfg)
 }
