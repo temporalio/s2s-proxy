@@ -34,12 +34,17 @@ type (
 func NewNamespaceNameTranslator(
 	logger log.Logger,
 	cfg config.ProxyConfig,
+	isInbound bool,
 ) *NamespaceNameTranslator {
 	localToRemote := map[string]string{}
 	remoteToLocal := map[string]string{}
 	for _, tr := range cfg.NamespaceNameTranslation.Mappings {
 		localToRemote[tr.LocalName] = tr.RemoteName
 		remoteToLocal[tr.RemoteName] = tr.LocalName
+	}
+	if isInbound {
+		// Invert the mapping for requests to the inbound listener.
+		localToRemote, remoteToLocal = remoteToLocal, localToRemote
 	}
 
 	return &NamespaceNameTranslator{
@@ -64,9 +69,8 @@ func (i *NamespaceNameTranslator) Intercept(
 
 	methodName := api.MethodName(info.FullMethod)
 	if strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) {
-		i.logger.Debug("intercepted workflowservice request",
-			tag.NewStringTag("method", info.FullMethod),
-		)
+		i.logger.Debug("intercepted workflowservice request", tag.NewStringTag("method", methodName))
+
 		// Translate local namespace name to remote namespace name before sending the request.
 		changed, trErr := translateNamespace(req, i.localToRemote, i.reflectionRecursionMaxDepth)
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Request", req)
@@ -78,6 +82,8 @@ func (i *NamespaceNameTranslator) Intercept(
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Response", resp)
 		return resp, err
 	} else if strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
+		i.logger.Debug("intercepted adminservice request", tag.NewStringTag("method", methodName))
+
 		resp, err := handler(ctx, req)
 		if resp == nil {
 			return resp, err
@@ -87,18 +93,21 @@ func (i *NamespaceNameTranslator) Intercept(
 		// We change the remote namespace name to local name.
 		switch rt := resp.(type) {
 		case *adminservice.GetNamespaceReplicationMessagesResponse:
+			if rt == nil || rt.Messages == nil {
+				return resp, err
+			}
 			for _, task := range rt.Messages.ReplicationTasks {
 				switch attr := task.Attributes.(type) {
 				case *replicationspb.ReplicationTask_NamespaceTaskAttributes:
-					oldName := attr.NamespaceTaskAttributes.Info.Name
-					if newName, ok := i.remoteToLocal[oldName]; ok {
-						attr.NamespaceTaskAttributes.Info.Name = newName
-						i.logger.Debug("translated NamespaceReplicationMessage NamespaceTaskAttributes",
-							tag.NewAnyTag("resp", resp),
-							tag.NewStringTag("old", oldName),
-							tag.NewStringTag("new", newName),
-						)
+					if attr == nil || attr.NamespaceTaskAttributes == nil || attr.NamespaceTaskAttributes.Info == nil {
+						continue
 					}
+					oldName := attr.NamespaceTaskAttributes.Info.Name
+					newName, found := i.remoteToLocal[oldName]
+					if found {
+						attr.NamespaceTaskAttributes.Info.Name = newName
+					}
+					logTranslateNamespaceResult(i.logger, found, nil, methodName+"Response", resp)
 				}
 			}
 		}
