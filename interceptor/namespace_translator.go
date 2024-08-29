@@ -25,8 +25,8 @@ const (
 type (
 	NamespaceNameTranslator struct {
 		logger                      log.Logger
-		localToRemote               map[string]string
-		remoteToLocal               map[string]string
+		requestNameMapping          map[string]string
+		responseNameMapping         map[string]string
 		reflectionRecursionMaxDepth int
 	}
 )
@@ -36,21 +36,26 @@ func NewNamespaceNameTranslator(
 	cfg config.ProxyConfig,
 	isInbound bool,
 ) *NamespaceNameTranslator {
-	localToRemote := map[string]string{}
-	remoteToLocal := map[string]string{}
+	requestNameMapping := map[string]string{}
+	responseNameMapping := map[string]string{}
 	for _, tr := range cfg.NamespaceNameTranslation.Mappings {
-		localToRemote[tr.LocalName] = tr.RemoteName
-		remoteToLocal[tr.RemoteName] = tr.LocalName
+		// For outbound listener,
+		//   - incoming requests from local server are modifed to match remote server
+		//   - outgoing responses from remote server are modified to match local server
+		requestNameMapping[tr.LocalName] = tr.RemoteName
+		responseNameMapping[tr.RemoteName] = tr.LocalName
 	}
 	if isInbound {
-		// Invert the mapping for requests to the inbound listener.
-		localToRemote, remoteToLocal = remoteToLocal, localToRemote
+		// For inbound listener, we invert the mapping:
+		//   - incoming requests from remote server are modifed to match local server
+		//   - outgoing responses from local server are modified to match remote server
+		requestNameMapping, responseNameMapping = responseNameMapping, requestNameMapping
 	}
 
 	return &NamespaceNameTranslator{
 		logger:                      logger,
-		localToRemote:               localToRemote,
-		remoteToLocal:               remoteToLocal,
+		requestNameMapping:          requestNameMapping,
+		responseNameMapping:         responseNameMapping,
 		reflectionRecursionMaxDepth: cfg.NamespaceNameTranslation.ReflectionRecursionMaxDepth,
 	}
 }
@@ -63,7 +68,7 @@ func (i *NamespaceNameTranslator) Intercept(
 	info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler,
 ) (any, error) {
-	if len(i.localToRemote) == 0 {
+	if len(i.requestNameMapping) == 0 {
 		return handler(ctx, req)
 	}
 
@@ -71,14 +76,14 @@ func (i *NamespaceNameTranslator) Intercept(
 	if strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) {
 		i.logger.Debug("intercepted workflowservice request", tag.NewStringTag("method", methodName))
 
-		// Translate local namespace name to remote namespace name before sending the request.
-		changed, trErr := translateNamespace(req, i.localToRemote, i.reflectionRecursionMaxDepth)
+		// Translate namespace name in request.
+		changed, trErr := translateNamespace(req, i.requestNameMapping, i.reflectionRecursionMaxDepth)
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Request", req)
 
 		resp, err := handler(ctx, req)
 
-		// Translate remote namespace name to local namespace name in the response.
-		changed, trErr = translateNamespace(resp, i.remoteToLocal, i.reflectionRecursionMaxDepth)
+		// Translate namespace name in response.
+		changed, trErr = translateNamespace(resp, i.responseNameMapping, i.reflectionRecursionMaxDepth)
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Response", resp)
 		return resp, err
 	} else if strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
@@ -89,8 +94,8 @@ func (i *NamespaceNameTranslator) Intercept(
 			return resp, err
 		}
 
-		// Translate the namespace name in GetNamespaceReplicationMessagesResponse.
-		// We change the remote namespace name to local name.
+		// Translate the namespace name in GetNamespaceReplicationMessagesResponse
+		// in order to support namespace replication (create, update).
 		switch rt := resp.(type) {
 		case *adminservice.GetNamespaceReplicationMessagesResponse:
 			if rt == nil || rt.Messages == nil {
@@ -103,7 +108,7 @@ func (i *NamespaceNameTranslator) Intercept(
 						continue
 					}
 					oldName := attr.NamespaceTaskAttributes.Info.Name
-					newName, found := i.remoteToLocal[oldName]
+					newName, found := i.responseNameMapping[oldName]
 					if found {
 						attr.NamespaceTaskAttributes.Info.Name = newName
 					}
