@@ -65,6 +65,8 @@ func newEchoServer(
 	}
 
 	var proxy *s2sproxy.Proxy
+	var err error
+
 	if localCfg := localClusterInfo.s2sProxyConfig; localCfg != nil {
 		if remoteCfg := remoteClusterInfo.s2sProxyConfig; remoteCfg != nil {
 			localCfg.Outbound.Client.ForwardAddress = remoteCfg.Inbound.Server.ListenAddress
@@ -78,11 +80,15 @@ func newEchoServer(
 
 		rpcFactory := rpc.NewRPCFactory(configProvider, logger)
 		clientFactory := client.NewClientFactory(rpcFactory, logger)
-		proxy = s2sproxy.NewProxy(
+		proxy, err = s2sproxy.NewProxy(
 			configProvider,
 			logger,
 			clientFactory,
 		)
+
+		if err != nil {
+			logger.Fatal("Failed to create proxy")
+		}
 	}
 
 	return &echoServer{

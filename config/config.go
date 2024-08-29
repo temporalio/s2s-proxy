@@ -2,6 +2,8 @@ package config
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/temporalio/s2s-proxy/encryption"
@@ -105,4 +107,21 @@ func WriteConfig(s2sConfig S2SProxyConfig, filePath string) error {
 	}
 
 	return nil
+}
+
+func marshalWithoutError(v any) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("%+v", v)
+	}
+
+	return string(data)
+}
+
+func (cfg ClientConfig) String() string {
+	return marshalWithoutError(cfg)
+}
+
+func (cfg ServerConfig) String() string {
+	return marshalWithoutError(cfg)
 }
