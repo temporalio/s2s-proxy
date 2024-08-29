@@ -7,8 +7,10 @@ import (
 	"sync"
 
 	"github.com/temporalio/s2s-proxy/client"
+	adminclient "github.com/temporalio/s2s-proxy/client/admin"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
+
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
@@ -23,8 +25,8 @@ import (
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		clientProvider client.ClientProvider
-		logger         log.Logger
+		adminClient adminservice.AdminServiceClient
+		logger      log.Logger
 	}
 )
 
@@ -35,9 +37,10 @@ func NewAdminServiceProxyServer(
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	logger = log.With(logger, common.ServiceTag(serviceName))
+	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
 	return &adminServiceProxyServer{
-		clientProvider: client.NewClientProvider(clientConfig, clientFactory, logger),
-		logger:         logger,
+		adminClient: adminclient.NewLazyClient(clientProvider),
+		logger:      logger,
 	}
 }
 
@@ -66,12 +69,7 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 }
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
-	adminClient, err := s.clientProvider.GetAdminClient()
-	if err != nil {
-		return nil, err
-	}
-
-	return adminClient.DescribeCluster(ctx, in0)
+	return s.adminClient.DescribeCluster(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) DescribeDLQJob(ctx context.Context, in0 *adminservice.DescribeDLQJobRequest) (*adminservice.DescribeDLQJobResponse, error) {
@@ -103,12 +101,7 @@ func (s *adminServiceProxyServer) GetNamespace(ctx context.Context, in0 *adminse
 }
 
 func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Context, in0 *adminservice.GetNamespaceReplicationMessagesRequest) (*adminservice.GetNamespaceReplicationMessagesResponse, error) {
-	adminClient, err := s.clientProvider.GetAdminClient()
-	if err != nil {
-		return nil, err
-	}
-
-	return adminClient.GetNamespaceReplicationMessages(ctx, in0)
+	return s.adminClient.GetNamespaceReplicationMessages(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetReplicationMessages(ctx context.Context, in0 *adminservice.GetReplicationMessagesRequest) (*adminservice.GetReplicationMessagesResponse, error) {
@@ -132,12 +125,7 @@ func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistory(ctx context.Con
 }
 
 func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistoryV2(ctx context.Context, in0 *adminservice.GetWorkflowExecutionRawHistoryV2Request) (*adminservice.GetWorkflowExecutionRawHistoryV2Response, error) {
-	adminClient, err := s.clientProvider.GetAdminClient()
-	if err != nil {
-		return nil, err
-	}
-
-	return adminClient.GetWorkflowExecutionRawHistoryV2(ctx, in0)
+	return s.adminClient.GetWorkflowExecutionRawHistoryV2(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) ImportWorkflowExecution(ctx context.Context, in0 *adminservice.ImportWorkflowExecutionRequest) (*adminservice.ImportWorkflowExecutionResponse, error) {
@@ -149,11 +137,7 @@ func (s *adminServiceProxyServer) ListClusterMembers(ctx context.Context, in0 *a
 }
 
 func (s *adminServiceProxyServer) ListClusters(ctx context.Context, in0 *adminservice.ListClustersRequest) (*adminservice.ListClustersResponse, error) {
-	adminClient, err := s.clientProvider.GetAdminClient()
-	if err != nil {
-		return nil, err
-	}
-	return adminClient.ListClusters(ctx, in0)
+	return s.adminClient.ListClusters(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) ListHistoryTasks(ctx context.Context, in0 *adminservice.ListHistoryTasksRequest) (*adminservice.ListHistoryTasksResponse, error) {
@@ -238,12 +222,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	outgoingContext, cancel := context.WithCancel(outgoingContext)
 	defer cancel()
 
-	adminClient, err := s.clientProvider.GetAdminClient()
-	if err != nil {
-		return err
-	}
-
-	sourceStreamClient, err := adminClient.StreamWorkflowReplicationMessages(outgoingContext)
+	sourceStreamClient, err := s.adminClient.StreamWorkflowReplicationMessages(outgoingContext)
 	if err != nil {
 		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err
