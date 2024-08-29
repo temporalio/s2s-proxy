@@ -86,7 +86,7 @@ func newEchoClient(
 		}
 	}
 
-	logger = log.With(logger, common.ServiceTag("EchoClient"))
+	logger = log.With(logger, common.ServiceTag("EchoClient"), tag.NewAnyTag("clientForwardAddress", clientConfig.ForwardAddress))
 	return &echoClient{
 		echoServerClusterShard: remoteClusterInfo.clusterShardID,
 		echoClientClusterShard: localClusterInfo.clusterShardID,

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 )
@@ -69,6 +70,72 @@ var (
 			},
 			Client: config.ClientConfig{
 				ForwardAddress: "to-be-added",
+			},
+		},
+	}
+
+	serverProxyConfigWithTLS = config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy1-inbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: serverProxyInboundAddress,
+				TLS: encryption.ServerTLSConfig{
+					CertificatePath:   filepath.Join("certificates", "proxy1.pem"),
+					KeyPath:           filepath.Join("certificates", "proxy1.key"),
+					ClientCAPath:      filepath.Join("certificates", "proxy2.pem"),
+					RequireClientAuth: true,
+				},
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: echoServerAddress,
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy1-outbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: serverProxyOutboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: "to-be-added",
+				TLS: encryption.ClientTLSConfig{
+					CertificatePath: filepath.Join("certificates", "proxy1.pem"),
+					KeyPath:         filepath.Join("certificates", "proxy1.key"),
+					ServerName:      "onebox-proxy2.cluster.tmprl.cloud",
+					ServerCAPath:    filepath.Join("certificates", "proxy2.pem"),
+				},
+			},
+		},
+	}
+
+	clientProxyConfigWithTLS = config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy2-inbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: clientProxyInboundAddress,
+				TLS: encryption.ServerTLSConfig{
+					CertificatePath:   filepath.Join("certificates", "proxy2.pem"),
+					KeyPath:           filepath.Join("certificates", "proxy2.key"),
+					ClientCAPath:      filepath.Join("certificates", "proxy1.pem"),
+					RequireClientAuth: true,
+				},
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: echoClientAddress,
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy2-outbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: clientProxyOutboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: "to-be-added",
+				TLS: encryption.ClientTLSConfig{
+					CertificatePath: filepath.Join("certificates", "proxy2.pem"),
+					KeyPath:         filepath.Join("certificates", "proxy2.key"),
+					ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
+					ServerCAPath:    filepath.Join("certificates", "proxy1.pem"),
+				},
 			},
 		},
 	}
@@ -186,6 +253,20 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
 				s2sProxyConfig: &clientProxyConfig,
+			},
+		},
+		{
+			// echo_server <-> proxy.inbound <- mTLS -> proxy.outbound <-> echo_client
+			name: "server-and-client-side-proxy-mTLS",
+			echoServerInfo: clusterInfo{
+				serverAddress:  echoServerAddress,
+				clusterShardID: serverClusterShard,
+				s2sProxyConfig: &serverProxyConfigWithTLS,
+			},
+			echoClientInfo: clusterInfo{
+				serverAddress:  echoClientAddress,
+				clusterShardID: clientClusterShard,
+				s2sProxyConfig: &clientProxyConfigWithTLS,
 			},
 		},
 	}

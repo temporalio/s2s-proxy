@@ -15,7 +15,7 @@ ALL_SRC         += go.mod
 
 all: bins lint
 bins: s2s-proxy
-clean:  clean-bins
+clean:  clean-bins clean-tests
 
 clean-bins:
 	@printf $(COLOR) "Delete old binaries...\n"
@@ -39,10 +39,18 @@ mocks: clean-mocks
 	@mockgen -source config/config.go -destination mocks/config/config_mock.go -package config
 
 # Tests
-generate-certs:
-	./scripts/generate-certs.sh 
+clean-tests:
+	@printf $(COLOR) "Delete test certificates...\n"
+	@rm -f develop/certificates/proxy1.* develop/certificates/proxy2.*
 
-test:
+TEST_CERT=develop/certificates/proxy1.pem
+$(TEST_CERT): scripts/generate-certs.sh
+	@printf $(COLOR) "Generate test certificates...\n"
+	./scripts/generate-certs.sh
+
+generate-test-certs: $(TEST_CERT)
+
+test: generate-test-certs
 	go test $(TEST_ARG) ./...
 
 cover:
