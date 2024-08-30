@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/client/history"
@@ -195,4 +196,14 @@ func (r *echoClient) sendAndRecv(sequence []int64) (map[int64]bool, error) {
 	_ = stream.CloseSend()
 	r.logger.Info("==== sendAndRecv completed ====")
 	return echoed, nil
+}
+
+// Test workflowservice by making some request.
+// EchoServer echoes the Namespace field in the request as the WorkflowNamespace field in the response.
+func (r *echoClient) pollActivityTaskQueue(req *workflowservice.PollActivityTaskQueueRequest) (*workflowservice.PollActivityTaskQueueResponse, error) {
+	wfclient, err := r.clientProvider.GetWorkflowServiceClient()
+	if err != nil {
+		return nil, err
+	}
+	return wfclient.PollActivityTaskQueue(context.Background(), req)
 }
