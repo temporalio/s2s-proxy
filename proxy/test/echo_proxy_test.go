@@ -275,8 +275,8 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 	sequence := genSequence(1, 100)
 	logger := log.NewTestLogger()
 	for _, ts := range tests {
-		echoServer := newEchoServer(ts.echoServerInfo, ts.echoClientInfo, logger)
-		echoClient := newEchoClient(ts.echoClientInfo, ts.echoServerInfo, logger)
+		echoServer := newEchoServer(ts.echoServerInfo, ts.echoClientInfo, "EchoServer", logger)
+		echoClient := newEchoServer(ts.echoClientInfo, ts.echoServerInfo, "EchoClient", logger)
 		echoServer.start()
 		echoClient.start()
 
@@ -289,12 +289,12 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				}()
 
 				// Test adminservice
-				echoed, err := echoClient.sendAndRecv(sequence)
+				echoed, err := echoClient.SendAndRecv(sequence)
 				s.NoError(err)
 				s.True(verifyEcho(sequence, echoed))
 
 				// Test workflowservice
-				resp, err := echoClient.pollActivityTaskQueue(&workflowservice.PollActivityTaskQueueRequest{
+				resp, err := echoClient.PollActivityTaskQueue(&workflowservice.PollActivityTaskQueueRequest{
 					Namespace: "example-ns",
 				})
 				s.NoError(err)
