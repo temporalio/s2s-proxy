@@ -19,12 +19,12 @@ clean:  clean-bins clean-tests
 
 clean-bins:
 	@printf $(COLOR) "Delete old binaries...\n"
-	@rm -f s2s-proxy
+	@rm -f ./bins/*
 
 # Binary target
 s2s-proxy: $(ALL_SRC)
 	@printf $(COLOR) "Build s2s-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)...\n"
-	CGO_ENABLED=$(CGO_ENABLED) go build -o s2s-proxy ./cmd/proxy
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -o ./bins/s2s-proxy ./cmd/proxy
 
 # Lint target
 lint:
@@ -55,3 +55,15 @@ test: generate-test-certs
 
 cover:
 	go test $(TEST_ARG) -cover ./...
+
+# arch build
+%-build:
+	mkdir -p build/linux/$*
+	@GOOS=linux GOARCH=$* CGO_ENABLED=$(CGO_ENABLED) make clean-bins bins
+	cp ./bins/* build/linux/$*
+
+clean-builds:
+	@printf $(COLOR) "Delete old builds...\n"
+	@rm -rf ./build/*
+
+build: clean-builds arm64-build amd64-build 
