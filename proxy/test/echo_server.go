@@ -244,7 +244,7 @@ func (s *echoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
 }
 
 // Test workflowservice by making some request.
-// EchoServer echoes the Namespace field in the request as the WorkflowNamespace field in the response.
+// Remote server echoes the Namespace field in the request as the WorkflowNamespace field in the response.
 func (r *echoServer) PollActivityTaskQueue(req *workflowservice.PollActivityTaskQueueRequest) (*workflowservice.PollActivityTaskQueueResponse, error) {
 	wfclient, err := r.clientProvider.GetWorkflowServiceClient()
 	if err != nil {
