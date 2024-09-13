@@ -42,8 +42,9 @@ func buildCLIOptions() *cli.App {
 			Usage: "Starts the proxy.",
 			Flags: []cli.Flag{
 				&cli.StringFlag{
-					Name:  config.ConfigPathFlag,
-					Usage: "path to proxy config yaml file",
+					Name:     config.ConfigPathFlag,
+					Usage:    "path to proxy config yaml file",
+					Required: true,
 				},
 			},
 			Action: startProxy,

@@ -30,3 +30,4 @@ go.work.sum
 *.pem
 *.key
 build/
+bins/

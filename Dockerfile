@@ -1,16 +1,19 @@
-ARG BASE_SERVER_IMAGE=temporalio/base-server:1.15.7
+ARG BASE_IMAGE=temporalio/base-server:1.15.7
+ARG ADMIN_TOOLS_IMAGE=temporalio/admin-tools:1.22
 
-FROM ${BASE_SERVER_IMAGE} as base-server
+FROM ${BASE_IMAGE} AS base
 
-WORKDIR /etc/temporal
+# Install tools
+RUN apk add --update --no-cache bash ca-certificates openssh jq
 
-ENV TEMPORAL_HOME=/etc/temporal
+# Admin tools setup
+FROM ${ADMIN_TOOLS_IMAGE} AS temporal-admin-tools
 
-RUN addgroup -g 1000 temporal
-RUN adduser -u 1000 -G temporal -D temporal
-RUN mkdir /etc/temporal/config
-RUN chown -R temporal:temporal /etc/temporal/config
-USER temporal
+WORKDIR /etc/s2s-proxy
 
-# binaries
 COPY ./build/linux/amd64/s2s-proxy /usr/local/bin
+COPY scripts/entrypoint.sh /opt/entrypoint.sh
+COPY scripts/start.sh /opt/start.sh
+
+ENTRYPOINT ["/opt/entrypoint.sh"]
+CMD ["/opt/start.sh"]

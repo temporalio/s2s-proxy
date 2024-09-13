@@ -73,8 +73,7 @@ DOCKER_REPO ?= 612212029444.dkr.ecr.us-west-2.amazonaws.com
 DOCKER_TAG ?= latest
 DOCKER_IMAGE ?= temporal-s2s-proxy
 
-.PHONY: docker-build
-
 # amd64 build only
+.PHONY: docker-build
 docker-build: build
 	@docker build --platform=linux/amd64 . --tag "${DOCKER_REPO}/${DOCKER_IMAGE}:${DOCKER_TAG}"
