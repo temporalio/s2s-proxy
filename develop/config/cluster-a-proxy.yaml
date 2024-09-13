@@ -9,20 +9,3 @@ inbound:
       requireClientAuth: true
   client:
     forwardAddress: "host.docker.internal:7233"
-
-# outbound:
-#   name: "outbound-server"
-#   server:
-#     address: "127.0.0.1:5333"
-#     tls:
-#       certificatePath: ""
-#       keyPath: ""
-#       clientCAPath: ""
-#       requireClientAuth: true
-#   client:
-#     address:
-#     tls:
-#       certificatePath: ""
-#       keyPath: ""
-#       serverCAPath: ""
-#       serverName: ""
