@@ -1,0 +1,11 @@
+inbound:
+  name: "inbound-server"
+  server:
+    listenAddress: "0.0.0.0:5334"
+    tls:
+      certificatePath: ""
+      keyPath: ""
+      clientCAPath: ""
+      requireClientAuth: true
+  client:
+    forwardAddress: "host.docker.internal:7233"
