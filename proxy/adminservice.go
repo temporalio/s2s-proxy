@@ -45,8 +45,16 @@ func NewAdminServiceProxyServer(
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
-
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method AddOrUpdateRemoteCluster is not allowed.")
+	newReq := &adminservice.AddOrUpdateRemoteClusterRequest{
+		FrontendAddress:               "localhost:5333",
+		EnableRemoteClusterConnection: true,
+		FrontendHttpAddress:           "",
+	}
+	s.logger.Debug("AddOrUpdateRemoteCluster",
+		tag.NewAnyTag("original", in0),
+		tag.NewAnyTag("new", newReq),
+	)
+	return s.adminClient.AddOrUpdateRemoteCluster(ctx, newReq)
 }
 
 func (s *adminServiceProxyServer) AddSearchAttributes(ctx context.Context, in0 *adminservice.AddSearchAttributesRequest) (*adminservice.AddSearchAttributesResponse, error) {
