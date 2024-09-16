@@ -37,6 +37,9 @@ func TestSetNamespaceBasedOnCluster(t *testing.T) {
 			Link      *StructWithCircularPointer
 			Namespace string
 		}
+		StructWithMap struct {
+			Nested map[string]any
+		}
 	)
 
 	permutations := []struct {
@@ -170,6 +173,31 @@ func TestSetNamespaceBasedOnCluster(t *testing.T) {
 				return a
 			},
 			expError: "max depth reached",
+		},
+		{
+			testName: "map with namespace keys",
+			makeType: func(ns string) any {
+				return &StructWithMap{
+					Nested: map[string]any{
+						"StructWithNamespaceFieldPtr": &StructWithNamespaceField{
+							Namespace: ns,
+						},
+						"StructWithNamespaceField": StructWithNamespaceField{
+							Namespace: ns,
+						},
+						"Namespace": ns,
+						"NestedNamespace": map[string]any{
+							"Namespace": ns,
+							"NestedStructWithNamespaceFieldPtr": &StructWithNamespaceField{
+								Namespace: ns,
+							},
+							"NestedStructWithNamespaceField": StructWithNamespaceField{
+								Namespace: ns,
+							},
+						},
+					},
+				}
+			},
 		},
 	}
 

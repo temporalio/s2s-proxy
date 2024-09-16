@@ -2,11 +2,13 @@ package interceptor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationspb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/common/api"
@@ -77,6 +79,34 @@ func (i *NamespaceNameTranslator) Intercept(
 	methodName := api.MethodName(info.FullMethod)
 	if strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) {
 		i.logger.Debug("intercepted workflowservice request", tag.NewStringTag("method", methodName))
+
+		switch rt := req.(type) {
+		case *workflowservice.StartWorkflowExecutionRequest:
+			if rt.Namespace == "temporal-system" && (rt.WorkflowType.Name == "force-replication" || rt.WorkflowType.Name == "namespace-handover") {
+				for _, payload := range rt.Input.Payloads {
+					var parsed any
+					err := json.Unmarshal(payload.Data, &parsed)
+					if err != nil {
+						i.logger.Warn("failed to unmarshal force-replication input",
+							tag.NewErrorTag(err),
+							tag.NewStringTag("data", string(payload.Data)),
+						)
+						break // break switch
+					}
+
+					changed, trErr := translateNamespace(parsed, i.requestNameMapping, i.reflectionRecursionMaxDepth)
+					logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Request", req)
+
+					payload.Data, err = json.Marshal(parsed)
+					if err != nil {
+						i.logger.Warn("failed to re-marshal force-replication input as json",
+							tag.NewErrorTag(err),
+							tag.NewAnyTag("data", parsed),
+						)
+					}
+				}
+			}
+		}
 
 		// Translate namespace name in request.
 		changed, trErr := translateNamespace(req, i.requestNameMapping, i.reflectionRecursionMaxDepth)
@@ -191,6 +221,54 @@ func translateNamespaceRecursive(val reflect.Value, mapping map[string]string, d
 					if old != new {
 						changed = true
 					}
+				}
+			}
+		}
+	case reflect.Map:
+		iter := val.MapRange()
+		for iter.Next() {
+			k := iter.Key()
+			v := iter.Value()
+
+			if k.Kind() == reflect.String && (v.Kind() == reflect.String || (v.Kind() == reflect.Interface && v.Elem().Kind() == reflect.String)) {
+				if keyName := k.String(); keyName == "Namespace" || keyName == "WorkflowNamespace" {
+					if v.Kind() == reflect.Interface {
+						v = v.Elem()
+					}
+					old := v.String()
+					new, ok := mapping[old]
+					if !ok {
+						continue
+					}
+					val.SetMapIndex(k, reflect.ValueOf(new))
+					if old != new {
+						changed = true
+					}
+					continue
+				}
+			} else {
+				if v.Kind() == reflect.Interface && v.Elem().Kind() == reflect.Struct {
+					// Non-pointer map values are unaddressable, so we cannot change them in place.
+					// Instead, take a copy, translate the copy, and assign back to map.
+					vCopy := reflect.New(v.Elem().Type())
+					vCopy.Elem().Set(v.Elem())
+
+					c, err := translateNamespaceRecursive(vCopy, mapping, depth+1, maxDepth)
+
+					val.SetMapIndex(k, vCopy.Elem())
+					changed = changed || c
+					if err != nil {
+						return changed, err
+					}
+				} else {
+
+					c, err := translateNamespaceRecursive(v, mapping, depth+1, maxDepth)
+					val.SetMapIndex(k, v)
+					changed = changed || c
+					if err != nil {
+						return changed, err
+					}
+
 				}
 			}
 		}

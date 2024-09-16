@@ -18,7 +18,7 @@ FAILOVER_VERSION_INCREMENT="1000000"
 INITIAL_FAILOVER_VERSION="11011"
 
 PROXY_OUTBOUND_LISTEN_ADDRESS='0.0.0.0:5333'
-PROXY_INBOUND_LISTEN_ADDRESS='0.0.0.0:5334'
+PROXY_INBOUND_LISTEN_ADDRESS='0.0.0.0:7233'
 PROXY_OUTBOUND_FORWARD_ADDRESS='replication.s-cgs-ue1-l.cluster.tmprl-test.cloud:7233'
 
 CERTS_DIR='/etc/temporal/certs'
@@ -83,7 +83,7 @@ global:
 services:
   frontend:
     rpc:
-      grpcPort: 7233
+      grpcPort: 17233
       membershipPort: 6933
       bindOnLocalHost: false
       bindOnIP: 0.0.0.0
@@ -117,7 +117,7 @@ clusterMetadata:
       enabled: true
       initialFailoverVersion: $INITIAL_FAILOVER_VERSION
       rpcName: "frontend"
-      rpcAddress: "localhost:7233"
+      rpcAddress: "localhost:17233"
       httpAddress: "localhost:7243"
 
 dcRedirectionPolicy:
@@ -159,7 +159,7 @@ history.hostLevelCacheMaxSize:
 EOF
 
 cat << EOF | sudo tee /etc/temporal/temporal-ui-server.yaml
-temporalGrpcAddress: 127.0.0.1:7233
+temporalGrpcAddress: 127.0.0.1:17233
 host: 127.0.0.1
 port: 8233
 enableUi: true
@@ -244,7 +244,7 @@ inbound:
       clientCAPath: "$CERTS_DIR/ca.crt"
       requireClientAuth: false
   client:
-    forwardAddress: localhost:7233
+    forwardAddress: localhost:17233
   namespaceNameTranslation:
     mappings:
       - localName: "pglass-s2c-01"

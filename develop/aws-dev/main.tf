@@ -55,6 +55,16 @@ resource "aws_vpc_security_group_ingress_rule" "allow_temporal_server_ingress" {
   to_port           = 7234
 }
 
+resource "aws_vpc_security_group_ingress_rule" "allow_temporal_server_frontend_ingress" {
+  count = length(var.allowed_ingress_cidrs)
+
+  security_group_id = aws_security_group.main.id
+  cidr_ipv4         = var.allowed_ingress_cidrs[count.index]
+  ip_protocol       = "tcp"
+  from_port         = 17233
+  to_port           = 17233
+}
+
 resource "aws_vpc_security_group_ingress_rule" "allow_s2s_proxy_ingress" {
   count = length(var.allowed_ingress_cidrs)
 

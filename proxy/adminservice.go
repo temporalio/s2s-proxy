@@ -46,7 +46,7 @@ func NewAdminServiceProxyServer(
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
 	newReq := &adminservice.AddOrUpdateRemoteClusterRequest{
-		FrontendAddress:               "localhost:5333",
+		FrontendAddress:               "localhost:5333", // proxy outbound
 		EnableRemoteClusterConnection: true,
 		FrontendHttpAddress:           "",
 	}
@@ -186,7 +186,7 @@ func (s *adminServiceProxyServer) RefreshWorkflowTasks(ctx context.Context, in0 
 }
 
 func (s *adminServiceProxyServer) RemoveRemoteCluster(ctx context.Context, in0 *adminservice.RemoveRemoteClusterRequest) (*adminservice.RemoveRemoteClusterResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method RemoveRemoteCluster is not allowed.")
+	return s.adminClient.RemoveRemoteCluster(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) RemoveSearchAttributes(ctx context.Context, in0 *adminservice.RemoveSearchAttributesRequest) (*adminservice.RemoveSearchAttributesResponse, error) {
