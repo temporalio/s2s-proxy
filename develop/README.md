@@ -13,3 +13,11 @@ make service-clients
 cp ${temporal_path}/client/admin/lazy_client_gen.go client/admin/lazy_client_gen.go
 cp ${temporal_path}/client/frontend/lazy_client_gen.go client/frontend/lazy_client_gen.go
 ```
+
+## Build & Push docker image
+
+```
+make docker-build
+make docker-login
+make docker-push
+```
