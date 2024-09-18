@@ -70,10 +70,19 @@ build: clean-builds amd64-build
 
 # Docker
 DOCKER_REPO ?= 612212029444.dkr.ecr.us-west-2.amazonaws.com
-DOCKER_TAG ?= latest
+DOCKER_TAG ?= $(shell whoami | tr -d " ")-local-$(shell git rev-parse --short HEAD)
 DOCKER_IMAGE ?= temporal-s2s-proxy
 
 # amd64 build only
 .PHONY: docker-build
 docker-build: build
 	@docker build --platform=linux/amd64 . --tag "${DOCKER_REPO}/${DOCKER_IMAGE}:${DOCKER_TAG}"
+
+.PHONY: docker-login
+docker-login:
+	@omni aws ecr get-login-password --region us-west-2 --profile temporal/AWSAdministratorAccess \
+	| docker login --username AWS --password-stdin $(DOCKER_REPO)
+
+.PHONY: docker-push
+docker-push: ## Push to repository
+	@docker push ${DOCKER_REPO}/${DOCKER_IMAGE}:${DOCKER_TAG}
