@@ -73,9 +73,8 @@ DOCKER_REPO ?= 612212029444.dkr.ecr.us-west-2.amazonaws.com
 DOCKER_TAG ?= $(shell whoami | tr -d " ")-local-$(shell git rev-parse --short HEAD)
 DOCKER_IMAGE ?= temporal-s2s-proxy
 
-# amd64 build only
 .PHONY: docker-build
-docker-build: build
+docker-build:
 	@docker build --platform=linux/amd64 . --tag "${DOCKER_REPO}/${DOCKER_IMAGE}:${DOCKER_TAG}"
 
 .PHONY: docker-login

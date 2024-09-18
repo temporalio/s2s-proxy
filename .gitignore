@@ -21,9 +21,6 @@
 go.work
 go.work.sum
 
-# Executables produced by temporal repo
-/s2s-proxy
-
 # misc file
 *.yaml
 *.yml
