@@ -23,64 +23,6 @@ permissions:
   contents: read
 
 jobs:
-  publish_to_docker_hub:
-    runs-on: ubuntu-latest
-
-    env:
-      DOCKER_TAG: ${{ github.ref_name }}
-
-    steps:
-      - name: Dump GitHub context
-        id: github_context_step
-        env:
-          GITHUB_CONTEXT: ${{ toJson(github) }}
-        run: echo "$GITHUB_CONTEXT"
-
-      - name: Dump Input context
-        id: input_context_step
-        env:
-          INPUT_CONTEXT: ${{ toJson(inputs) }}
-        run: echo "$INPUT_CONTEXT"
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-          check-latest: true
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PAT }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v3
-        with:
-          images: temporal-s2s-proxy
-          tags: |
-            type=sha,format=short,event=branch
-            type=ref,event=branch
-            type=raw,value=latest,enable=${{ github.event_name == 'push' || github.event.inputs.latest }}
-
-      - name: Build and push
-        if: github.ref_name == 'main' || github.event_name == 'release'
-        id: docker_build
-        uses: docker/build-push-action@v3
-        with:
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          file: Dockerfile
-          context: .
-
   publish_to_cloud_registries:
     runs-on: ubuntu-latest
 
