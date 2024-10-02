@@ -90,7 +90,7 @@ func (s *adminServiceProxyServer) DescribeHistoryHost(ctx context.Context, in0 *
 }
 
 func (s *adminServiceProxyServer) DescribeMutableState(ctx context.Context, in0 *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method DescribeMutableState is not allowed.")
+	return s.adminClient.DescribeMutableState(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetDLQMessages(ctx context.Context, in0 *adminservice.GetDLQMessagesRequest) (*adminservice.GetDLQMessagesResponse, error) {

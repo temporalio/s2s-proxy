@@ -19,7 +19,7 @@ const (
 	// Currently, name translation relies on reflection to recursively find namespace name fields
 	// in request and response objects. This is the default max depth allowed for that recursion
 	// to protect against circular pointers or etc. It is configurable.
-	defaultReflectionRecursionMaxDepth int = 20
+	defaultReflectionRecursionMaxDepth int = 100
 )
 
 type (
@@ -91,18 +91,22 @@ func (i *NamespaceNameTranslator) Intercept(
 	} else if strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
 		i.logger.Debug("intercepted adminservice request", tag.NewStringTag("method", methodName))
 
-		resp, err := handler(ctx, req)
-		if resp == nil {
-			return resp, err
-		}
+		// Translate namespace name in request.
+		changed, trErr := translateNamespace(req, i.requestNameMapping, i.reflectionRecursionMaxDepth)
+		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Request", req)
 
-		// Translate the namespace name in GetNamespaceReplicationMessagesResponse
-		// in order to support namespace replication (create, update).
+		resp, err := handler(ctx, req)
+
 		switch rt := resp.(type) {
 		case *adminservice.GetNamespaceReplicationMessagesResponse:
+			// Need special handling for the `Info.Name` field.
 			changed := translate_GetNamespaceReplicationMessagesResponse(rt, i.responseNameMapping)
 			logTranslateNamespaceResult(i.logger, changed, nil, methodName+"Response", resp)
 		}
+
+		changed, trErr = translateNamespace(resp, i.responseNameMapping, i.reflectionRecursionMaxDepth)
+		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Response", resp)
+
 		return resp, err
 	} else {
 		return handler(ctx, req)
