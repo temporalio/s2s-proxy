@@ -18,8 +18,8 @@ type (
 	}
 
 	proxyOpts struct {
-		IsInbound               bool
-		OutboundExternalAddress string
+		IsInbound bool
+		Config    config.S2SProxyConfig
 	}
 )
 
@@ -59,22 +59,18 @@ func NewProxy(
 	//    server-a <-> proxy-a <-> proxy-b <-> server-b
 	if s2sConfig.Outbound != nil {
 		if proxy.outboundServer, err = createProxy(*s2sConfig.Outbound, logger, clientFactory, proxyOpts{
-			IsInbound:               false,
-			OutboundExternalAddress: "", // outbound server does not need to know this
+			IsInbound: false,
+			Config:    s2sConfig,
 		}); err != nil {
 			return nil, err
 		}
 	}
 
 	if s2sConfig.Inbound != nil {
-		opts := proxyOpts{
+		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory, proxyOpts{
 			IsInbound: true,
-			// only the inbound server needs to translate AddOrUpdateRemoteCluster requests.
-		}
-		if s2sConfig.Outbound != nil {
-			opts.OutboundExternalAddress = s2sConfig.Outbound.Server.ExternalAddress
-		}
-		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory, opts); err != nil {
+			Config:    s2sConfig,
+		}); err != nil {
 			return nil, err
 		}
 	}

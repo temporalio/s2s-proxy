@@ -48,8 +48,8 @@ func NewAdminServiceProxyServer(
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
-	if s.IsInbound && len(s.OutboundExternalAddress) > 0 {
-		in0.FrontendAddress = s.OutboundExternalAddress
+	if outbound := s.Config.Outbound; s.IsInbound && outbound != nil && len(outbound.Server.ExternalAddress) > 0 {
+		in0.FrontendAddress = outbound.Server.ExternalAddress
 	}
 	return s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
 }

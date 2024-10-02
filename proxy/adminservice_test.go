@@ -65,24 +65,52 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 		{
 			name: "no override on outbound request",
 			opts: proxyOpts{
-				IsInbound:               false,
-				OutboundExternalAddress: fakeExternalAddr,
+				IsInbound: false,
+				Config: config.S2SProxyConfig{
+					Outbound: &config.ProxyConfig{
+						Server: config.ServerConfig{
+							ExternalAddress: fakeExternalAddr,
+						},
+					},
+				},
 			},
 			expectedReq: originalReq,
 		},
 		{
 			name: "override on inbound request",
 			opts: proxyOpts{
-				IsInbound:               true,
-				OutboundExternalAddress: fakeExternalAddr,
+				IsInbound: true,
+				Config: config.S2SProxyConfig{
+					Outbound: &config.ProxyConfig{
+						Server: config.ServerConfig{
+							ExternalAddress: fakeExternalAddr,
+						},
+					},
+				},
 			},
 			expectedReq: modifedReq, // request is modified
 		},
 		{
 			name: "no override on empty config",
 			opts: proxyOpts{
-				IsInbound:               true,
-				OutboundExternalAddress: "", // empty
+				IsInbound: true,
+				Config: config.S2SProxyConfig{
+					Outbound: &config.ProxyConfig{
+						Server: config.ServerConfig{
+							ExternalAddress: "", // empty
+						},
+					},
+				},
+			},
+			expectedReq: originalReq,
+		},
+		{
+			name: "nil outbound config",
+			opts: proxyOpts{
+				IsInbound: true,
+				Config: config.S2SProxyConfig{
+					Outbound: nil,
+				},
 			},
 			expectedReq: originalReq,
 		},
