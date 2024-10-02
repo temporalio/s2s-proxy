@@ -25,8 +25,9 @@ import (
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		adminClient adminservice.AdminServiceClient
-		logger      log.Logger
+		adminClient                             adminservice.AdminServiceClient
+		addOrUpdateRemoteClusterAddressOverride string
+		logger                                  log.Logger
 	}
 )
 
@@ -34,18 +35,27 @@ func NewAdminServiceProxyServer(
 	serviceName string,
 	clientConfig config.ClientConfig,
 	clientFactory client.ClientFactory,
+	addOrUpdateRemoteClusterAddressOverride string,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	logger = log.With(logger, common.ServiceTag(serviceName))
 	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
 	return &adminServiceProxyServer{
-		adminClient: adminclient.NewLazyClient(clientProvider),
-		logger:      logger,
+		adminClient:                             adminclient.NewLazyClient(clientProvider),
+		addOrUpdateRemoteClusterAddressOverride: addOrUpdateRemoteClusterAddressOverride,
+		logger:                                  logger,
 	}
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method AddOrUpdateRemoteCluster is not allowed.")
+	if len(s.addOrUpdateRemoteClusterAddressOverride) > 0 {
+		in0 = &adminservice.AddOrUpdateRemoteClusterRequest{
+			FrontendAddress:               s.addOrUpdateRemoteClusterAddressOverride,
+			EnableRemoteClusterConnection: in0.EnableRemoteClusterConnection,
+			FrontendHttpAddress:           in0.FrontendHttpAddress,
+		}
+	}
+	return s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) AddSearchAttributes(ctx context.Context, in0 *adminservice.AddSearchAttributesRequest) (*adminservice.AddSearchAttributesResponse, error) {

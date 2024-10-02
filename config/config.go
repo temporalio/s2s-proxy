@@ -42,6 +42,10 @@ type (
 	S2SProxyConfig struct {
 		Inbound  *ProxyConfig `yaml:"inbound"`
 		Outbound *ProxyConfig `yaml:"outbound"`
+		// AddOrUpdateRemoteClusterAddressOverride is an override for the cluster connection address.
+		// If set, incoming AddOrUpdateRemoteCluster requests are modified to connect the local temporal
+		// server to this address.
+		AddOrUpdateRemoteClusterAddressOverride string `yaml:"addOrUpdateRemoveClusterAddressOverride"`
 	}
 
 	NamespaceNameTranslationConfig struct {

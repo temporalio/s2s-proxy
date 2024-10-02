@@ -16,10 +16,15 @@ type (
 		outboundServer *TemporalAPIServer
 		inboundServer  *TemporalAPIServer
 	}
+
+	createProxyOpts struct {
+		isInbound                               bool
+		addOrUpdateRemoteClusterAddressOverride string
+	}
 )
 
-func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client.ClientFactory, isInbound bool) (*TemporalAPIServer, error) {
-	serverOpts, err := makeServerOptions(logger, cfg, isInbound)
+func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client.ClientFactory, opts createProxyOpts) (*TemporalAPIServer, error) {
+	serverOpts, err := makeServerOptions(logger, cfg, opts.isInbound)
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +32,7 @@ func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client
 	return NewTemporalAPIServer(
 		cfg.Name,
 		cfg.Server,
-		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, logger),
+		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, opts.addOrUpdateRemoteClusterAddressOverride, logger),
 		NewWorkflowServiceProxyServer(cfg.Name, cfg.Client, clientFactory, logger),
 		serverOpts,
 		logger,
@@ -53,13 +58,20 @@ func NewProxy(
 	// Here a remote server can be another proxy as well.
 	//    server-a <-> proxy-a <-> proxy-b <-> server-b
 	if s2sConfig.Outbound != nil {
-		if proxy.outboundServer, err = createProxy(*s2sConfig.Outbound, logger, clientFactory, false); err != nil {
+		if proxy.outboundServer, err = createProxy(*s2sConfig.Outbound, logger, clientFactory, createProxyOpts{
+			isInbound:                               false,
+			addOrUpdateRemoteClusterAddressOverride: "", // outbound server does not need to know this
+		}); err != nil {
 			return nil, err
 		}
 	}
 
 	if s2sConfig.Inbound != nil {
-		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory, true); err != nil {
+		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory, createProxyOpts{
+			isInbound: true,
+			// only the inbound server needs to translates AddOrUpdateRemoteCluster requests.
+			addOrUpdateRemoteClusterAddressOverride: s2sConfig.AddOrUpdateRemoteClusterAddressOverride,
+		}); err != nil {
 			return nil, err
 		}
 	}
