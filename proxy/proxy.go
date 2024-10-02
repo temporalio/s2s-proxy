@@ -18,8 +18,8 @@ type (
 	}
 
 	createProxyOpts struct {
-		isInbound                               bool
-		addOrUpdateRemoteClusterAddressOverride string
+		isInbound               bool
+		outboundExternalAddress string
 	}
 )
 
@@ -32,7 +32,7 @@ func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client
 	return NewTemporalAPIServer(
 		cfg.Name,
 		cfg.Server,
-		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, opts.addOrUpdateRemoteClusterAddressOverride, logger),
+		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, opts.outboundExternalAddress, logger),
 		NewWorkflowServiceProxyServer(cfg.Name, cfg.Client, clientFactory, logger),
 		serverOpts,
 		logger,
@@ -59,8 +59,8 @@ func NewProxy(
 	//    server-a <-> proxy-a <-> proxy-b <-> server-b
 	if s2sConfig.Outbound != nil {
 		if proxy.outboundServer, err = createProxy(*s2sConfig.Outbound, logger, clientFactory, createProxyOpts{
-			isInbound:                               false,
-			addOrUpdateRemoteClusterAddressOverride: "", // outbound server does not need to know this
+			isInbound:               false,
+			outboundExternalAddress: "", // outbound server does not need to know this
 		}); err != nil {
 			return nil, err
 		}
@@ -69,8 +69,8 @@ func NewProxy(
 	if s2sConfig.Inbound != nil {
 		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory, createProxyOpts{
 			isInbound: true,
-			// only the inbound server needs to translates AddOrUpdateRemoteCluster requests.
-			addOrUpdateRemoteClusterAddressOverride: s2sConfig.AddOrUpdateRemoteClusterAddressOverride,
+			// only the inbound server needs to translate AddOrUpdateRemoteCluster requests.
+			outboundExternalAddress: s2sConfig.Outbound.Server.ExternalAddress,
 		}); err != nil {
 			return nil, err
 		}

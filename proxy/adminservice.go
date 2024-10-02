@@ -25,9 +25,9 @@ import (
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		adminClient                             adminservice.AdminServiceClient
-		addOrUpdateRemoteClusterAddressOverride string
-		logger                                  log.Logger
+		adminClient             adminservice.AdminServiceClient
+		outboundExternalAddress string
+		logger                  log.Logger
 	}
 )
 
@@ -35,22 +35,22 @@ func NewAdminServiceProxyServer(
 	serviceName string,
 	clientConfig config.ClientConfig,
 	clientFactory client.ClientFactory,
-	addOrUpdateRemoteClusterAddressOverride string,
+	outboundExternalAddress string,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	logger = log.With(logger, common.ServiceTag(serviceName))
 	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
 	return &adminServiceProxyServer{
-		adminClient:                             adminclient.NewLazyClient(clientProvider),
-		addOrUpdateRemoteClusterAddressOverride: addOrUpdateRemoteClusterAddressOverride,
-		logger:                                  logger,
+		adminClient:             adminclient.NewLazyClient(clientProvider),
+		outboundExternalAddress: outboundExternalAddress,
+		logger:                  logger,
 	}
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
-	if len(s.addOrUpdateRemoteClusterAddressOverride) > 0 {
+	if len(s.outboundExternalAddress) > 0 {
 		in0 = &adminservice.AddOrUpdateRemoteClusterRequest{
-			FrontendAddress:               s.addOrUpdateRemoteClusterAddressOverride,
+			FrontendAddress:               s.outboundExternalAddress,
 			EnableRemoteClusterConnection: in0.EnableRemoteClusterConnection,
 			FrontendHttpAddress:           in0.FrontendHttpAddress,
 		}
