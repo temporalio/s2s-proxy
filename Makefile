@@ -8,7 +8,7 @@ GOLANGCI_LINT ?= $(shell which golangci-lint)
 
 # Disable cgo by default.
 CGO_ENABLED ?= 0
-TEST_ARG ?= -race -timeout=5m 
+TEST_ARG ?= -race -timeout=5m
 
 ALL_SRC         := $(shell find . -name "*.go")
 ALL_SRC         += go.mod
@@ -29,7 +29,7 @@ s2s-proxy: $(ALL_SRC)
 # Lint target
 lint:
 	@printf $(COLOR) "Running golangci-lint...\n"
-	@$(GOLANGCI_LINT) run 
+	@$(GOLANGCI_LINT) run
 
 # Mocks
 clean-mocks:
@@ -37,6 +37,7 @@ clean-mocks:
 
 mocks: clean-mocks
 	@mockgen -source config/config.go -destination mocks/config/config_mock.go -package config
+	@mockgen -source client/temporal_client.go -destination mocks/client/temporal_client_mock.go -package client
 
 # Tests
 clean-tests:

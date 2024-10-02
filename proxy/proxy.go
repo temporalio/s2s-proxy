@@ -17,14 +17,14 @@ type (
 		inboundServer  *TemporalAPIServer
 	}
 
-	createProxyOpts struct {
-		isInbound               bool
-		outboundExternalAddress string
+	proxyOpts struct {
+		IsInbound               bool
+		OutboundExternalAddress string
 	}
 )
 
-func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client.ClientFactory, opts createProxyOpts) (*TemporalAPIServer, error) {
-	serverOpts, err := makeServerOptions(logger, cfg, opts.isInbound)
+func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client.ClientFactory, opts proxyOpts) (*TemporalAPIServer, error) {
+	serverOpts, err := makeServerOptions(logger, cfg, opts.IsInbound)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +32,7 @@ func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client
 	return NewTemporalAPIServer(
 		cfg.Name,
 		cfg.Server,
-		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, opts.outboundExternalAddress, logger),
+		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, opts, logger),
 		NewWorkflowServiceProxyServer(cfg.Name, cfg.Client, clientFactory, logger),
 		serverOpts,
 		logger,
@@ -58,20 +58,23 @@ func NewProxy(
 	// Here a remote server can be another proxy as well.
 	//    server-a <-> proxy-a <-> proxy-b <-> server-b
 	if s2sConfig.Outbound != nil {
-		if proxy.outboundServer, err = createProxy(*s2sConfig.Outbound, logger, clientFactory, createProxyOpts{
-			isInbound:               false,
-			outboundExternalAddress: "", // outbound server does not need to know this
+		if proxy.outboundServer, err = createProxy(*s2sConfig.Outbound, logger, clientFactory, proxyOpts{
+			IsInbound:               false,
+			OutboundExternalAddress: "", // outbound server does not need to know this
 		}); err != nil {
 			return nil, err
 		}
 	}
 
 	if s2sConfig.Inbound != nil {
-		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory, createProxyOpts{
-			isInbound: true,
+		opts := proxyOpts{
+			IsInbound: true,
 			// only the inbound server needs to translate AddOrUpdateRemoteCluster requests.
-			outboundExternalAddress: s2sConfig.Outbound.Server.ExternalAddress,
-		}); err != nil {
+		}
+		if s2sConfig.Outbound != nil {
+			opts.OutboundExternalAddress = s2sConfig.Outbound.Server.ExternalAddress
+		}
+		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory, opts); err != nil {
 			return nil, err
 		}
 	}
