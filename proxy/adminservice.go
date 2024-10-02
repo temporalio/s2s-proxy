@@ -27,7 +27,7 @@ type (
 		adminservice.UnimplementedAdminServiceServer
 		adminClient adminservice.AdminServiceClient
 		logger      log.Logger
-		proxyOpts
+		proxyOptions
 	}
 )
 
@@ -35,20 +35,23 @@ func NewAdminServiceProxyServer(
 	serviceName string,
 	clientConfig config.ClientConfig,
 	clientFactory client.ClientFactory,
-	opts proxyOpts,
+	opts proxyOptions,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	logger = log.With(logger, common.ServiceTag(serviceName))
 	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
 	return &adminServiceProxyServer{
-		adminClient: adminclient.NewLazyClient(clientProvider),
-		logger:      logger,
-		proxyOpts:   opts,
+		adminClient:  adminclient.NewLazyClient(clientProvider),
+		logger:       logger,
+		proxyOptions: opts,
 	}
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
 	if outbound := s.Config.Outbound; s.IsInbound && outbound != nil && len(outbound.Server.ExternalAddress) > 0 {
+		// Override this address so that cross-cluster connections flow through the proxy.
+		// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
+		// from the local temporal server, or the proxy may be deployed behind a load balancer.
 		in0.FrontendAddress = outbound.Server.ExternalAddress
 	}
 	return s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)

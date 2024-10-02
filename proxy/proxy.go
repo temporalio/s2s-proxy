@@ -17,13 +17,13 @@ type (
 		inboundServer  *TemporalAPIServer
 	}
 
-	proxyOpts struct {
+	proxyOptions struct {
 		IsInbound bool
 		Config    config.S2SProxyConfig
 	}
 )
 
-func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client.ClientFactory, opts proxyOpts) (*TemporalAPIServer, error) {
+func createProxy(cfg config.ProxyConfig, logger log.Logger, clientFactory client.ClientFactory, opts proxyOptions) (*TemporalAPIServer, error) {
 	serverOpts, err := makeServerOptions(logger, cfg, opts.IsInbound)
 	if err != nil {
 		return nil, err
@@ -58,7 +58,7 @@ func NewProxy(
 	// Here a remote server can be another proxy as well.
 	//    server-a <-> proxy-a <-> proxy-b <-> server-b
 	if s2sConfig.Outbound != nil {
-		if proxy.outboundServer, err = createProxy(*s2sConfig.Outbound, logger, clientFactory, proxyOpts{
+		if proxy.outboundServer, err = createProxy(*s2sConfig.Outbound, logger, clientFactory, proxyOptions{
 			IsInbound: false,
 			Config:    s2sConfig,
 		}); err != nil {
@@ -67,7 +67,7 @@ func NewProxy(
 	}
 
 	if s2sConfig.Inbound != nil {
-		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory, proxyOpts{
+		if proxy.inboundServer, err = createProxy(*s2sConfig.Inbound, logger, clientFactory, proxyOptions{
 			IsInbound: true,
 			Config:    s2sConfig,
 		}); err != nil {

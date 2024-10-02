@@ -33,7 +33,7 @@ func (s *adminserviceSuite) SetupTest() {
 	s.clientFactoryMock = clientmock.NewMockClientFactory(s.ctrl)
 }
 
-func (s *adminserviceSuite) newAdminServiceProxyServer(opts proxyOpts) adminservice.AdminServiceServer {
+func (s *adminserviceSuite) newAdminServiceProxyServer(opts proxyOptions) adminservice.AdminServiceServer {
 	cfg := config.ClientConfig{
 		ForwardAddress: "fake-forward-address",
 		TLS:            encryption.ClientTLSConfig{},
@@ -59,12 +59,12 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 	cases := []struct {
 		name string
 
-		opts        proxyOpts
+		opts        proxyOptions
 		expectedReq *adminservice.AddOrUpdateRemoteClusterRequest
 	}{
 		{
 			name: "no override on outbound request",
-			opts: proxyOpts{
+			opts: proxyOptions{
 				IsInbound: false,
 				Config: config.S2SProxyConfig{
 					Outbound: &config.ProxyConfig{
@@ -78,7 +78,7 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 		},
 		{
 			name: "override on inbound request",
-			opts: proxyOpts{
+			opts: proxyOptions{
 				IsInbound: true,
 				Config: config.S2SProxyConfig{
 					Outbound: &config.ProxyConfig{
@@ -92,7 +92,7 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 		},
 		{
 			name: "no override on empty config",
-			opts: proxyOpts{
+			opts: proxyOptions{
 				IsInbound: true,
 				Config: config.S2SProxyConfig{
 					Outbound: &config.ProxyConfig{
@@ -106,7 +106,7 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 		},
 		{
 			name: "nil outbound config",
-			opts: proxyOpts{
+			opts: proxyOptions{
 				IsInbound: true,
 				Config: config.S2SProxyConfig{
 					Outbound: nil,
