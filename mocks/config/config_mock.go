@@ -8,98 +8,42 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	grpc "google.golang.org/grpc"
+	config "github.com/temporalio/s2s-proxy/config"
 )
 
-// MockConfig is a mock of Config interface.
-type MockConfig struct {
+// MockConfigProvider is a mock of ConfigProvider interface.
+type MockConfigProvider struct {
 	ctrl     *gomock.Controller
-	recorder *MockConfigMockRecorder
+	recorder *MockConfigProviderMockRecorder
 }
 
-// MockConfigMockRecorder is the mock recorder for MockConfig.
-type MockConfigMockRecorder struct {
-	mock *MockConfig
+// MockConfigProviderMockRecorder is the mock recorder for MockConfigProvider.
+type MockConfigProviderMockRecorder struct {
+	mock *MockConfigProvider
 }
 
-// NewMockConfig creates a new mock instance.
-func NewMockConfig(ctrl *gomock.Controller) *MockConfig {
-	mock := &MockConfig{ctrl: ctrl}
-	mock.recorder = &MockConfigMockRecorder{mock}
+// NewMockConfigProvider creates a new mock instance.
+func NewMockConfigProvider(ctrl *gomock.Controller) *MockConfigProvider {
+	mock := &MockConfigProvider{ctrl: ctrl}
+	mock.recorder = &MockConfigProviderMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockConfig) EXPECT() *MockConfigMockRecorder {
+func (m *MockConfigProvider) EXPECT() *MockConfigProviderMockRecorder {
 	return m.recorder
 }
 
-// GetGRPCServerOptions mocks base method.
-func (m *MockConfig) GetGRPCServerOptions() []grpc.ServerOption {
+// GetS2SProxyConfig mocks base method.
+func (m *MockConfigProvider) GetS2SProxyConfig() config.S2SProxyConfig {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetGRPCServerOptions")
-	ret0, _ := ret[0].([]grpc.ServerOption)
+	ret := m.ctrl.Call(m, "GetS2SProxyConfig")
+	ret0, _ := ret[0].(config.S2SProxyConfig)
 	return ret0
 }
 
-// GetGRPCServerOptions indicates an expected call of GetGRPCServerOptions.
-func (mr *MockConfigMockRecorder) GetGRPCServerOptions() *gomock.Call {
+// GetS2SProxyConfig indicates an expected call of GetS2SProxyConfig.
+func (mr *MockConfigProviderMockRecorder) GetS2SProxyConfig() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetGRPCServerOptions", reflect.TypeOf((*MockConfig)(nil).GetGRPCServerOptions))
-}
-
-// GetInboundServerAddress mocks base method.
-func (m *MockConfig) GetInboundServerAddress() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetInboundServerAddress")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetInboundServerAddress indicates an expected call of GetInboundServerAddress.
-func (mr *MockConfigMockRecorder) GetInboundServerAddress() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetInboundServerAddress", reflect.TypeOf((*MockConfig)(nil).GetInboundServerAddress))
-}
-
-// GetLocalServerRPCAddress mocks base method.
-func (m *MockConfig) GetLocalServerRPCAddress() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLocalServerRPCAddress")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetLocalServerRPCAddress indicates an expected call of GetLocalServerRPCAddress.
-func (mr *MockConfigMockRecorder) GetLocalServerRPCAddress() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLocalServerRPCAddress", reflect.TypeOf((*MockConfig)(nil).GetLocalServerRPCAddress))
-}
-
-// GetOutboundServerAddress mocks base method.
-func (m *MockConfig) GetOutboundServerAddress() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetOutboundServerAddress")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetOutboundServerAddress indicates an expected call of GetOutboundServerAddress.
-func (mr *MockConfigMockRecorder) GetOutboundServerAddress() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOutboundServerAddress", reflect.TypeOf((*MockConfig)(nil).GetOutboundServerAddress))
-}
-
-// GetRemoteServerRPCAddress mocks base method.
-func (m *MockConfig) GetRemoteServerRPCAddress() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRemoteServerRPCAddress")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetRemoteServerRPCAddress indicates an expected call of GetRemoteServerRPCAddress.
-func (mr *MockConfigMockRecorder) GetRemoteServerRPCAddress() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRemoteServerRPCAddress", reflect.TypeOf((*MockConfig)(nil).GetRemoteServerRPCAddress))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetS2SProxyConfig", reflect.TypeOf((*MockConfigProvider)(nil).GetS2SProxyConfig))
 }

@@ -24,6 +24,8 @@ type (
 		// ListenAddress indicates the server address (Host:Port) for listening requests
 		ListenAddress string                     `yaml:"listenAddress"`
 		TLS           encryption.ServerTLSConfig `yaml:"tls"`
+		// ExternalAddress is the externally reachable address of this server.
+		ExternalAddress string `yaml:"externalAddress"`
 	}
 
 	ClientConfig struct {
