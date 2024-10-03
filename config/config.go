@@ -47,8 +47,7 @@ type (
 	}
 
 	NamespaceNameTranslationConfig struct {
-		Mappings                    []NameMappingConfig `yaml:"mappings"`
-		ReflectionRecursionMaxDepth int                 `yaml:"reflectionRecursionMaxDepth"`
+		Mappings []NameMappingConfig `yaml:"mappings"`
 	}
 
 	NameMappingConfig struct {

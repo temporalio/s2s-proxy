@@ -13,7 +13,7 @@ import (
 	replicationspb "go.temporal.io/server/api/replication/v1"
 )
 
-func TestSetNamespaceBasedOnCluster(t *testing.T) {
+func TestTranslateNamespaceName(t *testing.T) {
 	type (
 		StructWithNamespaceField struct {
 			Namespace string
@@ -169,7 +169,6 @@ func TestSetNamespaceBasedOnCluster(t *testing.T) {
 				b.Link = a
 				return a
 			},
-			expError: "max depth reached",
 		},
 	}
 
@@ -181,7 +180,7 @@ func TestSetNamespaceBasedOnCluster(t *testing.T) {
 					expOutput := c.makeType(perm.outputNSName)
 					expChanged := perm.inputNSName != perm.outputNSName
 
-					changed, err := translateNamespace(input, perm.mapping, 0)
+					changed, err := translateNamespace(input, perm.mapping)
 					if len(c.expError) != 0 {
 						require.ErrorContains(t, err, c.expError)
 					} else {
@@ -351,7 +350,8 @@ func TestTranslateNamespaceReplicationMessages(t *testing.T) {
 			} else {
 				expOutput = c.makeType("orig")
 			}
-			changed := translate_GetNamespaceReplicationMessagesResponse(input, c.mapping)
+			changed, err := translateNamespace(input, c.mapping)
+			require.NoError(t, err)
 			require.Equal(t, c.expChanged, changed)
 			require.Equal(t, expOutput, input)
 		})
