@@ -3,6 +3,7 @@ package interceptor
 import (
 	"fmt"
 	"reflect"
+	"slices"
 
 	"github.com/keilerkonzept/visit"
 	replicationspb "go.temporal.io/server/api/replication/v1"
@@ -55,7 +56,7 @@ func translateNamespace(obj any, mapping map[string]string) (bool, error) {
 			}
 			attrs.Info.Name = new
 			changed = changed || old != new
-		} else if vwp.Kind() == reflect.String && contains(namespaceFieldNames, fieldType.Name) {
+		} else if vwp.Kind() == reflect.String && slices.Contains(namespaceFieldNames, fieldType.Name) {
 			// Translate namespace struct fields.
 			old := vwp.String()
 			new, ok := mapping[old]
@@ -71,14 +72,4 @@ func translateNamespace(obj any, mapping map[string]string) (bool, error) {
 		return visit.Continue, nil
 	})
 	return changed, err
-}
-
-// contains returns true if a slice contains a value
-func contains[T comparable](a []T, v T) bool {
-	for _, i := range a {
-		if i == v {
-			return true
-		}
-	}
-	return false
 }
