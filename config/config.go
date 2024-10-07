@@ -68,6 +68,10 @@ type (
 		AllowedActions    AllowedActionsConfig `yaml:"allowedActions"`
 		AllowedNamespaces []string             `yaml:"allowedNamespaces"`
 	}
+
+	ACLPolicy struct {
+		Migration ACLConfig `yaml:"migration"`
+	}
 )
 
 func newConfigProvider(ctx *cli.Context) (ConfigProvider, error) {
@@ -118,23 +122,6 @@ func WriteConfig[T any](config T, filePath string) error {
 
 	return nil
 }
-
-// func LoadACLConfig(configFilePath string) (ACLConfig, error) {
-// 	var aclConfig ACLConfig
-// 	data, err := os.ReadFile(configFilePath)
-// 	if err != nil {
-// 		return aclConfig, err
-// 	}
-
-// 	decoder := yaml.NewDecoder(bytes.NewReader(data))
-// 	decoder.KnownFields(true)
-// 	err = decoder.Decode(&aclConfig)
-// 	if err != nil {
-// 		return aclConfig, err
-// 	}
-
-// 	return aclConfig, nil
-// }
 
 func marshalWithoutError(v any) string {
 	data, err := json.Marshal(v)

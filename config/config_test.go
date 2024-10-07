@@ -27,14 +27,14 @@ func TestLoadS2SConfig(t *testing.T) {
 	}, s2sConfig.Outbound.NamespaceNameTranslation.Mappings)
 }
 
-func TestLoadACLConfig(t *testing.T) {
+func TestLoadACLPolicy(t *testing.T) {
 	currPath, err := os.Getwd()
 	assert.NoError(t, err)
 	samplePath := filepath.Join("..", "develop", "sample-acl-config.yaml")
 
 	fmt.Println(currPath)
-	aclConfig, err := LoadConfig[ACLConfig](samplePath)
+	aclConfig, err := LoadConfig[ACLPolicy](samplePath)
 	assert.NoError(t, err)
-	assert.Greater(t, len(aclConfig.AllowedActions.AdminService), 0)
-	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.AllowedNamespaces)
+	assert.Greater(t, len(aclConfig.Migration.AllowedActions.AdminService), 0)
+	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.Migration.AllowedNamespaces)
 }

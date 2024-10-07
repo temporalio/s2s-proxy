@@ -1,12 +1,13 @@
-allowedActions:
-  adminservice:
-    - AddOrUpdateRemoteCluster
-    - DescribeCluster
-    - DescribeMutableState
-    - GetNamespaceReplicationMessages
-    - GetWorkflowExecutionRawHistoryV2
-    - ListClusters
-    - StreamWorkflowReplicationMessages
-allowedNamespaces:
-  - namespace1
-  - namespace2
+migration:
+  allowedActions:
+    adminservice:
+      - AddOrUpdateRemoteCluster
+      - DescribeCluster
+      - DescribeMutableState
+      - GetNamespaceReplicationMessages
+      - GetWorkflowExecutionRawHistoryV2
+      - ListClusters
+      - StreamWorkflowReplicationMessages
+  allowedNamespaces:
+    - namespace1
+    - namespace2
