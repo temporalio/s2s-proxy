@@ -1,7 +1,7 @@
 inbound:
-  name: "inbound-server"
+  name: "inbound-proxy"
   server:
-    listenAddress:
+    listenAddress: ""
     tls:
       certificatePath: ""
       keyPath: ""
@@ -16,7 +16,7 @@ inbound:
       serverName: ""
 
 outbound:
-  name: "outbound-server"
+  name: "outbound-proxy"
   server:
     listenAddress:
     tls:
@@ -35,4 +35,3 @@ outbound:
     mappings:
       - localName: "example"
         remoteName: "example.cloud"
-    reflectionRecursionMaxDepth: 0

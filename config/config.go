@@ -59,10 +59,19 @@ type (
 		ctx       *cli.Context
 		s2sConfig S2SProxyConfig
 	}
+
+	AllowedActionsConfig struct {
+		AdminService []string `yaml:"adminservice"`
+	}
+
+	ACLConfig struct {
+		AllowedActions    AllowedActionsConfig `yaml:"allowedActions"`
+		AllowedNamespaces []string             `yaml:"allowedNamespaces"`
+	}
 )
 
 func newConfigProvider(ctx *cli.Context) (ConfigProvider, error) {
-	s2sConfig, err := LoadConfig(ctx.String(ConfigPathFlag))
+	s2sConfig, err := LoadConfig[S2SProxyConfig](ctx.String(ConfigPathFlag))
 	if err != nil {
 		return nil, err
 	}
@@ -77,26 +86,26 @@ func (c *cliConfigProvider) GetS2SProxyConfig() S2SProxyConfig {
 	return c.s2sConfig
 }
 
-func LoadConfig(configFilePath string) (S2SProxyConfig, error) {
-	var proxyConfig S2SProxyConfig
+func LoadConfig[T any](configFilePath string) (T, error) {
+	var config T
 	data, err := os.ReadFile(configFilePath)
 	if err != nil {
-		return proxyConfig, err
+		return config, err
 	}
 
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
-	err = decoder.Decode(&proxyConfig)
+	err = decoder.Decode(&config)
 	if err != nil {
-		return proxyConfig, err
+		return config, err
 	}
 
-	return proxyConfig, nil
+	return config, nil
 }
 
-func WriteConfig(s2sConfig S2SProxyConfig, filePath string) error {
+func WriteConfig[T any](config T, filePath string) error {
 	// Marshal the struct to YAML
-	data, err := yaml.Marshal(&s2sConfig)
+	data, err := yaml.Marshal(&config)
 	if err != nil {
 		return err
 	}
@@ -109,6 +118,23 @@ func WriteConfig(s2sConfig S2SProxyConfig, filePath string) error {
 
 	return nil
 }
+
+// func LoadACLConfig(configFilePath string) (ACLConfig, error) {
+// 	var aclConfig ACLConfig
+// 	data, err := os.ReadFile(configFilePath)
+// 	if err != nil {
+// 		return aclConfig, err
+// 	}
+
+// 	decoder := yaml.NewDecoder(bytes.NewReader(data))
+// 	decoder.KnownFields(true)
+// 	err = decoder.Decode(&aclConfig)
+// 	if err != nil {
+// 		return aclConfig, err
+// 	}
+
+// 	return aclConfig, nil
+// }
 
 func marshalWithoutError(v any) string {
 	data, err := json.Marshal(v)
