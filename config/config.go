@@ -61,7 +61,7 @@ type (
 	}
 
 	AllowedActionsConfig struct {
-		AdminService []string `yaml:"adminservice"`
+		AdminService []string `yaml:"adminService"`
 	}
 
 	ACLConfig struct {

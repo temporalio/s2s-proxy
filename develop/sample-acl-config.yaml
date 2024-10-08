@@ -1,6 +1,6 @@
 migration:
   allowedActions:
-    adminservice:
+    adminService:
       - AddOrUpdateRemoteCluster
       - DescribeCluster
       - DescribeMutableState
