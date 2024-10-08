@@ -175,6 +175,7 @@ func (s *adminserviceSuite) TestAccessControl() {
 								AllowedMethods: config.AllowedMethodsConfig{
 									AdminService: []string{
 										"AddSearchAttributes",
+										"GetReplicationMessages",
 									},
 								},
 							},

@@ -2,26 +2,24 @@ package auth
 
 type (
 	AccessControl struct {
-		AllowedList []string
+		allowedMap map[string]bool
 	}
 )
 
 func NewAccesControl(allowedList []string) *AccessControl {
+	allowedMap := make(map[string]bool)
+	for _, allowed := range allowedList {
+		allowedMap[allowed] = true
+	}
 	return &AccessControl{
-		AllowedList: allowedList,
+		allowedMap: allowedMap,
 	}
 }
 
 func (a *AccessControl) IsAllowed(name string) bool {
-	if len(a.AllowedList) == 0 {
+	if len(a.allowedMap) == 0 {
 		return true
 	}
 
-	for _, allowed := range a.AllowedList {
-		if allowed == name {
-			return true
-		}
-	}
-
-	return false
+	return a.allowedMap[name]
 }
