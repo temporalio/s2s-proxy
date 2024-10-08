@@ -65,7 +65,7 @@ type (
 	}
 
 	ACLConfig struct {
-		AllowedActions    AllowedActionsConfig `yaml:"allowedActions"`
+		AllowedMethods    AllowedActionsConfig `yaml:"allowedMethods"`
 		AllowedNamespaces []string             `yaml:"allowedNamespaces"`
 	}
 

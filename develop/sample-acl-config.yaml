@@ -1,5 +1,5 @@
 migration:
-  allowedActions:
+  allowedMethods:
     adminService:
       - AddOrUpdateRemoteCluster
       - DescribeCluster

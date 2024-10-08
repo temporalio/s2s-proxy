@@ -35,6 +35,6 @@ func TestLoadACLPolicy(t *testing.T) {
 	fmt.Println(currPath)
 	aclConfig, err := LoadConfig[ACLPolicy](samplePath)
 	assert.NoError(t, err)
-	assert.Greater(t, len(aclConfig.Migration.AllowedActions.AdminService), 0)
+	assert.Greater(t, len(aclConfig.Migration.AllowedMethods.AdminService), 0)
 	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.Migration.AllowedNamespaces)
 }
