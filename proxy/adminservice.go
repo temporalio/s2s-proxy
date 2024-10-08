@@ -367,6 +367,10 @@ func ClusterShardIDtoString(sd history.ClusterShardID) string {
 func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 ) (retError error) {
+	if !s.access.IsAllowed("StreamWorkflowReplicationMessages") {
+		return status.Errorf(codes.PermissionDenied, "Calling method StreamWorkflowReplicationMessages is not allowed.")
+	}
+
 	defer log.CapturePanic(s.logger, &retError)
 
 	targetMetadata, ok := metadata.FromIncomingContext(targetStreamServer.Context())
