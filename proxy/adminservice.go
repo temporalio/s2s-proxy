@@ -60,7 +60,7 @@ func NewAdminServiceProxyServer(
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
 	if !s.access.IsAllowed("AddOrUpdateRemoteCluster") {
-		return nil, status.Errorf(codes.PermissionDenied, "Calling method AddSearchAttributes is not allowed.")
+		return nil, status.Errorf(codes.PermissionDenied, "Calling method AddOrUpdateRemoteCluster is not allowed.")
 	}
 
 	if outbound := s.Config.Outbound; s.IsInbound && outbound != nil && len(outbound.Server.ExternalAddress) > 0 {
