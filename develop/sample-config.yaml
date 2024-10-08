@@ -16,18 +16,18 @@ inbound:
       serverName: ""
   aclPolicy:
     migration:
-    allowedMethods:
-      adminService:
-        - AddOrUpdateRemoteCluster
-        - DescribeCluster
-        - DescribeMutableState
-        - GetNamespaceReplicationMessages
-        - GetWorkflowExecutionRawHistoryV2
-        - ListClusters
-        - StreamWorkflowReplicationMessages
-    allowedNamespaces:
-      - namespace1
-      - namespace2
+      allowedMethods:
+        adminService:
+          - AddOrUpdateRemoteCluster
+          - DescribeCluster
+          - DescribeMutableState
+          - GetNamespaceReplicationMessages
+          - GetWorkflowExecutionRawHistoryV2
+          - ListClusters
+          - StreamWorkflowReplicationMessages
+      allowedNamespaces:
+        - namespace1
+        - namespace2
 
 outbound:
   name: "outbound-proxy"
