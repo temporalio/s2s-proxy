@@ -128,3 +128,85 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 		})
 	}
 }
+
+func (s *adminserviceSuite) TestAccessControl() {
+	cases := []struct {
+		name string
+
+		opts       proxyOptions
+		notAllowed bool
+	}{
+		{
+			name: "no AccessControl",
+			opts: proxyOptions{
+				IsInbound: true,
+				Config: config.S2SProxyConfig{
+					Inbound: &config.ProxyConfig{},
+				},
+			},
+		},
+		{
+			name: "With AccessControl Allowed",
+			opts: proxyOptions{
+				IsInbound: true,
+				Config: config.S2SProxyConfig{
+					Inbound: &config.ProxyConfig{
+						ACLPolicy: &config.ACLPolicy{
+							Migration: config.ACLConfig{
+								AllowedMethods: config.AllowedMethodsConfig{
+									AdminService: []string{
+										"AddOrUpdateRemoteCluster",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "With AccessControl Not Allowed",
+			opts: proxyOptions{
+				IsInbound: true,
+				Config: config.S2SProxyConfig{
+					Inbound: &config.ProxyConfig{
+						ACLPolicy: &config.ACLPolicy{
+							Migration: config.ACLConfig{
+								AllowedMethods: config.AllowedMethodsConfig{
+									AdminService: []string{
+										"AddSearchAttributes",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			notAllowed: true,
+		},
+	}
+
+	cfg := config.ClientConfig{
+		ForwardAddress: "fake-forward-address",
+		TLS:            encryption.ClientTLSConfig{},
+	}
+
+	for _, c := range cases {
+		s.Run(c.name, func() {
+			ctx := context.Background()
+			if !c.notAllowed {
+				s.clientFactoryMock.EXPECT().NewRemoteAdminClient(cfg).Return(s.adminClientMock, nil).Times(1)
+				s.adminClientMock.EXPECT().AddOrUpdateRemoteCluster(ctx, gomock.Any()).Return(nil, nil)
+			}
+
+			server := NewAdminServiceProxyServer("test-service-name", cfg, s.clientFactoryMock, c.opts, log.NewTestLogger())
+			_, err := server.AddOrUpdateRemoteCluster(ctx, &adminservice.AddOrUpdateRemoteClusterRequest{})
+
+			if c.notAllowed {
+				s.ErrorContains(err, "PermissionDenied")
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
