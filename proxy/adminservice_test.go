@@ -153,7 +153,7 @@ func (s *adminserviceSuite) TestAccessControl() {
 					Inbound: &config.ProxyConfig{
 						ACLPolicy: &config.ACLPolicy{
 							Migration: config.ACLConfig{
-								AllowedMethods: config.AllowedMethodsConfig{
+								AllowedMethods: config.AllowedMethods{
 									AdminService: []string{
 										"AddOrUpdateRemoteCluster",
 									},
@@ -172,7 +172,7 @@ func (s *adminserviceSuite) TestAccessControl() {
 					Inbound: &config.ProxyConfig{
 						ACLPolicy: &config.ACLPolicy{
 							Migration: config.ACLConfig{
-								AllowedMethods: config.AllowedMethodsConfig{
+								AllowedMethods: config.AllowedMethods{
 									AdminService: []string{
 										"AddSearchAttributes",
 										"GetReplicationMessages",

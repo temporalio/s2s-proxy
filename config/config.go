@@ -61,13 +61,13 @@ type (
 		s2sConfig S2SProxyConfig
 	}
 
-	AllowedMethodsConfig struct {
+	AllowedMethods struct {
 		AdminService []string `yaml:"adminService"`
 	}
 
 	ACLConfig struct {
-		AllowedMethods    AllowedMethodsConfig `yaml:"allowedMethods"`
-		AllowedNamespaces []string             `yaml:"allowedNamespaces"`
+		AllowedMethods    AllowedMethods `yaml:"allowedMethods"`
+		AllowedNamespaces []string       `yaml:"allowedNamespaces"`
 	}
 
 	ACLPolicy struct {
