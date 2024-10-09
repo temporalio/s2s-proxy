@@ -180,7 +180,7 @@ func TestTranslateNamespaceName(t *testing.T) {
 					expOutput := c.makeType(perm.outputNSName)
 					expChanged := perm.inputNSName != perm.outputNSName
 
-					changed, err := translateNamespace(input, perm.mapping)
+					changed, err := visitNamespace(input, createTranslator(perm.mapping))
 					if len(c.expError) != 0 {
 						require.ErrorContains(t, err, c.expError)
 					} else {
@@ -350,7 +350,7 @@ func TestTranslateNamespaceReplicationMessages(t *testing.T) {
 			} else {
 				expOutput = c.makeType("orig")
 			}
-			changed, err := translateNamespace(input, c.mapping)
+			changed, err := visitNamespace(input, createTranslator(c.mapping))
 			require.NoError(t, err)
 			require.Equal(t, c.expChanged, changed)
 			require.Equal(t, expOutput, input)

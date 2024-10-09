@@ -57,6 +57,20 @@ func (i *AccessControlInterceptor) Intercept(
 		}
 	}
 
+	if i.namespaceAccess != nil && strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) ||
+		strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
+
+		notAllowed, err := visitNamespace(req, func(name string) (string, bool) {
+			allowed := i.namespaceAccess.IsAllowed(name)
+			return name, !allowed
+		})
+
+		if notAllowed || err != nil {
+			methodName := api.MethodName(info.FullMethod)
+			return nil, status.Errorf(codes.PermissionDenied, fmt.Sprintf("Calling method %s is not allowed.", methodName))
+		}
+	}
+
 	return handler(ctx, req)
 }
 
