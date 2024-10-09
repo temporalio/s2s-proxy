@@ -332,11 +332,12 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 					echoServer.stop()
 				}()
 
+				// Test adminservice unary method
 				r, err := echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
 				s.NoError(err)
 				s.Equal("EchoServer", r.ClusterName)
 
-				// Test adminservice
+				// Test adminservice stream method
 				echoed, err := echoClient.SendAndRecv(sequence)
 				s.NoError(err)
 				s.True(verifyEcho(sequence, echoed))
