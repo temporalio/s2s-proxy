@@ -9,6 +9,7 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 )
@@ -153,6 +154,7 @@ var (
 			ACLPolicy: &config.ACLPolicy{
 				AllowedMethods: config.AllowedMethods{
 					AdminService: []string{
+						"DescribeCluster",
 						"StreamWorkflowReplicationMessages",
 					},
 				},
@@ -329,6 +331,10 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 					echoClient.stop()
 					echoServer.stop()
 				}()
+
+				r, err := echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
+				s.NoError(err)
+				s.Equal("EchoServer", r.ClusterName)
 
 				// Test adminservice
 				echoed, err := echoClient.SendAndRecv(sequence)

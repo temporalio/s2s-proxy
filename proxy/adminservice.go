@@ -6,7 +6,6 @@ import (
 	"io"
 	"sync"
 
-	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
 	adminclient "github.com/temporalio/s2s-proxy/client/admin"
 	"github.com/temporalio/s2s-proxy/common"
@@ -39,20 +38,11 @@ func NewAdminServiceProxyServer(
 ) adminservice.AdminServiceServer {
 	logger = log.With(logger, common.ServiceTag(serviceName))
 	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
-	server := &adminServiceProxyServer{
+	return &adminServiceProxyServer{
 		adminClient:  adminclient.NewLazyClient(clientProvider),
 		logger:       logger,
 		proxyOptions: opts,
 	}
-
-	if opts.IsInbound {
-		if inbound := opts.Config.Inbound; inbound != nil && inbound.ACLPolicy != nil {
-			allowedList := inbound.ACLPolicy.AllowedMethods.AdminService
-			return newAdminServiceAuth(server, auth.NewAccesControl(allowedList))
-		}
-	}
-
-	return server
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {

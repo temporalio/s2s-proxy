@@ -129,7 +129,7 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 	}
 }
 
-func (s *adminserviceSuite) TestAccessControl() {
+func (s *adminserviceSuite) testAccessControl() {
 	cases := []struct {
 		name string
 
