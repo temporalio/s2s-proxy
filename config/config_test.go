@@ -25,16 +25,9 @@ func TestLoadS2SConfig(t *testing.T) {
 			RemoteName: "example.cloud",
 		},
 	}, s2sConfig.Outbound.NamespaceNameTranslation.Mappings)
-}
 
-func TestLoadACLPolicy(t *testing.T) {
-	currPath, err := os.Getwd()
-	assert.NoError(t, err)
-	samplePath := filepath.Join("..", "develop", "sample-acl-config.yaml")
-
-	fmt.Println(currPath)
-	aclConfig, err := LoadConfig[ACLPolicy](samplePath)
-	assert.NoError(t, err)
-	assert.Greater(t, len(aclConfig.Migration.AllowedMethods.AdminService), 0)
-	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.Migration.AllowedNamespaces)
+	aclConfig := s2sConfig.Inbound.ACLPolicy
+	assert.NotEmpty(t, aclConfig)
+	assert.Greater(t, len(aclConfig.AllowedMethods.AdminService), 0)
+	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.AllowedNamespaces)
 }

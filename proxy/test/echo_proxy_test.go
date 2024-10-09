@@ -140,6 +140,34 @@ var (
 			},
 		},
 	}
+
+	serverProxyConfigWithACL = config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy1-inbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: serverProxyInboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: echoServerAddress,
+			},
+			ACLPolicy: &config.ACLPolicy{
+				AllowedMethods: config.AllowedMethods{
+					AdminService: []string{
+						"StreamWorkflowReplicationMessages",
+					},
+				},
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy1-outbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: serverProxyOutboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: "to-be-added",
+			},
+		},
+	}
 )
 
 type (
@@ -198,6 +226,7 @@ func genSequence(initial int64, n int) []int64 {
 	return sequence
 }
 
+// Run make generate-test-certs first befor running this test
 func (s *proxyTestSuite) Test_Echo_Success() {
 	tests := []struct {
 		name           string
@@ -268,6 +297,19 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
 				s2sProxyConfig: &clientProxyConfigWithTLS,
+			},
+		},
+		{
+			name: "server-and-client-side-proxy-ACL",
+			echoServerInfo: clusterInfo{
+				serverAddress:  echoServerAddress,
+				clusterShardID: serverClusterShard,
+				s2sProxyConfig: &serverProxyConfigWithACL,
+			},
+			echoClientInfo: clusterInfo{
+				serverAddress:  echoClientAddress,
+				clusterShardID: clientClusterShard,
+				s2sProxyConfig: &clientProxyConfig,
 			},
 		},
 	}

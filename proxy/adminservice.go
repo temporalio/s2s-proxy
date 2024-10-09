@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
 	adminclient "github.com/temporalio/s2s-proxy/client/admin"
 	"github.com/temporalio/s2s-proxy/common"
@@ -17,9 +18,7 @@ import (
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
-	codes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	status "google.golang.org/grpc/status"
 )
 
 type (
@@ -40,11 +39,20 @@ func NewAdminServiceProxyServer(
 ) adminservice.AdminServiceServer {
 	logger = log.With(logger, common.ServiceTag(serviceName))
 	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
-	return &adminServiceProxyServer{
+	server := &adminServiceProxyServer{
 		adminClient:  adminclient.NewLazyClient(clientProvider),
 		logger:       logger,
 		proxyOptions: opts,
 	}
+
+	if opts.IsInbound {
+		if inbound := opts.Config.Inbound; inbound != nil && inbound.ACLPolicy != nil {
+			allowedList := inbound.ACLPolicy.AllowedMethods.AdminService
+			return newAdminServiceAuth(server, auth.NewAccesControl(allowedList))
+		}
+	}
+
+	return server
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
@@ -58,23 +66,23 @@ func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, 
 }
 
 func (s *adminServiceProxyServer) AddSearchAttributes(ctx context.Context, in0 *adminservice.AddSearchAttributesRequest) (*adminservice.AddSearchAttributesResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method AddSearchAttributes is not allowed.")
+	return s.adminClient.AddSearchAttributes(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) AddTasks(ctx context.Context, in0 *adminservice.AddTasksRequest) (*adminservice.AddTasksResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method AddTasks is not allowed.")
+	return s.adminClient.AddTasks(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) CancelDLQJob(ctx context.Context, in0 *adminservice.CancelDLQJobRequest) (*adminservice.CancelDLQJobResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method CancelDLQJob is not allowed.")
+	return s.adminClient.CancelDLQJob(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) CloseShard(ctx context.Context, in0 *adminservice.CloseShardRequest) (*adminservice.CloseShardResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method CloseShard is not allowed.")
+	return s.adminClient.CloseShard(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, in0 *adminservice.DeleteWorkflowExecutionRequest) (*adminservice.DeleteWorkflowExecutionResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method DeleteWorkflowExecution is not allowed.")
+	return s.adminClient.DeleteWorkflowExecution(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
@@ -82,11 +90,11 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 }
 
 func (s *adminServiceProxyServer) DescribeDLQJob(ctx context.Context, in0 *adminservice.DescribeDLQJobRequest) (*adminservice.DescribeDLQJobResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method DescribeDLQJob is not allowed.")
+	return s.adminClient.DescribeDLQJob(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) DescribeHistoryHost(ctx context.Context, in0 *adminservice.DescribeHistoryHostRequest) (*adminservice.DescribeHistoryHostResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method DescribeHistoryHost is not allowed.")
+	return s.adminClient.DescribeHistoryHost(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) DescribeMutableState(ctx context.Context, in0 *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
@@ -94,19 +102,19 @@ func (s *adminServiceProxyServer) DescribeMutableState(ctx context.Context, in0 
 }
 
 func (s *adminServiceProxyServer) GetDLQMessages(ctx context.Context, in0 *adminservice.GetDLQMessagesRequest) (*adminservice.GetDLQMessagesResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method GetDLQMessages is not allowed.")
+	return s.adminClient.GetDLQMessages(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetDLQReplicationMessages(ctx context.Context, in0 *adminservice.GetDLQReplicationMessagesRequest) (*adminservice.GetDLQReplicationMessagesResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method GetDLQReplicationMessages is not allowed.")
+	return s.adminClient.GetDLQReplicationMessages(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetDLQTasks(ctx context.Context, in0 *adminservice.GetDLQTasksRequest) (*adminservice.GetDLQTasksResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method GetDLQTasks is not allowed.")
+	return s.adminClient.GetDLQTasks(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetNamespace(ctx context.Context, in0 *adminservice.GetNamespaceRequest) (*adminservice.GetNamespaceResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method GetNamespace is not allowed.")
+	return s.adminClient.GetNamespace(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Context, in0 *adminservice.GetNamespaceReplicationMessagesRequest) (*adminservice.GetNamespaceReplicationMessagesResponse, error) {
@@ -114,23 +122,23 @@ func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Co
 }
 
 func (s *adminServiceProxyServer) GetReplicationMessages(ctx context.Context, in0 *adminservice.GetReplicationMessagesRequest) (*adminservice.GetReplicationMessagesResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method GetReplicationMessages is not allowed.")
+	return s.adminClient.GetReplicationMessages(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetSearchAttributes(ctx context.Context, in0 *adminservice.GetSearchAttributesRequest) (*adminservice.GetSearchAttributesResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method GetSearchAttributes is not allowed.")
+	return s.adminClient.GetSearchAttributes(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetShard(ctx context.Context, in0 *adminservice.GetShardRequest) (*adminservice.GetShardResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method GetShard is not allowed.")
+	return s.adminClient.GetShard(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetTaskQueueTasks(ctx context.Context, in0 *adminservice.GetTaskQueueTasksRequest) (*adminservice.GetTaskQueueTasksResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method GetTaskQueueTasks is not allowed.")
+	return s.adminClient.GetTaskQueueTasks(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistory(ctx context.Context, in0 *adminservice.GetWorkflowExecutionRawHistoryRequest) (*adminservice.GetWorkflowExecutionRawHistoryResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method GetWorkflowExecutionRawHistory is not allowed.")
+	return s.adminClient.GetWorkflowExecutionRawHistory(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistoryV2(ctx context.Context, in0 *adminservice.GetWorkflowExecutionRawHistoryV2Request) (*adminservice.GetWorkflowExecutionRawHistoryV2Response, error) {
@@ -138,11 +146,11 @@ func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistoryV2(ctx context.C
 }
 
 func (s *adminServiceProxyServer) ImportWorkflowExecution(ctx context.Context, in0 *adminservice.ImportWorkflowExecutionRequest) (*adminservice.ImportWorkflowExecutionResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method ImportWorkflowExecution is not allowed.")
+	return s.adminClient.ImportWorkflowExecution(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) ListClusterMembers(ctx context.Context, in0 *adminservice.ListClusterMembersRequest) (*adminservice.ListClusterMembersResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method ListClusterMembers is not allowed.")
+	return s.adminClient.ListClusterMembers(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) ListClusters(ctx context.Context, in0 *adminservice.ListClustersRequest) (*adminservice.ListClustersResponse, error) {
@@ -150,55 +158,55 @@ func (s *adminServiceProxyServer) ListClusters(ctx context.Context, in0 *adminse
 }
 
 func (s *adminServiceProxyServer) ListHistoryTasks(ctx context.Context, in0 *adminservice.ListHistoryTasksRequest) (*adminservice.ListHistoryTasksResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method ListHistoryTasks is not allowed.")
+	return s.adminClient.ListHistoryTasks(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) ListQueues(ctx context.Context, in0 *adminservice.ListQueuesRequest) (*adminservice.ListQueuesResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method ListQueues is not allowed.")
+	return s.adminClient.ListQueues(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) MergeDLQMessages(ctx context.Context, in0 *adminservice.MergeDLQMessagesRequest) (*adminservice.MergeDLQMessagesResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method MergeDLQMessages is not allowed.")
+	return s.adminClient.MergeDLQMessages(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) MergeDLQTasks(ctx context.Context, in0 *adminservice.MergeDLQTasksRequest) (*adminservice.MergeDLQTasksResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method MergeDLQTasks is not allowed.")
+	return s.adminClient.MergeDLQTasks(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) PurgeDLQMessages(ctx context.Context, in0 *adminservice.PurgeDLQMessagesRequest) (*adminservice.PurgeDLQMessagesResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method PurgeDLQMessages is not allowed.")
+	return s.adminClient.PurgeDLQMessages(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) PurgeDLQTasks(ctx context.Context, in0 *adminservice.PurgeDLQTasksRequest) (*adminservice.PurgeDLQTasksResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method PurgeDLQTasks is not allowed.")
+	return s.adminClient.PurgeDLQTasks(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) ReapplyEvents(ctx context.Context, in0 *adminservice.ReapplyEventsRequest) (*adminservice.ReapplyEventsResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method ReapplyEvents is not allowed.")
+	return s.adminClient.ReapplyEvents(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) RebuildMutableState(ctx context.Context, in0 *adminservice.RebuildMutableStateRequest) (*adminservice.RebuildMutableStateResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method RebuildMutableState is not allowed.")
+	return s.adminClient.RebuildMutableState(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) RefreshWorkflowTasks(ctx context.Context, in0 *adminservice.RefreshWorkflowTasksRequest) (*adminservice.RefreshWorkflowTasksResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method RefreshWorkflowTasks is not allowed.")
+	return s.adminClient.RefreshWorkflowTasks(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) RemoveRemoteCluster(ctx context.Context, in0 *adminservice.RemoveRemoteClusterRequest) (*adminservice.RemoveRemoteClusterResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method RemoveRemoteCluster is not allowed.")
+	return s.adminClient.RemoveRemoteCluster(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) RemoveSearchAttributes(ctx context.Context, in0 *adminservice.RemoveSearchAttributesRequest) (*adminservice.RemoveSearchAttributesResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method RemoveSearchAttributes is not allowed.")
+	return s.adminClient.RemoveSearchAttributes(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) RemoveTask(ctx context.Context, in0 *adminservice.RemoveTaskRequest) (*adminservice.RemoveTaskResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method RemoveTask is not allowed.")
+	return s.adminClient.RemoveTask(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) ResendReplicationTasks(ctx context.Context, in0 *adminservice.ResendReplicationTasksRequest) (*adminservice.ResendReplicationTasksResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method ResendReplicationTasks is not allowed.")
+	return s.adminClient.ResendReplicationTasks(ctx, in0)
 }
 
 func ClusterShardIDtoString(sd history.ClusterShardID) string {

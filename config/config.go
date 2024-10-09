@@ -39,6 +39,7 @@ type (
 		Server                   ServerConfig                   `yaml:"server"`
 		Client                   ClientConfig                   `yaml:"client"`
 		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
+		ACLPolicy                *ACLPolicy                     `yaml:"aclPolicy"`
 	}
 
 	S2SProxyConfig struct {
@@ -60,17 +61,13 @@ type (
 		s2sConfig S2SProxyConfig
 	}
 
-	AllowedActionsConfig struct {
+	AllowedMethods struct {
 		AdminService []string `yaml:"adminService"`
 	}
 
-	ACLConfig struct {
-		AllowedMethods    AllowedActionsConfig `yaml:"allowedMethods"`
-		AllowedNamespaces []string             `yaml:"allowedNamespaces"`
-	}
-
 	ACLPolicy struct {
-		Migration ACLConfig `yaml:"migration"`
+		AllowedMethods    AllowedMethods `yaml:"allowedMethods"`
+		AllowedNamespaces []string       `yaml:"allowedNamespaces"`
 	}
 )
 
