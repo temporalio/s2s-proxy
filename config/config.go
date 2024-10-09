@@ -65,13 +65,9 @@ type (
 		AdminService []string `yaml:"adminService"`
 	}
 
-	ACLConfig struct {
+	ACLPolicy struct {
 		AllowedMethods    AllowedMethods `yaml:"allowedMethods"`
 		AllowedNamespaces []string       `yaml:"allowedNamespaces"`
-	}
-
-	ACLPolicy struct {
-		Migration ACLConfig `yaml:"migration"`
 	}
 )
 

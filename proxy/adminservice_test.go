@@ -152,11 +152,9 @@ func (s *adminserviceSuite) TestAccessControl() {
 				Config: config.S2SProxyConfig{
 					Inbound: &config.ProxyConfig{
 						ACLPolicy: &config.ACLPolicy{
-							Migration: config.ACLConfig{
-								AllowedMethods: config.AllowedMethods{
-									AdminService: []string{
-										"AddOrUpdateRemoteCluster",
-									},
+							AllowedMethods: config.AllowedMethods{
+								AdminService: []string{
+									"AddOrUpdateRemoteCluster",
 								},
 							},
 						},
@@ -171,12 +169,10 @@ func (s *adminserviceSuite) TestAccessControl() {
 				Config: config.S2SProxyConfig{
 					Inbound: &config.ProxyConfig{
 						ACLPolicy: &config.ACLPolicy{
-							Migration: config.ACLConfig{
-								AllowedMethods: config.AllowedMethods{
-									AdminService: []string{
-										"AddSearchAttributes",
-										"GetReplicationMessages",
-									},
+							AllowedMethods: config.AllowedMethods{
+								AdminService: []string{
+									"AddSearchAttributes",
+									"GetReplicationMessages",
 								},
 							},
 						},

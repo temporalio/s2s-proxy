@@ -28,6 +28,6 @@ func TestLoadS2SConfig(t *testing.T) {
 
 	aclConfig := s2sConfig.Inbound.ACLPolicy
 	assert.NotEmpty(t, aclConfig)
-	assert.Greater(t, len(aclConfig.Migration.AllowedMethods.AdminService), 0)
-	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.Migration.AllowedNamespaces)
+	assert.Greater(t, len(aclConfig.AllowedMethods.AdminService), 0)
+	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.AllowedNamespaces)
 }
