@@ -60,13 +60,18 @@ func newEchoServer(
 	remoteClusterInfo clusterInfo,
 	serviceName string,
 	logger log.Logger,
+	namespaces []string,
 ) *echoServer {
-
+	ns := map[string]bool{}
+	for _, n := range namespaces {
+		ns[n] = true
+	}
 	// echoAdminService handles StreamWorkflowReplicationMessages call from remote server.
 	// It acts as stream sender by echoing back InclusiveLowWatermark in SyncReplicationState message.
 	senderAdminService := &echoAdminService{
 		serviceName: serviceName,
 		logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.serverAddress)),
+		namespaces:  ns,
 	}
 
 	senderWorkflowService := &echoWorkflowService{
@@ -186,6 +191,15 @@ func (s *echoServer) DescribeCluster(req *adminservice.DescribeClusterRequest) (
 	}
 
 	return adminClient.DescribeCluster(context.Background(), req)
+}
+
+func (s *echoServer) DescribeMutableState(req *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
+	adminClient, err := s.clientProvider.GetAdminClient()
+	if err != nil {
+		return nil, err
+	}
+
+	return adminClient.DescribeMutableState(context.Background(), req)
 }
 
 // Method for testing replication stream.

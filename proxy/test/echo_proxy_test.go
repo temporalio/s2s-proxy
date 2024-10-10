@@ -33,146 +33,6 @@ var (
 		ClusterID: 2,
 		ShardID:   4,
 	}
-
-	serverProxyConfig = config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy1-inbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: serverProxyInboundAddress,
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: echoServerAddress,
-			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy1-outbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: serverProxyOutboundAddress,
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: "to-be-added",
-			},
-		},
-	}
-
-	clientProxyConfig = config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy2-inbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: clientProxyInboundAddress,
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: echoClientAddress,
-			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy2-outbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: clientProxyOutboundAddress,
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: "to-be-added",
-			},
-		},
-	}
-
-	serverProxyConfigWithTLS = config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy1-inbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: serverProxyInboundAddress,
-				TLS: encryption.ServerTLSConfig{
-					CertificatePath:   filepath.Join("certificates", "proxy1.pem"),
-					KeyPath:           filepath.Join("certificates", "proxy1.key"),
-					ClientCAPath:      filepath.Join("certificates", "proxy2.pem"),
-					RequireClientAuth: true,
-				},
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: echoServerAddress,
-			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy1-outbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: serverProxyOutboundAddress,
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: "to-be-added",
-				TLS: encryption.ClientTLSConfig{
-					CertificatePath: filepath.Join("certificates", "proxy1.pem"),
-					KeyPath:         filepath.Join("certificates", "proxy1.key"),
-					ServerName:      "onebox-proxy2.cluster.tmprl.cloud",
-					ServerCAPath:    filepath.Join("certificates", "proxy2.pem"),
-				},
-			},
-		},
-	}
-
-	clientProxyConfigWithTLS = config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy2-inbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: clientProxyInboundAddress,
-				TLS: encryption.ServerTLSConfig{
-					CertificatePath:   filepath.Join("certificates", "proxy2.pem"),
-					KeyPath:           filepath.Join("certificates", "proxy2.key"),
-					ClientCAPath:      filepath.Join("certificates", "proxy1.pem"),
-					RequireClientAuth: true,
-				},
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: echoClientAddress,
-			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy2-outbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: clientProxyOutboundAddress,
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: "to-be-added",
-				TLS: encryption.ClientTLSConfig{
-					CertificatePath: filepath.Join("certificates", "proxy2.pem"),
-					KeyPath:         filepath.Join("certificates", "proxy2.key"),
-					ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
-					ServerCAPath:    filepath.Join("certificates", "proxy1.pem"),
-				},
-			},
-		},
-	}
-
-	serverProxyConfigWithACL = config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy1-inbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: serverProxyInboundAddress,
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: echoServerAddress,
-			},
-			ACLPolicy: &config.ACLPolicy{
-				AllowedMethods: config.AllowedMethods{
-					AdminService: []string{
-						"DescribeCluster",
-						"StreamWorkflowReplicationMessages",
-					},
-				},
-				AllowedNamespaces: []string{
-					"example-ns",
-				},
-			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy1-outbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: serverProxyOutboundAddress,
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: "to-be-added",
-			},
-		},
-	}
 )
 
 type (
@@ -181,7 +41,149 @@ type (
 		originalPath string
 		developPath  string
 	}
+
+	cfgOption func(c *config.S2SProxyConfig)
 )
+
+func withServerTLS(tls encryption.ServerTLSConfig, inbound bool) cfgOption {
+	return func(c *config.S2SProxyConfig) {
+		if inbound {
+			c.Inbound.Server.TLS = tls
+		} else {
+			c.Outbound.Server.TLS = tls
+		}
+	}
+}
+
+func withClientTLS(tls encryption.ClientTLSConfig, inbound bool) cfgOption {
+	return func(c *config.S2SProxyConfig) {
+		if inbound {
+			c.Inbound.Client.TLS = tls
+		} else {
+			c.Outbound.Client.TLS = tls
+		}
+	}
+}
+
+func withACLPolicy(aclPolicy *config.ACLPolicy, inbound bool) cfgOption {
+	return func(c *config.S2SProxyConfig) {
+		if inbound {
+			c.Inbound.ACLPolicy = aclPolicy
+		} else {
+			c.Outbound.ACLPolicy = aclPolicy
+		}
+	}
+}
+
+func withNamespaceTranslation(mapping []config.NameMappingConfig, inbound bool) cfgOption {
+	return func(c *config.S2SProxyConfig) {
+		if inbound {
+			c.Inbound.NamespaceNameTranslation.Mappings = mapping
+		} else {
+			c.Outbound.NamespaceNameTranslation.Mappings = mapping
+		}
+	}
+}
+
+func EchoServerTLSOptions() []cfgOption {
+	return []cfgOption{
+		withServerTLS(
+			encryption.ServerTLSConfig{
+				CertificatePath:   filepath.Join("certificates", "proxy1.pem"),
+				KeyPath:           filepath.Join("certificates", "proxy1.key"),
+				ClientCAPath:      filepath.Join("certificates", "proxy2.pem"),
+				RequireClientAuth: true,
+			},
+			true,
+		),
+		withClientTLS(
+			encryption.ClientTLSConfig{
+				CertificatePath: filepath.Join("certificates", "proxy1.pem"),
+				KeyPath:         filepath.Join("certificates", "proxy1.key"),
+				ServerName:      "onebox-proxy2.cluster.tmprl.cloud",
+				ServerCAPath:    filepath.Join("certificates", "proxy2.pem"),
+			},
+			false,
+		),
+	}
+}
+
+func createS2SProxyConfig(cfg *config.S2SProxyConfig, opts []cfgOption) *config.S2SProxyConfig {
+	for _, option := range opts {
+		option(cfg)
+	}
+
+	return cfg
+}
+
+func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
+	return createS2SProxyConfig(&config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy1-inbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: serverProxyInboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: echoServerAddress,
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy1-outbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: serverProxyOutboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: "to-be-added",
+			},
+		},
+	}, opts)
+}
+
+func EchoClientTLSOptions() []cfgOption {
+	return []cfgOption{
+		withServerTLS(
+			encryption.ServerTLSConfig{
+				CertificatePath:   filepath.Join("certificates", "proxy2.pem"),
+				KeyPath:           filepath.Join("certificates", "proxy2.key"),
+				ClientCAPath:      filepath.Join("certificates", "proxy1.pem"),
+				RequireClientAuth: true,
+			},
+			true,
+		),
+		withClientTLS(
+			encryption.ClientTLSConfig{
+				CertificatePath: filepath.Join("certificates", "proxy2.pem"),
+				KeyPath:         filepath.Join("certificates", "proxy2.key"),
+				ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
+				ServerCAPath:    filepath.Join("certificates", "proxy1.pem"),
+			},
+			false,
+		),
+	}
+}
+
+func createEchoClientConfig(opts ...cfgOption) *config.S2SProxyConfig {
+	return createS2SProxyConfig(&config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy2-inbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: clientProxyInboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: echoClientAddress,
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy2-outbound-server",
+			Server: config.ServerConfig{
+				ListenAddress: clientProxyOutboundAddress,
+			},
+			Client: config.ClientConfig{
+				ForwardAddress: "to-be-added",
+			},
+		},
+	}, opts)
+}
 
 func TestProxyTestSuite(t *testing.T) {
 	suite.Run(t, new(proxyTestSuite))
@@ -256,7 +258,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
-				s2sProxyConfig: &serverProxyConfig,
+				s2sProxyConfig: createEchoServerConfig(),
 			},
 			echoClientInfo: clusterInfo{
 				serverAddress:  echoClientAddress,
@@ -273,7 +275,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoClientInfo: clusterInfo{
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
-				s2sProxyConfig: &clientProxyConfig,
+				s2sProxyConfig: createEchoClientConfig(),
 			},
 		},
 		{
@@ -282,12 +284,12 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
-				s2sProxyConfig: &serverProxyConfig,
+				s2sProxyConfig: createEchoServerConfig(),
 			},
 			echoClientInfo: clusterInfo{
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
-				s2sProxyConfig: &clientProxyConfig,
+				s2sProxyConfig: createEchoClientConfig(),
 			},
 		},
 		{
@@ -296,12 +298,12 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
-				s2sProxyConfig: &serverProxyConfigWithTLS,
+				s2sProxyConfig: createEchoServerConfig(EchoServerTLSOptions()...),
 			},
 			echoClientInfo: clusterInfo{
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
-				s2sProxyConfig: &clientProxyConfigWithTLS,
+				s2sProxyConfig: createEchoClientConfig(EchoClientTLSOptions()...),
 			},
 		},
 		{
@@ -309,12 +311,25 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 			echoServerInfo: clusterInfo{
 				serverAddress:  echoServerAddress,
 				clusterShardID: serverClusterShard,
-				s2sProxyConfig: &serverProxyConfigWithACL,
+				s2sProxyConfig: createEchoServerConfig(withACLPolicy(
+					&config.ACLPolicy{
+						AllowedMethods: config.AllowedMethods{
+							AdminService: []string{
+								"DescribeCluster",
+								"StreamWorkflowReplicationMessages",
+							},
+						},
+						AllowedNamespaces: []string{
+							"example-ns",
+						},
+					},
+					true,
+				)),
 			},
 			echoClientInfo: clusterInfo{
 				serverAddress:  echoClientAddress,
 				clusterShardID: clientClusterShard,
-				s2sProxyConfig: &clientProxyConfig,
+				s2sProxyConfig: createEchoClientConfig(),
 			},
 		},
 	}
@@ -322,8 +337,8 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 	sequence := genSequence(1, 100)
 	logger := log.NewTestLogger()
 	for _, ts := range tests {
-		echoServer := newEchoServer(ts.echoServerInfo, ts.echoClientInfo, "EchoServer", logger)
-		echoClient := newEchoServer(ts.echoClientInfo, ts.echoServerInfo, "EchoClient", logger)
+		echoServer := newEchoServer(ts.echoServerInfo, ts.echoClientInfo, "EchoServer", logger, nil)
+		echoClient := newEchoServer(ts.echoClientInfo, ts.echoServerInfo, "EchoClient", logger, nil)
 		echoServer.start()
 		echoClient.start()
 
@@ -352,6 +367,100 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				s.NoError(err)
 				s.Require().NotNil(resp)
 				s.Equal("example-ns", resp.WorkflowNamespace)
+			},
+		)
+	}
+}
+
+func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
+	tests := []struct {
+		name            string
+		echoServerInfo  clusterInfo
+		echoClientInfo  clusterInfo
+		serverNamespace string
+		clientNamespace string
+	}{
+		{
+			name: "server-and-client-side-proxy-namespacetrans",
+			echoServerInfo: clusterInfo{
+				serverAddress:  echoServerAddress,
+				clusterShardID: serverClusterShard,
+				s2sProxyConfig: createEchoServerConfig(withNamespaceTranslation(
+					[]config.NameMappingConfig{
+						{
+							LocalName:  "local",
+							RemoteName: "remote",
+						},
+					},
+					true,
+				)),
+			},
+			echoClientInfo: clusterInfo{
+				serverAddress:  echoClientAddress,
+				clusterShardID: clientClusterShard,
+				s2sProxyConfig: createEchoClientConfig(),
+			},
+			serverNamespace: "local",
+			clientNamespace: "remote",
+		},
+		{
+			name: "server-and-client-side-proxy-namespacetrans-acl",
+			echoServerInfo: clusterInfo{
+				serverAddress:  echoServerAddress,
+				clusterShardID: serverClusterShard,
+				s2sProxyConfig: createEchoServerConfig(
+					withNamespaceTranslation(
+						[]config.NameMappingConfig{
+							{
+								LocalName:  "local",
+								RemoteName: "remote",
+							},
+						},
+						true,
+					),
+					withACLPolicy(
+						&config.ACLPolicy{
+							AllowedMethods: config.AllowedMethods{
+								AdminService: []string{
+									"DescribeMutableState",
+								},
+							},
+							AllowedNamespaces: []string{
+								"local",
+							},
+						},
+						true,
+					),
+				)},
+			echoClientInfo: clusterInfo{
+				serverAddress:  echoClientAddress,
+				clusterShardID: clientClusterShard,
+				s2sProxyConfig: createEchoClientConfig(),
+			},
+			serverNamespace: "local",
+			clientNamespace: "remote",
+		},
+	}
+
+	logger := log.NewTestLogger()
+	for _, ts := range tests {
+		echoServer := newEchoServer(ts.echoServerInfo, ts.echoClientInfo, "EchoServer", logger, []string{ts.serverNamespace})
+		echoClient := newEchoServer(ts.echoClientInfo, ts.echoServerInfo, "EchoClient", logger, nil)
+		echoServer.start()
+		echoClient.start()
+
+		s.Run(
+			ts.name,
+			func() {
+				defer func() {
+					echoClient.stop()
+					echoServer.stop()
+				}()
+				resp, err := echoClient.DescribeMutableState(&adminservice.DescribeMutableStateRequest{
+					Namespace: ts.clientNamespace,
+				})
+				s.NoError(err)
+				s.Require().NotNil(resp)
 			},
 		)
 	}
