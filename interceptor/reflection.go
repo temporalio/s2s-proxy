@@ -27,7 +27,7 @@ type matcher func(name string) (string, bool)
 
 // visitNamespace uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
-// the provied match function.
+// the provided match function.
 func visitNamespace(obj any, match matcher) (bool, error) {
 	var matched bool
 

@@ -317,7 +317,7 @@ func testTranslateNamespace(t *testing.T, objCases []objCase) {
 	for _, c := range objCases {
 		t.Run(c.objName, func(t *testing.T) {
 			for _, ts := range testcases {
-				t.Run(ts.testName+"_"+c.objName, func(t *testing.T) {
+				t.Run(ts.testName, func(t *testing.T) {
 					input := c.makeType(ts.inputNSName)
 					expOutput := c.makeType(ts.outputNSName)
 					expChanged := ts.inputNSName != ts.outputNSName
