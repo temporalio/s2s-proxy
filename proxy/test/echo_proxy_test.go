@@ -33,39 +33,6 @@ var (
 		ClusterID: 2,
 		ShardID:   4,
 	}
-
-	clientProxyConfigWithTLS = config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy2-inbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: clientProxyInboundAddress,
-				TLS: encryption.ServerTLSConfig{
-					CertificatePath:   filepath.Join("certificates", "proxy2.pem"),
-					KeyPath:           filepath.Join("certificates", "proxy2.key"),
-					ClientCAPath:      filepath.Join("certificates", "proxy1.pem"),
-					RequireClientAuth: true,
-				},
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: echoClientAddress,
-			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy2-outbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: clientProxyOutboundAddress,
-			},
-			Client: config.ClientConfig{
-				ForwardAddress: "to-be-added",
-				TLS: encryption.ClientTLSConfig{
-					CertificatePath: filepath.Join("certificates", "proxy2.pem"),
-					KeyPath:         filepath.Join("certificates", "proxy2.key"),
-					ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
-					ServerCAPath:    filepath.Join("certificates", "proxy1.pem"),
-				},
-			},
-		},
-	}
 )
 
 type (
