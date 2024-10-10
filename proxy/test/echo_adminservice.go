@@ -52,7 +52,9 @@ func (s *echoAdminService) DeleteWorkflowExecution(ctx context.Context, in0 *adm
 }
 
 func (s *echoAdminService) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method DeleteWorkflowExecution is not allowed.")
+	return &adminservice.DescribeClusterResponse{
+		ClusterName: s.serviceName,
+	}, nil
 }
 
 func (s *echoAdminService) DescribeDLQJob(ctx context.Context, in0 *adminservice.DescribeDLQJobRequest) (*adminservice.DescribeDLQJobResponse, error) {

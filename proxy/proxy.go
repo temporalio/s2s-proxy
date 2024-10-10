@@ -79,13 +79,21 @@ func NewProxy(
 }
 
 func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool) ([]grpc.ServerOption, error) {
-	interceptors := []grpc.UnaryServerInterceptor{}
+	unaryInterceptors := []grpc.UnaryServerInterceptor{}
+	streamInterceptors := []grpc.StreamServerInterceptor{}
 	if len(cfg.NamespaceNameTranslation.Mappings) > 0 {
-		interceptors = append(interceptors, interceptor.NewNamespaceNameTranslator(logger, cfg, isInbound).Intercept)
+		unaryInterceptors = append(unaryInterceptors, interceptor.NewNamespaceNameTranslator(logger, cfg, isInbound).Intercept)
+	}
+
+	if isInbound && cfg.ACLPolicy != nil {
+		aclInterceptor := interceptor.NewAccessControlInterceptor(logger, cfg.ACLPolicy)
+		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
+		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
 	}
 
 	opts := []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(interceptors...),
+		grpc.ChainUnaryInterceptor(unaryInterceptors...),
+		grpc.ChainStreamInterceptor(streamInterceptors...),
 	}
 
 	if cfg.Server.TLS.IsEnabled() {

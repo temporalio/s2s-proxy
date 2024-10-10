@@ -179,6 +179,15 @@ func retry[T interface{}](f func() (T, error), maxRetries int, logger log.Logger
 	return output, fmt.Errorf("failed to call method after %d retries: %w", maxRetries, err)
 }
 
+func (s *echoServer) DescribeCluster(req *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
+	adminClient, err := s.clientProvider.GetAdminClient()
+	if err != nil {
+		return nil, err
+	}
+
+	return adminClient.DescribeCluster(context.Background(), req)
+}
+
 // Method for testing replication stream.
 //
 // It starts a bi-directional stream by connecting to remote server (which acts as stream sender).
