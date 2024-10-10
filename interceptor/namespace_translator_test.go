@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/temporalio/s2s-proxy/auth"
 	"go.temporal.io/api/command/v1"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/namespace/v1"
@@ -38,6 +39,17 @@ func TestTranslateNamespaceName(t *testing.T) {
 			Namespace string
 		}
 	)
+
+	accessControl := []struct {
+		testName    string
+		inputNSName string
+		access      *auth.AccessControl
+	}{
+		{
+			testName:    "No AccessControl",
+			inputNSName: "name allowed",
+		},
+	}
 
 	permutations := []struct {
 		testName     string
@@ -189,6 +201,21 @@ func TestTranslateNamespaceName(t *testing.T) {
 						require.Equal(t, expChanged, changed)
 					}
 				})
+			}
+
+			for _, acl := range accessControl {
+				t.Run(acl.testName, func(t *testing.T) {
+					input := c.makeType(acl.inputNSName)
+					changed, err := visitNamespace(input, createAccessHanlder(acl.access))
+					if len(c.expError) != 0 {
+						require.ErrorContains(t, err, c.expError)
+					} else {
+						require.NoError(t, err)
+						require.Equal(t, expOutput, input)
+						require.Equal(t, expChanged, changed)
+					}
+				})
+
 			}
 		})
 	}

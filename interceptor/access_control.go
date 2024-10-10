@@ -40,6 +40,16 @@ func NewAccessControlInterceptor(
 	}
 }
 
+func createAccessHanlder(access *auth.AccessControl) matchHandler {
+	return func(name string) (string, bool) {
+		var notAllowed bool
+		if access != nil {
+			notAllowed = !access.IsAllowed(name)
+		}
+		return name, notAllowed
+	}
+}
+
 func (i *AccessControlInterceptor) Intercept(
 	ctx context.Context,
 	req any,
@@ -60,11 +70,7 @@ func (i *AccessControlInterceptor) Intercept(
 	if i.namespaceAccess != nil && strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) ||
 		strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
 
-		notAllowed, err := visitNamespace(req, func(name string) (string, bool) {
-			allowed := i.namespaceAccess.IsAllowed(name)
-			return name, !allowed
-		})
-
+		notAllowed, err := visitNamespace(req, createAccessHanlder(i.namespaceAccess))
 		if notAllowed || err != nil {
 			methodName := api.MethodName(info.FullMethod)
 			return nil, status.Errorf(codes.PermissionDenied, fmt.Sprintf("Calling method %s is not allowed.", methodName))

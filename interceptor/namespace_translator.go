@@ -51,7 +51,7 @@ func NewNamespaceNameTranslator(
 
 var _ grpc.UnaryServerInterceptor = (*NamespaceNameTranslator)(nil).Intercept
 
-func createTranslator(mapping map[string]string) matchFunc {
+func createTranslator(mapping map[string]string) matchHandler {
 	return func(name string) (string, bool) {
 		newName, ok := mapping[name]
 		return newName, ok
