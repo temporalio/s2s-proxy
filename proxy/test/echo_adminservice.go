@@ -23,6 +23,7 @@ type (
 	echoAdminService struct {
 		adminservice.UnimplementedAdminServiceServer
 		serviceName string
+		namespaces  map[string]bool
 		logger      log.Logger
 	}
 )
@@ -66,7 +67,11 @@ func (s *echoAdminService) DescribeHistoryHost(ctx context.Context, in0 *adminse
 }
 
 func (s *echoAdminService) DescribeMutableState(ctx context.Context, in0 *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method DescribeMutableState is not allowed.")
+	if !s.namespaces[in0.Namespace] {
+		return nil, status.Errorf(codes.NotFound, fmt.Sprintf("namespace %s is not found", in0.Namespace))
+	}
+
+	return &adminservice.DescribeMutableStateResponse{}, nil
 }
 
 func (s *echoAdminService) GetDLQMessages(ctx context.Context, in0 *adminservice.GetDLQMessagesRequest) (*adminservice.GetDLQMessagesResponse, error) {
