@@ -20,12 +20,12 @@ var (
 	}
 )
 
-type matchHandler func(name string) (string, bool)
+type matcher func(name string) (string, bool)
 
 // visitNamespace uses reflection to recursively visit all fields
-// in the given object. When it finds namespace string fields, it maps
-// them to a new name, according to the mapping.
-func visitNamespace(obj any, match matchHandler) (bool, error) {
+// in the given object. When it finds namespace string fields, it invokes
+// the given matcher function.
+func visitNamespace(obj any, match matcher) (bool, error) {
 	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
@@ -64,8 +64,10 @@ func visitNamespace(obj any, match matchHandler) (bool, error) {
 				return visit.Continue, nil
 			}
 
-			if err := visit.Assign(vwp, reflect.ValueOf(newName)); err != nil {
-				return visit.Stop, err
+			if vwp.String() != newName {
+				if err := visit.Assign(vwp, reflect.ValueOf(newName)); err != nil {
+					return visit.Stop, err
+				}
 			}
 			matched = matched || ok
 		}

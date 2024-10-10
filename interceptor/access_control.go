@@ -10,6 +10,7 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 )
@@ -40,14 +41,28 @@ func NewAccessControlInterceptor(
 	}
 }
 
-func createAccessHanlder(access *auth.AccessControl) matchHandler {
+func createNamespaceAccessControl(access *auth.AccessControl) matcher {
 	return func(name string) (string, bool) {
 		var notAllowed bool
 		if access != nil {
 			notAllowed = !access.IsAllowed(name)
 		}
+
 		return name, notAllowed
 	}
+}
+
+func isNamespaceAccessAllowed(obj any, access *auth.AccessControl) (bool, error) {
+	if access == nil {
+		return true, nil
+	}
+
+	notAllowed, err := visitNamespace(obj, createNamespaceAccessControl(access))
+	if err != nil {
+		return false, err
+	}
+
+	return !notAllowed, nil
 }
 
 func (i *AccessControlInterceptor) Intercept(
@@ -69,10 +84,19 @@ func (i *AccessControlInterceptor) Intercept(
 
 	if i.namespaceAccess != nil && strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) ||
 		strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
-
-		notAllowed, err := visitNamespace(req, createAccessHanlder(i.namespaceAccess))
-		if notAllowed || err != nil {
+		allowed, err := isNamespaceAccessAllowed(req, i.namespaceAccess)
+		if !allowed || err != nil {
 			methodName := api.MethodName(info.FullMethod)
+			if err != nil {
+				logger := log.With(
+					i.logger,
+					tag.NewStringTag("method", methodName),
+					tag.NewAnyTag("obj", req),
+				)
+
+				logger.Error("namespace access control error", tag.NewErrorTag(err))
+			}
+
 			return nil, status.Errorf(codes.PermissionDenied, fmt.Sprintf("Calling method %s is not allowed.", methodName))
 		}
 	}

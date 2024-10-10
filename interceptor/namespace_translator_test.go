@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/temporalio/s2s-proxy/auth"
 	"go.temporal.io/api/command/v1"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/namespace/v1"
@@ -14,94 +13,56 @@ import (
 	replicationspb "go.temporal.io/server/api/replication/v1"
 )
 
-func TestTranslateNamespaceName(t *testing.T) {
-	type (
-		StructWithNamespaceField struct {
-			Namespace string
-		}
-		StructWithWorkflowNamespaceField struct {
-			WorkflowNamespace string
-		}
-		StructWithNestedNamespaceField struct {
-			Other  string
-			Nested StructWithNamespaceField
-		}
-		StructWithListOfNestedNamespaceField struct {
-			Other  string
-			Nested []StructWithNamespaceField
-		}
-		StructWithListOfNestedPtrs struct {
-			Other  string
-			Nested []*StructWithNamespaceField
-		}
-		StructWithCircularPointer struct {
-			Link      *StructWithCircularPointer
-			Namespace string
-		}
-	)
-
-	accessControl := []struct {
-		testName    string
-		inputNSName string
-		access      *auth.AccessControl
-	}{
-		{
-			testName:    "No AccessControl",
-			inputNSName: "name allowed",
-		},
+type (
+	StructWithNamespaceField struct {
+		Namespace string
+	}
+	StructWithWorkflowNamespaceField struct {
+		WorkflowNamespace string
+	}
+	StructWithNestedNamespaceField struct {
+		Other  string
+		Nested StructWithNamespaceField
+	}
+	StructWithListOfNestedNamespaceField struct {
+		Other  string
+		Nested []StructWithNamespaceField
+	}
+	StructWithListOfNestedPtrs struct {
+		Other  string
+		Nested []*StructWithNamespaceField
+	}
+	StructWithCircularPointer struct {
+		Link      *StructWithCircularPointer
+		Namespace string
 	}
 
-	permutations := []struct {
-		testName     string
-		inputNSName  string
-		outputNSName string
-		mapping      map[string]string
-	}{
-		{
-			testName:     "name changed",
-			inputNSName:  "orig",
-			outputNSName: "orig.cloud",
-			mapping:      map[string]string{"orig": "orig.cloud"},
-		},
-		{
-			testName:     "name unchanged",
-			inputNSName:  "orig",
-			outputNSName: "orig",
-			mapping:      map[string]string{"other": "other.cloud"},
-		},
-		{
-			testName:     "empty mapping",
-			inputNSName:  "orig",
-			outputNSName: "orig",
-			mapping:      map[string]string{},
-		},
-		{
-			testName:     "nil mapping",
-			inputNSName:  "orig",
-			outputNSName: "orig",
-			mapping:      nil,
-		},
+	objTestCase struct {
+		objName           string
+		makeType          func(ns string) any
+		expError          string
+		containsNamespace bool
 	}
+)
 
-	cases := []struct {
-		testName string
-		makeType func(ns string) any
-		expError string
-	}{
+func generateNamespaceTypeTestCases() []objTestCase {
+	return []objTestCase{
 		{
-			testName: "Namespace field",
+			objName: "Namespace field",
 			makeType: func(ns string) any {
 				return &StructWithNamespaceField{Namespace: ns}
 			},
+			containsNamespace: true,
 		},
 		{
-			testName: "WorkflowNamespace field",
+			objName: "WorkflowNamespace field",
 			makeType: func(ns string) any {
 				return &StructWithWorkflowNamespaceField{WorkflowNamespace: ns}
 			},
+			containsNamespace: true,
 		},
 		{
-			testName: "Nested Namespace field",
+			objName: "Nested Namespace field",
 			makeType: func(ns string) any {
 				return &StructWithNestedNamespaceField{
 					Other: "do not change",
@@ -110,9 +71,10 @@ func TestTranslateNamespaceName(t *testing.T) {
 					},
 				}
 			},
+			containsNamespace: true,
 		},
 		{
-			testName: "list of structs",
+			objName: "list of structs",
 			makeType: func(ns string) any {
 				return &StructWithListOfNestedNamespaceField{
 					Other: "do not change",
@@ -123,9 +85,10 @@ func TestTranslateNamespaceName(t *testing.T) {
 					},
 				}
 			},
+			containsNamespace: true,
 		},
 		{
-			testName: "list of ptrs",
+			objName: "list of ptrs",
 			makeType: func(ns string) any {
 				return &StructWithListOfNestedPtrs{
 					Other: "do not change",
@@ -136,9 +99,10 @@ func TestTranslateNamespaceName(t *testing.T) {
 					},
 				}
 			},
+			containsNamespace: true,
 		},
 		{
-			testName: "RespondWorkflowTaskCompletedRequest",
+			objName: "RespondWorkflowTaskCompletedRequest",
 			makeType: func(ns string) any {
 				return &workflowservice.RespondWorkflowTaskCompletedRequest{
 					TaskToken: []byte{},
@@ -165,11 +129,11 @@ func TestTranslateNamespaceName(t *testing.T) {
 					Identity:  "do-not-change",
 					Namespace: ns,
 				}
-
 			},
+			containsNamespace: true,
 		},
 		{
-			testName: "circular pointer",
+			objName: "circular pointer",
 			makeType: func(ns string) any {
 				a := &StructWithCircularPointer{
 					Namespace: ns,
@@ -181,48 +145,13 @@ func TestTranslateNamespaceName(t *testing.T) {
 				b.Link = a
 				return a
 			},
+			containsNamespace: true,
 		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.testName, func(t *testing.T) {
-			for _, perm := range permutations {
-				t.Run(perm.testName, func(t *testing.T) {
-					input := c.makeType(perm.inputNSName)
-					expOutput := c.makeType(perm.outputNSName)
-					expChanged := perm.inputNSName != perm.outputNSName
-
-					changed, err := visitNamespace(input, createTranslator(perm.mapping))
-					if len(c.expError) != 0 {
-						require.ErrorContains(t, err, c.expError)
-					} else {
-						require.NoError(t, err)
-						require.Equal(t, expOutput, input)
-						require.Equal(t, expChanged, changed)
-					}
-				})
-			}
-
-			for _, acl := range accessControl {
-				t.Run(acl.testName, func(t *testing.T) {
-					input := c.makeType(acl.inputNSName)
-					changed, err := visitNamespace(input, createAccessHanlder(acl.access))
-					if len(c.expError) != 0 {
-						require.ErrorContains(t, err, c.expError)
-					} else {
-						require.NoError(t, err)
-						require.Equal(t, expOutput, input)
-						require.Equal(t, expChanged, changed)
-					}
-				})
-
-			}
-		})
 	}
 }
 
-func TestTranslateNamespaceReplicationMessages(t *testing.T) {
-	makeFullType := func(ns string) *adminservice.GetNamespaceReplicationMessagesResponse {
+func generateNamespaceReplicationMessages() []objTestCase {
+	makeFullType := func(ns string) any {
 		return &adminservice.GetNamespaceReplicationMessagesResponse{
 			Messages: &replicationspb.ReplicationMessages{
 				ReplicationTasks: []*replicationspb.ReplicationTask{
@@ -257,27 +186,22 @@ func TestTranslateNamespaceReplicationMessages(t *testing.T) {
 		}
 	}
 
-	cases := []struct {
-		testName   string
-		mapping    map[string]string
-		expChanged bool
-		makeType   func(ns string) *adminservice.GetNamespaceReplicationMessagesResponse
-	}{
+	return []objTestCase{
 		{
-			testName: "nil",
-			makeType: func(ns string) *adminservice.GetNamespaceReplicationMessagesResponse {
+			objName: "nil",
+			makeType: func(ns string) any {
 				return nil
 			},
 		},
 		{
-			testName: "nil messages",
-			makeType: func(ns string) *adminservice.GetNamespaceReplicationMessagesResponse {
+			objName: "nil messages",
+			makeType: func(ns string) any {
 				return &adminservice.GetNamespaceReplicationMessagesResponse{}
 			},
 		},
 		{
-			testName: "nil replication tasks",
-			makeType: func(ns string) *adminservice.GetNamespaceReplicationMessagesResponse {
+			objName: "nil replication tasks",
+			makeType: func(ns string) any {
 				return &adminservice.GetNamespaceReplicationMessagesResponse{
 					Messages: &replicationspb.ReplicationMessages{
 						ReplicationTasks: nil,
@@ -286,8 +210,8 @@ func TestTranslateNamespaceReplicationMessages(t *testing.T) {
 			},
 		},
 		{
-			testName: "nil replication tasks item",
-			makeType: func(ns string) *adminservice.GetNamespaceReplicationMessagesResponse {
+			objName: "nil replication tasks item",
+			makeType: func(ns string) any {
 				return &adminservice.GetNamespaceReplicationMessagesResponse{
 					Messages: &replicationspb.ReplicationMessages{
 						ReplicationTasks: []*replicationspb.ReplicationTask{
@@ -299,8 +223,8 @@ func TestTranslateNamespaceReplicationMessages(t *testing.T) {
 			},
 		},
 		{
-			testName: "nil attributes",
-			makeType: func(ns string) *adminservice.GetNamespaceReplicationMessagesResponse {
+			objName: "nil attributes",
+			makeType: func(ns string) any {
 				return &adminservice.GetNamespaceReplicationMessagesResponse{
 					Messages: &replicationspb.ReplicationMessages{
 						ReplicationTasks: []*replicationspb.ReplicationTask{
@@ -312,8 +236,8 @@ func TestTranslateNamespaceReplicationMessages(t *testing.T) {
 			},
 		},
 		{
-			testName: "nil namespace task attributes",
-			makeType: func(ns string) *adminservice.GetNamespaceReplicationMessagesResponse {
+			objName: "nil namespace task attributes",
+			makeType: func(ns string) any {
 				return &adminservice.GetNamespaceReplicationMessagesResponse{
 					Messages: &replicationspb.ReplicationMessages{
 						ReplicationTasks: []*replicationspb.ReplicationTask{
@@ -331,8 +255,8 @@ func TestTranslateNamespaceReplicationMessages(t *testing.T) {
 			},
 		},
 		{
-			testName: "nil namespace info",
-			makeType: func(ns string) *adminservice.GetNamespaceReplicationMessagesResponse {
+			objName: "nil namespace info",
+			makeType: func(ns string) any {
 				return &adminservice.GetNamespaceReplicationMessagesResponse{
 					Messages: &replicationspb.ReplicationMessages{
 						ReplicationTasks: []*replicationspb.ReplicationTask{
@@ -351,36 +275,77 @@ func TestTranslateNamespaceReplicationMessages(t *testing.T) {
 			},
 		},
 		{
-			testName: "nil mapping",
-			makeType: makeFullType,
-		},
-		{
-			testName:   "unmapped namespace unchanged",
-			mapping:    map[string]string{"other-ns": "other-ns.cloud"},
-			expChanged: false,
-			makeType:   makeFullType,
-		},
-		{
-			testName:   "matched namespace changed",
-			mapping:    map[string]string{"orig": "orig.cloud"},
-			expChanged: true,
-			makeType:   makeFullType,
+			objName:           "full type",
+			makeType:          makeFullType,
+			containsNamespace: true,
 		},
 	}
+}
 
-	for _, c := range cases {
-		t.Run(c.testName, func(t *testing.T) {
-			input := c.makeType("orig")
-			var expOutput *adminservice.GetNamespaceReplicationMessagesResponse
-			if c.expChanged {
-				expOutput = c.makeType("orig.cloud")
-			} else {
-				expOutput = c.makeType("orig")
+func testTranslateNamespace(t *testing.T, objCases []objTestCase) {
+	testCases := []struct {
+		testName     string
+		inputNSName  string
+		outputNSName string
+		mapping      map[string]string
+	}{
+		{
+			testName:     "name changed",
+			inputNSName:  "orig",
+			outputNSName: "orig.cloud",
+			mapping:      map[string]string{"orig": "orig.cloud"},
+		},
+		{
+			testName:     "name unchanged",
+			inputNSName:  "orig",
+			outputNSName: "orig",
+			mapping:      map[string]string{"other": "other.cloud"},
+		},
+		{
+			testName:     "empty mapping",
+			inputNSName:  "orig",
+			outputNSName: "orig",
+			mapping:      map[string]string{},
+		},
+		{
+			testName:     "nil mapping",
+			inputNSName:  "orig",
+			outputNSName: "orig",
+			mapping:      nil,
+		},
+	}
+	for _, c := range objCases {
+		t.Run(c.objName, func(t *testing.T) {
+			for _, ts := range testCases {
+				t.Run(ts.testName+"_"+c.objName, func(t *testing.T) {
+					input := c.makeType(ts.inputNSName)
+					expOutput := c.makeType(ts.outputNSName)
+					expChanged := ts.inputNSName != ts.outputNSName
+
+					changed, err := visitNamespace(input, createNameTranslator(ts.mapping))
+					if len(c.expError) != 0 {
+						require.ErrorContains(t, err, c.expError)
+					} else {
+						require.NoError(t, err)
+						if c.containsNamespace {
+							require.Equal(t, expOutput, input)
+							require.Equal(t, expChanged, changed)
+						} else {
+							// input doesn't contain namespace, no change is expected.
+							require.Equal(t, c.makeType(ts.inputNSName), input)
+							require.False(t, changed)
+						}
+					}
+				})
 			}
-			changed, err := visitNamespace(input, createTranslator(c.mapping))
-			require.NoError(t, err)
-			require.Equal(t, c.expChanged, changed)
-			require.Equal(t, expOutput, input)
 		})
 	}
+}
+
+func TestTranslateNamespaceName(t *testing.T) {
+	testTranslateNamespace(t, generateNamespaceTypeTestCases())
+}
+
+func TestTranslateNamespaceReplicationMessages(t *testing.T) {
+	testTranslateNamespace(t, generateNamespaceReplicationMessages())
 }
