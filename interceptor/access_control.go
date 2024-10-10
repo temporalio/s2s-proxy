@@ -53,10 +53,6 @@ func createNamespaceAccessControl(access *auth.AccessControl) matcher {
 }
 
 func isNamespaceAccessAllowed(obj any, access *auth.AccessControl) (bool, error) {
-	if access == nil {
-		return true, nil
-	}
-
 	notAllowed, err := visitNamespace(obj, createNamespaceAccessControl(access))
 	if err != nil {
 		return false, err

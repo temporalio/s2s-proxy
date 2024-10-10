@@ -83,26 +83,26 @@ func TestMethodAccessControlInterceptor(t *testing.T) {
 	}
 }
 
-func testNamespaceAccessControl(t *testing.T, objCases []objTestCase) {
-	testCases := []struct {
+func testNamespaceAccessControl(t *testing.T, objCases []objCase) {
+	testcases := []struct {
 		testName    string
 		inputNSName string
 		access      *auth.AccessControl
 		expAllowed  bool
 	}{
 		{
-			testName:    "Nil AccessControl",
+			testName:    "nil AccessControl",
 			inputNSName: "AllowedNamespace",
 			expAllowed:  true,
 		},
 		{
-			testName:    "With AllowedNamespace",
+			testName:    "allowed namespace",
 			inputNSName: "AllowedNamespace",
 			access:      auth.NewAccesControl([]string{"AllowedNamespace"}),
 			expAllowed:  true,
 		},
 		{
-			testName:    "With NotAllowedNamespace",
+			testName:    "not allowed Namespace",
 			inputNSName: "NotAllowedNamespace",
 			access:      auth.NewAccesControl([]string{"AllowedNamespace"}),
 			expAllowed:  false,
@@ -111,7 +111,7 @@ func testNamespaceAccessControl(t *testing.T, objCases []objTestCase) {
 
 	for _, c := range objCases {
 		t.Run(c.objName, func(t *testing.T) {
-			for _, ts := range testCases {
+			for _, ts := range testcases {
 				t.Run(ts.testName, func(t *testing.T) {
 					input := c.makeType(ts.inputNSName)
 					allowed, err := isNamespaceAccessAllowed(input, ts.access)
@@ -134,6 +134,6 @@ func testNamespaceAccessControl(t *testing.T, objCases []objTestCase) {
 }
 
 func TestNamespaceAccessControl(t *testing.T) {
-	testNamespaceAccessControl(t, generateNamespaceTypeTestCases())
+	testNamespaceAccessControl(t, generateNamespaceObjCases())
 	testNamespaceAccessControl(t, generateNamespaceReplicationMessages())
 }

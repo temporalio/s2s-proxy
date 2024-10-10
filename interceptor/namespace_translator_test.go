@@ -37,7 +37,7 @@ type (
 		Namespace string
 	}
 
-	objTestCase struct {
+	objCase struct {
 		objName           string
 		makeType          func(ns string) any
 		expError          string
@@ -45,8 +45,8 @@ type (
 	}
 )
 
-func generateNamespaceTypeTestCases() []objTestCase {
-	return []objTestCase{
+func generateNamespaceObjCases() []objCase {
+	return []objCase{
 		{
 			objName: "Namespace field",
 			makeType: func(ns string) any {
@@ -150,7 +150,7 @@ func generateNamespaceTypeTestCases() []objTestCase {
 	}
 }
 
-func generateNamespaceReplicationMessages() []objTestCase {
+func generateNamespaceReplicationMessages() []objCase {
 	makeFullType := func(ns string) any {
 		return &adminservice.GetNamespaceReplicationMessagesResponse{
 			Messages: &replicationspb.ReplicationMessages{
@@ -186,7 +186,7 @@ func generateNamespaceReplicationMessages() []objTestCase {
 		}
 	}
 
-	return []objTestCase{
+	return []objCase{
 		{
 			objName: "nil",
 			makeType: func(ns string) any {
@@ -282,8 +282,8 @@ func generateNamespaceReplicationMessages() []objTestCase {
 	}
 }
 
-func testTranslateNamespace(t *testing.T, objCases []objTestCase) {
-	testCases := []struct {
+func testTranslateNamespace(t *testing.T, objCases []objCase) {
+	testcases := []struct {
 		testName     string
 		inputNSName  string
 		outputNSName string
@@ -316,7 +316,7 @@ func testTranslateNamespace(t *testing.T, objCases []objTestCase) {
 	}
 	for _, c := range objCases {
 		t.Run(c.objName, func(t *testing.T) {
-			for _, ts := range testCases {
+			for _, ts := range testcases {
 				t.Run(ts.testName+"_"+c.objName, func(t *testing.T) {
 					input := c.makeType(ts.inputNSName)
 					expOutput := c.makeType(ts.outputNSName)
@@ -343,7 +343,7 @@ func testTranslateNamespace(t *testing.T, objCases []objTestCase) {
 }
 
 func TestTranslateNamespaceName(t *testing.T) {
-	testTranslateNamespace(t, generateNamespaceTypeTestCases())
+	testTranslateNamespace(t, generateNamespaceObjCases())
 }
 
 func TestTranslateNamespaceReplicationMessages(t *testing.T) {
