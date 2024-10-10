@@ -20,11 +20,16 @@ var (
 	}
 )
 
-// translateNamespace uses reflection to recursively visit all fields
-// in the given object. When it finds namespace string fields, it maps
-// them to a new name, according to the mapping.
-func translateNamespace(obj any, mapping map[string]string) (bool, error) {
-	var changed bool
+// matcher returns 2 values:
+//  1. new name. If there is no change, new name equals to input name
+//  2. whether or not the input name matches the defined rule(s).
+type matcher func(name string) (string, bool)
+
+// visitNamespace uses reflection to recursively visit all fields
+// in the given object. When it finds namespace string fields, it invokes
+// the provided match function.
+func visitNamespace(obj any, match matcher) (bool, error) {
+	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
 	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
@@ -48,28 +53,29 @@ func translateNamespace(obj any, mapping map[string]string) (bool, error) {
 				return visit.Continue, nil
 			}
 
-			// Translate the namespace name.
-			old := attrs.Info.Name
-			new, ok := mapping[old]
+			newName, ok := match(attrs.Info.Name)
 			if !ok {
 				return visit.Continue, nil
 			}
-			attrs.Info.Name = new
-			changed = changed || old != new
+			if attrs.Info.Name != newName {
+				attrs.Info.Name = newName
+			}
+			matched = matched || ok
 		} else if vwp.Kind() == reflect.String && slices.Contains(namespaceFieldNames, fieldType.Name) {
-			// Translate namespace struct fields.
-			old := vwp.String()
-			new, ok := mapping[old]
+			newName, ok := match(vwp.String())
 			if !ok {
 				return visit.Continue, nil
 			}
-			if err := visit.Assign(vwp, reflect.ValueOf(new)); err != nil {
-				return visit.Stop, err
+
+			if vwp.String() != newName {
+				if err := visit.Assign(vwp, reflect.ValueOf(newName)); err != nil {
+					return visit.Stop, err
+				}
 			}
-			changed = changed || old != new
+			matched = matched || ok
 		}
 
 		return visit.Continue, nil
 	})
-	return changed, err
+	return matched, err
 }

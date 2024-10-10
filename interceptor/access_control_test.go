@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
 )
 
-func TestAccessControlInterceptor(t *testing.T) {
+func TestMethodAccessControlInterceptor(t *testing.T) {
 	cases := []struct {
 		name string
 
@@ -80,4 +81,59 @@ func TestAccessControlInterceptor(t *testing.T) {
 			}
 		})
 	}
+}
+
+func testNamespaceAccessControl(t *testing.T, objCases []objCase) {
+	testcases := []struct {
+		testName    string
+		inputNSName string
+		access      *auth.AccessControl
+		expAllowed  bool
+	}{
+		{
+			testName:    "nil AccessControl",
+			inputNSName: "AllowedNamespace",
+			expAllowed:  true,
+		},
+		{
+			testName:    "allowed namespace",
+			inputNSName: "AllowedNamespace",
+			access:      auth.NewAccesControl([]string{"AllowedNamespace"}),
+			expAllowed:  true,
+		},
+		{
+			testName:    "not allowed Namespace",
+			inputNSName: "NotAllowedNamespace",
+			access:      auth.NewAccesControl([]string{"AllowedNamespace"}),
+			expAllowed:  false,
+		},
+	}
+
+	for _, c := range objCases {
+		t.Run(c.objName, func(t *testing.T) {
+			for _, ts := range testcases {
+				t.Run(ts.testName, func(t *testing.T) {
+					input := c.makeType(ts.inputNSName)
+					allowed, err := isNamespaceAccessAllowed(input, ts.access)
+					if len(c.expError) != 0 {
+						require.ErrorContains(t, err, c.expError)
+					} else {
+						require.NoError(t, err)
+						if c.containsNamespace {
+							require.Equal(t, ts.expAllowed, allowed)
+						} else {
+							require.True(t, allowed)
+						}
+
+						require.Equal(t, c.makeType(ts.inputNSName), input)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestNamespaceAccessControl(t *testing.T) {
+	testNamespaceAccessControl(t, generateNamespaceObjCases())
+	testNamespaceAccessControl(t, generateNamespaceReplicationMessages())
 }

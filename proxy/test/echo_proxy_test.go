@@ -158,6 +158,9 @@ var (
 						"StreamWorkflowReplicationMessages",
 					},
 				},
+				AllowedNamespaces: []string{
+					"example-ns",
+				},
 			},
 		},
 		Outbound: &config.ProxyConfig{

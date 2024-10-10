@@ -13,9 +13,9 @@ import (
 
 type (
 	NamespaceNameTranslator struct {
-		logger                      log.Logger
-		requestNameMapping          map[string]string
-		responseNameMapping         map[string]string
+		logger              log.Logger
+		requestNameMapping  map[string]string
+		responseNameMapping map[string]string
 	}
 )
 
@@ -43,13 +43,20 @@ func NewNamespaceNameTranslator(
 	}
 
 	return &NamespaceNameTranslator{
-		logger:                      logger,
-		requestNameMapping:          requestNameMapping,
-		responseNameMapping:         responseNameMapping,
+		logger:              logger,
+		requestNameMapping:  requestNameMapping,
+		responseNameMapping: responseNameMapping,
 	}
 }
 
 var _ grpc.UnaryServerInterceptor = (*NamespaceNameTranslator)(nil).Intercept
+
+func createNameTranslator(mapping map[string]string) matcher {
+	return func(name string) (string, bool) {
+		newName, ok := mapping[name]
+		return newName, ok
+	}
+}
 
 func (i *NamespaceNameTranslator) Intercept(
 	ctx context.Context,
@@ -68,13 +75,13 @@ func (i *NamespaceNameTranslator) Intercept(
 		i.logger.Debug("intercepted request", tag.NewStringTag("method", methodName))
 
 		// Translate namespace name in request.
-		changed, trErr := translateNamespace(req, i.requestNameMapping)
+		changed, trErr := visitNamespace(req, createNameTranslator(i.requestNameMapping))
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Request", req)
 
 		resp, err := handler(ctx, req)
 
 		// Translate namespace name in response.
-		changed, trErr = translateNamespace(resp, i.responseNameMapping)
+		changed, trErr = visitNamespace(resp, createNameTranslator(i.responseNameMapping))
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Response", resp)
 		return resp, err
 	} else {
