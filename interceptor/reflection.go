@@ -20,11 +20,14 @@ var (
 	}
 )
 
+// matcher returns 2 values:
+//  1. new name. If there is no change, new name equals to input name
+//  2. whether or not the input name matches the defined rule(s).
 type matcher func(name string) (string, bool)
 
 // visitNamespace uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
-// the given matcher function.
+// the provied match function.
 func visitNamespace(obj any, match matcher) (bool, error) {
 	var matched bool
 
