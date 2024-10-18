@@ -35,8 +35,8 @@ func (s *adminserviceSuite) SetupTest() {
 
 func (s *adminserviceSuite) newAdminServiceProxyServer(opts proxyOptions) adminservice.AdminServiceServer {
 	cfg := config.ClientConfig{
-		ForwardAddress: "fake-forward-address",
-		TLS:            encryption.ClientTLSConfig{},
+		ServerAddress: "fake-forward-address",
+		TLS:           encryption.ClientTLSConfig{},
 	}
 	s.clientFactoryMock.EXPECT().NewRemoteAdminClient(cfg).Return(s.adminClientMock, nil).Times(1)
 	return NewAdminServiceProxyServer("test-service-name", cfg, s.clientFactoryMock, opts, log.NewTestLogger())

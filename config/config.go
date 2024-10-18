@@ -15,12 +15,19 @@ const (
 	ConfigPathFlag = "config"
 )
 
+type StreamMode string
+
+const (
+	ClientMode StreamMode = "client"
+	ServerMode StreamMode = "server"
+)
+
 type (
 	ConfigProvider interface {
 		GetS2SProxyConfig() S2SProxyConfig
 	}
 
-	ServerConfig struct {
+	TCPServer struct {
 		// ListenAddress indicates the server address (Host:Port) for listening requests
 		ListenAddress string                     `yaml:"listenAddress"`
 		TLS           encryption.ServerTLSConfig `yaml:"tls"`
@@ -28,10 +35,35 @@ type (
 		ExternalAddress string `yaml:"externalAddress"`
 	}
 
+	TCPClient struct {
+		// ServerAddress indicates the address (Host:Port) for forwarding requests
+		ServerAddress string                     `yaml:"serverAddress"`
+		TLS           encryption.ClientTLSConfig `yaml:"tls"`
+	}
+
+	StreamSetting struct {
+		Mode StreamMode
+		Name string
+	}
+
+	StreamServer struct {
+		Name string
+		TCPServer
+	}
+
+	StreamClient struct {
+		Name string
+		TCPClient
+	}
+
+	ServerConfig struct {
+		TCPServer
+		Stream *StreamSetting
+	}
+
 	ClientConfig struct {
-		// ForwardAddress indicates the address (Host:Port) for forwarding requests
-		ForwardAddress string                     `yaml:"forwardAddress"`
-		TLS            encryption.ClientTLSConfig `yaml:"tls"`
+		TCPClient
+		Stream *StreamSetting
 	}
 
 	ProxyConfig struct {
@@ -42,9 +74,15 @@ type (
 		ACLPolicy                *ACLPolicy                     `yaml:"aclPolicy"`
 	}
 
+	TransportConfig struct {
+		Clients []StreamClient
+		Servers []StreamServer
+	}
+
 	S2SProxyConfig struct {
-		Inbound  *ProxyConfig `yaml:"inbound"`
-		Outbound *ProxyConfig `yaml:"outbound"`
+		Inbound   *ProxyConfig `yaml:"inbound"`
+		Outbound  *ProxyConfig `yaml:"outbound"`
+		Transport TransportConfig
 	}
 
 	NamespaceNameTranslationConfig struct {

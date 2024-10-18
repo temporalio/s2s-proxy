@@ -124,7 +124,7 @@ func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 				ListenAddress: serverProxyInboundAddress,
 			},
 			Client: config.ClientConfig{
-				ForwardAddress: echoServerAddress,
+				ServerAddress: echoServerAddress,
 			},
 		},
 		Outbound: &config.ProxyConfig{
@@ -133,7 +133,7 @@ func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 				ListenAddress: serverProxyOutboundAddress,
 			},
 			Client: config.ClientConfig{
-				ForwardAddress: "to-be-added",
+				ServerAddress: "to-be-added",
 			},
 		},
 	}, opts)
@@ -170,7 +170,7 @@ func createEchoClientConfig(opts ...cfgOption) *config.S2SProxyConfig {
 				ListenAddress: clientProxyInboundAddress,
 			},
 			Client: config.ClientConfig{
-				ForwardAddress: echoClientAddress,
+				ServerAddress: echoClientAddress,
 			},
 		},
 		Outbound: &config.ProxyConfig{
@@ -179,7 +179,7 @@ func createEchoClientConfig(opts ...cfgOption) *config.S2SProxyConfig {
 				ListenAddress: clientProxyOutboundAddress,
 			},
 			Client: config.ClientConfig{
-				ForwardAddress: "to-be-added",
+				ServerAddress: "to-be-added",
 			},
 		},
 	}, opts)
@@ -464,4 +464,33 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 			},
 		)
 	}
+}
+
+func (s *proxyTestSuite) Test_Echo() {
+
+	echoServerInfo := clusterInfo{
+		serverAddress:  echoServerAddress,
+		clusterShardID: serverClusterShard,
+		s2sProxyConfig: createEchoServerConfig(),
+	}
+	echoClientInfo := clusterInfo{
+		serverAddress:  echoClientAddress,
+		clusterShardID: clientClusterShard,
+		s2sProxyConfig: createEchoClientConfig(),
+	}
+
+	logger := log.NewTestLogger()
+	echoServer := newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
+	echoClient := newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
+	echoServer.start()
+	echoClient.start()
+
+	defer func() {
+		echoClient.stop()
+		echoServer.stop()
+	}()
+
+	r, err := echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
+	s.NoError(err)
+	s.Equal("EchoServer", r.ClusterName)
 }

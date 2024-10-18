@@ -91,9 +91,9 @@ func newEchoServer(
 	if localProxyCfg != nil {
 		// Setup local proxy ForwardAddress
 		if remoteProxyCfg != nil {
-			localProxyCfg.Outbound.Client.ForwardAddress = remoteProxyCfg.Inbound.Server.ListenAddress
+			localProxyCfg.Outbound.Client.ServerAddress = remoteProxyCfg.Inbound.Server.ListenAddress
 		} else {
-			localProxyCfg.Outbound.Client.ForwardAddress = remoteClusterInfo.serverAddress
+			localProxyCfg.Outbound.Client.ServerAddress = remoteClusterInfo.serverAddress
 		}
 
 		configProvider := &mockConfigProvider{
@@ -111,17 +111,17 @@ func newEchoServer(
 		}
 
 		clientConfig = config.ClientConfig{
-			ForwardAddress: localProxyCfg.Outbound.Server.ListenAddress,
+			ServerAddress: localProxyCfg.Outbound.Server.ListenAddress,
 		}
 	} else {
 		// No local proxy
 		if remoteProxyCfg != nil {
 			clientConfig = config.ClientConfig{
-				ForwardAddress: remoteProxyCfg.Inbound.Server.ListenAddress,
+				ServerAddress: remoteProxyCfg.Inbound.Server.ListenAddress,
 			}
 		} else {
 			clientConfig = config.ClientConfig{
-				ForwardAddress: remoteClusterInfo.serverAddress,
+				ServerAddress: remoteClusterInfo.serverAddress,
 			}
 		}
 	}

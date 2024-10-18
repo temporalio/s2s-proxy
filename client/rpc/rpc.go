@@ -36,10 +36,5 @@ func NewRPCFactory(
 
 // CreateRemoteFrontendGRPCConnection creates connection for gRPC calls
 func (d *rpcFactory) CreateRemoteFrontendGRPCConnection(rpcAddress string, tlsConfig *tls.Config) (*grpc.ClientConn, error) {
-	connection, err := dial(rpcAddress, tlsConfig, d.logger)
-	if err != nil {
-		return nil, err
-	}
-
-	return connection, nil
+	return dial(rpcAddress, tlsConfig, d.logger)
 }

@@ -1,13 +1,12 @@
 package client
 
 import (
-	"crypto/tls"
 	"fmt"
 	"sync"
 
 	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/transport"
 
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -22,8 +21,8 @@ type (
 	}
 
 	clientFactory struct {
-		rpcFactory rpc.RPCFactory
-		logger     log.Logger
+		transportProvider *transport.TransportProvider
+		logger            log.Logger
 	}
 
 	ClientProvider interface {
@@ -98,25 +97,27 @@ func NewClientFactory(
 	logger log.Logger,
 ) ClientFactory {
 	return &clientFactory{
-		rpcFactory: rpcFactory,
-		logger:     logger,
+		transportProvider: &transport.TransportProvider{},
+		logger:            logger,
 	}
 }
 
 func (cf *clientFactory) NewRemoteAdminClient(
 	clientConfig config.ClientConfig,
 ) (adminservice.AdminServiceClient, error) {
-	var tlsConfig *tls.Config
 	var err error
 
-	if clientConfig.TLS.IsEnabled() {
-		tlsConfig, err = encryption.GetClientTLSConfig(clientConfig.TLS)
-		if err != nil {
-			return nil, err
-		}
-	}
+	// var tlsConfig *tls.Config
+	// if clientConfig.TLS.IsEnabled() {
+	// 	tlsConfig, err = encryption.GetClientTLSConfig(clientConfig.TLS)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// }
 
-	connection, err := cf.rpcFactory.CreateRemoteFrontendGRPCConnection(clientConfig.ForwardAddress, tlsConfig)
+	clientTransport := cf.transportProvider.CreateClientTransport(clientConfig)
+	// connection, err := cf.rpcFactory.CreateRemoteFrontendGRPCConnection(clientConfig.ServerAddress, tlsConfig)
+	connection, err := clientTransport.Dial()
 	if err != nil {
 		return nil, err
 	}
@@ -127,19 +128,10 @@ func (cf *clientFactory) NewRemoteAdminClient(
 func (cf *clientFactory) NewRemoteWorkflowServiceClient(
 	clientConfig config.ClientConfig,
 ) (workflowservice.WorkflowServiceClient, error) {
-	var tlsConfig *tls.Config
 	var err error
 
-	// TODO: refactor a bit. probably only need to load tls config once.
-	if clientConfig.TLS.IsEnabled() {
-		tlsConfig, err = encryption.GetClientTLSConfig(clientConfig.TLS)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// TODO: maybe only need to create one connection?
-	connection, err := cf.rpcFactory.CreateRemoteFrontendGRPCConnection(clientConfig.ForwardAddress, tlsConfig)
+	clientTransport := cf.transportProvider.CreateClientTransport(clientConfig)
+	connection, err := clientTransport.Dial()
 	if err != nil {
 		return nil, err
 	}

@@ -1,19 +1,27 @@
 inbound:
   name: "inbound-proxy"
   server:
-    listenAddress: ""
-    tls:
-      certificatePath: ""
-      keyPath: ""
-      clientCAPath: ""
-      requireClientAuth: true
+    stream:
+      name : "migration-stream"
+    tcp: 
+      listenAddress:
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        clientCAPath: ""
+        requireClientAuth: true
+
   client:
-    forwardAddress:
-    tls:
-      certificatePath: ""
-      keyPath: ""
-      serverCAPath: ""
-      serverName: ""
+    stream:
+      mode : "client"
+      name : "temporal-cloud"
+    tcp:
+      forwardAddress:
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        serverCAPath: ""
+        serverName: ""
   aclPolicy:
     allowedMethods:
       adminService:
@@ -38,13 +46,14 @@ outbound:
       clientCAPath: ""
       requireClientAuth: true
   client:
-    forwardAddress:
-    tls:
-      certificatePath: ""
-      keyPath: ""
-      serverCAPath: ""
-      serverName: ""
+    transport: 
+
   namespaceNameTranslation:
     mappings:
       - localName: "example"
         remoteName: "example.cloud"
+
+streams:
+  streamClients:
+    - name : "migration-stream"
+    - tls: 

@@ -2,9 +2,9 @@ package proxy
 
 import (
 	"fmt"
-	"net"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/transport"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
@@ -19,6 +19,7 @@ type (
 		server                 *grpc.Server
 		adminHandler           adminservice.AdminServiceServer
 		workflowserviceHandler workflowservice.WorkflowServiceServer
+		serverTransport        transport.Server
 		logger                 log.Logger
 	}
 )
@@ -29,6 +30,7 @@ func NewTemporalAPIServer(
 	adminHandler adminservice.AdminServiceServer,
 	workflowserviceHandler workflowservice.WorkflowServiceServer,
 	serverOptions []grpc.ServerOption,
+	serverTransport transport.Server,
 	logger log.Logger,
 ) *TemporalAPIServer {
 	server := grpc.NewServer(serverOptions...)
@@ -38,6 +40,7 @@ func NewTemporalAPIServer(
 		server:                 server,
 		adminHandler:           adminHandler,
 		workflowserviceHandler: workflowserviceHandler,
+		serverTransport:        serverTransport,
 		logger:                 logger,
 	}
 }
@@ -46,7 +49,7 @@ func (s *TemporalAPIServer) Start() error {
 	adminservice.RegisterAdminServiceServer(s.server, s.adminHandler)
 	workflowservice.RegisterWorkflowServiceServer(s.server, s.workflowserviceHandler)
 
-	grpcListener, err := net.Listen("tcp", s.serverConfig.ListenAddress)
+	listner, err := s.serverTransport.Listener()
 	if err != nil {
 		s.logger.Fatal("Failed to start gRPC listener", tag.Error(err))
 		return err
@@ -54,7 +57,7 @@ func (s *TemporalAPIServer) Start() error {
 
 	s.logger.Info(fmt.Sprintf("Starting %s with config: %v", s.serviceName, s.serverConfig))
 	go func() {
-		if err := s.server.Serve(grpcListener); err != nil {
+		if err := s.server.Serve(listner); err != nil {
 			s.logger.Fatal("Failed to start proxy", tag.Error(err))
 		}
 	}()
