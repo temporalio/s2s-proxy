@@ -17,29 +17,29 @@ import (
 
 type (
 	Client interface {
-		Dial() (*grpc.ClientConn, error)
+		Connect() (*grpc.ClientConn, error)
 	}
 
 	Server interface {
-		Listener() (net.Listener, error)
+		Listen() (net.Listener, error)
 	}
 	streamClient struct {
-		config  config.TCPClient
+		config  config.TCPClientSetting
 		session *yamux.Session
 	}
 
 	streamServer struct {
-		config  config.TCPServer
+		config  config.TCPServerSetting
 		session *yamux.Session
 	}
 
 	tcpClient struct {
-		config config.TCPClient
+		config config.TCPClientSetting
 		logger log.Logger
 	}
 
 	tcpServer struct {
-		config config.TCPServer
+		config config.TCPServerSetting
 	}
 
 	sessionTransport struct {
@@ -91,19 +91,18 @@ func (s *streamServer) start() error {
 }
 
 func (c *streamServer) stop() {
-
 }
 
 func (t *TransportProvider) Init() error {
 	for _, cfg := range t.transportConfig.Clients {
 		t.streamClients[cfg.Name] = &streamClient{
-			config: cfg.TCPClient,
+			config: cfg.TCPClientSetting,
 		}
 	}
 
 	for _, cfg := range t.transportConfig.Servers {
 		t.streamServer[cfg.Name] = &streamServer{
-			config: cfg.TCPServer,
+			config: cfg.TCPServerSetting,
 		}
 	}
 
@@ -122,7 +121,7 @@ func (t *TransportProvider) Init() error {
 	return nil
 }
 
-func (t *TransportProvider) getSession(setting config.StreamSetting) (*yamux.Session, error) {
+func (t *TransportProvider) getSession(setting config.MultiplexSetting) (*yamux.Session, error) {
 	if setting.Mode == config.ClientMode {
 		client := t.streamClients[setting.Name]
 		if client == nil {
@@ -141,8 +140,8 @@ func (t *TransportProvider) getSession(setting config.StreamSetting) (*yamux.Ses
 }
 
 func (t *TransportProvider) CreateServerTransport(cfg config.ServerConfig) (Server, error) {
-	if cfg.Stream != nil {
-		session, err := t.getSession(*cfg.Stream)
+	if cfg.Type == config.MultiplexTransport {
+		session, err := t.getSession(cfg.MultiplexSetting)
 		if err != nil {
 			return nil, err
 		}
@@ -152,13 +151,13 @@ func (t *TransportProvider) CreateServerTransport(cfg config.ServerConfig) (Serv
 	}
 
 	return &tcpServer{
-		config: cfg.TCPServer,
+		config: cfg.TCPServerSetting,
 	}, nil
 }
 
 func (t *TransportProvider) CreateClientTransport(cfg config.ClientConfig) (Client, error) {
-	if cfg.Stream != nil {
-		session, err := t.getSession(*cfg.Stream)
+	if cfg.Type == config.MultiplexTransport {
+		session, err := t.getSession(cfg.MultiplexSetting)
 		if err != nil {
 			return nil, err
 		}
@@ -168,11 +167,11 @@ func (t *TransportProvider) CreateClientTransport(cfg config.ClientConfig) (Clie
 	}
 
 	return &tcpClient{
-		config: cfg.TCPClient,
+		config: cfg.TCPClientSetting,
 	}, nil
 }
 
-func (c *tcpClient) Dial() (*grpc.ClientConn, error) {
+func (c *tcpClient) Connect() (*grpc.ClientConn, error) {
 	var tlsConfig *tls.Config
 	var err error
 	if tls := c.config.TLS; tls.IsEnabled() {
@@ -185,7 +184,7 @@ func (c *tcpClient) Dial() (*grpc.ClientConn, error) {
 	return dial(c.config.ServerAddress, tlsConfig, c.logger)
 }
 
-func (s *tcpServer) Listener() (net.Listener, error) {
+func (s *tcpServer) Listen() (net.Listener, error) {
 	return net.Listen("tcp", s.config.ListenAddress)
 }
 
@@ -197,7 +196,7 @@ func NewSessionServer() Server {
 	return &sessionTransport{}
 }
 
-func (s *sessionTransport) Dial() (*grpc.ClientConn, error) {
+func (s *sessionTransport) Connect() (*grpc.ClientConn, error) {
 	conn, err := s.session.Open()
 	if err != nil {
 		return nil, err
@@ -216,6 +215,6 @@ func (s *sessionTransport) Dial() (*grpc.ClientConn, error) {
 	)
 }
 
-func (s *sessionTransport) Listener() (net.Listener, error) {
+func (s *sessionTransport) Listen() (net.Listener, error) {
 	return s.session, nil
 }

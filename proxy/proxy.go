@@ -102,7 +102,10 @@ func (s *Proxy) createServer(cfg config.ProxyConfig, logger log.Logger, clientFa
 	}
 
 	provider := &transport.TransportProvider{}
-	serverTransport := provider.CreateServerTransport(cfg.Server)
+	serverTransport, err := provider.CreateServerTransport(cfg.Server)
+	if err != nil {
+		return nil, err
+	}
 
 	return NewTemporalAPIServer(
 		cfg.Name,
@@ -116,10 +119,6 @@ func (s *Proxy) createServer(cfg config.ProxyConfig, logger log.Logger, clientFa
 }
 
 func (s *Proxy) Start() error {
-	if err := s.streamManager.start(s.config.Streams); err != nil {
-		return err
-	}
-
 	if s.outboundServer != nil {
 		if err := s.outboundServer.Start(); err != nil {
 			return err

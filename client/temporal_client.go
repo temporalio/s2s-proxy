@@ -105,19 +105,13 @@ func NewClientFactory(
 func (cf *clientFactory) NewRemoteAdminClient(
 	clientConfig config.ClientConfig,
 ) (adminservice.AdminServiceClient, error) {
-	var err error
+	clientTransport, err := cf.transportProvider.CreateClientTransport(clientConfig)
+	if err != nil {
+		return nil, err
+	}
 
-	// var tlsConfig *tls.Config
-	// if clientConfig.TLS.IsEnabled() {
-	// 	tlsConfig, err = encryption.GetClientTLSConfig(clientConfig.TLS)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// }
-
-	clientTransport := cf.transportProvider.CreateClientTransport(clientConfig)
 	// connection, err := cf.rpcFactory.CreateRemoteFrontendGRPCConnection(clientConfig.ServerAddress, tlsConfig)
-	connection, err := clientTransport.Dial()
+	connection, err := clientTransport.Connect()
 	if err != nil {
 		return nil, err
 	}
@@ -128,10 +122,12 @@ func (cf *clientFactory) NewRemoteAdminClient(
 func (cf *clientFactory) NewRemoteWorkflowServiceClient(
 	clientConfig config.ClientConfig,
 ) (workflowservice.WorkflowServiceClient, error) {
-	var err error
+	clientTransport, err := cf.transportProvider.CreateClientTransport(clientConfig)
+	if err != nil {
+		return nil, err
+	}
 
-	clientTransport := cf.transportProvider.CreateClientTransport(clientConfig)
-	connection, err := clientTransport.Dial()
+	connection, err := clientTransport.Connect()
 	if err != nil {
 		return nil, err
 	}

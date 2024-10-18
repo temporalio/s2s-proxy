@@ -21,6 +21,7 @@ import (
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
+	"github.com/temporalio/s2s-proxy/transport"
 )
 
 type (
@@ -111,30 +112,47 @@ func newEchoServer(
 		}
 
 		clientConfig = config.ClientConfig{
-			ServerAddress: localProxyCfg.Outbound.Server.ListenAddress,
+			TCPClientSetting: config.TCPClientSetting{
+				ServerAddress: localProxyCfg.Outbound.Server.ListenAddress,
+			},
 		}
 	} else {
 		// No local proxy
 		if remoteProxyCfg != nil {
 			clientConfig = config.ClientConfig{
-				ServerAddress: remoteProxyCfg.Inbound.Server.ListenAddress,
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: remoteProxyCfg.Inbound.Server.ListenAddress,
+				},
 			}
 		} else {
 			clientConfig = config.ClientConfig{
-				ServerAddress: remoteClusterInfo.serverAddress,
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: remoteClusterInfo.serverAddress,
+				},
 			}
 		}
+	}
+
+	serverConfig := config.ServerConfig{
+		TCPServerSetting: config.TCPServerSetting{
+			ListenAddress: localClusterInfo.serverAddress,
+		},
+	}
+
+	provider := &transport.TransportProvider{}
+	serverTransport, err := provider.CreateServerTransport(serverConfig)
+	if err != nil {
+		panic(err)
 	}
 
 	return &echoServer{
 		server: s2sproxy.NewTemporalAPIServer(
 			serviceName,
-			config.ServerConfig{
-				ListenAddress: localClusterInfo.serverAddress,
-			},
+			serverConfig,
 			senderAdminService,
 			senderWorkflowService,
 			nil,
+			serverTransport,
 			logger),
 		proxy:             proxy,
 		clusterInfo:       localClusterInfo,

@@ -121,19 +121,27 @@ func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 		Inbound: &config.ProxyConfig{
 			Name: "proxy1-inbound-server",
 			Server: config.ServerConfig{
-				ListenAddress: serverProxyInboundAddress,
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: serverProxyInboundAddress,
+				},
 			},
 			Client: config.ClientConfig{
-				ServerAddress: echoServerAddress,
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: echoServerAddress,
+				},
 			},
 		},
 		Outbound: &config.ProxyConfig{
 			Name: "proxy1-outbound-server",
 			Server: config.ServerConfig{
-				ListenAddress: serverProxyOutboundAddress,
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: serverProxyOutboundAddress,
+				},
 			},
 			Client: config.ClientConfig{
-				ServerAddress: "to-be-added",
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: "to-be-added",
+				},
 			},
 		},
 	}, opts)
@@ -167,19 +175,27 @@ func createEchoClientConfig(opts ...cfgOption) *config.S2SProxyConfig {
 		Inbound: &config.ProxyConfig{
 			Name: "proxy2-inbound-server",
 			Server: config.ServerConfig{
-				ListenAddress: clientProxyInboundAddress,
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: clientProxyInboundAddress,
+				},
 			},
 			Client: config.ClientConfig{
-				ServerAddress: echoClientAddress,
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: echoClientAddress,
+				},
 			},
 		},
 		Outbound: &config.ProxyConfig{
 			Name: "proxy2-outbound-server",
 			Server: config.ServerConfig{
-				ListenAddress: clientProxyOutboundAddress,
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: clientProxyOutboundAddress,
+				},
 			},
 			Client: config.ClientConfig{
-				ServerAddress: "to-be-added",
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: "to-be-added",
+				},
 			},
 		},
 	}, opts)

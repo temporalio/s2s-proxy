@@ -49,7 +49,7 @@ func (s *TemporalAPIServer) Start() error {
 	adminservice.RegisterAdminServiceServer(s.server, s.adminHandler)
 	workflowservice.RegisterWorkflowServiceServer(s.server, s.workflowserviceHandler)
 
-	listner, err := s.serverTransport.Listener()
+	listner, err := s.serverTransport.Listen()
 	if err != nil {
 		s.logger.Fatal("Failed to start gRPC listener", tag.Error(err))
 		return err

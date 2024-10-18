@@ -15,11 +15,18 @@ const (
 	ConfigPathFlag = "config"
 )
 
-type StreamMode string
+type TransportType string
 
 const (
-	ClientMode StreamMode = "client"
-	ServerMode StreamMode = "server"
+	TCPTransport       TransportType = "tcp"
+	MultiplexTransport TransportType = "multiplex"
+)
+
+type MultiplexMode string
+
+const (
+	ClientMode MultiplexMode = "client"
+	ServerMode MultiplexMode = "server"
 )
 
 type (
@@ -27,7 +34,7 @@ type (
 		GetS2SProxyConfig() S2SProxyConfig
 	}
 
-	TCPServer struct {
+	TCPServerSetting struct {
 		// ListenAddress indicates the server address (Host:Port) for listening requests
 		ListenAddress string                     `yaml:"listenAddress"`
 		TLS           encryption.ServerTLSConfig `yaml:"tls"`
@@ -35,35 +42,37 @@ type (
 		ExternalAddress string `yaml:"externalAddress"`
 	}
 
-	TCPClient struct {
+	TCPClientSetting struct {
 		// ServerAddress indicates the address (Host:Port) for forwarding requests
 		ServerAddress string                     `yaml:"serverAddress"`
 		TLS           encryption.ClientTLSConfig `yaml:"tls"`
 	}
 
-	StreamSetting struct {
-		Mode StreamMode
+	MultiplexSetting struct {
+		Mode MultiplexMode
 		Name string
 	}
 
-	StreamServer struct {
+	MultiplexServerSetting struct {
 		Name string
-		TCPServer
+		TCPServerSetting
 	}
 
-	StreamClient struct {
+	MultiplexClientSetting struct {
 		Name string
-		TCPClient
+		TCPClientSetting
 	}
 
 	ServerConfig struct {
-		TCPServer
-		Stream *StreamSetting
+		Type TransportType
+		TCPServerSetting
+		MultiplexSetting
 	}
 
 	ClientConfig struct {
-		TCPClient
-		Stream *StreamSetting
+		Type TransportType
+		TCPClientSetting
+		MultiplexSetting
 	}
 
 	ProxyConfig struct {
@@ -75,8 +84,8 @@ type (
 	}
 
 	TransportConfig struct {
-		Clients []StreamClient
-		Servers []StreamServer
+		Clients []MultiplexClientSetting
+		Servers []MultiplexServerSetting
 	}
 
 	S2SProxyConfig struct {
