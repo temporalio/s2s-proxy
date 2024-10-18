@@ -21,7 +21,7 @@ type (
 	}
 
 	Server interface {
-		Listen() (net.Listener, error)
+		Serve(server *grpc.Server) error
 	}
 	streamClient struct {
 		config  config.TCPClientSetting
@@ -47,9 +47,9 @@ type (
 	}
 
 	TransportProvider struct {
-		transportConfig config.TransportConfig
+		transportConfig config.MultiplexTransportConfig
 		streamClients   map[string]*streamClient
-		streamServer    map[string]*streamServer
+		streamServers   map[string]*streamServer
 	}
 )
 
@@ -93,6 +93,14 @@ func (s *streamServer) start() error {
 func (c *streamServer) stop() {
 }
 
+func NewTranprotProvider(cfg config.MultiplexTransportConfig) *TransportProvider {
+	return &TransportProvider{
+		transportConfig: cfg,
+		streamClients:   make(map[string]*streamClient),
+		streamServers:   make(map[string]*streamServer),
+	}
+}
+
 func (t *TransportProvider) Init() error {
 	for _, cfg := range t.transportConfig.Clients {
 		t.streamClients[cfg.Name] = &streamClient{
@@ -101,12 +109,12 @@ func (t *TransportProvider) Init() error {
 	}
 
 	for _, cfg := range t.transportConfig.Servers {
-		t.streamServer[cfg.Name] = &streamServer{
+		t.streamServers[cfg.Name] = &streamServer{
 			config: cfg.TCPServerSetting,
 		}
 	}
 
-	for _, server := range t.streamServer {
+	for _, server := range t.streamServers {
 		if err := server.start(); err != nil {
 			return err
 		}
@@ -121,19 +129,15 @@ func (t *TransportProvider) Init() error {
 	return nil
 }
 
-func (t *TransportProvider) getSession(setting config.MultiplexSetting) (*yamux.Session, error) {
-	if setting.Mode == config.ClientMode {
-		client := t.streamClients[setting.Name]
-		if client == nil {
-			return nil, fmt.Errorf("not able to find client")
-		}
-
+func (t *TransportProvider) getMultiplexSession(name string) (*yamux.Session, error) {
+	client := t.streamClients[name]
+	if client != nil {
 		return client.session, nil
 	}
 
-	server := t.streamServer[setting.Name]
+	server := t.streamServers[name]
 	if server == nil {
-		return nil, fmt.Errorf("not able to find server")
+		return nil, fmt.Errorf("not able to find session")
 	}
 
 	return server.session, nil
@@ -141,7 +145,7 @@ func (t *TransportProvider) getSession(setting config.MultiplexSetting) (*yamux.
 
 func (t *TransportProvider) CreateServerTransport(cfg config.ServerConfig) (Server, error) {
 	if cfg.Type == config.MultiplexTransport {
-		session, err := t.getSession(cfg.MultiplexSetting)
+		session, err := t.getMultiplexSession(cfg.MultiplexerName)
 		if err != nil {
 			return nil, err
 		}
@@ -150,6 +154,7 @@ func (t *TransportProvider) CreateServerTransport(cfg config.ServerConfig) (Serv
 		}, nil
 	}
 
+	// use TCP as default transport
 	return &tcpServer{
 		config: cfg.TCPServerSetting,
 	}, nil
@@ -157,7 +162,7 @@ func (t *TransportProvider) CreateServerTransport(cfg config.ServerConfig) (Serv
 
 func (t *TransportProvider) CreateClientTransport(cfg config.ClientConfig) (Client, error) {
 	if cfg.Type == config.MultiplexTransport {
-		session, err := t.getSession(cfg.MultiplexSetting)
+		session, err := t.getMultiplexSession(cfg.MultiplexerName)
 		if err != nil {
 			return nil, err
 		}
@@ -166,6 +171,7 @@ func (t *TransportProvider) CreateClientTransport(cfg config.ClientConfig) (Clie
 		}, nil
 	}
 
+	// use TCP as default transport
 	return &tcpClient{
 		config: cfg.TCPClientSetting,
 	}, nil
@@ -184,8 +190,13 @@ func (c *tcpClient) Connect() (*grpc.ClientConn, error) {
 	return dial(c.config.ServerAddress, tlsConfig, c.logger)
 }
 
-func (s *tcpServer) Listen() (net.Listener, error) {
-	return net.Listen("tcp", s.config.ListenAddress)
+func (s *tcpServer) Serve(server *grpc.Server) error {
+	listener, err := net.Listen("tcp", s.config.ListenAddress)
+	if err != nil {
+		return err
+	}
+
+	return server.Serve(listener)
 }
 
 func NewSessionClient() Client {
@@ -215,6 +226,6 @@ func (s *sessionTransport) Connect() (*grpc.ClientConn, error) {
 	)
 }
 
-func (s *sessionTransport) Listen() (net.Listener, error) {
-	return s.session, nil
+func (s *sessionTransport) Serve(server *grpc.Server) error {
+	return server.Serve(s.session)
 }

@@ -49,15 +49,9 @@ func (s *TemporalAPIServer) Start() error {
 	adminservice.RegisterAdminServiceServer(s.server, s.adminHandler)
 	workflowservice.RegisterWorkflowServiceServer(s.server, s.workflowserviceHandler)
 
-	listner, err := s.serverTransport.Listen()
-	if err != nil {
-		s.logger.Fatal("Failed to start gRPC listener", tag.Error(err))
-		return err
-	}
-
 	s.logger.Info(fmt.Sprintf("Starting %s with config: %v", s.serviceName, s.serverConfig))
 	go func() {
-		if err := s.server.Serve(listner); err != nil {
+		if err := s.serverTransport.Serve(s.server); err != nil {
 			s.logger.Fatal("Failed to start proxy", tag.Error(err))
 		}
 	}()

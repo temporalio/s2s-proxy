@@ -48,9 +48,9 @@ type (
 		TLS           encryption.ClientTLSConfig `yaml:"tls"`
 	}
 
-	MultiplexSetting struct {
-		Mode MultiplexMode
+	MultiplexClientSetting struct {
 		Name string
+		TCPClientSetting
 	}
 
 	MultiplexServerSetting struct {
@@ -58,21 +58,16 @@ type (
 		TCPServerSetting
 	}
 
-	MultiplexClientSetting struct {
-		Name string
-		TCPClientSetting
-	}
-
 	ServerConfig struct {
 		Type TransportType
 		TCPServerSetting
-		MultiplexSetting
+		MultiplexerName string
 	}
 
 	ClientConfig struct {
 		Type TransportType
 		TCPClientSetting
-		MultiplexSetting
+		MultiplexerName string
 	}
 
 	ProxyConfig struct {
@@ -83,15 +78,15 @@ type (
 		ACLPolicy                *ACLPolicy                     `yaml:"aclPolicy"`
 	}
 
-	TransportConfig struct {
+	MultiplexTransportConfig struct {
 		Clients []MultiplexClientSetting
 		Servers []MultiplexServerSetting
 	}
 
 	S2SProxyConfig struct {
-		Inbound   *ProxyConfig `yaml:"inbound"`
-		Outbound  *ProxyConfig `yaml:"outbound"`
-		Transport TransportConfig
+		Inbound             *ProxyConfig `yaml:"inbound"`
+		Outbound            *ProxyConfig `yaml:"outbound"`
+		MultiplexTransports MultiplexTransportConfig
 	}
 
 	NamespaceNameTranslationConfig struct {
