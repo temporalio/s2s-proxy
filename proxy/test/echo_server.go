@@ -79,12 +79,24 @@ func newEchoServer(
 	localProxyCfg := localClusterInfo.s2sProxyConfig
 	remoteProxyCfg := remoteClusterInfo.s2sProxyConfig
 
+	if localProxyCfg != nil && remoteProxyCfg != nil {
+		if localProxyCfg.Outbound.Client.Type != remoteProxyCfg.Inbound.Server.Type {
+			panic(fmt.Sprintf("local proxy outbound client type: %s doesn't match with remote inbound server type: %s",
+				localProxyCfg.Outbound.Client.Type,
+				remoteProxyCfg.Inbound.Server.Type,
+			))
+		}
+	}
+
 	if localProxyCfg != nil {
-		// Setup local proxy ForwardAddress
-		if remoteProxyCfg != nil {
-			localProxyCfg.Outbound.Client.ServerAddress = remoteProxyCfg.Inbound.Server.ListenAddress
-		} else {
-			localProxyCfg.Outbound.Client.ServerAddress = remoteClusterInfo.serverAddress
+		if localProxyCfg.Outbound.Client.Type != config.MultiplexTransport {
+			// Setup local proxy forwarded server address explicitly if not using multiplex transport.
+			// If use multiplex transport, then outbound -> inbound uses established multiplex connection.
+			if remoteProxyCfg != nil {
+				localProxyCfg.Outbound.Client.ServerAddress = remoteProxyCfg.Inbound.Server.ListenAddress
+			} else {
+				localProxyCfg.Outbound.Client.ServerAddress = remoteClusterInfo.serverAddress
+			}
 		}
 
 		configProvider := config.NewMockConfigProvider(*localClusterInfo.s2sProxyConfig)
@@ -93,11 +105,10 @@ func newEchoServer(
 			logger.Fatal("Failed to create transport provider", tag.Error(err))
 		}
 
-		clientFactory := client.NewClientFactory(transportProvider, logger)
 		proxy, err = s2sproxy.NewProxy(
 			configProvider,
+			transportProvider,
 			logger,
-			clientFactory,
 		)
 
 		if err != nil {
@@ -132,15 +143,14 @@ func newEchoServer(
 		},
 	}
 
-	provider := &transport.TransportProvider{}
-	serverTransport, err := provider.CreateServerTransport(serverConfig)
-	if err != nil {
-		panic(err)
-	}
-
 	tcpTransport, err := transport.NewTransprotProvider(&config.EmptyConfigProvider)
 	if err != nil {
 		logger.Fatal("Failed to create transport provider", tag.Error(err))
+	}
+
+	serverTransport, err := tcpTransport.CreateServerTransport(serverConfig)
+	if err != nil {
+		logger.Fatal("Failed to create server transport", tag.Error(err))
 	}
 
 	return &echoServer{

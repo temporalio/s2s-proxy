@@ -8,6 +8,7 @@ import (
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/proxy"
+	"github.com/temporalio/s2s-proxy/transport"
 
 	"github.com/urfave/cli/v2"
 	"go.temporal.io/server/common/log"
@@ -61,6 +62,7 @@ func startProxy(c *cli.Context) error {
 		fx.Provide(func() *cli.Context { return c }),
 		fx.Provide(func() log.Logger { return log.NewCLILogger() }),
 		config.Module,
+		transport.Module,
 		client.Module,
 		proxy.Module,
 		fx.Populate(&proxyParams),

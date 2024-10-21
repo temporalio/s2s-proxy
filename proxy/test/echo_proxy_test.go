@@ -3,6 +3,7 @@ package proxy
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -482,24 +483,101 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 	}
 }
 
-func (s *proxyTestSuite) Test_Echo() {
+func (s *proxyTestSuite) Test_Echo_WithMultiplexTransport() {
+	muxTransportName := "muxed"
+	serverConfig := &config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy1-inbound-server",
+			Server: config.ServerConfig{
+				Type:            config.MultiplexTransport,
+				MultiplexerName: muxTransportName,
+			},
+			Client: config.ClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: echoServerAddress,
+				},
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy1-outbound-server",
+			Server: config.ServerConfig{
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: serverProxyOutboundAddress,
+				},
+			},
+			Client: config.ClientConfig{
+				Type:            config.MultiplexTransport,
+				MultiplexerName: muxTransportName,
+			},
+		},
+		MultiplexTransports: []config.MultiplexTransportConfig{
+			{
+				Name: muxTransportName,
+				Mode: config.ClientMode,
+				Client: &config.TCPClientSetting{
+					ServerAddress: clientProxyInboundAddress,
+				},
+			},
+		},
+	}
+
+	clientConfig := &config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy2-inbound-server",
+			Server: config.ServerConfig{
+				Type:            config.MultiplexTransport,
+				MultiplexerName: muxTransportName,
+			},
+			Client: config.ClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: echoClientAddress,
+				},
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy2-outbound-server",
+			Server: config.ServerConfig{
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: clientProxyOutboundAddress,
+				},
+			},
+			Client: config.ClientConfig{
+				Type:            config.MultiplexTransport,
+				MultiplexerName: muxTransportName,
+			},
+		},
+		MultiplexTransports: []config.MultiplexTransportConfig{
+			{
+				Name: muxTransportName,
+				Mode: config.ServerMode,
+				Server: &config.TCPServerSetting{
+					ListenAddress: clientProxyInboundAddress,
+				},
+			},
+		},
+	}
 
 	echoServerInfo := clusterInfo{
 		serverAddress:  echoServerAddress,
 		clusterShardID: serverClusterShard,
-		s2sProxyConfig: createEchoServerConfig(),
+		s2sProxyConfig: serverConfig,
 	}
 	echoClientInfo := clusterInfo{
 		serverAddress:  echoClientAddress,
 		clusterShardID: clientClusterShard,
-		s2sProxyConfig: createEchoClientConfig(),
+		s2sProxyConfig: clientConfig,
 	}
 
 	logger := log.NewTestLogger()
+	var wg sync.WaitGroup
+	wg.Add(2)
+
 	echoServer := newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
 	echoClient := newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
-	echoServer.start()
+	wg.Wait()
+
 	echoClient.start()
+	echoServer.start()
 
 	defer func() {
 		echoClient.stop()

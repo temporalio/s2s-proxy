@@ -22,6 +22,13 @@ const (
 	MultiplexTransport TransportType = "multiplex"
 )
 
+type MultiplexMode string
+
+const (
+	ClientMode MultiplexMode = "client"
+	ServerMode MultiplexMode = "server"
+)
+
 type (
 	ConfigProvider interface {
 		GetS2SProxyConfig() S2SProxyConfig
@@ -63,6 +70,7 @@ type (
 
 	MultiplexTransportConfig struct {
 		Name   string
+		Mode   MultiplexMode
 		Client *TCPClientSetting
 		Server *TCPServerSetting
 	}

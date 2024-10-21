@@ -15,24 +15,22 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type multiplexMode string
-
-const (
-	clientMode multiplexMode = "client"
-	serverMode multiplexMode = "server"
-)
-
 type (
-	Client interface {
+	ClientTransport interface {
 		Connect() (*grpc.ClientConn, error)
 	}
 
-	Server interface {
+	ServerTransport interface {
 		Serve(server *grpc.Server) error
 	}
 
+	TransportProvider interface {
+		CreateClientTransport(cfg config.ClientConfig) (ClientTransport, error)
+		CreateServerTransport(cfg config.ServerConfig) (ServerTransport, error)
+	}
+
 	multiplexTransport struct {
-		mode    multiplexMode
+		mode    config.MultiplexMode
 		session *yamux.Session
 		isReady bool
 	}
@@ -50,7 +48,7 @@ type (
 		session *yamux.Session
 	}
 
-	TransportProvider struct {
+	transportProviderImpl struct {
 		multiplexTransports map[string]*multiplexTransport
 	}
 )
@@ -81,53 +79,52 @@ func createServerSession(setting config.TCPServerSetting) (*yamux.Session, error
 
 func NewTransprotProvider(
 	configProvider config.ConfigProvider,
-) (*TransportProvider, error) {
-	provider := &TransportProvider{
+) (TransportProvider, error) {
+	provider := &transportProviderImpl{
 		multiplexTransports: make(map[string]*multiplexTransport),
 	}
 
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	for _, multiplex := range s2sConfig.MultiplexTransports {
-		if multiplex.Client != nil && multiplex.Server != nil {
-			return nil, fmt.Errorf("invalid multiplexed transport for %s: client and server can't be defined together.", multiplex.Name)
-		}
+		var session *yamux.Session
+		var err error
 
-		if multiplex.Client == nil && multiplex.Server == nil {
-			return nil, fmt.Errorf("invalid multiplexed transport for %s: neigther clietn nor server is defined.", multiplex.Name)
-		}
-
-		if multiplex.Client != nil {
-			provider.multiplexTransports[multiplex.Name] = &multiplexTransport{
-				mode: clientMode,
+		switch multiplex.Mode {
+		case config.ClientMode:
+			if multiplex.Client == nil {
+				return nil, fmt.Errorf("invalid multiplexed transport for %s: client setting is not provided.", multiplex.Name)
 			}
 
-			session, err := createClientSession(*multiplex.Client)
+			session, err = createClientSession(*multiplex.Client)
 			if err != nil {
 				return nil, err
 			}
 
-			provider.multiplexTransports[multiplex.Name].session = session
-			provider.multiplexTransports[multiplex.Name].isReady = true
-
-		} else if multiplex.Server != nil {
-			provider.multiplexTransports[multiplex.Name] = &multiplexTransport{
-				mode: serverMode,
+		case config.ServerMode:
+			if multiplex.Server == nil {
+				return nil, fmt.Errorf("invalid multiplexed transport for %s: server setting is not provided.", multiplex.Name)
 			}
 
-			session, err := createServerSession(*multiplex.Server)
+			session, err = createServerSession(*multiplex.Server)
 			if err != nil {
 				return nil, err
 			}
 
-			provider.multiplexTransports[multiplex.Name].session = session
-			provider.multiplexTransports[multiplex.Name].isReady = true
+		default:
+			return nil, fmt.Errorf("invalid multiplexed transport for %s: unknown mode %s.", multiplex.Name, multiplex.Mode)
+		}
+
+		provider.multiplexTransports[multiplex.Name] = &multiplexTransport{
+			mode:    multiplex.Mode,
+			session: session,
+			isReady: true,
 		}
 	}
 
 	return provider, nil
 }
 
-func (t *TransportProvider) getMultiplexSession(name string) (*yamux.Session, error) {
+func (t *transportProviderImpl) getMultiplexSession(name string) (*yamux.Session, error) {
 	ts := t.multiplexTransports[name]
 	if ts == nil {
 		return nil, fmt.Errorf("could not find transport  %s", name)
@@ -140,7 +137,7 @@ func (t *TransportProvider) getMultiplexSession(name string) (*yamux.Session, er
 	return ts.session, nil
 }
 
-func (t *TransportProvider) CreateServerTransport(cfg config.ServerConfig) (Server, error) {
+func (t *transportProviderImpl) CreateServerTransport(cfg config.ServerConfig) (ServerTransport, error) {
 	if cfg.Type == config.MultiplexTransport {
 		session, err := t.getMultiplexSession(cfg.MultiplexerName)
 		if err != nil {
@@ -157,7 +154,7 @@ func (t *TransportProvider) CreateServerTransport(cfg config.ServerConfig) (Serv
 	}, nil
 }
 
-func (t *TransportProvider) CreateClientTransport(cfg config.ClientConfig) (Client, error) {
+func (t *transportProviderImpl) CreateClientTransport(cfg config.ClientConfig) (ClientTransport, error) {
 	if cfg.Type == config.MultiplexTransport {
 		session, err := t.getMultiplexSession(cfg.MultiplexerName)
 		if err != nil {
@@ -196,11 +193,11 @@ func (s *tcpServer) Serve(server *grpc.Server) error {
 	return server.Serve(listener)
 }
 
-func NewSessionClient() Client {
+func NewSessionClient() ClientTransport {
 	return &sessionTransport{}
 }
 
-func NewSessionServer() Server {
+func NewSessionServer() ServerTransport {
 	return &sessionTransport{}
 }
 

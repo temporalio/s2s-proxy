@@ -13,9 +13,10 @@ import (
 
 type (
 	Proxy struct {
-		config         config.S2SProxyConfig
-		outboundServer *TemporalAPIServer
-		inboundServer  *TemporalAPIServer
+		config            config.S2SProxyConfig
+		transportProvider transport.TransportProvider
+		outboundServer    *TemporalAPIServer
+		inboundServer     *TemporalAPIServer
 	}
 
 	proxyOptions struct {
@@ -26,14 +27,15 @@ type (
 
 func NewProxy(
 	configProvider config.ConfigProvider,
+	transportProvider transport.TransportProvider,
 	logger log.Logger,
-	clientFactory client.ClientFactory,
 ) (*Proxy, error) {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	var err error
 
 	proxy := Proxy{
-		config: s2sConfig,
+		config:            s2sConfig,
+		transportProvider: transportProvider,
 	}
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
@@ -43,7 +45,7 @@ func NewProxy(
 	// Here a remote server can be another proxy as well.
 	//    server-a <-> proxy-a <-> proxy-b <-> server-b
 	if s2sConfig.Outbound != nil {
-		if proxy.outboundServer, err = proxy.createServer(*s2sConfig.Outbound, logger, clientFactory, proxyOptions{
+		if proxy.outboundServer, err = proxy.createServer(*s2sConfig.Outbound, logger, proxyOptions{
 			IsInbound: false,
 			Config:    s2sConfig,
 		}); err != nil {
@@ -52,7 +54,7 @@ func NewProxy(
 	}
 
 	if s2sConfig.Inbound != nil {
-		if proxy.inboundServer, err = proxy.createServer(*s2sConfig.Inbound, logger, clientFactory, proxyOptions{
+		if proxy.inboundServer, err = proxy.createServer(*s2sConfig.Inbound, logger, proxyOptions{
 			IsInbound: true,
 			Config:    s2sConfig,
 		}); err != nil {
@@ -95,18 +97,18 @@ func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool
 	return opts, nil
 }
 
-func (s *Proxy) createServer(cfg config.ProxyConfig, logger log.Logger, clientFactory client.ClientFactory, opts proxyOptions) (*TemporalAPIServer, error) {
+func (s *Proxy) createServer(cfg config.ProxyConfig, logger log.Logger, opts proxyOptions) (*TemporalAPIServer, error) {
 	serverOpts, err := makeServerOptions(logger, cfg, opts.IsInbound)
 	if err != nil {
 		return nil, err
 	}
 
-	provider := &transport.TransportProvider{}
-	serverTransport, err := provider.CreateServerTransport(cfg.Server)
+	serverTransport, err := s.transportProvider.CreateServerTransport(cfg.Server)
 	if err != nil {
 		return nil, err
 	}
 
+	clientFactory := client.NewClientFactory(s.transportProvider, logger)
 	return NewTemporalAPIServer(
 		cfg.Name,
 		cfg.Server,

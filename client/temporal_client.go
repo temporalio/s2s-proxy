@@ -20,7 +20,7 @@ type (
 	}
 
 	clientFactory struct {
-		transportProvider *transport.TransportProvider
+		transportProvider transport.TransportProvider
 		logger            log.Logger
 	}
 
@@ -92,7 +92,7 @@ func (c *clientProvider) GetWorkflowServiceClient() (workflowservice.WorkflowSer
 
 // NewFactory creates an instance of client factory that knows how to dispatch RPC calls.
 func NewClientFactory(
-	transportProvider *transport.TransportProvider,
+	transportProvider transport.TransportProvider,
 	logger log.Logger,
 ) ClientFactory {
 	return &clientFactory{

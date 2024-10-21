@@ -19,7 +19,7 @@ type (
 		server                 *grpc.Server
 		adminHandler           adminservice.AdminServiceServer
 		workflowserviceHandler workflowservice.WorkflowServiceServer
-		serverTransport        transport.Server
+		serverTransport        transport.ServerTransport
 		logger                 log.Logger
 	}
 )
@@ -30,7 +30,7 @@ func NewTemporalAPIServer(
 	adminHandler adminservice.AdminServiceServer,
 	workflowserviceHandler workflowservice.WorkflowServiceServer,
 	serverOptions []grpc.ServerOption,
-	serverTransport transport.Server,
+	serverTransport transport.ServerTransport,
 	logger log.Logger,
 ) *TemporalAPIServer {
 	server := grpc.NewServer(serverOptions...)

@@ -27,7 +27,7 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 	}, nil
 }
 
-func testMultiplex(t *testing.T, clientProvider *TransportProvider, serverProvider *TransportProvider) {
+func testMultiplex(t *testing.T, clientProvider TransportProvider, serverProvider TransportProvider) {
 	// client
 	client, err := clientProvider.CreateClientTransport(config.ClientConfig{
 		Type:            config.MultiplexTransport,
@@ -59,7 +59,7 @@ func testMultiplex(t *testing.T, clientProvider *TransportProvider, serverProvid
 }
 
 func TestMultiplexTransport(t *testing.T) {
-	var providerA, providerB *TransportProvider
+	var providerA, providerB TransportProvider
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -73,6 +73,7 @@ func TestMultiplexTransport(t *testing.T) {
 				MultiplexTransports: []config.MultiplexTransportConfig{
 					{
 						Name: muxedName,
+						Mode: config.ClientMode,
 						Client: &config.TCPClientSetting{
 							ServerAddress: serverAddress,
 						},
@@ -92,6 +93,7 @@ func TestMultiplexTransport(t *testing.T) {
 				MultiplexTransports: []config.MultiplexTransportConfig{
 					{
 						Name: muxedName,
+						Mode: config.ServerMode,
 						Server: &config.TCPServerSetting{
 							ListenAddress: serverAddress,
 						},
