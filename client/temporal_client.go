@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/transport"
 
@@ -93,11 +92,11 @@ func (c *clientProvider) GetWorkflowServiceClient() (workflowservice.WorkflowSer
 
 // NewFactory creates an instance of client factory that knows how to dispatch RPC calls.
 func NewClientFactory(
-	rpcFactory rpc.RPCFactory,
+	transportProvider *transport.TransportProvider,
 	logger log.Logger,
 ) ClientFactory {
 	return &clientFactory{
-		transportProvider: &transport.TransportProvider{},
+		transportProvider: transportProvider,
 		logger:            logger,
 	}
 }
@@ -110,7 +109,6 @@ func (cf *clientFactory) NewRemoteAdminClient(
 		return nil, err
 	}
 
-	// connection, err := cf.rpcFactory.CreateRemoteFrontendGRPCConnection(clientConfig.ServerAddress, tlsConfig)
 	connection, err := clientTransport.Connect()
 	if err != nil {
 		return nil, err

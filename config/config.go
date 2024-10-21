@@ -22,13 +22,6 @@ const (
 	MultiplexTransport TransportType = "multiplex"
 )
 
-type MultiplexMode string
-
-const (
-	ClientMode MultiplexMode = "client"
-	ServerMode MultiplexMode = "server"
-)
-
 type (
 	ConfigProvider interface {
 		GetS2SProxyConfig() S2SProxyConfig
@@ -46,16 +39,6 @@ type (
 		// ServerAddress indicates the address (Host:Port) for forwarding requests
 		ServerAddress string                     `yaml:"serverAddress"`
 		TLS           encryption.ClientTLSConfig `yaml:"tls"`
-	}
-
-	MultiplexClientSetting struct {
-		Name string
-		TCPClientSetting
-	}
-
-	MultiplexServerSetting struct {
-		Name string
-		TCPServerSetting
 	}
 
 	ServerConfig struct {
@@ -79,14 +62,15 @@ type (
 	}
 
 	MultiplexTransportConfig struct {
-		Clients []MultiplexClientSetting
-		Servers []MultiplexServerSetting
+		Name   string
+		Client *TCPClientSetting
+		Server *TCPServerSetting
 	}
 
 	S2SProxyConfig struct {
 		Inbound             *ProxyConfig `yaml:"inbound"`
 		Outbound            *ProxyConfig `yaml:"outbound"`
-		MultiplexTransports MultiplexTransportConfig
+		MultiplexTransports []MultiplexTransportConfig
 	}
 
 	NamespaceNameTranslationConfig struct {

@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -27,23 +28,23 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 }
 
 func testMultiplex(t *testing.T, clientProvider *TransportProvider, serverProvider *TransportProvider) {
-	client, err := serverProvider.CreateClientTransport(config.ClientConfig{
-		Type:            config.MultiplexTransport,
-		MultiplexerName: muxedName,
-	},
-	)
-	require.NoError(t, err)
-
-	server, err := clientProvider.CreateServerTransport(config.ServerConfig{
+	// client
+	client, err := clientProvider.CreateClientTransport(config.ClientConfig{
 		Type:            config.MultiplexTransport,
 		MultiplexerName: muxedName,
 	})
+	require.NoError(t, err)
 
 	grpcServer := grpc.NewServer()
 	adminservice.RegisterAdminServiceServer(grpcServer, &service{})
+	server, err := serverProvider.CreateServerTransport(config.ServerConfig{
+		Type:            config.MultiplexTransport,
+		MultiplexerName: muxedName,
+	})
+	require.NoError(t, err)
 
 	go func() {
-		err := server.Serve(grpcServer)
+		err = server.Serve(grpcServer)
 		require.NoError(t, err)
 	}()
 
@@ -58,34 +59,50 @@ func testMultiplex(t *testing.T, clientProvider *TransportProvider, serverProvid
 }
 
 func TestMultiplexTransport(t *testing.T) {
-	clientProvider := NewTranprotProvider(config.MultiplexTransportConfig{
-		Clients: []config.MultiplexClientSetting{
-			{
-				Name: muxedName,
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: serverAddress,
+	var providerA, providerB *TransportProvider
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+
+		var err error
+		providerA, err = NewTransprotProvider(config.NewMockConfigProvider(
+			config.S2SProxyConfig{
+				MultiplexTransports: []config.MultiplexTransportConfig{
+					{
+						Name: muxedName,
+						Client: &config.TCPClientSetting{
+							ServerAddress: serverAddress,
+						},
+					},
 				},
 			},
-		},
-		Servers: []config.MultiplexServerSetting{},
-	})
+		))
+		require.NoError(t, err)
+	}()
 
-	serverProvider := NewTranprotProvider(config.MultiplexTransportConfig{
-		Servers: []config.MultiplexServerSetting{
-			{
-				Name: muxedName,
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: serverAddress,
+	go func() {
+		defer wg.Done()
+
+		var err error
+		providerB, err = NewTransprotProvider(config.NewMockConfigProvider(
+			config.S2SProxyConfig{
+				MultiplexTransports: []config.MultiplexTransportConfig{
+					{
+						Name: muxedName,
+						Server: &config.TCPServerSetting{
+							ListenAddress: serverAddress,
+						},
+					},
 				},
 			},
-		},
-	})
+		))
+		require.NoError(t, err)
+	}()
 
-	go serverProvider.Init()
-	err := clientProvider.Init()
-	require.NoError(t, err)
-
-	require.NoError(t, err)
-	testMultiplex(t, clientProvider, serverProvider)
-	testMultiplex(t, serverProvider, clientProvider)
+	wg.Wait()
+	testMultiplex(t, providerA, providerB)
+	testMultiplex(t, providerB, providerA)
 }

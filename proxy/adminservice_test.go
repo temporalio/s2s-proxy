@@ -35,8 +35,10 @@ func (s *adminserviceSuite) SetupTest() {
 
 func (s *adminserviceSuite) newAdminServiceProxyServer(opts proxyOptions) adminservice.AdminServiceServer {
 	cfg := config.ClientConfig{
-		ServerAddress: "fake-forward-address",
-		TLS:           encryption.ClientTLSConfig{},
+		TCPClientSetting: config.TCPClientSetting{
+			ServerAddress: "fake-forward-address",
+			TLS:           encryption.ClientTLSConfig{},
+		},
 	}
 	s.clientFactoryMock.EXPECT().NewRemoteAdminClient(cfg).Return(s.adminClientMock, nil).Times(1)
 	return NewAdminServiceProxyServer("test-service-name", cfg, s.clientFactoryMock, opts, log.NewTestLogger())
@@ -69,7 +71,9 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 				Config: config.S2SProxyConfig{
 					Outbound: &config.ProxyConfig{
 						Server: config.ServerConfig{
-							ExternalAddress: fakeExternalAddr,
+							TCPServerSetting: config.TCPServerSetting{
+								ExternalAddress: fakeExternalAddr,
+							},
 						},
 					},
 				},
@@ -83,7 +87,9 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 				Config: config.S2SProxyConfig{
 					Outbound: &config.ProxyConfig{
 						Server: config.ServerConfig{
-							ExternalAddress: fakeExternalAddr,
+							TCPServerSetting: config.TCPServerSetting{
+								ExternalAddress: fakeExternalAddr,
+							},
 						},
 					},
 				},
@@ -97,7 +103,9 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 				Config: config.S2SProxyConfig{
 					Outbound: &config.ProxyConfig{
 						Server: config.ServerConfig{
-							ExternalAddress: "", // empty
+							TCPServerSetting: config.TCPServerSetting{
+								ExternalAddress: "", // empty
+							},
 						},
 					},
 				},
