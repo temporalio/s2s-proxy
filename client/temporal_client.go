@@ -20,8 +20,8 @@ type (
 	}
 
 	clientFactory struct {
-		transportProvider transport.TransportProvider
-		logger            log.Logger
+		transportManger transport.TransportManager
+		logger          log.Logger
 	}
 
 	ClientProvider interface {
@@ -92,19 +92,19 @@ func (c *clientProvider) GetWorkflowServiceClient() (workflowservice.WorkflowSer
 
 // NewFactory creates an instance of client factory that knows how to dispatch RPC calls.
 func NewClientFactory(
-	transportProvider transport.TransportProvider,
+	transportManager transport.TransportManager,
 	logger log.Logger,
 ) ClientFactory {
 	return &clientFactory{
-		transportProvider: transportProvider,
-		logger:            logger,
+		transportManger: transportManager,
+		logger:          logger,
 	}
 }
 
 func (cf *clientFactory) NewRemoteAdminClient(
 	clientConfig config.ClientConfig,
 ) (adminservice.AdminServiceClient, error) {
-	clientTransport, err := cf.transportProvider.CreateClientTransport(clientConfig)
+	clientTransport, err := cf.transportManger.CreateClientTransport(clientConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func (cf *clientFactory) NewRemoteAdminClient(
 func (cf *clientFactory) NewRemoteWorkflowServiceClient(
 	clientConfig config.ClientConfig,
 ) (workflowservice.WorkflowServiceClient, error) {
-	clientTransport, err := cf.transportProvider.CreateClientTransport(clientConfig)
+	clientTransport, err := cf.transportManger.CreateClientTransport(clientConfig)
 	if err != nil {
 		return nil, err
 	}

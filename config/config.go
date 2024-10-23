@@ -18,15 +18,15 @@ const (
 type TransportType string
 
 const (
-	TCPTransport       TransportType = "tcp"
-	MultiplexTransport TransportType = "multiplex"
+	TCPTransport TransportType = "tcp"
+	MuxTransport TransportType = "mux"
 )
 
-type MultiplexMode string
+type MuxMode string
 
 const (
-	ClientMode MultiplexMode = "client"
-	ServerMode MultiplexMode = "server"
+	ClientMode MuxMode = "client"
+	ServerMode MuxMode = "server"
 )
 
 type (
@@ -51,13 +51,13 @@ type (
 	ServerConfig struct {
 		Type TransportType
 		TCPServerSetting
-		MultiplexerName string
+		MuxTransportName string
 	}
 
 	ClientConfig struct {
 		Type TransportType
 		TCPClientSetting
-		MultiplexerName string
+		MuxTransportName string
 	}
 
 	ProxyConfig struct {
@@ -68,17 +68,17 @@ type (
 		ACLPolicy                *ACLPolicy                     `yaml:"aclPolicy"`
 	}
 
-	MultiplexTransportConfig struct {
+	MuxTransportConfig struct {
 		Name   string
-		Mode   MultiplexMode
+		Mode   MuxMode
 		Client *TCPClientSetting
 		Server *TCPServerSetting
 	}
 
 	S2SProxyConfig struct {
-		Inbound             *ProxyConfig `yaml:"inbound"`
-		Outbound            *ProxyConfig `yaml:"outbound"`
-		MultiplexTransports []MultiplexTransportConfig
+		Inbound       *ProxyConfig `yaml:"inbound"`
+		Outbound      *ProxyConfig `yaml:"outbound"`
+		MuxTransports []MuxTransportConfig
 	}
 
 	NamespaceNameTranslationConfig struct {

@@ -89,7 +89,7 @@ func newEchoServer(
 	}
 
 	if localProxyCfg != nil {
-		if localProxyCfg.Outbound.Client.Type != config.MultiplexTransport {
+		if localProxyCfg.Outbound.Client.Type != config.MuxTransport {
 			// Setup local proxy forwarded server address explicitly if not using multiplex transport.
 			// If use multiplex transport, then outbound -> inbound uses established multiplex connection.
 			if remoteProxyCfg != nil {
@@ -100,14 +100,13 @@ func newEchoServer(
 		}
 
 		configProvider := config.NewMockConfigProvider(*localClusterInfo.s2sProxyConfig)
-		transportProvider, err := transport.NewTransprotProvider(configProvider)
 		if err != nil {
 			logger.Fatal("Failed to create transport provider", tag.Error(err))
 		}
 
 		proxy, err = s2sproxy.NewProxy(
 			configProvider,
-			transportProvider,
+			transport.NewTransportManager(configProvider),
 			logger,
 		)
 
@@ -143,11 +142,7 @@ func newEchoServer(
 		},
 	}
 
-	tcpTransport, err := transport.NewTransprotProvider(&config.EmptyConfigProvider)
-	if err != nil {
-		logger.Fatal("Failed to create transport provider", tag.Error(err))
-	}
-
+	tcpTransport := transport.NewTransportManager(&config.EmptyConfigProvider)
 	serverTransport, err := tcpTransport.CreateServerTransport(serverConfig)
 	if err != nil {
 		logger.Fatal("Failed to create server transport", tag.Error(err))

@@ -13,10 +13,10 @@ import (
 
 type (
 	Proxy struct {
-		config            config.S2SProxyConfig
-		transportProvider transport.TransportProvider
-		outboundServer    *TemporalAPIServer
-		inboundServer     *TemporalAPIServer
+		config           config.S2SProxyConfig
+		transportManager transport.TransportManager
+		outboundServer   *TemporalAPIServer
+		inboundServer    *TemporalAPIServer
 	}
 
 	proxyOptions struct {
@@ -27,15 +27,20 @@ type (
 
 func NewProxy(
 	configProvider config.ConfigProvider,
-	transportProvider transport.TransportProvider,
+	transportManager transport.TransportManager,
 	logger log.Logger,
 ) (*Proxy, error) {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	var err error
 
+	// Establish underlying connection first before start proxy server.
+	if err := transportManager.Start(); err != nil {
+		return nil, err
+	}
+
 	proxy := Proxy{
-		config:            s2sConfig,
-		transportProvider: transportProvider,
+		config:           s2sConfig,
+		transportManager: transportManager,
 	}
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
@@ -103,12 +108,12 @@ func (s *Proxy) createServer(cfg config.ProxyConfig, logger log.Logger, opts pro
 		return nil, err
 	}
 
-	serverTransport, err := s.transportProvider.CreateServerTransport(cfg.Server)
+	serverTransport, err := s.transportManager.CreateServerTransport(cfg.Server)
 	if err != nil {
 		return nil, err
 	}
 
-	clientFactory := client.NewClientFactory(s.transportProvider, logger)
+	clientFactory := client.NewClientFactory(s.transportManager, logger)
 	return NewTemporalAPIServer(
 		cfg.Name,
 		cfg.Server,
@@ -143,4 +148,6 @@ func (s *Proxy) Stop() {
 	if s.outboundServer != nil {
 		s.outboundServer.Stop()
 	}
+
+	s.transportManager.Stop()
 }

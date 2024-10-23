@@ -489,8 +489,8 @@ func (s *proxyTestSuite) Test_Echo_WithMultiplexTransport() {
 		Inbound: &config.ProxyConfig{
 			Name: "proxy1-inbound-server",
 			Server: config.ServerConfig{
-				Type:            config.MultiplexTransport,
-				MultiplexerName: muxTransportName,
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
 			},
 			Client: config.ClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
@@ -506,11 +506,11 @@ func (s *proxyTestSuite) Test_Echo_WithMultiplexTransport() {
 				},
 			},
 			Client: config.ClientConfig{
-				Type:            config.MultiplexTransport,
-				MultiplexerName: muxTransportName,
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
 			},
 		},
-		MultiplexTransports: []config.MultiplexTransportConfig{
+		MuxTransports: []config.MuxTransportConfig{
 			{
 				Name: muxTransportName,
 				Mode: config.ClientMode,
@@ -525,8 +525,8 @@ func (s *proxyTestSuite) Test_Echo_WithMultiplexTransport() {
 		Inbound: &config.ProxyConfig{
 			Name: "proxy2-inbound-server",
 			Server: config.ServerConfig{
-				Type:            config.MultiplexTransport,
-				MultiplexerName: muxTransportName,
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
 			},
 			Client: config.ClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
@@ -542,11 +542,11 @@ func (s *proxyTestSuite) Test_Echo_WithMultiplexTransport() {
 				},
 			},
 			Client: config.ClientConfig{
-				Type:            config.MultiplexTransport,
-				MultiplexerName: muxTransportName,
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
 			},
 		},
-		MultiplexTransports: []config.MultiplexTransportConfig{
+		MuxTransports: []config.MuxTransportConfig{
 			{
 				Name: muxTransportName,
 				Mode: config.ServerMode,
@@ -569,11 +569,19 @@ func (s *proxyTestSuite) Test_Echo_WithMultiplexTransport() {
 	}
 
 	logger := log.NewTestLogger()
+	var echoServer, echoClient *echoServer
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	echoServer := newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
-	echoClient := newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
+	go func() {
+		echoServer = newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
+		wg.Done()
+	}()
+
+	go func() {
+		echoClient = newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
+		wg.Done()
+	}()
 	wg.Wait()
 
 	echoClient.start()

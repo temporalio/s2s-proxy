@@ -27,19 +27,18 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 	}, nil
 }
 
-func testMultiplex(t *testing.T, clientProvider TransportProvider, serverProvider TransportProvider) {
-	// client
-	client, err := clientProvider.CreateClientTransport(config.ClientConfig{
-		Type:            config.MultiplexTransport,
-		MultiplexerName: muxedName,
+func testConnection(t *testing.T, clientTs TransportManager, serverTs TransportManager) func() {
+	client, err := clientTs.CreateClientTransport(config.ClientConfig{
+		Type:             config.MuxTransport,
+		MuxTransportName: muxedName,
 	})
 	require.NoError(t, err)
 
 	grpcServer := grpc.NewServer()
 	adminservice.RegisterAdminServiceServer(grpcServer, &service{})
-	server, err := serverProvider.CreateServerTransport(config.ServerConfig{
-		Type:            config.MultiplexTransport,
-		MultiplexerName: muxedName,
+	server, err := serverTs.CreateServerTransport(config.ServerConfig{
+		Type:             config.MuxTransport,
+		MuxTransportName: muxedName,
 	})
 	require.NoError(t, err)
 
@@ -56,55 +55,69 @@ func testMultiplex(t *testing.T, clientProvider TransportProvider, serverProvide
 	res, err := adminClient.DescribeCluster(context.Background(), req)
 	require.NoError(t, err)
 	require.Equal(t, clusterName, res.ClusterName)
+
+	// defer stop grpcServer after test is complete because GracefulStop will
+	// close listener, which will close mux session.
+	return func() {
+		grpcServer.GracefulStop()
+	}
 }
 
-func TestMultiplexTransport(t *testing.T) {
-	var providerA, providerB TransportProvider
+func TestMuxTransport(t *testing.T) {
+	tsA := NewTransportManager(config.NewMockConfigProvider(
+		config.S2SProxyConfig{
+			MuxTransports: []config.MuxTransportConfig{
+				{
+					Name: muxedName,
+					Mode: config.ClientMode,
+					Client: &config.TCPClientSetting{
+						ServerAddress: serverAddress,
+					},
+				},
+			},
+		},
+	))
 
+	tsB := NewTransportManager(config.NewMockConfigProvider(
+		config.S2SProxyConfig{
+			MuxTransports: []config.MuxTransportConfig{
+				{
+					Name: muxedName,
+					Mode: config.ServerMode,
+					Server: &config.TCPServerSetting{
+						ListenAddress: serverAddress,
+					},
+				},
+			},
+		},
+	))
+
+	// Establish mux session between tsA and tsB concurrently
 	var wg sync.WaitGroup
 	wg.Add(2)
-
 	go func() {
 		defer wg.Done()
-
-		var err error
-		providerA, err = NewTransprotProvider(config.NewMockConfigProvider(
-			config.S2SProxyConfig{
-				MultiplexTransports: []config.MultiplexTransportConfig{
-					{
-						Name: muxedName,
-						Mode: config.ClientMode,
-						Client: &config.TCPClientSetting{
-							ServerAddress: serverAddress,
-						},
-					},
-				},
-			},
-		))
+		err := tsA.Start()
 		require.NoError(t, err)
 	}()
 
 	go func() {
 		defer wg.Done()
-
-		var err error
-		providerB, err = NewTransprotProvider(config.NewMockConfigProvider(
-			config.S2SProxyConfig{
-				MultiplexTransports: []config.MultiplexTransportConfig{
-					{
-						Name: muxedName,
-						Mode: config.ServerMode,
-						Server: &config.TCPServerSetting{
-							ListenAddress: serverAddress,
-						},
-					},
-				},
-			},
-		))
+		err := tsB.Start()
 		require.NoError(t, err)
 	}()
-
 	wg.Wait()
-	testMultiplex(t, providerA, providerB)
-	testMultiplex(t, providerB, providerA)
+
+	defer func() {
+		tsA.Stop()
+		tsB.Stop()
+	}()
+
+	var closers []func()
+	closers = append(closers, testConnection(t, tsA, tsB))
+	closers = append(closers, testConnection(t, tsB, tsA))
+
+	for _, close := range closers {
+		close()
+	}
 }

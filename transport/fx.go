@@ -5,5 +5,5 @@ import (
 )
 
 var Module = fx.Provide(
-	NewTransprotProvider,
+	NewTransportManager,
 )
