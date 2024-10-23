@@ -106,7 +106,7 @@ func newEchoServer(
 
 		proxy, err = s2sproxy.NewProxy(
 			configProvider,
-			transport.NewTransportManager(configProvider),
+			transport.NewTransportManager(configProvider, logger),
 			logger,
 		)
 
@@ -142,7 +142,7 @@ func newEchoServer(
 		},
 	}
 
-	tcpTransport := transport.NewTransportManager(&config.EmptyConfigProvider)
+	tcpTransport := transport.NewTransportManager(&config.EmptyConfigProvider, logger)
 	serverTransport, err := tcpTransport.CreateServerTransport(serverConfig)
 	if err != nil {
 		logger.Fatal("Failed to create server transport", tag.Error(err))

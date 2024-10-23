@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/temporalio/s2s-proxy/config"
+	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -15,6 +16,7 @@ type (
 		config  config.MuxTransportConfig
 		session *yamux.Session
 		isReady bool
+		logger  log.Logger
 	}
 )
 

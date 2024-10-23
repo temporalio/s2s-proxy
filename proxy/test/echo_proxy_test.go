@@ -76,6 +76,32 @@ func withACLPolicy(aclPolicy *config.ACLPolicy, inbound bool) cfgOption {
 	}
 }
 
+func withMux(mux config.MuxTransportConfig) cfgOption {
+	return func(c *config.S2SProxyConfig) {
+		c.MuxTransports = append(c.MuxTransports, mux)
+	}
+}
+
+func withClientConfig(clientCfg config.ClientConfig, inbound bool) cfgOption {
+	return func(c *config.S2SProxyConfig) {
+		if inbound {
+			c.Inbound.Client = clientCfg
+		} else {
+			c.Outbound.Client = clientCfg
+		}
+	}
+}
+
+func withServerConfig(serverCfg config.ServerConfig, inbound bool) cfgOption {
+	return func(c *config.S2SProxyConfig) {
+		if inbound {
+			c.Inbound.Server = serverCfg
+		} else {
+			c.Outbound.Server = serverCfg
+		}
+	}
+}
+
 func withNamespaceTranslation(mapping []config.NameMappingConfig, inbound bool) cfgOption {
 	return func(c *config.S2SProxyConfig) {
 		if inbound {
@@ -483,89 +509,69 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 	}
 }
 
-func (s *proxyTestSuite) Test_Echo_WithMultiplexTransport() {
+func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
 	muxTransportName := "muxed"
-	serverConfig := &config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy1-inbound-server",
-			Server: config.ServerConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			},
-			Client: config.ClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: echoServerAddress,
-				},
-			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy1-outbound-server",
-			Server: config.ServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: serverProxyOutboundAddress,
-				},
-			},
-			Client: config.ClientConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			},
-		},
-		MuxTransports: []config.MuxTransportConfig{
-			{
+
+	// Mux Transport
+	//    echoServer muxClient(proxy1) -> muxServer(proxy2) echoClient
+	//
+	// echoServer proxy1.inbound.Server(muxClient)  <- proxy2.outbound.Client(muxServer) echoClient
+	// echoServer proxy1.outbound.Client(muxClient) -> proxy2.inbound.Server(muxServer) echoClient
+	echoServerConfig := createEchoServerConfig(
+		withMux(
+			config.MuxTransportConfig{
 				Name: muxTransportName,
 				Mode: config.ClientMode,
 				Client: &config.TCPClientSetting{
 					ServerAddress: clientProxyInboundAddress,
 				},
-			},
-		},
-	}
+			}),
+		withServerConfig(
+			// proxy1.inbound.Server
+			config.ServerConfig{
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
+			}, true),
+		withClientConfig(
+			// proxy1.outbound.Client
+			config.ClientConfig{
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
+			}, false),
+	)
 
-	clientConfig := &config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy2-inbound-server",
-			Server: config.ServerConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			},
-			Client: config.ClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: echoClientAddress,
-				},
-			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy2-outbound-server",
-			Server: config.ServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: clientProxyOutboundAddress,
-				},
-			},
-			Client: config.ClientConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			},
-		},
-		MuxTransports: []config.MuxTransportConfig{
-			{
+	echoClientConfig := createEchoClientConfig(
+		withMux(
+			config.MuxTransportConfig{
 				Name: muxTransportName,
 				Mode: config.ServerMode,
 				Server: &config.TCPServerSetting{
 					ListenAddress: clientProxyInboundAddress,
 				},
-			},
-		},
-	}
+			}),
+		withServerConfig(
+			// proxy2.inbound.Server
+			config.ServerConfig{
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
+			}, true),
+		withClientConfig(
+			// proxy2.outbound.Client
+			config.ClientConfig{
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
+			}, false),
+	)
 
 	echoServerInfo := clusterInfo{
 		serverAddress:  echoServerAddress,
 		clusterShardID: serverClusterShard,
-		s2sProxyConfig: serverConfig,
+		s2sProxyConfig: echoServerConfig,
 	}
 	echoClientInfo := clusterInfo{
 		serverAddress:  echoClientAddress,
 		clusterShardID: clientClusterShard,
-		s2sProxyConfig: clientConfig,
+		s2sProxyConfig: echoClientConfig,
 	}
 
 	logger := log.NewTestLogger()

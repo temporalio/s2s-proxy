@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/api/adminservice/v1"
+	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
 )
 
@@ -64,6 +65,8 @@ func testConnection(t *testing.T, clientTs TransportManager, serverTs TransportM
 }
 
 func TestMuxTransport(t *testing.T) {
+	logger := log.NewTestLogger()
+
 	tsA := NewTransportManager(config.NewMockConfigProvider(
 		config.S2SProxyConfig{
 			MuxTransports: []config.MuxTransportConfig{
@@ -76,7 +79,7 @@ func TestMuxTransport(t *testing.T) {
 				},
 			},
 		},
-	))
+	), logger)
 
 	tsB := NewTransportManager(config.NewMockConfigProvider(
 		config.S2SProxyConfig{
@@ -90,7 +93,7 @@ func TestMuxTransport(t *testing.T) {
 				},
 			},
 		},
-	))
+	), logger)
 
 	// Establish mux session between tsA and tsB concurrently
 	var wg sync.WaitGroup

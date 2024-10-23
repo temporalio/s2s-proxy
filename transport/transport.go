@@ -7,6 +7,8 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/temporalio/s2s-proxy/config"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 )
 
@@ -29,6 +31,7 @@ type (
 	transportManagerImpl struct {
 		muxTransports map[string]*muxTransport
 		isReady       bool
+		logger        log.Logger
 	}
 )
 
@@ -58,10 +61,12 @@ func createServerSession(setting config.TCPServerSetting) (*yamux.Session, error
 
 func NewTransportManager(
 	configProvider config.ConfigProvider,
+	logger log.Logger,
 ) TransportManager {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	manager := &transportManagerImpl{
 		muxTransports: make(map[string]*muxTransport),
+		logger:        logger,
 	}
 
 	for _, multiplex := range s2sConfig.MuxTransports {
@@ -78,10 +83,12 @@ func (t *transportManagerImpl) Start() error {
 		return nil
 	}
 
+	t.logger.Info("Starting transport manager")
 	for _, mux := range t.muxTransports {
 		var err error
-
 		cfg := mux.config
+
+		t.logger.Info("Create mux connection", tag.NewAnyTag("Mode", cfg.Mode), tag.Name(cfg.Name))
 		switch cfg.Mode {
 		case config.ClientMode:
 			if cfg.Client == nil {
@@ -115,6 +122,8 @@ func (t *transportManagerImpl) Start() error {
 }
 
 func (t *transportManagerImpl) Stop() {
+	t.logger.Info("Stopping transport manager")
+
 	if !t.isReady {
 		return
 	}
