@@ -47,7 +47,13 @@ func testMuxConnection(t *testing.T, clientTs TransportManager, serverTs Transpo
 
 	go func() {
 		err = server.Serve(grpcServer)
-		require.NoError(t, err)
+		if err != nil {
+			// it is possible to receive an error here becaus we created two grpcServer:
+			// one for normal direction; one for reverse direction and they all
+			// share the same underly connection. If grpcServer A calls stop before
+			// grpcServer B calls stop, grpcServer B can get an error here.
+			t.Log("grpcServer received err", err)
+		}
 	}()
 
 	conn, err := client.Connect()
@@ -59,6 +65,7 @@ func testMuxConnection(t *testing.T, clientTs TransportManager, serverTs Transpo
 	require.NoError(t, err)
 	require.Equal(t, clusterName, res.ClusterName)
 
+	conn.Close()
 	// Defer stopping grpcServer after test is done as GracefulStop will close underlying listener
 	t.Cleanup(func() { grpcServer.GracefulStop() })
 }

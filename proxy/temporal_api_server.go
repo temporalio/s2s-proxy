@@ -56,7 +56,7 @@ func (s *TemporalAPIServer) Start() error {
 			if err == io.EOF {
 				// grpc server can get EOF error if grpc server relies on client side of
 				// mux connection. Given a mux connection from node A (mux client) to node B (mux server),
-				// we start a grpc server on A using mux client. If node B (mux server) closed the connection,
+				// and start a grpc server on A using mux client. If node B (mux server) closed the connection,
 				// grpc server on A can get an EOF client connection error from underlying mux connection.
 				// It should not happen if grpc server is based on mux server or normal TCP connection.
 				s.logger.Warn("grpc server received EOF error")
