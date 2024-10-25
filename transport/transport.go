@@ -2,10 +2,7 @@ package transport
 
 import (
 	"fmt"
-	"net"
-	"time"
 
-	"github.com/hashicorp/yamux"
 	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -35,47 +32,22 @@ type (
 	}
 )
 
-func createClientSession(setting config.TCPClientSetting) (*yamux.Session, error) {
-	conn, err := net.DialTimeout("tcp", setting.ServerAddress, 10*time.Second)
-	if err != nil {
-		return nil, err
-	}
-
-	return yamux.Client(conn, nil)
-}
-
-func createServerSession(setting config.TCPServerSetting) (*yamux.Session, error) {
-	listener, err := net.Listen("tcp", setting.ListenAddress)
-	if err != nil {
-		return nil, err
-	}
-
-	// Accept a TCP connection
-	conn, err := listener.Accept()
-	if err != nil {
-		return nil, err
-	}
-
-	return yamux.Server(conn, nil)
-}
-
 func NewTransportManager(
 	configProvider config.ConfigProvider,
 	logger log.Logger,
 ) TransportManager {
 	s2sConfig := configProvider.GetS2SProxyConfig()
-	manager := &transportManagerImpl{
-		muxTransports: make(map[string]*muxTransport),
-		logger:        logger,
-	}
-
-	for _, multiplex := range s2sConfig.MuxTransports {
-		manager.muxTransports[multiplex.Name] = &muxTransport{
-			config: multiplex,
+	muxTransports := make(map[string]*muxTransport)
+	for _, cfg := range s2sConfig.MuxTransports {
+		muxTransports[cfg.Name] = &muxTransport{
+			config: cfg,
 		}
 	}
 
-	return manager
+	return &transportManagerImpl{
+		muxTransports: muxTransports,
+		logger:        logger,
+	}
 }
 
 func (t *transportManagerImpl) Start() error {
@@ -85,36 +57,11 @@ func (t *transportManagerImpl) Start() error {
 
 	t.logger.Info("Starting transport manager")
 	for _, mux := range t.muxTransports {
-		var err error
-		cfg := mux.config
+		t.logger.Info("Starting mux transport", tag.NewAnyTag("Mode", mux.config.Mode), tag.Name(mux.config.Name))
 
-		t.logger.Info("Create mux connection", tag.NewAnyTag("Mode", cfg.Mode), tag.Name(cfg.Name))
-		switch cfg.Mode {
-		case config.ClientMode:
-			if cfg.Client == nil {
-				return fmt.Errorf("invalid multiplexed transport for %s: client setting is not provided.", cfg.Name)
-			}
-
-			mux.session, err = createClientSession(*cfg.Client)
-			if err != nil {
-				return err
-			}
-
-		case config.ServerMode:
-			if cfg.Server == nil {
-				return fmt.Errorf("invalid multiplexed transport for %s: server setting is not provided.", cfg.Name)
-			}
-
-			mux.session, err = createServerSession(*cfg.Server)
-			if err != nil {
-				return err
-			}
-
-		default:
-			return fmt.Errorf("invalid multiplexed transport for %s: unknown mode %s.", cfg.Name, cfg.Mode)
+		if err := mux.start(); err != nil {
+			return err
 		}
-
-		mux.isReady = true
 	}
 
 	t.isReady = true
@@ -129,10 +76,11 @@ func (t *transportManagerImpl) Stop() {
 	}
 
 	for _, mux := range t.muxTransports {
-		if mux.isReady && mux.session != nil {
-			mux.session.Close()
-		}
+		t.logger.Info("Stopping mux transport", tag.NewAnyTag("Mode", mux.config.Mode), tag.Name(mux.config.Name))
+		mux.stop()
 	}
+
+	t.isReady = false
 }
 
 func (t *transportManagerImpl) getMuxTransport(name string) (*muxTransport, error) {
@@ -142,7 +90,7 @@ func (t *transportManagerImpl) getMuxTransport(name string) (*muxTransport, erro
 	}
 
 	if !ts.isReady {
-		return nil, fmt.Errorf("multiplex session for transport %s is not ready", name)
+		return nil, fmt.Errorf("mutiplex transport %s is not ready", name)
 	}
 
 	return ts, nil

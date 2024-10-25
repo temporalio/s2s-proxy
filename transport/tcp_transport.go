@@ -6,14 +6,12 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
-	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
 )
 
 type (
 	tcpClient struct {
 		config config.TCPClientSetting
-		logger log.Logger
 	}
 
 	tcpServer struct {
@@ -31,7 +29,7 @@ func (c *tcpClient) Connect() (*grpc.ClientConn, error) {
 		}
 	}
 
-	return dial(c.config.ServerAddress, tlsConfig, c.logger)
+	return dial(c.config.ServerAddress, tlsConfig, nil)
 }
 
 func (s *tcpServer) Serve(server *grpc.Server) error {
