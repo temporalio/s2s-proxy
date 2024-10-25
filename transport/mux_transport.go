@@ -17,7 +17,7 @@ type (
 	muxTransport struct {
 		config   config.MuxTransportConfig
 		session  *yamux.Session
-		closeFns []func()
+		releases []func()
 		isReady  bool
 	}
 )
@@ -37,6 +37,14 @@ func (m *muxTransport) Connect() (*grpc.ClientConn, error) {
 
 func (m *muxTransport) Serve(server *grpc.Server) error {
 	return server.Serve(m.session)
+}
+
+// release registers functions to release/close underlying connection as
+// yamux.Session.Close doesn't release connection.
+// Release functions will be called in last added first called order.
+// It is not thread-safe
+func (m *muxTransport) release(f func()) {
+	m.releases = append(m.releases, f)
 }
 
 func (m *muxTransport) startClient() error {
@@ -62,7 +70,7 @@ func (m *muxTransport) startClient() error {
 		conn = client
 	}
 
-	m.closeFns = append(m.closeFns, func() { _ = conn.Close() })
+	m.release(func() { _ = conn.Close() })
 
 	m.session, err = yamux.Client(conn, nil)
 	if err != nil {
@@ -90,7 +98,7 @@ func (m *muxTransport) startServer() error {
 		return err
 	}
 
-	m.closeFns = append(m.closeFns, func() { _ = listener.Close() })
+	m.release(func() { _ = listener.Close() })
 
 	var conn net.Conn
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
@@ -104,7 +112,7 @@ func (m *muxTransport) startServer() error {
 		conn = server
 	}
 
-	m.closeFns = append(m.closeFns, func() { _ = conn.Close() })
+	m.release(func() { _ = conn.Close() })
 	m.session, err = yamux.Server(conn, nil)
 	if err != nil {
 		return err
@@ -139,10 +147,10 @@ func (m *muxTransport) stop() {
 	if m.isReady && m.session != nil {
 		m.session.Close()
 
-		for len(m.closeFns) > 0 {
-			last := len(m.closeFns) - 1
-			m.closeFns[last]()
-			m.closeFns = m.closeFns[:last]
+		for len(m.releases) > 0 {
+			last := len(m.releases) - 1
+			m.releases[last]()
+			m.releases = m.releases[:last]
 		}
 
 		m.isReady = false

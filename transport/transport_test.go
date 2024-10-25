@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,7 +30,7 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 	}, nil
 }
 
-func testConnection(t *testing.T, clientTs TransportManager, serverTs TransportManager) {
+func testMuxConnection(t *testing.T, clientTs TransportManager, serverTs TransportManager) {
 	client, err := clientTs.CreateClientTransport(config.ClientConfig{
 		Type:             config.MuxTransport,
 		MuxTransportName: muxedName,
@@ -49,7 +48,6 @@ func testConnection(t *testing.T, clientTs TransportManager, serverTs TransportM
 	go func() {
 		err = server.Serve(grpcServer)
 		require.NoError(t, err)
-		fmt.Println("--- grpc server stopped")
 	}()
 
 	conn, err := client.Connect()
@@ -61,8 +59,8 @@ func testConnection(t *testing.T, clientTs TransportManager, serverTs TransportM
 	require.NoError(t, err)
 	require.Equal(t, clusterName, res.ClusterName)
 
-	// This will close session.
-	grpcServer.GracefulStop()
+	// Defer stopping grpcServer after test is done as GracefulStop will close underlying listener
+	t.Cleanup(func() { grpcServer.GracefulStop() })
 }
 
 func testTransportWithCfg(t *testing.T, muxClientCfg config.MuxTransportConfig, muxServerCfg config.MuxTransportConfig) {
@@ -78,95 +76,27 @@ func testTransportWithCfg(t *testing.T, muxClientCfg config.MuxTransportConfig, 
 			MuxTransports: []config.MuxTransportConfig{muxServerCfg},
 		}), logger)
 
-	servChan := make(chan error, 1)
-	go func(done chan<- error) {
-		done <- muxServer.Start()
-	}(servChan)
+	serverCh := make(chan error, 1)
+	go func() {
+		serverCh <- muxServer.Start()
+	}()
 
 	err := muxClient.Start()
 	require.NoError(t, err)
 
-	err = <-servChan
+	err = <-serverCh
 	require.NoError(t, err)
 
-	defer func() {
+	t.Cleanup(func() {
 		muxClient.Stop()
 		muxServer.Stop()
-	}()
+	})
 
-	testConnection(t, muxClient, muxServer)
-
-	// var cleanups []func()
-
-	// cleanups = append(cleanups, testConnection(t, muxClient, muxServer))
-	// testConnection(t, muxServer, muxClient)
-
-	// for _, cleanup := range cleanups {
-	// 	cleanup()
-	// }
-}
-
-func TestConnect(t *testing.T) {
-	logger := log.NewTestLogger()
-
-	muxClientCfg := config.MuxTransportConfig{
-		Name: muxedName,
-		Mode: config.ClientMode,
-		Client: &config.TCPClientSetting{
-			ServerAddress: serverAddress,
-		},
-	}
-
-	muxServerCfg := config.MuxTransportConfig{
-		Name: muxedName,
-		Mode: config.ServerMode,
-		Server: &config.TCPServerSetting{
-			ListenAddress: serverAddress,
-		},
-	}
-
-	muxClient := NewTransportManager(config.NewMockConfigProvider(
-		config.S2SProxyConfig{
-			MuxTransports: []config.MuxTransportConfig{muxClientCfg},
-		}), logger)
-
-	muxServer := NewTransportManager(config.NewMockConfigProvider(
-		config.S2SProxyConfig{
-			MuxTransports: []config.MuxTransportConfig{muxServerCfg},
-		}), logger)
-
-	srvChan := make(chan error)
-	shutdownChan := make(chan struct{})
-	go func() {
-		err := muxServer.Start()
-		if err != nil {
-			srvChan <- err
-			fmt.Println("muxServer failed")
-			return
-		}
-
-		fmt.Println("muxServer started: server", *muxServer.(*transportManagerImpl).muxTransports[muxedName])
-		srvChan <- nil
-
-		fmt.Println("muxServer wait for done")
-		<-shutdownChan
-		muxServer.Stop()
-	}()
-
-	err := muxClient.Start()
-	require.NoError(t, err)
-	err = <-srvChan
-	require.NoError(t, err)
-
-	fmt.Println("Test started: client", *muxClient.(*transportManagerImpl).muxTransports[muxedName])
-	// testConnection(t, muxClient, muxServer)
-	fmt.Println("Test done")
-	shutdownChan <- struct{}{}
-	muxClient.Stop()
+	testMuxConnection(t, muxClient, muxServer)
+	testMuxConnection(t, muxServer, muxClient)
 }
 
 func TestMuxTransport(t *testing.T) {
-
 	muxClientCfg := config.MuxTransportConfig{
 		Name: muxedName,
 		Mode: config.ClientMode,
@@ -183,10 +113,7 @@ func TestMuxTransport(t *testing.T) {
 		},
 	}
 
-	for i := 0; i < 5; i++ {
-		fmt.Println(" --------------- ")
-		testTransportWithCfg(t, muxClientCfg, muxServerCfg)
-	}
+	testTransportWithCfg(t, muxClientCfg, muxServerCfg)
 }
 
 func TestMuxTransportTLS(t *testing.T) {
