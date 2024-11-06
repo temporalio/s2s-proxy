@@ -16,7 +16,7 @@ import (
 type (
 	TemporalAPIServer struct {
 		serviceName            string
-		serverConfig           config.ServerConfig
+		serverConfig           config.ProxyServerConfig
 		server                 *grpc.Server
 		adminHandler           adminservice.AdminServiceServer
 		workflowserviceHandler workflowservice.WorkflowServiceServer
@@ -27,7 +27,7 @@ type (
 
 func NewTemporalAPIServer(
 	serviceName string,
-	serverConfig config.ServerConfig,
+	serverConfig config.ProxyServerConfig,
 	adminHandler adminservice.AdminServiceServer,
 	workflowserviceHandler workflowservice.WorkflowServiceServer,
 	serverOptions []grpc.ServerOption,

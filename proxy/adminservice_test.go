@@ -34,7 +34,7 @@ func (s *adminserviceSuite) SetupTest() {
 }
 
 func (s *adminserviceSuite) newAdminServiceProxyServer(opts proxyOptions) adminservice.AdminServiceServer {
-	cfg := config.ClientConfig{
+	cfg := config.ProxyClientConfig{
 		TCPClientSetting: config.TCPClientSetting{
 			ServerAddress: "fake-forward-address",
 			TLS:           encryption.ClientTLSConfig{},
@@ -70,7 +70,7 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 				IsInbound: false,
 				Config: config.S2SProxyConfig{
 					Outbound: &config.ProxyConfig{
-						Server: config.ServerConfig{
+						Server: config.ProxyServerConfig{
 							TCPServerSetting: config.TCPServerSetting{
 								ExternalAddress: fakeExternalAddr,
 							},
@@ -86,7 +86,7 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 				IsInbound: true,
 				Config: config.S2SProxyConfig{
 					Outbound: &config.ProxyConfig{
-						Server: config.ServerConfig{
+						Server: config.ProxyServerConfig{
 							TCPServerSetting: config.TCPServerSetting{
 								ExternalAddress: fakeExternalAddr,
 							},
@@ -102,7 +102,7 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 				IsInbound: true,
 				Config: config.S2SProxyConfig{
 					Outbound: &config.ProxyConfig{
-						Server: config.ServerConfig{
+						Server: config.ProxyServerConfig{
 							TCPServerSetting: config.TCPServerSetting{
 								ExternalAddress: "", // empty
 							},

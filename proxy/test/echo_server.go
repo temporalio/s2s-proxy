@@ -74,7 +74,7 @@ func newEchoServer(
 
 	var proxy *s2sproxy.Proxy
 	var err error
-	var clientConfig config.ClientConfig
+	var clientConfig config.ProxyClientConfig
 
 	localProxyCfg := localClusterInfo.s2sProxyConfig
 	remoteProxyCfg := remoteClusterInfo.s2sProxyConfig
@@ -114,7 +114,7 @@ func newEchoServer(
 			logger.Fatal("Failed to create proxy", tag.Error(err))
 		}
 
-		clientConfig = config.ClientConfig{
+		clientConfig = config.ProxyClientConfig{
 			TCPClientSetting: config.TCPClientSetting{
 				ServerAddress: localProxyCfg.Outbound.Server.ListenAddress,
 			},
@@ -122,13 +122,13 @@ func newEchoServer(
 	} else {
 		// No local proxy
 		if remoteProxyCfg != nil {
-			clientConfig = config.ClientConfig{
+			clientConfig = config.ProxyClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
 					ServerAddress: remoteProxyCfg.Inbound.Server.ListenAddress,
 				},
 			}
 		} else {
-			clientConfig = config.ClientConfig{
+			clientConfig = config.ProxyClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
 					ServerAddress: remoteClusterInfo.serverAddress,
 				},
@@ -136,7 +136,7 @@ func newEchoServer(
 		}
 	}
 
-	serverConfig := config.ServerConfig{
+	serverConfig := config.ProxyServerConfig{
 		TCPServerSetting: config.TCPServerSetting{
 			ListenAddress: localClusterInfo.serverAddress,
 		},

@@ -29,9 +29,10 @@ func (m *muxTransport) Connect() (*grpc.ClientConn, error) {
 	}
 
 	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
-		return conn, nil // Return the original TCP connection
+		return conn, nil
 	}
 
+	// Set hostname to unused since custom dialer is used.
 	return dial("unused", nil, dialer)
 }
 
@@ -39,10 +40,10 @@ func (m *muxTransport) Serve(server *grpc.Server) error {
 	return server.Serve(m.session)
 }
 
-// release registers functions to release/close underlying connection as
+// release method registers functions to release/close underlying connection as
 // yamux.Session.Close doesn't release connection.
 // Release functions will be called in last added first called order.
-// It is not thread-safe
+// It is not thread-safe.
 func (m *muxTransport) release(f func()) {
 	m.releases = append(m.releases, f)
 }

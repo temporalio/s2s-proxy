@@ -82,7 +82,7 @@ func withMux(mux config.MuxTransportConfig) cfgOption {
 	}
 }
 
-func withClientConfig(clientCfg config.ClientConfig, inbound bool) cfgOption {
+func withClientConfig(clientCfg config.ProxyClientConfig, inbound bool) cfgOption {
 	return func(c *config.S2SProxyConfig) {
 		if inbound {
 			c.Inbound.Client = clientCfg
@@ -92,7 +92,7 @@ func withClientConfig(clientCfg config.ClientConfig, inbound bool) cfgOption {
 	}
 }
 
-func withServerConfig(serverCfg config.ServerConfig, inbound bool) cfgOption {
+func withServerConfig(serverCfg config.ProxyServerConfig, inbound bool) cfgOption {
 	return func(c *config.S2SProxyConfig) {
 		if inbound {
 			c.Inbound.Server = serverCfg
@@ -147,12 +147,12 @@ func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 	return createS2SProxyConfig(&config.S2SProxyConfig{
 		Inbound: &config.ProxyConfig{
 			Name: "proxy1-inbound-server",
-			Server: config.ServerConfig{
+			Server: config.ProxyServerConfig{
 				TCPServerSetting: config.TCPServerSetting{
 					ListenAddress: serverProxyInboundAddress,
 				},
 			},
-			Client: config.ClientConfig{
+			Client: config.ProxyClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
 					ServerAddress: echoServerAddress,
 				},
@@ -160,12 +160,12 @@ func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 		},
 		Outbound: &config.ProxyConfig{
 			Name: "proxy1-outbound-server",
-			Server: config.ServerConfig{
+			Server: config.ProxyServerConfig{
 				TCPServerSetting: config.TCPServerSetting{
 					ListenAddress: serverProxyOutboundAddress,
 				},
 			},
-			Client: config.ClientConfig{
+			Client: config.ProxyClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
 					ServerAddress: "to-be-added",
 				},
@@ -201,12 +201,12 @@ func createEchoClientConfig(opts ...cfgOption) *config.S2SProxyConfig {
 	return createS2SProxyConfig(&config.S2SProxyConfig{
 		Inbound: &config.ProxyConfig{
 			Name: "proxy2-inbound-server",
-			Server: config.ServerConfig{
+			Server: config.ProxyServerConfig{
 				TCPServerSetting: config.TCPServerSetting{
 					ListenAddress: clientProxyInboundAddress,
 				},
 			},
-			Client: config.ClientConfig{
+			Client: config.ProxyClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
 					ServerAddress: echoClientAddress,
 				},
@@ -214,12 +214,12 @@ func createEchoClientConfig(opts ...cfgOption) *config.S2SProxyConfig {
 		},
 		Outbound: &config.ProxyConfig{
 			Name: "proxy2-outbound-server",
-			Server: config.ServerConfig{
+			Server: config.ProxyServerConfig{
 				TCPServerSetting: config.TCPServerSetting{
 					ListenAddress: clientProxyOutboundAddress,
 				},
 			},
-			Client: config.ClientConfig{
+			Client: config.ProxyClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
 					ServerAddress: "to-be-added",
 				},
@@ -528,13 +528,13 @@ func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
 			}),
 		withServerConfig(
 			// proxy1.inbound.Server
-			config.ServerConfig{
+			config.ProxyServerConfig{
 				Type:             config.MuxTransport,
 				MuxTransportName: muxTransportName,
 			}, true),
 		withClientConfig(
 			// proxy1.outbound.Client
-			config.ClientConfig{
+			config.ProxyClientConfig{
 				Type:             config.MuxTransport,
 				MuxTransportName: muxTransportName,
 			}, false),
@@ -551,13 +551,13 @@ func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
 			}),
 		withServerConfig(
 			// proxy2.inbound.Server
-			config.ServerConfig{
+			config.ProxyServerConfig{
 				Type:             config.MuxTransport,
 				MuxTransportName: muxTransportName,
 			}, true),
 		withClientConfig(
 			// proxy2.outbound.Client
-			config.ClientConfig{
+			config.ProxyClientConfig{
 				Type:             config.MuxTransport,
 				MuxTransportName: muxTransportName,
 			}, false),

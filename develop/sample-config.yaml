@@ -1,22 +1,16 @@
 inbound:
   name: "inbound-proxy"
   server:
-    stream:
-      name : "migration-stream"
-    tcp: 
-      listenAddress:
+    tcp:
+      listenAddress: ""
       tls:
         certificatePath: ""
         keyPath: ""
         clientCAPath: ""
         requireClientAuth: true
-
   client:
-    stream:
-      mode : "client"
-      name : "temporal-cloud"
     tcp:
-      forwardAddress:
+      serverAddress:
       tls:
         certificatePath: ""
         keyPath: ""
@@ -39,21 +33,22 @@ inbound:
 outbound:
   name: "outbound-proxy"
   server:
-    listenAddress:
-    tls:
-      certificatePath: ""
-      keyPath: ""
-      clientCAPath: ""
-      requireClientAuth: true
+    tcp:
+      listenAddress:
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        clientCAPath: ""
+        requireClientAuth: true
   client:
-    transport: 
-
+    tcp:
+      serverAddress:
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        serverCAPath: ""
+        serverName: ""
   namespaceNameTranslation:
     mappings:
       - localName: "example"
         remoteName: "example.cloud"
-
-streams:
-  streamClients:
-    - name : "migration-stream"
-    - tls: 

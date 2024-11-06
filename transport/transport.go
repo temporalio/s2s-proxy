@@ -21,8 +21,8 @@ type (
 	TransportManager interface {
 		Start() error
 		Stop()
-		CreateClientTransport(cfg config.ClientConfig) (ClientTransport, error)
-		CreateServerTransport(cfg config.ServerConfig) (ServerTransport, error)
+		CreateClientTransport(cfg config.ProxyClientConfig) (ClientTransport, error)
+		CreateServerTransport(cfg config.ProxyServerConfig) (ServerTransport, error)
 	}
 
 	transportManagerImpl struct {
@@ -96,7 +96,7 @@ func (t *transportManagerImpl) getMuxTransport(name string) (*muxTransport, erro
 	return ts, nil
 }
 
-func (t *transportManagerImpl) CreateServerTransport(cfg config.ServerConfig) (ServerTransport, error) {
+func (t *transportManagerImpl) CreateServerTransport(cfg config.ProxyServerConfig) (ServerTransport, error) {
 	if cfg.Type == config.MuxTransport {
 		return t.getMuxTransport(cfg.MuxTransportName)
 	}
@@ -107,7 +107,7 @@ func (t *transportManagerImpl) CreateServerTransport(cfg config.ServerConfig) (S
 	}, nil
 }
 
-func (t *transportManagerImpl) CreateClientTransport(cfg config.ClientConfig) (ClientTransport, error) {
+func (t *transportManagerImpl) CreateClientTransport(cfg config.ProxyClientConfig) (ClientTransport, error) {
 	if cfg.Type == config.MuxTransport {
 		return t.getMuxTransport(cfg.MuxTransportName)
 	}

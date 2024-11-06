@@ -19,14 +19,14 @@ type TransportType string
 
 const (
 	TCPTransport TransportType = "tcp"
-	MuxTransport TransportType = "mux"
+	MuxTransport TransportType = "mux" // transport based on multiplexing over TCP
 )
 
 type MuxMode string
 
 const (
-	ClientMode MuxMode = "client"
-	ServerMode MuxMode = "server"
+	ClientMode MuxMode = "client" // client of the underly tcp connection in mux mode.
+	ServerMode MuxMode = "server" // server of underly tcp connection in mux mode.
 )
 
 type (
@@ -48,22 +48,22 @@ type (
 		TLS           encryption.ClientTLSConfig `yaml:"tls"`
 	}
 
-	ServerConfig struct {
-		Type TransportType
-		TCPServerSetting
-		MuxTransportName string
+	ProxyServerConfig struct {
+		Type             TransportType `yaml:"type"`
+		TCPServerSetting `yaml:"tcp"`
+		MuxTransportName string `yaml:"mux"`
 	}
 
-	ClientConfig struct {
-		Type TransportType
-		TCPClientSetting
-		MuxTransportName string
+	ProxyClientConfig struct {
+		Type             TransportType `yaml:"type"`
+		TCPClientSetting `yaml:"tcp"`
+		MuxTransportName string `yaml:"mux"`
 	}
 
 	ProxyConfig struct {
 		Name                     string                         `yaml:"name"`
-		Server                   ServerConfig                   `yaml:"server"`
-		Client                   ClientConfig                   `yaml:"client"`
+		Server                   ProxyServerConfig              `yaml:"server"`
+		Client                   ProxyClientConfig              `yaml:"client"`
 		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
 		ACLPolicy                *ACLPolicy                     `yaml:"aclPolicy"`
 	}
@@ -163,10 +163,28 @@ func marshalWithoutError(v any) string {
 	return string(data)
 }
 
-func (cfg ClientConfig) String() string {
+func (cfg ProxyClientConfig) String() string {
 	return marshalWithoutError(cfg)
 }
 
-func (cfg ServerConfig) String() string {
+func (cfg ProxyServerConfig) String() string {
 	return marshalWithoutError(cfg)
+}
+
+type (
+	MockConfigProvider struct {
+		config S2SProxyConfig
+	}
+)
+
+var (
+	EmptyConfigProvider MockConfigProvider
+)
+
+func NewMockConfigProvider(config S2SProxyConfig) *MockConfigProvider {
+	return &MockConfigProvider{config: config}
+}
+
+func (mc *MockConfigProvider) GetS2SProxyConfig() S2SProxyConfig {
+	return mc.config
 }

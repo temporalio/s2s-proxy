@@ -15,8 +15,8 @@ import (
 type (
 	// ClientFactory can be used to create RPC clients for temporal services
 	ClientFactory interface {
-		NewRemoteAdminClient(clientConfig config.ClientConfig) (adminservice.AdminServiceClient, error)
-		NewRemoteWorkflowServiceClient(clientConfig config.ClientConfig) (workflowservice.WorkflowServiceClient, error)
+		NewRemoteAdminClient(clientConfig config.ProxyClientConfig) (adminservice.AdminServiceClient, error)
+		NewRemoteWorkflowServiceClient(clientConfig config.ProxyClientConfig) (workflowservice.WorkflowServiceClient, error)
 	}
 
 	clientFactory struct {
@@ -30,7 +30,7 @@ type (
 	}
 
 	clientProvider struct {
-		clientConfig  config.ClientConfig
+		clientConfig  config.ProxyClientConfig
 		clientFactory ClientFactory
 		logger        log.Logger
 
@@ -43,7 +43,7 @@ type (
 )
 
 func NewClientProvider(
-	clientConfig config.ClientConfig,
+	clientConfig config.ProxyClientConfig,
 	clientFactory ClientFactory,
 	logger log.Logger,
 ) ClientProvider {
@@ -102,7 +102,7 @@ func NewClientFactory(
 }
 
 func (cf *clientFactory) NewRemoteAdminClient(
-	clientConfig config.ClientConfig,
+	clientConfig config.ProxyClientConfig,
 ) (adminservice.AdminServiceClient, error) {
 	clientTransport, err := cf.transportManger.CreateClientTransport(clientConfig)
 	if err != nil {
@@ -118,7 +118,7 @@ func (cf *clientFactory) NewRemoteAdminClient(
 }
 
 func (cf *clientFactory) NewRemoteWorkflowServiceClient(
-	clientConfig config.ClientConfig,
+	clientConfig config.ProxyClientConfig,
 ) (workflowservice.WorkflowServiceClient, error) {
 	clientTransport, err := cf.transportManger.CreateClientTransport(clientConfig)
 	if err != nil {

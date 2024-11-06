@@ -31,7 +31,7 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 }
 
 func testMuxConnection(t *testing.T, clientTs TransportManager, serverTs TransportManager) {
-	client, err := clientTs.CreateClientTransport(config.ClientConfig{
+	client, err := clientTs.CreateClientTransport(config.ProxyClientConfig{
 		Type:             config.MuxTransport,
 		MuxTransportName: muxedName,
 	})
@@ -39,7 +39,7 @@ func testMuxConnection(t *testing.T, clientTs TransportManager, serverTs Transpo
 
 	grpcServer := grpc.NewServer()
 	adminservice.RegisterAdminServiceServer(grpcServer, &service{})
-	server, err := serverTs.CreateServerTransport(config.ServerConfig{
+	server, err := serverTs.CreateServerTransport(config.ProxyServerConfig{
 		Type:             config.MuxTransport,
 		MuxTransportName: muxedName,
 	})
@@ -48,10 +48,10 @@ func testMuxConnection(t *testing.T, clientTs TransportManager, serverTs Transpo
 	go func() {
 		err = server.Serve(grpcServer)
 		if err != nil {
-			// it is possible to receive an error here becaus we created two grpcServer:
-			// one for normal direction; one for reverse direction and they all
-			// share the same underly connection. If grpcServer A calls stop before
-			// grpcServer B calls stop, grpcServer B can get an error here.
+			// it is possible to receive an error here because test creates two grpcServers:
+			// one on muxServer and one on muxClient based on the same connection between
+			// muxClient to muxServer. If one of the grpcServer stopped before the other one (which
+			// close the underly TCP connection), the other grpcServer can get an error here.
 			t.Log("grpcServer received err", err)
 		}
 	}()
