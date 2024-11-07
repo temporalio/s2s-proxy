@@ -31,3 +31,14 @@ func TestLoadS2SConfig(t *testing.T) {
 	assert.Greater(t, len(aclConfig.AllowedMethods.AdminService), 0)
 	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.AllowedNamespaces)
 }
+
+func TestLoadS2SConfig2(t *testing.T) {
+	currPath, err := os.Getwd()
+	assert.NoError(t, err)
+	samplePath := filepath.Join("..", "develop", "config", "cluster-a-mux-client-proxy.yaml")
+
+	fmt.Println(currPath)
+	s2sConfig, err := LoadConfig[S2SProxyConfig](samplePath)
+	assert.NoError(t, err)
+	fmt.Println(s2sConfig)
+}

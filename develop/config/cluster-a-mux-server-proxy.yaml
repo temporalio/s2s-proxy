@@ -1,0 +1,14 @@
+outbound:
+  name: "outbound-server"
+  server:
+    tcp:
+      listenAddress: "0.0.0.0:6333"
+  client:
+    type: "mux"
+    mux: "muxed"
+mux:
+  - name: "muxed"
+    mode: "server"
+    server:
+      listenAddress: "0.0.0.0:6334"
+

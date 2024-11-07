@@ -1,0 +1,14 @@
+inbound:
+  name: "inbound-server"
+  server:
+    type: "mux"
+    mux: "muxed"
+  client:
+    tcp:
+      serverAddress: "localhost:7233"
+mux:
+  - name: "muxed"
+    mode: "client"
+    client:
+      serverAddress: "localhost:6334" 
+

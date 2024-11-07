@@ -69,16 +69,16 @@ type (
 	}
 
 	MuxTransportConfig struct {
-		Name   string
-		Mode   MuxMode
-		Client *TCPClientSetting
-		Server *TCPServerSetting
+		Name   string            `yaml:"name"`
+		Mode   MuxMode           `yaml:"mode"`
+		Client *TCPClientSetting `yaml:"client"`
+		Server *TCPServerSetting `yaml:"server"`
 	}
 
 	S2SProxyConfig struct {
-		Inbound       *ProxyConfig `yaml:"inbound"`
-		Outbound      *ProxyConfig `yaml:"outbound"`
-		MuxTransports []MuxTransportConfig
+		Inbound       *ProxyConfig         `yaml:"inbound"`
+		Outbound      *ProxyConfig         `yaml:"outbound"`
+		MuxTransports []MuxTransportConfig `yaml:"mux"`
 	}
 
 	NamespaceNameTranslationConfig struct {
