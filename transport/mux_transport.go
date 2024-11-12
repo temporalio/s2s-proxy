@@ -17,19 +17,14 @@ type (
 	muxTransport struct {
 		config   config.MuxTransportConfig
 		session  *yamux.Session
-		releases []func()
+		cleanups []func()
 		isReady  bool
 	}
 )
 
 func (m *muxTransport) Connect() (*grpc.ClientConn, error) {
-	conn, err := m.session.Open()
-	if err != nil {
-		return nil, err
-	}
-
 	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
-		return conn, nil
+		return m.session.Open()
 	}
 
 	// Set hostname to unused since custom dialer is used.
@@ -40,12 +35,12 @@ func (m *muxTransport) Serve(server *grpc.Server) error {
 	return server.Serve(m.session)
 }
 
-// release method registers functions to release/close underlying connection as
-// yamux.Session.Close doesn't release connection.
+// addCleanup method registers functions to clean up underlying connection as
+// yamux.Session.Close doesn't addCleanup connection.
 // Release functions will be called in last added first called order.
 // It is not thread-safe.
-func (m *muxTransport) release(f func()) {
-	m.releases = append(m.releases, f)
+func (m *muxTransport) addCleanup(f func()) {
+	m.cleanups = append(m.cleanups, f)
 }
 
 func (m *muxTransport) startClient() error {
@@ -71,7 +66,7 @@ func (m *muxTransport) startClient() error {
 		conn = client
 	}
 
-	m.release(func() { _ = conn.Close() })
+	m.addCleanup(func() { _ = conn.Close() })
 
 	m.session, err = yamux.Client(conn, nil)
 	if err != nil {
@@ -99,7 +94,7 @@ func (m *muxTransport) startServer() error {
 		return err
 	}
 
-	m.release(func() { _ = listener.Close() })
+	m.addCleanup(func() { _ = listener.Close() })
 
 	var conn net.Conn
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
@@ -113,7 +108,7 @@ func (m *muxTransport) startServer() error {
 		conn = server
 	}
 
-	m.release(func() { _ = conn.Close() })
+	m.addCleanup(func() { _ = conn.Close() })
 	m.session, err = yamux.Server(conn, nil)
 	if err != nil {
 		return err
@@ -148,10 +143,10 @@ func (m *muxTransport) stop() {
 	if m.isReady && m.session != nil {
 		m.session.Close()
 
-		for len(m.releases) > 0 {
-			last := len(m.releases) - 1
-			m.releases[last]()
-			m.releases = m.releases[:last]
+		for len(m.cleanups) > 0 {
+			last := len(m.cleanups) - 1
+			m.cleanups[last]()
+			m.cleanups = m.cleanups[:last]
 		}
 
 		m.isReady = false
