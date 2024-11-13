@@ -37,7 +37,7 @@ func (m *MockClientFactory) EXPECT() *MockClientFactoryMockRecorder {
 }
 
 // NewRemoteAdminClient mocks base method.
-func (m *MockClientFactory) NewRemoteAdminClient(clientConfig config.ClientConfig) (adminservice.AdminServiceClient, error) {
+func (m *MockClientFactory) NewRemoteAdminClient(clientConfig config.ProxyClientConfig) (adminservice.AdminServiceClient, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NewRemoteAdminClient", clientConfig)
 	ret0, _ := ret[0].(adminservice.AdminServiceClient)
@@ -52,7 +52,7 @@ func (mr *MockClientFactoryMockRecorder) NewRemoteAdminClient(clientConfig inter
 }
 
 // NewRemoteWorkflowServiceClient mocks base method.
-func (m *MockClientFactory) NewRemoteWorkflowServiceClient(clientConfig config.ClientConfig) (workflowservice.WorkflowServiceClient, error) {
+func (m *MockClientFactory) NewRemoteWorkflowServiceClient(clientConfig config.ProxyClientConfig) (workflowservice.WorkflowServiceClient, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NewRemoteWorkflowServiceClient", clientConfig)
 	ret0, _ := ret[0].(workflowservice.WorkflowServiceClient)

@@ -17,22 +17,19 @@ import (
 
 	"github.com/gogo/status"
 	"github.com/temporalio/s2s-proxy/client"
-	"github.com/temporalio/s2s-proxy/client/rpc"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
+	"github.com/temporalio/s2s-proxy/transport"
 )
 
 type (
-	mockConfigProvider struct {
-		proxyConfig config.S2SProxyConfig
-	}
-
 	clusterInfo struct {
 		serverAddress  string
 		clusterShardID history.ClusterShardID
 		s2sProxyConfig *config.S2SProxyConfig // if provided, used for setting up proxy
 	}
+
 	echoServer struct {
 		server            *s2sproxy.TemporalAPIServer
 		proxy             *s2sproxy.Proxy
@@ -47,10 +44,6 @@ type (
 		Timestamp time.Time
 	}
 )
-
-func (mc *mockConfigProvider) GetS2SProxyConfig() config.S2SProxyConfig {
-	return mc.proxyConfig
-}
 
 // Echo server for testing replication calls with or without proxies.
 // It consists of 1/ a server for handling replication requests from remote server and 2/ a client for
@@ -81,65 +74,93 @@ func newEchoServer(
 
 	var proxy *s2sproxy.Proxy
 	var err error
-	var clientConfig config.ClientConfig
+	var clientConfig config.ProxyClientConfig
 
 	localProxyCfg := localClusterInfo.s2sProxyConfig
 	remoteProxyCfg := remoteClusterInfo.s2sProxyConfig
 
-	rpcFactory := rpc.NewRPCFactory(&mockConfigProvider{}, logger)
-	clientFactory := client.NewClientFactory(rpcFactory, logger)
+	if localProxyCfg != nil && remoteProxyCfg != nil {
+		if localProxyCfg.Outbound.Client.Type != remoteProxyCfg.Inbound.Server.Type {
+			panic(fmt.Sprintf("local proxy outbound client type: %s doesn't match with remote inbound server type: %s",
+				localProxyCfg.Outbound.Client.Type,
+				remoteProxyCfg.Inbound.Server.Type,
+			))
+		}
+	}
+
 	if localProxyCfg != nil {
-		// Setup local proxy ForwardAddress
-		if remoteProxyCfg != nil {
-			localProxyCfg.Outbound.Client.ForwardAddress = remoteProxyCfg.Inbound.Server.ListenAddress
-		} else {
-			localProxyCfg.Outbound.Client.ForwardAddress = remoteClusterInfo.serverAddress
+		if localProxyCfg.Outbound.Client.Type != config.MuxTransport {
+			// Setup local proxy forwarded server address explicitly if not using multiplex transport.
+			// If use multiplex transport, then outbound -> inbound uses established multiplex connection.
+			if remoteProxyCfg != nil {
+				localProxyCfg.Outbound.Client.ServerAddress = remoteProxyCfg.Inbound.Server.ListenAddress
+			} else {
+				localProxyCfg.Outbound.Client.ServerAddress = remoteClusterInfo.serverAddress
+			}
 		}
 
-		configProvider := &mockConfigProvider{
-			proxyConfig: *localClusterInfo.s2sProxyConfig,
+		configProvider := config.NewMockConfigProvider(*localClusterInfo.s2sProxyConfig)
+		if err != nil {
+			logger.Fatal("Failed to create transport provider", tag.Error(err))
 		}
 
 		proxy, err = s2sproxy.NewProxy(
 			configProvider,
+			transport.NewTransportManager(configProvider, logger),
 			logger,
-			clientFactory,
 		)
 
 		if err != nil {
 			logger.Fatal("Failed to create proxy", tag.Error(err))
 		}
 
-		clientConfig = config.ClientConfig{
-			ForwardAddress: localProxyCfg.Outbound.Server.ListenAddress,
+		clientConfig = config.ProxyClientConfig{
+			TCPClientSetting: config.TCPClientSetting{
+				ServerAddress: localProxyCfg.Outbound.Server.ListenAddress,
+			},
 		}
 	} else {
 		// No local proxy
 		if remoteProxyCfg != nil {
-			clientConfig = config.ClientConfig{
-				ForwardAddress: remoteProxyCfg.Inbound.Server.ListenAddress,
+			clientConfig = config.ProxyClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: remoteProxyCfg.Inbound.Server.ListenAddress,
+				},
 			}
 		} else {
-			clientConfig = config.ClientConfig{
-				ForwardAddress: remoteClusterInfo.serverAddress,
+			clientConfig = config.ProxyClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: remoteClusterInfo.serverAddress,
+				},
 			}
 		}
+	}
+
+	serverConfig := config.ProxyServerConfig{
+		TCPServerSetting: config.TCPServerSetting{
+			ListenAddress: localClusterInfo.serverAddress,
+		},
+	}
+
+	tcpTransport := transport.NewTransportManager(&config.EmptyConfigProvider, logger)
+	serverTransport, err := tcpTransport.CreateServerTransport(serverConfig)
+	if err != nil {
+		logger.Fatal("Failed to create server transport", tag.Error(err))
 	}
 
 	return &echoServer{
 		server: s2sproxy.NewTemporalAPIServer(
 			serviceName,
-			config.ServerConfig{
-				ListenAddress: localClusterInfo.serverAddress,
-			},
+			serverConfig,
 			senderAdminService,
 			senderWorkflowService,
 			nil,
+			serverTransport,
 			logger),
 		proxy:             proxy,
 		clusterInfo:       localClusterInfo,
 		remoteClusterInfo: remoteClusterInfo,
-		clientProvider:    client.NewClientProvider(clientConfig, clientFactory, logger),
+		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(tcpTransport, logger), logger),
 		logger:            log.With(logger, common.ServiceTag(serviceName)),
 	}
 }

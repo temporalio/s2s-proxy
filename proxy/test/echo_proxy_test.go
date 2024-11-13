@@ -3,6 +3,7 @@ package proxy
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -75,6 +76,32 @@ func withACLPolicy(aclPolicy *config.ACLPolicy, inbound bool) cfgOption {
 	}
 }
 
+func withMux(mux config.MuxTransportConfig) cfgOption {
+	return func(c *config.S2SProxyConfig) {
+		c.MuxTransports = append(c.MuxTransports, mux)
+	}
+}
+
+func withClientConfig(clientCfg config.ProxyClientConfig, inbound bool) cfgOption {
+	return func(c *config.S2SProxyConfig) {
+		if inbound {
+			c.Inbound.Client = clientCfg
+		} else {
+			c.Outbound.Client = clientCfg
+		}
+	}
+}
+
+func withServerConfig(serverCfg config.ProxyServerConfig, inbound bool) cfgOption {
+	return func(c *config.S2SProxyConfig) {
+		if inbound {
+			c.Inbound.Server = serverCfg
+		} else {
+			c.Outbound.Server = serverCfg
+		}
+	}
+}
+
 func withNamespaceTranslation(mapping []config.NameMappingConfig, inbound bool) cfgOption {
 	return func(c *config.S2SProxyConfig) {
 		if inbound {
@@ -120,20 +147,28 @@ func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 	return createS2SProxyConfig(&config.S2SProxyConfig{
 		Inbound: &config.ProxyConfig{
 			Name: "proxy1-inbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: serverProxyInboundAddress,
+			Server: config.ProxyServerConfig{
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: serverProxyInboundAddress,
+				},
 			},
-			Client: config.ClientConfig{
-				ForwardAddress: echoServerAddress,
+			Client: config.ProxyClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: echoServerAddress,
+				},
 			},
 		},
 		Outbound: &config.ProxyConfig{
 			Name: "proxy1-outbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: serverProxyOutboundAddress,
+			Server: config.ProxyServerConfig{
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: serverProxyOutboundAddress,
+				},
 			},
-			Client: config.ClientConfig{
-				ForwardAddress: "to-be-added",
+			Client: config.ProxyClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: "to-be-added",
+				},
 			},
 		},
 	}, opts)
@@ -166,20 +201,28 @@ func createEchoClientConfig(opts ...cfgOption) *config.S2SProxyConfig {
 	return createS2SProxyConfig(&config.S2SProxyConfig{
 		Inbound: &config.ProxyConfig{
 			Name: "proxy2-inbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: clientProxyInboundAddress,
+			Server: config.ProxyServerConfig{
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: clientProxyInboundAddress,
+				},
 			},
-			Client: config.ClientConfig{
-				ForwardAddress: echoClientAddress,
+			Client: config.ProxyClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: echoClientAddress,
+				},
 			},
 		},
 		Outbound: &config.ProxyConfig{
 			Name: "proxy2-outbound-server",
-			Server: config.ServerConfig{
-				ListenAddress: clientProxyOutboundAddress,
+			Server: config.ProxyServerConfig{
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: clientProxyOutboundAddress,
+				},
 			},
-			Client: config.ClientConfig{
-				ForwardAddress: "to-be-added",
+			Client: config.ProxyClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: "to-be-added",
+				},
 			},
 		},
 	}, opts)
@@ -464,4 +507,98 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 			},
 		)
 	}
+}
+
+func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
+	muxTransportName := "muxed"
+
+	// Mux Transport
+	//    echoServer muxClient(proxy1) -> muxServer(proxy2) echoClient
+	//
+	// echoServer proxy1.inbound.Server(muxClient)  <- proxy2.outbound.Client(muxServer) echoClient
+	// echoServer proxy1.outbound.Client(muxClient) -> proxy2.inbound.Server(muxServer) echoClient
+	echoServerConfig := createEchoServerConfig(
+		withMux(
+			config.MuxTransportConfig{
+				Name: muxTransportName,
+				Mode: config.ClientMode,
+				Client: &config.TCPClientSetting{
+					ServerAddress: clientProxyInboundAddress,
+				},
+			}),
+		withServerConfig(
+			// proxy1.inbound.Server
+			config.ProxyServerConfig{
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
+			}, true),
+		withClientConfig(
+			// proxy1.outbound.Client
+			config.ProxyClientConfig{
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
+			}, false),
+	)
+
+	echoClientConfig := createEchoClientConfig(
+		withMux(
+			config.MuxTransportConfig{
+				Name: muxTransportName,
+				Mode: config.ServerMode,
+				Server: &config.TCPServerSetting{
+					ListenAddress: clientProxyInboundAddress,
+				},
+			}),
+		withServerConfig(
+			// proxy2.inbound.Server
+			config.ProxyServerConfig{
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
+			}, true),
+		withClientConfig(
+			// proxy2.outbound.Client
+			config.ProxyClientConfig{
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
+			}, false),
+	)
+
+	echoServerInfo := clusterInfo{
+		serverAddress:  echoServerAddress,
+		clusterShardID: serverClusterShard,
+		s2sProxyConfig: echoServerConfig,
+	}
+	echoClientInfo := clusterInfo{
+		serverAddress:  echoClientAddress,
+		clusterShardID: clientClusterShard,
+		s2sProxyConfig: echoClientConfig,
+	}
+
+	logger := log.NewTestLogger()
+	var echoServer, echoClient *echoServer
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		echoServer = newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
+		wg.Done()
+	}()
+
+	go func() {
+		echoClient = newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
+		wg.Done()
+	}()
+	wg.Wait()
+
+	echoClient.start()
+	echoServer.start()
+
+	defer func() {
+		echoClient.stop()
+		echoServer.stop()
+	}()
+
+	r, err := echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
+	s.NoError(err)
+	s.Equal("EchoServer", r.ClusterName)
 }

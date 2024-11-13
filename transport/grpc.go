@@ -1,10 +1,11 @@
-package rpc
+package transport
 
 import (
+	"context"
 	"crypto/tls"
+	"net"
 	"time"
 
-	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
@@ -31,7 +32,7 @@ const (
 // The hostName syntax is defined in
 // https://github.com/grpc/grpc/blob/master/doc/naming.md.
 // e.g. to use dns resolver, a "dns:///" prefix should be applied to the target.
-func dial(hostName string, tlsConfig *tls.Config, logger log.Logger) (*grpc.ClientConn, error) {
+func dial(hostName string, tlsConfig *tls.Config, dialer func(ctx context.Context, addr string) (net.Conn, error)) (*grpc.ClientConn, error) {
 	var grpcSecureOpt grpc.DialOption
 	if tlsConfig == nil {
 		grpcSecureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
@@ -56,6 +57,11 @@ func dial(hostName string, tlsConfig *tls.Config, logger log.Logger) (*grpc.Clie
 		grpc.WithDefaultServiceConfig(DefaultServiceConfig),
 		grpc.WithDisableServiceConfig(),
 		grpc.WithConnectParams(cp),
+	}
+
+	if dialer != nil {
+		dialOptions = append(dialOptions,
+			grpc.WithContextDialer(dialer))
 	}
 
 	return grpc.Dial(

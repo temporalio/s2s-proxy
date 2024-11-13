@@ -31,7 +31,7 @@ type (
 
 func NewAdminServiceProxyServer(
 	serviceName string,
-	clientConfig config.ClientConfig,
+	clientConfig config.ProxyClientConfig,
 	clientFactory client.ClientFactory,
 	opts proxyOptions,
 	logger log.Logger,

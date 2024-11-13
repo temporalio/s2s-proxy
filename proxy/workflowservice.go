@@ -25,7 +25,7 @@ type (
 // requests and responses.
 func NewWorkflowServiceProxyServer(
 	serviceName string,
-	clientConfig config.ClientConfig,
+	clientConfig config.ProxyClientConfig,
 	clientFactory client.ClientFactory,
 	logger log.Logger,
 ) workflowservice.WorkflowServiceServer {

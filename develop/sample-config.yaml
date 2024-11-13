@@ -1,19 +1,21 @@
 inbound:
   name: "inbound-proxy"
   server:
-    listenAddress: ""
-    tls:
-      certificatePath: ""
-      keyPath: ""
-      clientCAPath: ""
-      requireClientAuth: true
+    tcp:
+      listenAddress: ""
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        clientCAPath: ""
+        requireClientAuth: true
   client:
-    forwardAddress:
-    tls:
-      certificatePath: ""
-      keyPath: ""
-      serverCAPath: ""
-      serverName: ""
+    tcp:
+      serverAddress:
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        serverCAPath: ""
+        serverName: ""
   aclPolicy:
     allowedMethods:
       adminService:
@@ -31,19 +33,21 @@ inbound:
 outbound:
   name: "outbound-proxy"
   server:
-    listenAddress:
-    tls:
-      certificatePath: ""
-      keyPath: ""
-      clientCAPath: ""
-      requireClientAuth: true
+    tcp:
+      listenAddress:
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        clientCAPath: ""
+        requireClientAuth: true
   client:
-    forwardAddress:
-    tls:
-      certificatePath: ""
-      keyPath: ""
-      serverCAPath: ""
-      serverName: ""
+    tcp:
+      serverAddress:
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        serverCAPath: ""
+        serverName: ""
   namespaceNameTranslation:
     mappings:
       - localName: "example"

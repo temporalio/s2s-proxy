@@ -1,8 +1,6 @@
 package config
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -10,11 +8,8 @@ import (
 )
 
 func TestLoadS2SConfig(t *testing.T) {
-	currPath, err := os.Getwd()
-	assert.NoError(t, err)
 	samplePath := filepath.Join("..", "develop", "sample-config.yaml")
 
-	fmt.Println(currPath)
 	s2sConfig, err := LoadConfig[S2SProxyConfig](samplePath)
 	assert.NoError(t, err)
 	assert.Equal(t, "inbound-proxy", s2sConfig.Inbound.Name)
@@ -30,4 +25,17 @@ func TestLoadS2SConfig(t *testing.T) {
 	assert.NotEmpty(t, aclConfig)
 	assert.Greater(t, len(aclConfig.AllowedMethods.AdminService), 0)
 	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.AllowedNamespaces)
+}
+
+func TestLoadS2SConfigMux(t *testing.T) {
+	configFiles := []string{
+		"cluster-a-mux-client-proxy.yaml",
+		"cluster-a-mux-server-proxy.yaml",
+	}
+
+	for _, file := range configFiles {
+		samplePath := filepath.Join("..", "develop", "config", file)
+		_, err := LoadConfig[S2SProxyConfig](samplePath)
+		assert.NoError(t, err)
+	}
 }
