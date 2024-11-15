@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,23 +31,38 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 	}, nil
 }
 
-func testMuxConnection(t *testing.T, clientTs TransportManager, serverTs TransportManager) {
-	client, err := clientTs.CreateClientTransport(config.ProxyClientConfig{
-		Type:             config.MuxTransport,
-		MuxTransportName: muxedName,
-	})
-	require.NoError(t, err)
+func testMuxConnection(t *testing.T, clientTransManager TransportManager, serverTransManager TransportManager) {
+	var clientTs MuxTransport
+	var serverTs MuxTransport
+
+	// Establish connection
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		var err error
+		clientTs, err = clientTransManager.Open(muxedName)
+		require.NoError(t, err)
+	}()
+
+	go func() {
+		defer wg.Done()
+		var err error
+		serverTs, err = serverTransManager.Open(muxedName)
+		require.NoError(t, err)
+	}()
+
+	wg.Wait()
+
+	defer func() {
+		serverTs.Close()
+		clientTs.Close()
+	}()
 
 	grpcServer := grpc.NewServer()
 	adminservice.RegisterAdminServiceServer(grpcServer, &service{})
-	server, err := serverTs.CreateServerTransport(config.ProxyServerConfig{
-		Type:             config.MuxTransport,
-		MuxTransportName: muxedName,
-	})
-	require.NoError(t, err)
-
 	go func() {
-		err = server.Serve(grpcServer)
+		err := serverTs.Serve(grpcServer)
 		if err != nil {
 			// it is possible to receive an error here because test creates two grpcServers:
 			// one on muxServer and one on muxClient based on the same connection between
@@ -56,7 +72,9 @@ func testMuxConnection(t *testing.T, clientTs TransportManager, serverTs Transpo
 		}
 	}()
 
-	conn, err := client.Connect()
+	defer grpcServer.GracefulStop()
+
+	conn, err := clientTs.Connect()
 	require.NoError(t, err)
 	adminClient := adminservice.NewAdminServiceClient(conn)
 
@@ -66,41 +84,22 @@ func testMuxConnection(t *testing.T, clientTs TransportManager, serverTs Transpo
 	require.Equal(t, clusterName, res.ClusterName)
 
 	conn.Close()
-	// Defer stopping grpcServer after test is done as GracefulStop will close underlying listener
-	t.Cleanup(func() { grpcServer.GracefulStop() })
 }
 
 func testTransportWithCfg(t *testing.T, muxClientCfg config.MuxTransportConfig, muxServerCfg config.MuxTransportConfig) {
 	logger := log.NewTestLogger()
 
-	muxClient := NewTransportManager(config.NewMockConfigProvider(
+	muxClientManager := NewTransportManager(config.NewMockConfigProvider(
 		config.S2SProxyConfig{
 			MuxTransports: []config.MuxTransportConfig{muxClientCfg},
 		}), logger)
 
-	muxServer := NewTransportManager(config.NewMockConfigProvider(
+	muxServerManager := NewTransportManager(config.NewMockConfigProvider(
 		config.S2SProxyConfig{
 			MuxTransports: []config.MuxTransportConfig{muxServerCfg},
 		}), logger)
 
-	serverCh := make(chan error, 1)
-	go func() {
-		serverCh <- muxServer.Start()
-	}()
-
-	err := muxClient.Start()
-	require.NoError(t, err)
-
-	err = <-serverCh
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		muxClient.Stop()
-		muxServer.Stop()
-	})
-
-	testMuxConnection(t, muxClient, muxServer)
-	testMuxConnection(t, muxServer, muxClient)
+	testMuxConnection(t, muxClientManager, muxServerManager)
 }
 
 func TestMuxTransport(t *testing.T) {
