@@ -15,15 +15,25 @@ import (
 
 type (
 	muxTransport struct {
-		config   config.MuxTransportConfig
-		session  *yamux.Session
-		cleanups []func()
-		isReady  bool
+		config      config.MuxTransportConfig
+		session     *yamux.Session
+		conn        net.Conn
+		isConnected bool
 	}
 )
 
+func newMuxTransport(cfg config.MuxTransportConfig) *muxTransport {
+	return &muxTransport{
+		config: cfg,
+	}
+}
+
 func (m *muxTransport) Connect() (*grpc.ClientConn, error) {
 	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
+		if !m.isConnected {
+			return nil, fmt.Errorf("Transport Connect failed: mux transport is not connected")
+		}
+
 		return m.session.Open()
 	}
 
@@ -32,18 +42,14 @@ func (m *muxTransport) Connect() (*grpc.ClientConn, error) {
 }
 
 func (m *muxTransport) Serve(server *grpc.Server) error {
+	if !m.isConnected {
+		return fmt.Errorf("Transport Serve failed: mux transport is not connected")
+	}
+
 	return server.Serve(m.session)
 }
 
-// addCleanup method registers functions to clean up underlying connection as
-// yamux.Session.Close doesn't addCleanup connection.
-// Release functions will be called in last added first called order.
-// It is not thread-safe.
-func (m *muxTransport) addCleanup(f func()) {
-	m.cleanups = append(m.cleanups, f)
-}
-
-func (m *muxTransport) startClient() error {
+func (m *muxTransport) createClientConn() error {
 	setting := m.config.Client
 	if setting == nil {
 		return fmt.Errorf("invalid client mux transport setting: %v", m.config)
@@ -66,18 +72,17 @@ func (m *muxTransport) startClient() error {
 		conn = client
 	}
 
-	m.addCleanup(func() { _ = conn.Close() })
-
+	m.conn = conn
 	m.session, err = yamux.Client(conn, nil)
 	if err != nil {
 		return err
 	}
 
-	m.isReady = true
+	m.isConnected = true
 	return nil
 }
 
-func (m *muxTransport) startServer() error {
+func (m *muxTransport) createServerConn() error {
 	setting := m.config.Server
 	if setting == nil {
 		return fmt.Errorf("invalid client mux transport setting: %v", m.config)
@@ -94,8 +99,6 @@ func (m *muxTransport) startServer() error {
 		return err
 	}
 
-	m.addCleanup(func() { _ = listener.Close() })
-
 	var conn net.Conn
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
 		tlsConfig, err := encryption.GetServerTLSConfig(tlsCfg)
@@ -108,47 +111,56 @@ func (m *muxTransport) startServer() error {
 		conn = server
 	}
 
-	m.addCleanup(func() { _ = conn.Close() })
+	m.conn = conn
 	m.session, err = yamux.Server(conn, nil)
 	if err != nil {
 		return err
 	}
-	m.isReady = true
+
+	m.isConnected = true
 	return nil
 }
 
-func (m *muxTransport) start() error {
-	if m.isReady {
-		return nil
-	}
-
+func (m *muxTransport) establishConnection() error {
 	switch m.config.Mode {
 	case config.ClientMode:
-		if err := m.startClient(); err != nil {
-			return err
-		}
+		return m.createClientConn()
 	case config.ServerMode:
-		if err := m.startServer(); err != nil {
-			return err
-		}
-
+		return m.createServerConn()
 	default:
 		return fmt.Errorf("invalid mux transport mode: name %s, mode %s.", m.config.Name, m.config.Mode)
 	}
+}
 
+func (m *muxTransport) waitForClose() {
+	defer func() {
+		m.conn.Close()
+		m.session.Close()
+		m.isConnected = false
+	}()
+
+	// wait for session to close
+	<-m.session.CloseChan()
+}
+
+func (m *muxTransport) start() error {
+	// Create initial connection
+	if err := m.establishConnection(); err != nil {
+		return err
+	}
+
+	go m.waitForClose()
 	return nil
 }
 
-func (m *muxTransport) stop() {
-	if m.isReady && m.session != nil {
-		m.session.Close()
+func (m *muxTransport) Close() {
+	m.session.Close()
+}
 
-		for len(m.cleanups) > 0 {
-			last := len(m.cleanups) - 1
-			m.cleanups[last]()
-			m.cleanups = m.cleanups[:last]
-		}
+func (m *muxTransport) IsClosed() bool {
+	return !m.isConnected
+}
 
-		m.isReady = false
-	}
+func (m *muxTransport) CloseChan() <-chan struct{} {
+	return m.session.CloseChan()
 }

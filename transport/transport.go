@@ -2,10 +2,10 @@ package transport
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 )
 
@@ -18,16 +18,22 @@ type (
 		Serve(server *grpc.Server) error
 	}
 
+	MuxTransport interface {
+		ClientTransport
+		ServerTransport
+		IsClosed() bool
+		CloseChan() <-chan struct{}
+		Close()
+	}
+
 	TransportManager interface {
-		Start() error
-		Stop()
-		CreateClientTransport(cfg config.ProxyClientConfig) (ClientTransport, error)
-		CreateServerTransport(cfg config.ProxyServerConfig) (ServerTransport, error)
+		Open(transportName string) (MuxTransport, error)
 	}
 
 	transportManagerImpl struct {
+		config        config.S2SProxyConfig
 		muxTransports map[string]*muxTransport
-		isReady       bool
+		mu            sync.Mutex
 		logger        log.Logger
 	}
 )
@@ -36,84 +42,55 @@ func NewTransportManager(
 	configProvider config.ConfigProvider,
 	logger log.Logger,
 ) TransportManager {
-	s2sConfig := configProvider.GetS2SProxyConfig()
-	muxTransports := make(map[string]*muxTransport)
-	for _, cfg := range s2sConfig.MuxTransports {
-		muxTransports[cfg.Name] = &muxTransport{
-			config: cfg,
-		}
-	}
-
 	return &transportManagerImpl{
-		muxTransports: muxTransports,
+		config:        configProvider.GetS2SProxyConfig(),
+		muxTransports: make(map[string]*muxTransport),
 		logger:        logger,
 	}
 }
 
-func (t *transportManagerImpl) Start() error {
-	if t.isReady {
-		return nil
-	}
-
-	t.logger.Info("Starting transport manager")
-	for _, mux := range t.muxTransports {
-		t.logger.Info("Starting mux transport", tag.NewAnyTag("Mode", mux.config.Mode), tag.Name(mux.config.Name))
-
-		if err := mux.start(); err != nil {
-			return err
+func (cm *transportManagerImpl) getConfig(transportName string) *config.MuxTransportConfig {
+	for _, cfg := range cm.config.MuxTransports {
+		if cfg.Name == transportName {
+			return &cfg
 		}
 	}
 
-	t.isReady = true
 	return nil
 }
 
-func (t *transportManagerImpl) Stop() {
-	t.logger.Info("Stopping transport manager")
-
-	if !t.isReady {
-		return
+func (cm *transportManagerImpl) Open(transportName string) (MuxTransport, error) {
+	cfg := cm.getConfig(transportName)
+	if cfg == nil {
+		return nil, fmt.Errorf("Transport %s is not found", transportName)
 	}
 
-	for _, mux := range t.muxTransports {
-		t.logger.Info("Stopping mux transport", tag.NewAnyTag("Mode", mux.config.Mode), tag.Name(mux.config.Name))
-		mux.stop()
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	mux := cm.muxTransports[cfg.Name]
+	if mux != nil && !mux.IsClosed() {
+		return mux, nil
 	}
 
-	t.isReady = false
+	// Create a new transport
+	mux = newMuxTransport(*cfg)
+	if err := mux.start(); err != nil {
+		return nil, err
+	}
+
+	cm.muxTransports[cfg.Name] = mux
+	return mux, nil
 }
 
-func (t *transportManagerImpl) getMuxTransport(name string) (*muxTransport, error) {
-	ts := t.muxTransports[name]
-	if ts == nil {
-		return nil, fmt.Errorf("could not find transport  %s", name)
-	}
-
-	if !ts.isReady {
-		return nil, fmt.Errorf("mutiplex transport %s is not ready", name)
-	}
-
-	return ts, nil
-}
-
-func (t *transportManagerImpl) CreateServerTransport(cfg config.ProxyServerConfig) (ServerTransport, error) {
-	if cfg.Type == config.MuxTransport {
-		return t.getMuxTransport(cfg.MuxTransportName)
-	}
-
-	// use TCP as default transport
-	return &tcpServer{
-		config: cfg.TCPServerSetting,
-	}, nil
-}
-
-func (t *transportManagerImpl) CreateClientTransport(cfg config.ProxyClientConfig) (ClientTransport, error) {
-	if cfg.Type == config.MuxTransport {
-		return t.getMuxTransport(cfg.MuxTransportName)
-	}
-
-	// use TCP as default transport
+func NewTCPClientTransport(cfg config.TCPClientSetting) ClientTransport {
 	return &tcpClient{
-		config: cfg.TCPClientSetting,
-	}, nil
+		config: cfg,
+	}
+}
+
+func NewTCPServerTransport(cfg config.TCPServerSetting) ServerTransport {
+	return &tcpServer{
+		config: cfg,
+	}
 }

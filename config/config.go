@@ -105,6 +105,22 @@ type (
 	}
 )
 
+func (c ProxyClientConfig) IsMux() bool {
+	return c.Type == MuxTransport
+}
+
+func (c ProxyClientConfig) IsTCP() bool {
+	return c.Type == TCPTransport
+}
+
+func (c ProxyServerConfig) IsMux() bool {
+	return c.Type == MuxTransport
+}
+
+func (c ProxyServerConfig) IsTCP() bool {
+	return c.Type == TCPTransport
+}
+
 func newConfigProvider(ctx *cli.Context) (ConfigProvider, error) {
 	s2sConfig, err := LoadConfig[S2SProxyConfig](ctx.String(ConfigPathFlag))
 	if err != nil {
