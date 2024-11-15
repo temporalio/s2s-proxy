@@ -46,7 +46,7 @@ func NewTemporalAPIServer(
 	}
 }
 
-func (s *TemporalAPIServer) Start() error {
+func (s *TemporalAPIServer) Start() {
 	adminservice.RegisterAdminServiceServer(s.server, s.adminHandler)
 	workflowservice.RegisterWorkflowServiceServer(s.server, s.workflowserviceHandler)
 
@@ -61,12 +61,10 @@ func (s *TemporalAPIServer) Start() error {
 				// It should not happen if grpc server is based on mux server or normal TCP connection.
 				s.logger.Warn("grpc server received EOF error")
 			} else {
-				s.logger.Fatal("grpc server fatal error ", tag.Error(err))
+				s.logger.Error("grpc server fatal error ", tag.Error(err))
 			}
 		}
 	}()
-
-	return nil
 }
 
 func (s *TemporalAPIServer) Stop() {
