@@ -32,7 +32,7 @@ type (
 
 	transportManagerImpl struct {
 		config        config.S2SProxyConfig
-		muxTransports map[string]*muxTransport
+		muxTransports map[string]*muxTransportImpl
 		mu            sync.Mutex
 		logger        log.Logger
 	}
@@ -44,7 +44,7 @@ func NewTransportManager(
 ) TransportManager {
 	return &transportManagerImpl{
 		config:        configProvider.GetS2SProxyConfig(),
-		muxTransports: make(map[string]*muxTransport),
+		muxTransports: make(map[string]*muxTransportImpl),
 		logger:        logger,
 	}
 }

@@ -14,21 +14,23 @@ import (
 )
 
 type (
-	muxTransport struct {
+	muxTransportImpl struct {
 		config      config.MuxTransportConfig
 		session     *yamux.Session
 		conn        net.Conn
+		shutDownCh  chan struct{}
 		isConnected bool
 	}
 )
 
-func newMuxTransport(cfg config.MuxTransportConfig) *muxTransport {
-	return &muxTransport{
-		config: cfg,
+func newMuxTransport(cfg config.MuxTransportConfig) *muxTransportImpl {
+	return &muxTransportImpl{
+		config:     cfg,
+		shutDownCh: make(chan struct{}),
 	}
 }
 
-func (m *muxTransport) Connect() (*grpc.ClientConn, error) {
+func (m *muxTransportImpl) Connect() (*grpc.ClientConn, error) {
 	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
 		if !m.isConnected {
 			return nil, fmt.Errorf("Transport Connect failed: mux transport is not connected")
@@ -41,7 +43,7 @@ func (m *muxTransport) Connect() (*grpc.ClientConn, error) {
 	return dial("unused", nil, dialer)
 }
 
-func (m *muxTransport) Serve(server *grpc.Server) error {
+func (m *muxTransportImpl) Serve(server *grpc.Server) error {
 	if !m.isConnected {
 		return fmt.Errorf("Transport Serve failed: mux transport is not connected")
 	}
@@ -49,7 +51,7 @@ func (m *muxTransport) Serve(server *grpc.Server) error {
 	return server.Serve(m.session)
 }
 
-func (m *muxTransport) createClientConn() error {
+func (m *muxTransportImpl) createClientConn() error {
 	setting := m.config.Client
 	if setting == nil {
 		return fmt.Errorf("invalid client mux transport setting: %v", m.config)
@@ -82,7 +84,7 @@ func (m *muxTransport) createClientConn() error {
 	return nil
 }
 
-func (m *muxTransport) createServerConn() error {
+func (m *muxTransportImpl) createServerConn() error {
 	setting := m.config.Server
 	if setting == nil {
 		return fmt.Errorf("invalid client mux transport setting: %v", m.config)
@@ -121,7 +123,7 @@ func (m *muxTransport) createServerConn() error {
 	return nil
 }
 
-func (m *muxTransport) establishConnection() error {
+func (m *muxTransportImpl) establishConnection() error {
 	switch m.config.Mode {
 	case config.ClientMode:
 		return m.createClientConn()
@@ -132,18 +134,18 @@ func (m *muxTransport) establishConnection() error {
 	}
 }
 
-func (m *muxTransport) waitForClose() {
+func (m *muxTransportImpl) waitForClose() {
 	defer func() {
 		m.conn.Close()
-		m.session.Close()
 		m.isConnected = false
+		close(m.shutDownCh)
 	}()
 
 	// wait for session to close
 	<-m.session.CloseChan()
 }
 
-func (m *muxTransport) start() error {
+func (m *muxTransportImpl) start() error {
 	// Create initial connection
 	if err := m.establishConnection(); err != nil {
 		return err
@@ -153,14 +155,16 @@ func (m *muxTransport) start() error {
 	return nil
 }
 
-func (m *muxTransport) Close() {
+func (m *muxTransportImpl) Close() {
 	m.session.Close()
+	// wait for shutdown
+	<-m.shutDownCh
 }
 
-func (m *muxTransport) IsClosed() bool {
+func (m *muxTransportImpl) IsClosed() bool {
 	return !m.isConnected
 }
 
-func (m *muxTransport) CloseChan() <-chan struct{} {
+func (m *muxTransportImpl) CloseChan() <-chan struct{} {
 	return m.session.CloseChan()
 }

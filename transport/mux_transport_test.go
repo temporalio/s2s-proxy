@@ -21,6 +21,24 @@ const (
 	muxedName     = "muxed"
 )
 
+var (
+	muxClientCfg = config.MuxTransportConfig{
+		Name: muxedName,
+		Mode: config.ClientMode,
+		Client: &config.TCPClientSetting{
+			ServerAddress: serverAddress,
+		},
+	}
+
+	muxServerCfg = config.MuxTransportConfig{
+		Name: muxedName,
+		Mode: config.ServerMode,
+		Server: &config.TCPServerSetting{
+			ListenAddress: serverAddress,
+		},
+	}
+)
+
 type service struct {
 	adminservice.UnimplementedAdminServiceServer
 }
@@ -31,7 +49,7 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 	}, nil
 }
 
-func testMuxConnection(t *testing.T, clientTransManager TransportManager, serverTransManager TransportManager) {
+func connect(t *testing.T, clientTransManager TransportManager, serverTransManager TransportManager) (MuxTransport, MuxTransport) {
 	var clientTs MuxTransport
 	var serverTs MuxTransport
 
@@ -54,6 +72,11 @@ func testMuxConnection(t *testing.T, clientTransManager TransportManager, server
 
 	wg.Wait()
 
+	return clientTs, serverTs
+}
+
+func testMuxConnection(t *testing.T, clientTransManager TransportManager, serverTransManager TransportManager) {
+	clientTs, serverTs := connect(t, clientTransManager, serverTransManager)
 	defer func() {
 		serverTs.Close()
 		clientTs.Close()
@@ -99,26 +122,16 @@ func testTransportWithCfg(t *testing.T, muxClientCfg config.MuxTransportConfig, 
 			MuxTransports: []config.MuxTransportConfig{muxServerCfg},
 		}), logger)
 
-	testMuxConnection(t, muxClientManager, muxServerManager)
+	t.Run("client call server", func(t *testing.T) {
+		testMuxConnection(t, muxClientManager, muxServerManager)
+	})
+
+	t.Run("server call client", func(t *testing.T) {
+		testMuxConnection(t, muxServerManager, muxClientManager)
+	})
 }
 
 func TestMuxTransport(t *testing.T) {
-	muxClientCfg := config.MuxTransportConfig{
-		Name: muxedName,
-		Mode: config.ClientMode,
-		Client: &config.TCPClientSetting{
-			ServerAddress: serverAddress,
-		},
-	}
-
-	muxServerCfg := config.MuxTransportConfig{
-		Name: muxedName,
-		Mode: config.ServerMode,
-		Server: &config.TCPServerSetting{
-			ListenAddress: serverAddress,
-		},
-	}
-
 	testTransportWithCfg(t, muxClientCfg, muxServerCfg)
 }
 
@@ -129,7 +142,7 @@ func TestMuxTransportTLS(t *testing.T) {
 		os.Chdir(pwd)
 	}()
 
-	muxClientCfg := config.MuxTransportConfig{
+	muxClientCfgTLS := config.MuxTransportConfig{
 		Name: muxedName,
 		Mode: config.ClientMode,
 		Client: &config.TCPClientSetting{
@@ -143,7 +156,7 @@ func TestMuxTransportTLS(t *testing.T) {
 		},
 	}
 
-	muxServerCfg := config.MuxTransportConfig{
+	muxServerCfgTLS := config.MuxTransportConfig{
 		Name: muxedName,
 		Mode: config.ServerMode,
 		Server: &config.TCPServerSetting{
@@ -157,5 +170,37 @@ func TestMuxTransportTLS(t *testing.T) {
 		},
 	}
 
-	testTransportWithCfg(t, muxClientCfg, muxServerCfg)
+	testTransportWithCfg(t, muxClientCfgTLS, muxServerCfgTLS)
+}
+
+func TestMuxTransportClose(t *testing.T) {
+	logger := log.NewTestLogger()
+
+	muxClientManager := NewTransportManager(config.NewMockConfigProvider(
+		config.S2SProxyConfig{
+			MuxTransports: []config.MuxTransportConfig{muxClientCfg},
+		}), logger)
+
+	muxServerManager := NewTransportManager(config.NewMockConfigProvider(
+		config.S2SProxyConfig{
+			MuxTransports: []config.MuxTransportConfig{muxServerCfg},
+		}), logger)
+
+	testClose := func(t *testing.T, close TransportManager, wait TransportManager) {
+		closeTs, waitTs := connect(t, close, wait)
+		closeTs.Close()
+		require.True(t, closeTs.IsClosed())
+
+		<-waitTs.CloseChan()
+		waitTs.Close() // call Close to make sure all underlying connection is closed
+		require.True(t, waitTs.IsClosed())
+	}
+
+	t.Run("close server", func(t *testing.T) {
+		testClose(t, muxClientManager, muxServerManager)
+	})
+
+	t.Run("close client", func(t *testing.T) {
+		testClose(t, muxServerManager, muxClientManager)
+	})
 }
