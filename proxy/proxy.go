@@ -143,7 +143,6 @@ func (ps *ProxyServer) start() error {
 
 			select {
 			case <-ps.shutDownCh:
-				close(retryCh)
 				ps.stopServer()
 				return
 			case <-retryCh:
