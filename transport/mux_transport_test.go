@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -52,27 +51,10 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 }
 
 func connect(t *testing.T, clientCM *MuxConnectMananger, serverCM *MuxConnectMananger) (MuxTransport, MuxTransport) {
-	var clientTs MuxTransport
-	var serverTs MuxTransport
-
-	// Establish connection
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		var err error
-		clientTs, err = clientCM.Open()
-		require.NoError(t, err)
-	}()
-
-	go func() {
-		defer wg.Done()
-		var err error
-		serverTs, err = serverCM.Open()
-		require.NoError(t, err)
-	}()
-
-	wg.Wait()
+	clientTs, err := clientCM.Open()
+	require.NoError(t, err)
+	serverTs, err := serverCM.Open()
+	require.NoError(t, err)
 	return clientTs, serverTs
 }
 
@@ -277,6 +259,28 @@ func TestMuxTransportMultiServer(t *testing.T) {
 
 		clientCM.stop()
 		serverCM.stop()
+	}
+
+	runTests(t, testMulti)
+}
+
+func TestMuxTransportFailedToOpen(t *testing.T) {
+	testMulti := func(t *testing.T, clientCfg config.MuxTransportConfig, serverCfg config.MuxTransportConfig) {
+		clientCM := newMuxConnectManager(clientCfg, testLogger)
+		serverCM := newMuxConnectManager(serverCfg, testLogger)
+
+		require.NoError(t, clientCM.start())
+		require.NoError(t, serverCM.start())
+
+		clientCM.stop()
+		serverCM.stop()
+
+		var err error
+		_, err = clientCM.Open()
+		require.Error(t, err)
+
+		_, err = serverCM.Open()
+		require.Error(t, err)
 	}
 
 	runTests(t, testMulti)
