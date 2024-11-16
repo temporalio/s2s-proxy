@@ -109,60 +109,79 @@ func (ps *ProxyServer) start() error {
 	if serverConfig.IsMux() && clientConfig.IsMux() {
 		return fmt.Errorf("ProxyServer server and client can't both be multiplexed connection.")
 	}
-	var serverTransport transport.ServerTransport
-	var clientTransport transport.ClientTransport
+	var serverTsManager transport.TransportManager
+	var clientTsManager transport.TransportManager
 
-	var openMuxTransport func() (transport.MuxTransport, error)
-	if serverConfig.IsTCP() {
-		serverTransport = transport.NewTCPServerTransport(serverConfig.TCPServerSetting)
-	} else {
-		openMuxTransport = func() (transport.MuxTransport, error) {
-			muxTransport, err := ps.transManager.Open(serverConfig.MuxTransportName)
-			if err != nil {
-				return nil, err
-			}
+	// var openMuxTransport func() (transport.MuxTransport, error)
+	// if serverConfig.IsTCP() {
+	// 	serverTransport = transport.NewTCPServerTransport(serverConfig.TCPServerSetting)
+	// } else {
+	// 	openMuxTransport = func() (transport.MuxTransport, error) {
+	// 		muxTransport, err := ps.transManager.GetConnectManager(serverConfig.MuxTransportName)
+	// 		if err != nil {
+	// 			return nil, err
+	// 		}
 
-			serverTransport = muxTransport
-			return muxTransport, nil
-		}
-	}
+	// 		serverTransport = muxTransport
+	// 		return muxTransport, nil
+	// 	}
+	// }
 
-	if clientConfig.IsTCP() {
-		clientTransport = transport.NewTCPClientTransport(clientConfig.TCPClientSetting)
-	} else {
-		openMuxTransport = func() (transport.MuxTransport, error) {
-			muxTransport, err := ps.transManager.Open(clientConfig.MuxTransportName)
-			if err != nil {
-				return nil, err
-			}
+	// if clientConfig.IsTCP() {
+	// 	clientTransport = transport.NewTCPClientTransport(clientConfig.TCPClientSetting)
+	// } else {
+	// 	openMuxTransport = func() (transport.MuxTransport, error) {
+	// 		muxTransport, err := ps.transManager.Open(clientConfig.MuxTransportName)
+	// 		if err != nil {
+	// 			return nil, err
+	// 		}
 
-			clientTransport = muxTransport
-			return muxTransport, nil
-		}
-	}
+	// 		clientTransport = muxTransport
+	// 		return muxTransport, nil
+	// 	}
+	// }
 
-	if openMuxTransport == nil {
-		return ps.startServer(serverTransport, clientTransport)
-	}
+	// if openMuxTransport == nil {
+	// 	return ps.startServer(serverTransport, clientTransport)
+	// }
 
 	// Manage multiplexed connection via connection manager
+
+	serverCM, err := serverTsManager.GetConnectManager("")
+	if err != nil {
+		return err
+	}
+
+	clientCM, err := clientTsManager.GetConnectManager("")
+	if err != nil {
+		return err
+	}
+
 	go func() {
 		for {
-			muxTransport, err := openMuxTransport()
+			serverTransport, err := serverCM.Open()
 			if err != nil {
-				ps.logger.Error("Failed to open mux transport", tag.Error(err))
+				ps.logger.Error("Open transport is failed", tag.Error(err))
 				return
 			}
 
+			clientTransport, err := clientCM.Open()
+			if err != nil {
+				ps.logger.Error("Open transport is failed", tag.Error(err))
+				return
+			}
+
+			retryCh := make(chan struct{})
+
 			ps.startServer(serverTransport, clientTransport)
+
 			select {
-			case <-muxTransport.CloseChan():
-				// stop server and try re-open transport
-				ps.stopServer()
 			case <-ps.shutDownCh:
 				ps.stopServer()
-				muxTransport.Close()
 				return
+			case <-retryCh:
+				// stop server and try re-open transport
+				ps.stopServer()
 			}
 		}
 	}()

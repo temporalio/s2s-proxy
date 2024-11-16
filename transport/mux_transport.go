@@ -5,89 +5,101 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/yamux"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 )
 
 type (
 	muxTransportImpl struct {
-		config      config.MuxTransportConfig
-		session     *yamux.Session
-		conn        net.Conn
-		shutDownCh  chan struct{}
-		isConnected bool
+		session *yamux.Session
+		conn    net.Conn
+		closeCh chan struct{}
+	}
+
+	MuxConnectMananger struct {
+		config       config.MuxTransportConfig
+		muxTransport *muxTransportImpl
+		shutdownCh   chan struct{}
+		connectedCh  chan struct{}
+		wg           sync.WaitGroup
+		logger       log.Logger
 	}
 )
 
-func newMuxTransport(cfg config.MuxTransportConfig) *muxTransportImpl {
+func newMuxTransport(conn net.Conn, session *yamux.Session) *muxTransportImpl {
 	return &muxTransportImpl{
-		config:     cfg,
-		shutDownCh: make(chan struct{}),
+		conn:    conn,
+		session: session,
+		closeCh: make(chan struct{}),
 	}
 }
 
-func (m *muxTransportImpl) Connect() (*grpc.ClientConn, error) {
+func (s *muxTransportImpl) Connect() (*grpc.ClientConn, error) {
 	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
-		if !m.isConnected {
-			return nil, fmt.Errorf("Transport Connect failed: mux transport is not connected")
-		}
-
-		return m.session.Open()
+		return s.session.Open()
 	}
 
 	// Set hostname to unused since custom dialer is used.
 	return dial("unused", nil, dialer)
 }
 
-func (m *muxTransportImpl) Serve(server *grpc.Server) error {
-	if !m.isConnected {
-		return fmt.Errorf("Transport Serve failed: mux transport is not connected")
-	}
-
-	return server.Serve(m.session)
+func (s *muxTransportImpl) Serve(server *grpc.Server) error {
+	return server.Serve(s.session)
 }
 
-func (m *muxTransportImpl) createClientConn() error {
-	setting := m.config.Client
-	if setting == nil {
-		return fmt.Errorf("invalid client mux transport setting: %v", m.config)
-	}
+func (m *muxTransportImpl) CloseChan() <-chan struct{} {
+	return m.closeCh
+}
 
-	client, err := net.DialTimeout("tcp", setting.ServerAddress, 10*time.Second)
-	if err != nil {
-		return err
-	}
+func (s *muxTransportImpl) Close() {
+	s.conn.Close()
+	s.session.Close()
 
-	var conn net.Conn
-	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
-		tlsConfig, err := encryption.GetClientTLSConfig(tlsCfg)
-		if err != nil {
-			return err
+	// Wait for connection manager to notify close is completed.
+	<-s.closeCh
+}
+
+func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *MuxConnectMananger {
+	return &MuxConnectMananger{
+		config:      cfg,
+		logger:      log.With(logger, tag.NewStringTag("Name", cfg.Name), tag.NewStringTag("Mode", string(cfg.Mode))),
+		shutdownCh:  make(chan struct{}),
+		connectedCh: make(chan struct{}),
+	}
+}
+
+func (m *MuxConnectMananger) Open() (MuxTransport, error) {
+	select {
+	case <-m.shutdownCh:
+		return nil, fmt.Errorf("Connection is closed.")
+	case <-m.connectedCh:
+		// block on connect
+		if m.muxTransport.session.IsClosed() {
+			return nil, fmt.Errorf("Session is closed")
 		}
-
-		conn = tls.Client(client, tlsConfig)
-	} else {
-		conn = client
+		return m.muxTransport, nil
 	}
-
-	m.conn = conn
-	m.session, err = yamux.Client(conn, nil)
-	if err != nil {
-		return err
-	}
-
-	m.isConnected = true
-	return nil
 }
 
-func (m *muxTransportImpl) createServerConn() error {
-	setting := m.config.Server
+func (m *MuxConnectMananger) isStopped() bool {
+	select {
+	case <-m.shutdownCh:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *MuxConnectMananger) serverLoop(setting *config.TCPServerSetting) error {
 	if setting == nil {
-		return fmt.Errorf("invalid client mux transport setting: %v", m.config)
+		return fmt.Errorf("invalid server mux transport setting: %v", m.config)
 	}
 
 	listener, err := net.Listen("tcp", setting.ListenAddress)
@@ -95,76 +107,142 @@ func (m *muxTransportImpl) createServerConn() error {
 		return err
 	}
 
-	// Accept a TCP connection
-	server, err := listener.Accept()
-	if err != nil {
-		return err
-	}
+	m.wg.Add(1)
+	go func() {
+		defer func() {
+			listener.Close()
+			m.wg.Done()
+		}()
 
-	var conn net.Conn
-	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
-		tlsConfig, err := encryption.GetServerTLSConfig(tlsCfg)
-		if err != nil {
-			return err
+		for {
+			select {
+			case <-m.shutdownCh:
+				return
+			default:
+				m.logger.Info("listener accept new connection")
+				// Accept a TCP connection
+				server, err := listener.Accept()
+				if err != nil {
+					if m.isStopped() {
+						return
+					}
+
+					m.logger.Fatal("listener.Accept failed", tag.Error(err))
+				}
+
+				var conn net.Conn
+				if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
+					tlsConfig, err := encryption.GetServerTLSConfig(tlsCfg)
+					if err != nil {
+						m.logger.Fatal("GetClientTLSConfig failed", tag.Error(err))
+					}
+
+					conn = tls.Server(server, tlsConfig)
+				} else {
+					conn = server
+				}
+
+				session, err := yamux.Server(conn, nil)
+				if err != nil {
+					m.logger.Fatal("yamux.Server failed", tag.Error(err))
+				}
+
+				m.muxTransport = newMuxTransport(conn, session)
+				m.waitForReconnect()
+			}
 		}
-
-		conn = tls.Server(server, tlsConfig)
-	} else {
-		conn = server
-	}
-
-	m.conn = conn
-	m.session, err = yamux.Server(conn, nil)
-	if err != nil {
-		return err
-	}
-
-	m.isConnected = true
-	return nil
-}
-
-func (m *muxTransportImpl) establishConnection() error {
-	switch m.config.Mode {
-	case config.ClientMode:
-		return m.createClientConn()
-	case config.ServerMode:
-		return m.createServerConn()
-	default:
-		return fmt.Errorf("invalid mux transport mode: name %s, mode %s.", m.config.Name, m.config.Mode)
-	}
-}
-
-func (m *muxTransportImpl) waitForClose() {
-	defer func() {
-		m.conn.Close()
-		m.isConnected = false
-		close(m.shutDownCh)
 	}()
 
-	// wait for session to close
-	<-m.session.CloseChan()
-}
+	go func() {
+		// wait for shutdown
+		<-m.shutdownCh
+		listener.Close()
+	}()
 
-func (m *muxTransportImpl) start() error {
-	// Create initial connection
-	if err := m.establishConnection(); err != nil {
-		return err
-	}
-
-	go m.waitForClose()
 	return nil
 }
 
-func (m *muxTransportImpl) Close() {
-	m.session.Close()
-	// wait for shutdown
-	<-m.shutDownCh
+func (m *MuxConnectMananger) clientLoop(setting *config.TCPClientSetting) error {
+	if setting == nil {
+		return fmt.Errorf("invalid client mux transport setting: %v", m.config)
+	}
+
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+	Loop:
+		for {
+			select {
+			case <-m.shutdownCh:
+				return
+			default:
+				m.logger.Info("try to dail up")
+				client, err := net.DialTimeout("tcp", setting.ServerAddress, 5*time.Second)
+				if err != nil {
+					m.logger.Error("failed to dail up")
+					continue Loop
+				}
+
+				var conn net.Conn
+				if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
+					tlsConfig, err := encryption.GetClientTLSConfig(tlsCfg)
+					if err != nil {
+						m.logger.Fatal("GetClientTLSConfig failed")
+					}
+
+					conn = tls.Client(client, tlsConfig)
+				} else {
+					conn = client
+				}
+
+				session, err := yamux.Client(conn, nil)
+				if err != nil {
+					m.logger.Fatal("yamux.Client failed")
+				}
+
+				m.muxTransport = newMuxTransport(conn, session)
+				m.waitForReconnect()
+			}
+		}
+	}()
+
+	return nil
 }
 
-func (m *muxTransportImpl) IsClosed() bool {
-	return !m.isConnected
+func (m *MuxConnectMananger) start() error {
+	m.logger.Info("start connection manager")
+	switch m.config.Mode {
+	case config.ClientMode:
+		return m.clientLoop(m.config.Client)
+	case config.ServerMode:
+		return m.serverLoop(m.config.Server)
+	default:
+		return fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s.", m.config.Name, m.config.Mode)
+	}
 }
 
-func (m *muxTransportImpl) CloseChan() <-chan struct{} {
-	return m.session.CloseChan()
+func (m *MuxConnectMananger) stop() {
+	close(m.shutdownCh)
+	m.wg.Wait()
+	m.logger.Info("Connection manager stopped")
+}
+
+func (m *MuxConnectMananger) waitForReconnect() {
+	// Notify transport is connected
+	close(m.connectedCh)
+
+	m.logger.Info("connected")
+
+	select {
+	case <-m.shutdownCh:
+	case <-m.muxTransport.session.CloseChan():
+		m.logger.Info("session closed")
+	}
+
+	// create a new connected channel for reconnect
+	m.connectedCh = make(chan struct{})
+
+	// Notify transport is closed
+	close(m.muxTransport.closeCh)
+	m.muxTransport = nil
 }

@@ -2,7 +2,6 @@ package transport
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/common/log"
@@ -21,66 +20,56 @@ type (
 	MuxTransport interface {
 		ClientTransport
 		ServerTransport
-		IsClosed() bool
 		CloseChan() <-chan struct{}
 		Close()
 	}
 
-	TransportManager interface {
-		Open(transportName string) (MuxTransport, error)
-	}
-
-	transportManagerImpl struct {
-		config        config.S2SProxyConfig
-		muxTransports map[string]*muxTransportImpl
-		mu            sync.Mutex
-		logger        log.Logger
+	TransportManager struct {
+		connectManagers map[string]*MuxConnectMananger
+		logger          log.Logger
 	}
 )
 
 func NewTransportManager(
 	configProvider config.ConfigProvider,
 	logger log.Logger,
-) TransportManager {
-	return &transportManagerImpl{
-		config:        configProvider.GetS2SProxyConfig(),
-		muxTransports: make(map[string]*muxTransportImpl),
-		logger:        logger,
+) *TransportManager {
+
+	cm := make(map[string]*MuxConnectMananger)
+	s2sConfig := configProvider.GetS2SProxyConfig()
+	for _, cfg := range s2sConfig.MuxTransports {
+		cm[cfg.Name] = newMuxConnectManager(cfg, logger)
+	}
+
+	return &TransportManager{
+		connectManagers: cm,
+		logger:          logger,
 	}
 }
 
-func (cm *transportManagerImpl) getConfig(transportName string) *config.MuxTransportConfig {
-	for _, cfg := range cm.config.MuxTransports {
-		if cfg.Name == transportName {
-			return &cfg
+func (tm *TransportManager) GetConnectManager(name string) (*MuxConnectMananger, error) {
+	mux := tm.connectManagers[name]
+	if mux == nil {
+		return nil, fmt.Errorf("Multiplexed transport %s is not found", name)
+	}
+
+	return mux, nil
+}
+
+func (tm *TransportManager) Start() error {
+	for _, cm := range tm.connectManagers {
+		if err := cm.start(); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-func (cm *transportManagerImpl) Open(transportName string) (MuxTransport, error) {
-	cfg := cm.getConfig(transportName)
-	if cfg == nil {
-		return nil, fmt.Errorf("Transport %s is not found", transportName)
+func (tm *TransportManager) Stop() {
+	for _, cm := range tm.connectManagers {
+		cm.stop()
 	}
-
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	mux := cm.muxTransports[cfg.Name]
-	if mux != nil && !mux.IsClosed() {
-		return mux, nil
-	}
-
-	// Create a new transport
-	mux = newMuxTransport(*cfg)
-	if err := mux.start(); err != nil {
-		return nil, err
-	}
-
-	cm.muxTransports[cfg.Name] = mux
-	return mux, nil
 }
 
 func NewTCPClientTransport(cfg config.TCPClientSetting) ClientTransport {
