@@ -1,8 +1,6 @@
 package proxy
 
 import (
-	"fmt"
-
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
@@ -18,14 +16,15 @@ type (
 	ProxyServer struct {
 		config       config.ProxyConfig
 		opts         proxyOptions
-		transManager transport.TransportManager
 		logger       log.Logger
 		server       *TemporalAPIServer
+		transManager *transport.TransportManager
 		shutDownCh   chan struct{}
 	}
 
 	Proxy struct {
 		config         config.S2SProxyConfig
+		transManager   *transport.TransportManager
 		outboundServer *ProxyServer
 		inboundServer  *ProxyServer
 	}
@@ -102,85 +101,53 @@ func (ps *ProxyServer) stopServer() {
 	}
 }
 
+func monitorClosable(closable transport.Closable, retryCh chan struct{}) {
+	select {
+	// Stop monitor if retryCh is closed
+	case <-retryCh:
+		return
+	case <-closable.CloseChan():
+		close(retryCh)
+	}
+}
+
 func (ps *ProxyServer) start() error {
 	serverConfig := ps.config.Server
 	clientConfig := ps.config.Client
 
-	if serverConfig.IsMux() && clientConfig.IsMux() {
-		return fmt.Errorf("ProxyServer server and client can't both be multiplexed connection.")
-	}
-	var serverTsManager transport.TransportManager
-	var clientTsManager transport.TransportManager
-
-	// var openMuxTransport func() (transport.MuxTransport, error)
-	// if serverConfig.IsTCP() {
-	// 	serverTransport = transport.NewTCPServerTransport(serverConfig.TCPServerSetting)
-	// } else {
-	// 	openMuxTransport = func() (transport.MuxTransport, error) {
-	// 		muxTransport, err := ps.transManager.GetConnectManager(serverConfig.MuxTransportName)
-	// 		if err != nil {
-	// 			return nil, err
-	// 		}
-
-	// 		serverTransport = muxTransport
-	// 		return muxTransport, nil
-	// 	}
-	// }
-
-	// if clientConfig.IsTCP() {
-	// 	clientTransport = transport.NewTCPClientTransport(clientConfig.TCPClientSetting)
-	// } else {
-	// 	openMuxTransport = func() (transport.MuxTransport, error) {
-	// 		muxTransport, err := ps.transManager.Open(clientConfig.MuxTransportName)
-	// 		if err != nil {
-	// 			return nil, err
-	// 		}
-
-	// 		clientTransport = muxTransport
-	// 		return muxTransport, nil
-	// 	}
-	// }
-
-	// if openMuxTransport == nil {
-	// 	return ps.startServer(serverTransport, clientTransport)
-	// }
-
-	// Manage multiplexed connection via connection manager
-
-	serverCM, err := serverTsManager.GetConnectManager("")
-	if err != nil {
-		return err
-	}
-
-	clientCM, err := clientTsManager.GetConnectManager("")
-	if err != nil {
-		return err
-	}
-
 	go func() {
 		for {
-			serverTransport, err := serverCM.Open()
+			clientTransport, err := ps.transManager.OpenClient(clientConfig)
 			if err != nil {
-				ps.logger.Error("Open transport is failed", tag.Error(err))
+				ps.logger.Error("Open client transport is failed", tag.Error(err))
 				return
 			}
 
-			clientTransport, err := clientCM.Open()
+			serverTransport, err := ps.transManager.OpenServer(serverConfig)
 			if err != nil {
-				ps.logger.Error("Open transport is failed", tag.Error(err))
+				ps.logger.Error("Open server transport is failed", tag.Error(err))
 				return
 			}
-
-			retryCh := make(chan struct{})
 
 			ps.startServer(serverTransport, clientTransport)
 
+			retryCh := make(chan struct{})
+
+			if closable, ok := clientTransport.(transport.Closable); ok {
+				go monitorClosable(closable, retryCh)
+			}
+
+			if closable, ok := serverTransport.(transport.Closable); ok {
+				go monitorClosable(closable, retryCh)
+			}
+
 			select {
 			case <-ps.shutDownCh:
+				close(retryCh)
 				ps.stopServer()
 				return
 			case <-retryCh:
-				// stop server and try re-open transport
+				// One of the closable transport is closed. Stop server and try re-open transport
 				ps.stopServer()
 			}
 		}
@@ -196,7 +163,7 @@ func (ps *ProxyServer) stop() {
 func newProxyServer(
 	cfg config.ProxyConfig,
 	opts proxyOptions,
-	transManager transport.TransportManager,
+	transManager *transport.TransportManager,
 	logger log.Logger,
 ) *ProxyServer {
 	return &ProxyServer{
@@ -210,12 +177,13 @@ func newProxyServer(
 
 func NewProxy(
 	configProvider config.ConfigProvider,
-	transManager transport.TransportManager,
+	transManager *transport.TransportManager,
 	logger log.Logger,
 ) (*Proxy, error) {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	proxy := &Proxy{
-		config: s2sConfig,
+		config:       s2sConfig,
+		transManager: transManager,
 	}
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
@@ -252,6 +220,7 @@ func NewProxy(
 }
 
 func (s *Proxy) Start() error {
+	s.transManager.Start()
 	if s.outboundServer != nil {
 		if err := s.outboundServer.start(); err != nil {
 			return err
@@ -274,4 +243,6 @@ func (s *Proxy) Stop() {
 	if s.outboundServer != nil {
 		s.outboundServer.stop()
 	}
+
+	s.transManager.Stop()
 }

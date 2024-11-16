@@ -17,15 +17,19 @@ type (
 		Serve(server *grpc.Server) error
 	}
 
-	MuxTransport interface {
-		ClientTransport
-		ServerTransport
+	Closable interface {
 		CloseChan() <-chan struct{}
 		Close()
 	}
 
+	MuxTransport interface {
+		ClientTransport
+		ServerTransport
+		Closable
+	}
+
 	TransportManager struct {
-		connectManagers map[string]*MuxConnectMananger
+		muxConnManagers map[string]*muxConnectMananger
 		logger          log.Logger
 	}
 )
@@ -35,29 +39,49 @@ func NewTransportManager(
 	logger log.Logger,
 ) *TransportManager {
 
-	cm := make(map[string]*MuxConnectMananger)
+	muxConnManagers := make(map[string]*muxConnectMananger)
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	for _, cfg := range s2sConfig.MuxTransports {
-		cm[cfg.Name] = newMuxConnectManager(cfg, logger)
+		muxConnManagers[cfg.Name] = newMuxConnectManager(cfg, logger)
 	}
 
 	return &TransportManager{
-		connectManagers: cm,
+		muxConnManagers: muxConnManagers,
 		logger:          logger,
 	}
 }
 
-func (tm *TransportManager) GetConnectManager(name string) (*MuxConnectMananger, error) {
-	mux := tm.connectManagers[name]
+func (tm *TransportManager) openMuxTransport(transportName string) (MuxTransport, error) {
+	mux := tm.muxConnManagers[transportName]
 	if mux == nil {
-		return nil, fmt.Errorf("Multiplexed transport %s is not found", name)
+		return nil, fmt.Errorf("Multiplexed transport %s is not found", transportName)
 	}
 
-	return mux, nil
+	return mux.open()
+}
+
+func (tm *TransportManager) OpenClient(clientConfig config.ProxyClientConfig) (ClientTransport, error) {
+	if clientConfig.Type == config.MuxTransport {
+		return tm.openMuxTransport(clientConfig.MuxTransportName)
+	}
+
+	return &tcpClient{
+		config: clientConfig.TCPClientSetting,
+	}, nil
+}
+
+func (tm *TransportManager) OpenServer(serverConfig config.ProxyServerConfig) (ServerTransport, error) {
+	if serverConfig.Type == config.MuxTransport {
+		return tm.openMuxTransport(serverConfig.MuxTransportName)
+	}
+
+	return &tcpServer{
+		config: serverConfig.TCPServerSetting,
+	}, nil
 }
 
 func (tm *TransportManager) Start() error {
-	for _, cm := range tm.connectManagers {
+	for _, cm := range tm.muxConnManagers {
 		if err := cm.start(); err != nil {
 			return err
 		}
@@ -67,19 +91,7 @@ func (tm *TransportManager) Start() error {
 }
 
 func (tm *TransportManager) Stop() {
-	for _, cm := range tm.connectManagers {
+	for _, cm := range tm.muxConnManagers {
 		cm.stop()
-	}
-}
-
-func NewTCPClientTransport(cfg config.TCPClientSetting) ClientTransport {
-	return &tcpClient{
-		config: cfg,
-	}
-}
-
-func NewTCPServerTransport(cfg config.TCPServerSetting) ServerTransport {
-	return &tcpServer{
-		config: cfg,
 	}
 }

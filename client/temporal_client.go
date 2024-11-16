@@ -102,7 +102,7 @@ func NewClientFactory(
 }
 
 func (cf *clientFactory) NewRemoteAdminClient(
-	clientConfig config.ProxyClientConfig,
+	clientConfig config.ProxyClientConfig, // NOT USED?!!
 ) (adminservice.AdminServiceClient, error) {
 	connection, err := cf.clientTransport.Connect()
 	if err != nil {

@@ -23,7 +23,7 @@ type (
 		closeCh chan struct{}
 	}
 
-	MuxConnectMananger struct {
+	muxConnectMananger struct {
 		config       config.MuxTransportConfig
 		muxTransport *muxTransportImpl
 		shutdownCh   chan struct{}
@@ -70,14 +70,14 @@ func (s *muxTransportImpl) Close() {
 	<-s.closeCh
 }
 
-func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *MuxConnectMananger {
-	return &MuxConnectMananger{
+func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *muxConnectMananger {
+	return &muxConnectMananger{
 		config: cfg,
 		logger: log.With(logger, tag.NewStringTag("Name", cfg.Name), tag.NewStringTag("Mode", string(cfg.Mode))),
 	}
 }
 
-func (m *MuxConnectMananger) Open() (MuxTransport, error) {
+func (m *muxConnectMananger) open() (MuxTransport, error) {
 	if !m.started {
 		return nil, fmt.Errorf("Connection manager is stopped")
 	}
@@ -92,7 +92,7 @@ func (m *MuxConnectMananger) Open() (MuxTransport, error) {
 	return m.muxTransport, nil
 }
 
-func (m *MuxConnectMananger) isShuttingDown() bool {
+func (m *muxConnectMananger) isShuttingDown() bool {
 	select {
 	case <-m.shutdownCh:
 		return true
@@ -101,7 +101,7 @@ func (m *MuxConnectMananger) isShuttingDown() bool {
 	}
 }
 
-func (m *MuxConnectMananger) serverLoop(setting *config.TCPServerSetting) error {
+func (m *muxConnectMananger) serverLoop(setting *config.TCPServerSetting) error {
 	if setting == nil {
 		return fmt.Errorf("invalid server mux transport setting: %v", m.config)
 	}
@@ -166,7 +166,7 @@ func (m *MuxConnectMananger) serverLoop(setting *config.TCPServerSetting) error 
 	return nil
 }
 
-func (m *MuxConnectMananger) clientLoop(setting *config.TCPClientSetting) error {
+func (m *muxConnectMananger) clientLoop(setting *config.TCPClientSetting) error {
 	if setting == nil {
 		return fmt.Errorf("invalid client mux transport setting: %v", m.config)
 	}
@@ -214,7 +214,7 @@ func (m *MuxConnectMananger) clientLoop(setting *config.TCPClientSetting) error 
 	return nil
 }
 
-func (m *MuxConnectMananger) start() error {
+func (m *muxConnectMananger) start() error {
 	if m.started {
 		return nil
 	}
@@ -241,14 +241,14 @@ func (m *MuxConnectMananger) start() error {
 	return nil
 }
 
-func (m *MuxConnectMananger) stop() {
+func (m *muxConnectMananger) stop() {
 	close(m.shutdownCh)
 	m.wg.Wait()
 	m.started = false
 	m.logger.Info("Connection manager stopped")
 }
 
-func (m *MuxConnectMananger) waitForReconnect() {
+func (m *muxConnectMananger) waitForReconnect() {
 	// Notify transport is connected
 	close(m.connectedCh)
 

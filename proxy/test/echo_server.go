@@ -142,10 +142,15 @@ func newEchoServer(
 		},
 	}
 
-	tcpTransport := transport.NewTransportManager(&config.EmptyConfigProvider, logger)
-	serverTransport, err := tcpTransport.CreateServerTransport(serverConfig)
+	tm := transport.NewTransportManager(&config.EmptyConfigProvider, logger)
+	serverTransport, err := tm.OpenServer(serverConfig)
 	if err != nil {
 		logger.Fatal("Failed to create server transport", tag.Error(err))
+	}
+
+	clientTransport, err := tm.OpenClient(clientConfig)
+	if err != nil {
+		logger.Fatal("Failed to create client transport", tag.Error(err))
 	}
 
 	return &echoServer{
@@ -160,13 +165,13 @@ func newEchoServer(
 		proxy:             proxy,
 		clusterInfo:       localClusterInfo,
 		remoteClusterInfo: remoteClusterInfo,
-		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(tcpTransport, logger), logger),
+		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, logger), logger),
 		logger:            log.With(logger, common.ServiceTag(serviceName)),
 	}
 }
 
 func (s *echoServer) start() {
-	_ = s.server.Start()
+	s.server.Start()
 	if s.proxy != nil {
 		_ = s.proxy.Start()
 	}
