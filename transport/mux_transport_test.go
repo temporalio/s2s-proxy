@@ -80,8 +80,8 @@ func testMuxConnection(t *testing.T, muxClientCfg config.MuxTransportConfig, mux
 	clientCM := newMuxConnectManager(muxClientCfg, testLogger)
 	serverCM := newMuxConnectManager(muxServerCfg, testLogger)
 
-	clientCM.start()
-	serverCM.start()
+	require.NoError(t, clientCM.start())
+	require.NoError(t, serverCM.start())
 
 	defer func() {
 		clientCM.stop()
@@ -179,4 +179,35 @@ func TestMuxTransportTLS(t *testing.T) {
 	}
 
 	testMuxConnectionWithConfig(t, muxClientCfgTLS, muxServerCfgTLS)
+}
+
+func TestMuxTransporWaitForClose(t *testing.T) {
+	testClose := func(t *testing.T, closeCfg config.MuxTransportConfig, waitForCloseCfg config.MuxTransportConfig) {
+		closeCM := newMuxConnectManager(closeCfg, testLogger)
+		waitForCloseCM := newMuxConnectManager(waitForCloseCfg, testLogger)
+		require.NoError(t, closeCM.start())
+		require.NoError(t, waitForCloseCM.start())
+
+		defer func() {
+			closeCM.stop()
+			waitForCloseCM.stop()
+		}()
+
+		closeTs, waitForCloseTs := connect(t, closeCM, waitForCloseCM)
+		closeTs.Close()
+		_, ok := <-closeTs.CloseChan()
+		require.False(t, ok)
+
+		// waitForClose transport should be closed.
+		_, ok = <-waitForCloseTs.CloseChan()
+		require.False(t, ok)
+	}
+
+	t.Run("wait for mux client to close", func(t *testing.T) {
+		testClose(t, testMuxClientCfg, testMuxServerCfg)
+	})
+
+	t.Run("wait for mux server to close", func(t *testing.T) {
+		testClose(t, testMuxServerCfg, testMuxClientCfg)
+	})
 }

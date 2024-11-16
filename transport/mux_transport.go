@@ -30,6 +30,7 @@ type (
 		connectedCh  chan struct{}
 		wg           sync.WaitGroup
 		logger       log.Logger
+		started      bool
 	}
 )
 
@@ -76,19 +77,21 @@ func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *Mux
 }
 
 func (m *MuxConnectMananger) Open() (MuxTransport, error) {
-	select {
-	case <-m.shutdownCh:
-		return nil, fmt.Errorf("Connection is closed.")
-	case <-m.connectedCh:
-		// block on connect
-		if m.muxTransport.session.IsClosed() {
-			return nil, fmt.Errorf("Session is closed")
-		}
-		return m.muxTransport, nil
+	if !m.started {
+		return nil, fmt.Errorf("Connection manager is stopped")
 	}
+
+	// Wait for transport to be connected
+	<-m.connectedCh
+
+	if m.muxTransport.session.IsClosed() {
+		// this should not happen
+		return nil, fmt.Errorf("Session is closed")
+	}
+	return m.muxTransport, nil
 }
 
-func (m *MuxConnectMananger) isStopped() bool {
+func (m *MuxConnectMananger) isShuttingDown() bool {
 	select {
 	case <-m.shutdownCh:
 		return true
@@ -123,7 +126,7 @@ func (m *MuxConnectMananger) serverLoop(setting *config.TCPServerSetting) error 
 				// Accept a TCP connection
 				server, err := listener.Accept()
 				if err != nil {
-					if m.isStopped() {
+					if m.isShuttingDown() {
 						return
 					}
 
@@ -213,17 +216,26 @@ func (m *MuxConnectMananger) start() error {
 	m.logger.Info("start connection manager")
 	switch m.config.Mode {
 	case config.ClientMode:
-		return m.clientLoop(m.config.Client)
+		if err := m.clientLoop(m.config.Client); err != nil {
+			return err
+		}
 	case config.ServerMode:
-		return m.serverLoop(m.config.Server)
+		if err := m.serverLoop(m.config.Server); err != nil {
+			return err
+		}
+
 	default:
 		return fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s.", m.config.Name, m.config.Mode)
 	}
+
+	m.started = true
+	return nil
 }
 
 func (m *MuxConnectMananger) stop() {
 	close(m.shutdownCh)
 	m.wg.Wait()
+	m.started = false
 	m.logger.Info("Connection manager stopped")
 }
 
