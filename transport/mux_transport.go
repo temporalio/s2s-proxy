@@ -123,7 +123,7 @@ func (m *MuxConnectMananger) serverLoop(setting *config.TCPServerSetting) error 
 			case <-m.shutdownCh:
 				return
 			default:
-				m.logger.Info("listener accept new connection")
+				m.logger.Debug("listener accept new connection")
 				// Accept a TCP connection
 				server, err := listener.Accept()
 				if err != nil {
@@ -180,10 +180,11 @@ func (m *MuxConnectMananger) clientLoop(setting *config.TCPClientSetting) error 
 			case <-m.shutdownCh:
 				return
 			default:
-				m.logger.Info("try to dail up")
+				m.logger.Debug("Dail up")
+
 				client, err := net.DialTimeout("tcp", setting.ServerAddress, 5*time.Second)
 				if err != nil {
-					m.logger.Error("failed to dail up")
+					m.logger.Error("failed to dail up", tag.Error(err))
 					continue Loop
 				}
 
@@ -218,7 +219,7 @@ func (m *MuxConnectMananger) start() error {
 		return nil
 	}
 
-	m.logger.Info("start connection manager")
+	m.logger.Info("Start connection manager")
 	m.shutdownCh = make(chan struct{})
 	m.connectedCh = make(chan struct{})
 
@@ -251,7 +252,7 @@ func (m *MuxConnectMananger) waitForReconnect() {
 	// Notify transport is connected
 	close(m.connectedCh)
 
-	m.logger.Info("connected")
+	m.logger.Debug("connected")
 
 	select {
 	case <-m.shutdownCh:
@@ -260,7 +261,7 @@ func (m *MuxConnectMananger) waitForReconnect() {
 		m.muxTransport.closeSession()
 	}
 
-	m.logger.Info("disconnected")
+	m.logger.Debug("disconnected")
 
 	// create a new connected channel for reconnect
 	m.connectedCh = make(chan struct{})

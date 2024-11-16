@@ -76,6 +76,36 @@ func connect(t *testing.T, clientCM *MuxConnectMananger, serverCM *MuxConnectMan
 	return clientTs, serverTs
 }
 
+func startServer(t *testing.T, serverTs ServerTransport) *grpc.Server {
+	grpcServer := grpc.NewServer()
+	adminservice.RegisterAdminServiceServer(grpcServer, &service{})
+	go func() {
+		err := serverTs.Serve(grpcServer)
+		if err != nil {
+			// it is possible to receive an error here because test creates two grpcServers:
+			// one on muxServer and one on muxClient based on the same connection between
+			// muxClient to muxServer. If one of the grpcServer stopped before the other one (which
+			// close the underly TCP connection), the other grpcServer can get an error here.
+			t.Log("grpcServer received err", err)
+		}
+	}()
+
+	return grpcServer
+}
+
+func testClient(t *testing.T, clientTs ClientTransport) {
+	conn, err := clientTs.Connect()
+	require.NoError(t, err)
+	adminClient := adminservice.NewAdminServiceClient(conn)
+
+	req := &adminservice.DescribeClusterRequest{}
+	res, err := adminClient.DescribeCluster(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, clusterName, res.ClusterName)
+
+	conn.Close()
+}
+
 func testMuxConnection(t *testing.T, muxClientCfg config.MuxTransportConfig, muxServerCfg config.MuxTransportConfig, repeat int) {
 	clientCM := newMuxConnectManager(muxClientCfg, testLogger)
 	serverCM := newMuxConnectManager(muxServerCfg, testLogger)
@@ -91,35 +121,12 @@ func testMuxConnection(t *testing.T, muxClientCfg config.MuxTransportConfig, mux
 	for i := 0; i < repeat; i++ {
 		t.Log("Test connection", "repeat", i)
 		clientTs, serverTs := connect(t, clientCM, serverCM)
-		t.Log("Connected")
 
-		grpcServer := grpc.NewServer()
-		adminservice.RegisterAdminServiceServer(grpcServer, &service{})
-		go func() {
-			err := serverTs.Serve(grpcServer)
-			if err != nil {
-				// it is possible to receive an error here because test creates two grpcServers:
-				// one on muxServer and one on muxClient based on the same connection between
-				// muxClient to muxServer. If one of the grpcServer stopped before the other one (which
-				// close the underly TCP connection), the other grpcServer can get an error here.
-				t.Log("grpcServer received err", err)
-			}
-		}()
+		server := startServer(t, serverTs)
+		testClient(t, clientTs)
 
-		conn, err := clientTs.Connect()
-		require.NoError(t, err)
-		adminClient := adminservice.NewAdminServiceClient(conn)
+		server.GracefulStop()
 
-		req := &adminservice.DescribeClusterRequest{}
-		res, err := adminClient.DescribeCluster(context.Background(), req)
-		require.NoError(t, err)
-		require.Equal(t, clusterName, res.ClusterName)
-
-		t.Log("Stop client/server")
-		conn.Close()
-		grpcServer.GracefulStop()
-
-		t.Log("Close transport")
 		clientTs.Close()
 		serverTs.Close()
 	}
@@ -211,6 +218,9 @@ func TestMuxTransporWaitForClose(t *testing.T) {
 		// waitForClose transport should be closed.
 		_, ok = <-waitForCloseTs.CloseChan()
 		require.False(t, ok)
+
+		// Reconnect transport
+		closeTs, waitForCloseTs = connect(t, closeCM, waitForCloseCM)
 	}
 
 	runTests(t, testClose)
@@ -243,4 +253,31 @@ func TestMuxTransporReconnect(t *testing.T) {
 	}
 
 	runTests(t, testReconnect)
+}
+
+func TestMuxTransportMultiServer(t *testing.T) {
+	testMulti := func(t *testing.T, clientCfg config.MuxTransportConfig, serverCfg config.MuxTransportConfig) {
+		clientCM := newMuxConnectManager(clientCfg, testLogger)
+		serverCM := newMuxConnectManager(serverCfg, testLogger)
+
+		require.NoError(t, clientCM.start())
+		require.NoError(t, serverCM.start())
+
+		clientTs, serverTs := connect(t, clientCM, serverCM)
+
+		// Start server on both sides
+		server1 := startServer(t, clientTs)
+		server2 := startServer(t, serverTs)
+
+		testClient(t, clientTs)
+		testClient(t, serverTs)
+
+		server1.GracefulStop()
+		server2.GracefulStop()
+
+		clientCM.stop()
+		serverCM.stop()
+	}
+
+	runTests(t, testMulti)
 }
