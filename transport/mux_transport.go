@@ -59,20 +59,21 @@ func (m *muxTransportImpl) CloseChan() <-chan struct{} {
 	return m.closeCh
 }
 
-func (s *muxTransportImpl) Close() {
+func (s *muxTransportImpl) closeSession() {
 	s.conn.Close()
 	s.session.Close()
+}
 
+func (s *muxTransportImpl) Close() {
+	s.closeSession()
 	// Wait for connection manager to notify close is completed.
 	<-s.closeCh
 }
 
 func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *MuxConnectMananger {
 	return &MuxConnectMananger{
-		config:      cfg,
-		logger:      log.With(logger, tag.NewStringTag("Name", cfg.Name), tag.NewStringTag("Mode", string(cfg.Mode))),
-		shutdownCh:  make(chan struct{}),
-		connectedCh: make(chan struct{}),
+		config: cfg,
+		logger: log.With(logger, tag.NewStringTag("Name", cfg.Name), tag.NewStringTag("Mode", string(cfg.Mode))),
 	}
 }
 
@@ -213,7 +214,14 @@ func (m *MuxConnectMananger) clientLoop(setting *config.TCPClientSetting) error 
 }
 
 func (m *MuxConnectMananger) start() error {
+	if m.started {
+		return nil
+	}
+
 	m.logger.Info("start connection manager")
+	m.shutdownCh = make(chan struct{})
+	m.connectedCh = make(chan struct{})
+
 	switch m.config.Mode {
 	case config.ClientMode:
 		if err := m.clientLoop(m.config.Client); err != nil {
@@ -247,9 +255,12 @@ func (m *MuxConnectMananger) waitForReconnect() {
 
 	select {
 	case <-m.shutdownCh:
+		m.muxTransport.closeSession()
 	case <-m.muxTransport.session.CloseChan():
-		m.logger.Info("session closed")
+		m.muxTransport.closeSession()
 	}
+
+	m.logger.Info("disconnected")
 
 	// create a new connected channel for reconnect
 	m.connectedCh = make(chan struct{})
