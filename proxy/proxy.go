@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"fmt"
+
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
@@ -91,6 +93,7 @@ func (ps *ProxyServer) startServer(
 		logger,
 	)
 
+	ps.logger.Info(fmt.Sprintf("Starting ProxyServer %s with ServerConfig: %v, ClientConfig: %v", cfg.Name, cfg.Server, cfg.Client))
 	ps.server.Start()
 	return nil
 }
@@ -156,6 +159,7 @@ func (ps *ProxyServer) start() error {
 }
 
 func (ps *ProxyServer) stop() {
+	ps.logger.Info("Stop ProxyServer")
 	close(ps.shutDownCh)
 }
 
@@ -242,6 +246,5 @@ func (s *Proxy) Stop() {
 	if s.outboundServer != nil {
 		s.outboundServer.stop()
 	}
-
 	s.transManager.Stop()
 }

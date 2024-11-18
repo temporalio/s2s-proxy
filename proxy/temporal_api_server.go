@@ -50,7 +50,6 @@ func (s *TemporalAPIServer) Start() {
 	adminservice.RegisterAdminServiceServer(s.server, s.adminHandler)
 	workflowservice.RegisterWorkflowServiceServer(s.server, s.workflowserviceHandler)
 
-	s.logger.Info(fmt.Sprintf("Starting %s with config: %v", s.serviceName, s.serverConfig))
 	go func() {
 		if err := s.serverTransport.Serve(s.server); err != nil {
 			if err == io.EOF {

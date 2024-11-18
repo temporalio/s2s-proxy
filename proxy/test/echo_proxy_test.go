@@ -3,7 +3,6 @@ package proxy
 import (
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -394,7 +393,9 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				}()
 
 				// Test adminservice unary method
-				r, err := echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
+				r, err := retry(func() (*adminservice.DescribeClusterResponse, error) {
+					return echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
+				}, 5, logger)
 				s.NoError(err)
 				s.Equal("EchoServer", r.ClusterName)
 
@@ -522,7 +523,7 @@ func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
 			config.MuxTransportConfig{
 				Name: muxTransportName,
 				Mode: config.ClientMode,
-				Client: &config.TCPClientSetting{
+				Client: config.TCPClientSetting{
 					ServerAddress: clientProxyInboundAddress,
 				},
 			}),
@@ -545,7 +546,7 @@ func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
 			config.MuxTransportConfig{
 				Name: muxTransportName,
 				Mode: config.ServerMode,
-				Server: &config.TCPServerSetting{
+				Server: config.TCPServerSetting{
 					ListenAddress: clientProxyInboundAddress,
 				},
 			}),
@@ -575,20 +576,8 @@ func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
 	}
 
 	logger := log.NewTestLogger()
-	var echoServer, echoClient *echoServer
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		echoServer = newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
-		wg.Done()
-	}()
-
-	go func() {
-		echoClient = newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
-		wg.Done()
-	}()
-	wg.Wait()
+	echoServer := newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
+	echoClient := newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
 
 	echoClient.start()
 	echoServer.start()
@@ -598,7 +587,10 @@ func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
 		echoServer.stop()
 	}()
 
-	r, err := echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
+	r, err := retry(func() (*adminservice.DescribeClusterResponse, error) {
+		return echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
+	}, 5, logger)
+
 	s.NoError(err)
 	s.Equal("EchoServer", r.ClusterName)
 }

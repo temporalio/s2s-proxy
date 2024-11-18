@@ -69,10 +69,10 @@ type (
 	}
 
 	MuxTransportConfig struct {
-		Name   string            `yaml:"name"`
-		Mode   MuxMode           `yaml:"mode"`
-		Client *TCPClientSetting `yaml:"client"`
-		Server *TCPServerSetting `yaml:"server"`
+		Name   string           `yaml:"name"`
+		Mode   MuxMode          `yaml:"mode"`
+		Client TCPClientSetting `yaml:"client"`
+		Server TCPServerSetting `yaml:"server"`
 	}
 
 	S2SProxyConfig struct {
@@ -179,12 +179,24 @@ func marshalWithoutError(v any) string {
 	return string(data)
 }
 
-func (cfg ProxyClientConfig) String() string {
-	return marshalWithoutError(cfg)
+func (o ProxyClientConfig) String() string {
+	return marshalWithoutError(o)
 }
 
-func (cfg ProxyServerConfig) String() string {
-	return marshalWithoutError(cfg)
+func (o ProxyServerConfig) String() string {
+	return marshalWithoutError(o)
+}
+
+func (o MuxTransportConfig) String() string {
+	return marshalWithoutError(o)
+}
+
+func (o TCPServerSetting) String() string {
+	return marshalWithoutError(o)
+}
+
+func (o TCPClientSetting) String() string {
+	return marshalWithoutError(o)
 }
 
 type (
