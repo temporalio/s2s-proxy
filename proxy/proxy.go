@@ -185,7 +185,7 @@ func NewProxy(
 	configProvider config.ConfigProvider,
 	transManager *transport.TransportManager,
 	logger log.Logger,
-) (*Proxy, error) {
+) *Proxy {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	proxy := &Proxy{
 		config:       s2sConfig,
@@ -222,11 +222,14 @@ func NewProxy(
 		)
 	}
 
-	return proxy, nil
+	return proxy
 }
 
 func (s *Proxy) Start() error {
-	s.transManager.Start()
+	if err := s.transManager.Start(); err != nil {
+		return err
+	}
+
 	if s.outboundServer != nil {
 		if err := s.outboundServer.start(); err != nil {
 			return err

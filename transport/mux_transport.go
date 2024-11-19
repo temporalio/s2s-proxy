@@ -17,10 +17,12 @@ import (
 	"google.golang.org/grpc"
 )
 
+type status int32
+
 const (
-	statusInitialized int32 = 0
-	statusStarted     int32 = 1
-	statusStopped     int32 = 2
+	statusInitialized status = iota
+	statusStarted
+	statusStopped
 )
 
 type (
@@ -38,7 +40,7 @@ type (
 		mu           sync.Mutex
 		wg           sync.WaitGroup
 		logger       log.Logger
-		status       int32
+		status       atomic.Int32
 	}
 )
 
@@ -79,11 +81,13 @@ func (s *muxTransportImpl) Close() {
 }
 
 func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *muxConnectMananger {
-	return &muxConnectMananger{
+	cm := &muxConnectMananger{
 		config: cfg,
 		logger: log.With(logger, tag.NewStringTag("Name", cfg.Name), tag.NewStringTag("Mode", string(cfg.Mode))),
-		status: statusInitialized,
 	}
+
+	cm.status.Store(int32(statusInitialized))
+	return cm
 }
 
 func (m *muxConnectMananger) open() (MuxTransport, error) {
@@ -239,10 +243,9 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 }
 
 func (m *muxConnectMananger) start() error {
-	if !atomic.CompareAndSwapInt32(
-		&m.status,
-		statusInitialized,
-		statusStarted,
+	if !m.status.CompareAndSwap(
+		int32(statusInitialized),
+		int32(statusStarted),
 	) {
 		return fmt.Errorf("Connetion manager can't be started. status: %d", m.getStatus())
 	}
@@ -270,18 +273,17 @@ func (m *muxConnectMananger) start() error {
 }
 
 func (m *muxConnectMananger) isStarted() bool {
-	return atomic.LoadInt32(&m.status) == statusStarted
+	return m.getStatus() == statusStarted
 }
 
-func (m *muxConnectMananger) getStatus() int32 {
-	return atomic.LoadInt32(&m.status)
+func (m *muxConnectMananger) getStatus() status {
+	return status(m.status.Load())
 }
 
 func (m *muxConnectMananger) stop() {
-	if !atomic.CompareAndSwapInt32(
-		&m.status,
-		statusStarted,
-		statusStopped,
+	if !m.status.CompareAndSwap(
+		int32(statusStarted),
+		int32(statusStopped),
 	) {
 		return
 	}
