@@ -31,6 +31,8 @@ type (
 	}
 
 	echoServer struct {
+		serverConfig      config.ProxyServerConfig
+		clientConfig      config.ProxyClientConfig
 		server            *s2sproxy.TemporalAPIServer
 		proxy             *s2sproxy.Proxy
 		clusterInfo       clusterInfo
@@ -104,7 +106,7 @@ func newEchoServer(
 			logger.Fatal("Failed to create transport provider", tag.Error(err))
 		}
 
-		proxy, err = s2sproxy.NewProxy(
+		proxy = s2sproxy.NewProxy(
 			configProvider,
 			transport.NewTransportManager(configProvider, logger),
 			logger,
@@ -142,13 +144,21 @@ func newEchoServer(
 		},
 	}
 
-	tcpTransport := transport.NewTransportManager(&config.EmptyConfigProvider, logger)
-	serverTransport, err := tcpTransport.CreateServerTransport(serverConfig)
+	tm := transport.NewTransportManager(&config.EmptyConfigProvider, logger)
+	serverTransport, err := tm.OpenServer(serverConfig)
 	if err != nil {
 		logger.Fatal("Failed to create server transport", tag.Error(err))
 	}
 
+	clientTransport, err := tm.OpenClient(clientConfig)
+	if err != nil {
+		logger.Fatal("Failed to create client transport", tag.Error(err))
+	}
+
+	logger = log.With(logger, common.ServiceTag(serviceName))
 	return &echoServer{
+		serverConfig: serverConfig,
+		clientConfig: clientConfig,
 		server: s2sproxy.NewTemporalAPIServer(
 			serviceName,
 			serverConfig,
@@ -160,13 +170,14 @@ func newEchoServer(
 		proxy:             proxy,
 		clusterInfo:       localClusterInfo,
 		remoteClusterInfo: remoteClusterInfo,
-		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(tcpTransport, logger), logger),
-		logger:            log.With(logger, common.ServiceTag(serviceName)),
+		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, logger), logger),
+		logger:            logger,
 	}
 }
 
 func (s *echoServer) start() {
-	_ = s.server.Start()
+	s.logger.Info(fmt.Sprintf("Starting echoServer with ServerConfig: %v, ClientConfig: %v", s.serverConfig, s.clientConfig))
+	s.server.Start()
 	if s.proxy != nil {
 		_ = s.proxy.Start()
 	}

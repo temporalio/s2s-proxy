@@ -1,22 +1,34 @@
 package proxy
 
 import (
+	"fmt"
+
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/transport"
 	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
 
 type (
+	ProxyServer struct {
+		config       config.ProxyConfig
+		opts         proxyOptions
+		logger       log.Logger
+		server       *TemporalAPIServer
+		transManager *transport.TransportManager
+		shutDownCh   chan struct{}
+	}
+
 	Proxy struct {
-		config           config.S2SProxyConfig
-		transportManager transport.TransportManager
-		outboundServer   *TemporalAPIServer
-		inboundServer    *TemporalAPIServer
+		config         config.S2SProxyConfig
+		transManager   *transport.TransportManager
+		outboundServer *ProxyServer
+		inboundServer  *ProxyServer
 	}
 
 	proxyOptions struct {
@@ -24,51 +36,6 @@ type (
 		Config    config.S2SProxyConfig
 	}
 )
-
-func NewProxy(
-	configProvider config.ConfigProvider,
-	transportManager transport.TransportManager,
-	logger log.Logger,
-) (*Proxy, error) {
-	s2sConfig := configProvider.GetS2SProxyConfig()
-	var err error
-
-	// Establish underlying connection first before start proxy server.
-	if err := transportManager.Start(); err != nil {
-		return nil, err
-	}
-
-	proxy := Proxy{
-		config:           s2sConfig,
-		transportManager: transportManager,
-	}
-
-	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
-	//    local server -> proxy(outbound) -> remote server
-	//    local server <- proxy(inbound) <- remote server
-	//
-	// Here a remote server can be another proxy as well.
-	//    server-a <-> proxy-a <-> proxy-b <-> server-b
-	if s2sConfig.Outbound != nil {
-		if proxy.outboundServer, err = proxy.createServer(*s2sConfig.Outbound, logger, proxyOptions{
-			IsInbound: false,
-			Config:    s2sConfig,
-		}); err != nil {
-			return nil, err
-		}
-	}
-
-	if s2sConfig.Inbound != nil {
-		if proxy.inboundServer, err = proxy.createServer(*s2sConfig.Inbound, logger, proxyOptions{
-			IsInbound: true,
-			Config:    s2sConfig,
-		}); err != nil {
-			return nil, err
-		}
-	}
-
-	return &proxy, nil
-}
 
 func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool) ([]grpc.ServerOption, error) {
 	unaryInterceptors := []grpc.UnaryServerInterceptor{}
@@ -102,19 +69,21 @@ func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool
 	return opts, nil
 }
 
-func (s *Proxy) createServer(cfg config.ProxyConfig, logger log.Logger, opts proxyOptions) (*TemporalAPIServer, error) {
+func (ps *ProxyServer) startServer(
+	serverTransport transport.ServerTransport,
+	clientTransport transport.ClientTransport,
+) error {
+	cfg := ps.config
+	opts := ps.opts
+	logger := ps.logger
+
 	serverOpts, err := makeServerOptions(logger, cfg, opts.IsInbound)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	serverTransport, err := s.transportManager.CreateServerTransport(cfg.Server)
-	if err != nil {
-		return nil, err
-	}
-
-	clientFactory := client.NewClientFactory(s.transportManager, logger)
-	return NewTemporalAPIServer(
+	clientFactory := client.NewClientFactory(clientTransport, logger)
+	ps.server = NewTemporalAPIServer(
 		cfg.Name,
 		cfg.Server,
 		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, opts, logger),
@@ -122,18 +91,154 @@ func (s *Proxy) createServer(cfg config.ProxyConfig, logger log.Logger, opts pro
 		serverOpts,
 		serverTransport,
 		logger,
-	), nil
+	)
+
+	ps.logger.Info(fmt.Sprintf("Starting ProxyServer %s with ServerConfig: %v, ClientConfig: %v", cfg.Name, cfg.Server, cfg.Client))
+	ps.server.Start()
+	return nil
+}
+
+func (ps *ProxyServer) stopServer() {
+	if ps.server != nil {
+		ps.server.Stop()
+	}
+}
+
+func monitorClosable(closable transport.Closable, retryCh chan struct{}, shutDownCh <-chan struct{}) {
+	select {
+	case <-shutDownCh:
+		return
+	// Stop monitor if retryCh is already closed
+	case <-retryCh:
+		return
+	case <-closable.CloseChan():
+		// TODO: avoid retryCh to be closed twice.
+		close(retryCh)
+	}
+}
+
+func (ps *ProxyServer) start() error {
+	serverConfig := ps.config.Server
+	clientConfig := ps.config.Client
+
+	go func() {
+		for {
+			// If using mux transport underneath, Open call will be blocked until
+			// underlying connection is established.
+			clientTransport, err := ps.transManager.OpenClient(clientConfig)
+			if err != nil {
+				ps.logger.Error("Open client transport is failed", tag.Error(err))
+				return
+			}
+
+			serverTransport, err := ps.transManager.OpenServer(serverConfig)
+			if err != nil {
+				ps.logger.Error("Open server transport is failed", tag.Error(err))
+				return
+			}
+
+			ps.startServer(serverTransport, clientTransport)
+
+			retryCh := make(chan struct{})
+			if closable, ok := clientTransport.(transport.Closable); ok {
+				go monitorClosable(closable, retryCh, ps.shutDownCh)
+			}
+
+			if closable, ok := serverTransport.(transport.Closable); ok {
+				go monitorClosable(closable, retryCh, ps.shutDownCh)
+			}
+
+			select {
+			case <-ps.shutDownCh:
+				ps.stopServer()
+				return
+			case <-retryCh:
+				// If any closable transport is closed, try to restart the proxy server.
+				ps.stopServer()
+			}
+		}
+	}()
+
+	return nil
+}
+
+func (ps *ProxyServer) stop() {
+	ps.logger.Info("Stop ProxyServer")
+	close(ps.shutDownCh)
+}
+
+func newProxyServer(
+	cfg config.ProxyConfig,
+	opts proxyOptions,
+	transManager *transport.TransportManager,
+	logger log.Logger,
+) *ProxyServer {
+	return &ProxyServer{
+		config:       cfg,
+		opts:         opts,
+		transManager: transManager,
+		logger:       logger,
+		shutDownCh:   make(chan struct{}),
+	}
+}
+
+func NewProxy(
+	configProvider config.ConfigProvider,
+	transManager *transport.TransportManager,
+	logger log.Logger,
+) *Proxy {
+	s2sConfig := configProvider.GetS2SProxyConfig()
+	proxy := &Proxy{
+		config:       s2sConfig,
+		transManager: transManager,
+	}
+
+	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
+	//    local server -> proxy(outbound) -> remote server
+	//    local server <- proxy(inbound) <- remote server
+	//
+	// Here a remote server can be another proxy as well.
+	//    server-a <-> proxy-a <-> proxy-b <-> server-b
+	if s2sConfig.Outbound != nil {
+		proxy.outboundServer = newProxyServer(
+			*s2sConfig.Outbound,
+			proxyOptions{
+				IsInbound: false,
+				Config:    s2sConfig,
+			},
+			transManager,
+			logger,
+		)
+	}
+
+	if s2sConfig.Inbound != nil {
+		proxy.inboundServer = newProxyServer(
+			*s2sConfig.Inbound,
+			proxyOptions{
+				IsInbound: true,
+				Config:    s2sConfig,
+			},
+			transManager,
+			logger,
+		)
+	}
+
+	return proxy
 }
 
 func (s *Proxy) Start() error {
+	if err := s.transManager.Start(); err != nil {
+		return err
+	}
+
 	if s.outboundServer != nil {
-		if err := s.outboundServer.Start(); err != nil {
+		if err := s.outboundServer.start(); err != nil {
 			return err
 		}
 	}
 
 	if s.inboundServer != nil {
-		if err := s.inboundServer.Start(); err != nil {
+		if err := s.inboundServer.start(); err != nil {
 			return err
 		}
 	}
@@ -143,11 +248,10 @@ func (s *Proxy) Start() error {
 
 func (s *Proxy) Stop() {
 	if s.inboundServer != nil {
-		s.inboundServer.Stop()
+		s.inboundServer.stop()
 	}
 	if s.outboundServer != nil {
-		s.outboundServer.Stop()
+		s.outboundServer.stop()
 	}
-
-	s.transportManager.Stop()
+	s.transManager.Stop()
 }
