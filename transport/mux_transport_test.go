@@ -24,7 +24,7 @@ var (
 	testMuxClientCfg = config.MuxTransportConfig{
 		Name: muxedName,
 		Mode: config.ClientMode,
-		Client: &config.TCPClientSetting{
+		Client: config.TCPClientSetting{
 			ServerAddress: serverAddress,
 		},
 	}
@@ -32,7 +32,7 @@ var (
 	testMuxServerCfg = config.MuxTransportConfig{
 		Name: muxedName,
 		Mode: config.ServerMode,
-		Server: &config.TCPServerSetting{
+		Server: config.TCPServerSetting{
 			ListenAddress: serverAddress,
 		},
 	}
@@ -51,9 +51,9 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 }
 
 func connect(t *testing.T, clientCM *muxConnectMananger, serverCM *muxConnectMananger) (MuxTransport, MuxTransport) {
-	clientTs, err := clientCM.Open()
+	clientTs, err := clientCM.open()
 	require.NoError(t, err)
-	serverTs, err := serverCM.Open()
+	serverTs, err := serverCM.open()
 	require.NoError(t, err)
 	return clientTs, serverTs
 }
@@ -139,32 +139,19 @@ func TestMuxTransportTLS(t *testing.T) {
 		os.Chdir(pwd)
 	}()
 
-	muxClientCfgTLS := config.MuxTransportConfig{
-		Name: muxedName,
-		Mode: config.ClientMode,
-		Client: &config.TCPClientSetting{
-			ServerAddress: serverAddress,
-			TLS: encryption.ClientTLSConfig{
-				CertificatePath: filepath.Join("certificates", "proxy2.pem"),
-				KeyPath:         filepath.Join("certificates", "proxy2.key"),
-				ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
-				ServerCAPath:    filepath.Join("certificates", "proxy1.pem"),
-			},
-		},
+	muxClientCfgTLS := testMuxClientCfg
+	muxClientCfgTLS.Client.TLS = encryption.ClientTLSConfig{
+		CertificatePath: filepath.Join("certificates", "proxy2.pem"),
+		KeyPath:         filepath.Join("certificates", "proxy2.key"),
+		ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
+		ServerCAPath:    filepath.Join("certificates", "proxy1.pem"),
 	}
-
-	muxServerCfgTLS := config.MuxTransportConfig{
-		Name: muxedName,
-		Mode: config.ServerMode,
-		Server: &config.TCPServerSetting{
-			ListenAddress: serverAddress,
-			TLS: encryption.ServerTLSConfig{
-				CertificatePath:   filepath.Join("certificates", "proxy1.pem"),
-				KeyPath:           filepath.Join("certificates", "proxy1.key"),
-				ClientCAPath:      filepath.Join("certificates", "proxy2.pem"),
-				RequireClientAuth: true,
-			},
-		},
+	muxServerCfgTLS := testMuxServerCfg
+	muxServerCfgTLS.Server.TLS = encryption.ServerTLSConfig{
+		CertificatePath:   filepath.Join("certificates", "proxy1.pem"),
+		KeyPath:           filepath.Join("certificates", "proxy1.key"),
+		ClientCAPath:      filepath.Join("certificates", "proxy2.pem"),
+		RequireClientAuth: true,
 	}
 
 	testMuxConnectionWithConfig(t, muxClientCfgTLS, muxServerCfgTLS)
@@ -208,7 +195,7 @@ func TestMuxTransporWaitForClose(t *testing.T) {
 	runTests(t, testClose)
 }
 
-func TestMuxTransporReconnect(t *testing.T) {
+func TestMuxTransporStopConnectionManager(t *testing.T) {
 	testReconnect := func(t *testing.T, clientCfg config.MuxTransportConfig, serverCfg config.MuxTransportConfig) {
 		clientCM := newMuxConnectManager(clientCfg, testLogger)
 		serverCM := newMuxConnectManager(serverCfg, testLogger)
@@ -221,17 +208,15 @@ func TestMuxTransporReconnect(t *testing.T) {
 
 		// close underlying connection
 		clientCM.stop()
+		serverCM.stop()
 
 		// Wait for both transport to close
 		<-clientTs.CloseChan()
 		<-serverTs.CloseChan()
 
 		// restart clientCM and connect again
-		clientCM.start()
-		clientTs, serverTs = connect(t, clientCM, serverCM)
-
-		clientCM.stop()
-		serverCM.stop()
+		err := clientCM.start()
+		require.Error(t, err)
 	}
 
 	runTests(t, testReconnect)
@@ -276,10 +261,10 @@ func TestMuxTransportFailedToOpen(t *testing.T) {
 		serverCM.stop()
 
 		var err error
-		_, err = clientCM.Open()
+		_, err = clientCM.open()
 		require.Error(t, err)
 
-		_, err = serverCM.Open()
+		_, err = serverCM.open()
 		require.Error(t, err)
 	}
 

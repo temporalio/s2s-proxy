@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/yamux"
@@ -14,6 +15,12 @@ import (
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
+)
+
+const (
+	statusInitialized int32 = 0
+	statusStarted     int32 = 1
+	statusStopped     int32 = 2
 )
 
 type (
@@ -28,9 +35,10 @@ type (
 		muxTransport *muxTransportImpl
 		shutdownCh   chan struct{}
 		connectedCh  chan struct{}
+		mu           sync.Mutex
 		wg           sync.WaitGroup
 		logger       log.Logger
-		started      bool
+		status       int32
 	}
 )
 
@@ -74,22 +82,25 @@ func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *mux
 	return &muxConnectMananger{
 		config: cfg,
 		logger: log.With(logger, tag.NewStringTag("Name", cfg.Name), tag.NewStringTag("Mode", string(cfg.Mode))),
+		status: statusInitialized,
 	}
 }
 
 func (m *muxConnectMananger) open() (MuxTransport, error) {
-	if !m.started {
-		return nil, fmt.Errorf("Connection manager is stopped")
+	if !m.isStarted() {
+		return nil, fmt.Errorf("Connection manager is not running.")
 	}
 
 	// Wait for transport to be connected
+	m.mu.Lock()
 	<-m.connectedCh
+	muxTransport := m.muxTransport
+	m.mu.Unlock()
 
-	if m.muxTransport.session.IsClosed() {
-		// this should not happen
+	if muxTransport.session.IsClosed() {
 		return nil, fmt.Errorf("Session is closed")
 	}
-	return m.muxTransport, nil
+	return muxTransport, nil
 }
 
 func (m *muxConnectMananger) isShuttingDown() bool {
@@ -101,11 +112,7 @@ func (m *muxConnectMananger) isShuttingDown() bool {
 	}
 }
 
-func (m *muxConnectMananger) serverLoop(setting *config.TCPServerSetting) error {
-	if setting == nil {
-		return fmt.Errorf("invalid server mux transport setting: %v", m.config)
-	}
-
+func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 	listener, err := net.Listen("tcp", setting.ListenAddress)
 	if err != nil {
 		return err
@@ -166,11 +173,7 @@ func (m *muxConnectMananger) serverLoop(setting *config.TCPServerSetting) error 
 	return nil
 }
 
-func (m *muxConnectMananger) clientLoop(setting *config.TCPClientSetting) error {
-	if setting == nil {
-		return fmt.Errorf("invalid client mux transport setting: %v", m.config)
-	}
-
+func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
@@ -215,20 +218,25 @@ func (m *muxConnectMananger) clientLoop(setting *config.TCPClientSetting) error 
 }
 
 func (m *muxConnectMananger) start() error {
-	if m.started {
-		return nil
+	if !atomic.CompareAndSwapInt32(
+		&m.status,
+		statusInitialized,
+		statusStarted,
+	) {
+		return fmt.Errorf("Connetion manager can't be started. status: %d", m.getStatus())
 	}
 
-	m.logger.Info("Start connection manager")
 	m.shutdownCh = make(chan struct{})
 	m.connectedCh = make(chan struct{})
 
 	switch m.config.Mode {
 	case config.ClientMode:
+		m.logger.Info(fmt.Sprintf("Start ConnectMananger with Config: %v", m.config.Client))
 		if err := m.clientLoop(m.config.Client); err != nil {
 			return err
 		}
 	case config.ServerMode:
+		m.logger.Info(fmt.Sprintf("Start ConnectMananger with Config: %v", m.config.Server))
 		if err := m.serverLoop(m.config.Server); err != nil {
 			return err
 		}
@@ -237,14 +245,28 @@ func (m *muxConnectMananger) start() error {
 		return fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s.", m.config.Name, m.config.Mode)
 	}
 
-	m.started = true
 	return nil
 }
 
+func (m *muxConnectMananger) isStarted() bool {
+	return atomic.LoadInt32(&m.status) == statusStarted
+}
+
+func (m *muxConnectMananger) getStatus() int32 {
+	return atomic.LoadInt32(&m.status)
+}
+
 func (m *muxConnectMananger) stop() {
+	if !atomic.CompareAndSwapInt32(
+		&m.status,
+		statusStarted,
+		statusStopped,
+	) {
+		return
+	}
+
 	close(m.shutdownCh)
 	m.wg.Wait()
-	m.started = false
 	m.logger.Info("Connection manager stopped")
 }
 
@@ -263,10 +285,13 @@ func (m *muxConnectMananger) waitForReconnect() {
 
 	m.logger.Debug("disconnected")
 
-	// create a new connected channel for reconnect
+	// Initialize connectedCh and muxTransport
+	m.mu.Lock()
 	m.connectedCh = make(chan struct{})
+	muxTransport := m.muxTransport
+	m.muxTransport = nil
+	m.mu.Unlock()
 
 	// Notify transport is closed
-	close(m.muxTransport.closeCh)
-	m.muxTransport = nil
+	close(muxTransport.closeCh)
 }
