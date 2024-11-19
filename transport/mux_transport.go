@@ -69,12 +69,21 @@ func (m *muxTransportImpl) CloseChan() <-chan struct{} {
 	return m.closeCh
 }
 
+func (m *muxTransportImpl) IsClosed() bool {
+	select {
+	case <-m.closeCh:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *muxTransportImpl) closeSession() {
 	s.conn.Close()
 	s.session.Close()
 }
 
-func (s *muxTransportImpl) Close() {
+func (s *muxTransportImpl) close() {
 	s.closeSession()
 	// Wait for connection manager to notify close is completed.
 	<-s.closeCh
@@ -138,6 +147,15 @@ func (m *muxConnectMananger) isShuttingDown() bool {
 }
 
 func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
+	var tlsConfig *tls.Config
+	var err error
+	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
+		tlsConfig, err = encryption.GetServerTLSConfig(tlsCfg)
+		if err != nil {
+			return err
+		}
+	}
+
 	listener, err := net.Listen("tcp", setting.ListenAddress)
 	if err != nil {
 		return err
@@ -167,12 +185,8 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 				}
 
 				var conn net.Conn
-				if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
-					tlsConfig, err := encryption.GetServerTLSConfig(tlsCfg)
-					if err != nil {
-						m.logger.Fatal("GetClientTLSConfig failed", tag.Error(err))
-					}
 
+				if tlsConfig != nil {
 					conn = tls.Server(server, tlsConfig)
 				} else {
 					conn = server
@@ -199,6 +213,15 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 }
 
 func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
+	var tlsConfig *tls.Config
+	var err error
+	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
+		tlsConfig, err = encryption.GetClientTLSConfig(tlsCfg)
+		if err != nil {
+			return err
+		}
+	}
+
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
@@ -208,21 +231,16 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 			case <-m.shutdownCh:
 				return
 			default:
-				m.logger.Debug("Dail up")
+				m.logger.Debug("mux client dialing server")
 
 				client, err := net.DialTimeout("tcp", setting.ServerAddress, 5*time.Second)
 				if err != nil {
-					m.logger.Error("failed to dail up", tag.Error(err))
+					m.logger.Error("mux client failed to dial", tag.Error(err))
 					continue Loop
 				}
 
 				var conn net.Conn
-				if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
-					tlsConfig, err := encryption.GetClientTLSConfig(tlsCfg)
-					if err != nil {
-						m.logger.Fatal("GetClientTLSConfig failed")
-					}
-
+				if tlsConfig != nil {
 					conn = tls.Client(client, tlsConfig)
 				} else {
 					conn = client
@@ -230,7 +248,7 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 
 				session, err := yamux.Client(conn, nil)
 				if err != nil {
-					m.logger.Fatal("yamux.Client failed")
+					m.logger.Fatal("yamux.Client failed", tag.Error(err))
 				}
 
 				m.muxTransport = newMuxTransport(conn, session)
@@ -247,7 +265,7 @@ func (m *muxConnectMananger) start() error {
 		int32(statusInitialized),
 		int32(statusStarted),
 	) {
-		return fmt.Errorf("Connetion manager can't be started. status: %d", m.getStatus())
+		return fmt.Errorf("Connection manager can't be started. status: %d", m.getStatus())
 	}
 
 	m.shutdownCh = make(chan struct{})
@@ -315,6 +333,7 @@ func (m *muxConnectMananger) waitForReconnect() {
 	m.muxTransport = nil
 	m.mu.Unlock()
 
-	// Notify transport is closed
+	// Notify transport is closed after we reset connectedCh to avoid the case that
+	// the caller of Open receives an already closed transport.
 	close(muxTransport.closeCh)
 }

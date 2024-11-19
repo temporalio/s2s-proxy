@@ -19,7 +19,7 @@ type (
 
 	Closable interface {
 		CloseChan() <-chan struct{}
-		Close()
+		IsClosed() bool
 	}
 
 	MuxTransport interface {

@@ -109,8 +109,10 @@ func testMuxConnection(t *testing.T, muxClientCfg config.MuxTransportConfig, mux
 
 		server.GracefulStop()
 
-		clientTs.Close()
-		serverTs.Close()
+		clientTs.(*muxTransportImpl).close()
+		require.True(t, clientTs.IsClosed())
+		serverTs.(*muxTransportImpl).close()
+		require.True(t, serverTs.IsClosed())
 	}
 }
 
@@ -180,7 +182,7 @@ func TestMuxTransporWaitForClose(t *testing.T) {
 		}()
 
 		closeTs, waitForCloseTs := connect(t, closeCM, waitForCloseCM)
-		closeTs.Close()
+		closeTs.(*muxTransportImpl).close()
 		_, ok := <-closeTs.CloseChan()
 		require.False(t, ok)
 
