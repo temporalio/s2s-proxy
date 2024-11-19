@@ -214,15 +214,18 @@ func TestMuxTransporStopConnectionManager(t *testing.T) {
 		<-clientTs.CloseChan()
 		<-serverTs.CloseChan()
 
-		// restart clientCM and connect again
+		// restart CM should fail
 		err := clientCM.start()
+		require.Error(t, err)
+
+		err = serverCM.start()
 		require.Error(t, err)
 	}
 
 	runTests(t, testReconnect)
 }
 
-func TestMuxTransportMultiServer(t *testing.T) {
+func TestMuxTransportMultiServers(t *testing.T) {
 	testMulti := func(t *testing.T, clientCfg config.MuxTransportConfig, serverCfg config.MuxTransportConfig) {
 		clientCM := newMuxConnectManager(clientCfg, testLogger)
 		serverCM := newMuxConnectManager(serverCfg, testLogger)

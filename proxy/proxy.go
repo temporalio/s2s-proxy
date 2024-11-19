@@ -104,9 +104,11 @@ func (ps *ProxyServer) stopServer() {
 	}
 }
 
-func monitorClosable(closable transport.Closable, retryCh chan struct{}) {
+func monitorClosable(closable transport.Closable, retryCh chan struct{}, shutDownCh <-chan struct{}) {
 	select {
-	// Stop monitor if retryCh is closed
+	case <-shutDownCh:
+		return
+	// Stop monitor if retryCh is already closed
 	case <-retryCh:
 		return
 	case <-closable.CloseChan():
@@ -120,6 +122,8 @@ func (ps *ProxyServer) start() error {
 
 	go func() {
 		for {
+			// If using mux transport underneath, Open call will be blocked until
+			// underlying connection is established.
 			clientTransport, err := ps.transManager.OpenClient(clientConfig)
 			if err != nil {
 				ps.logger.Error("Open client transport is failed", tag.Error(err))
@@ -135,13 +139,12 @@ func (ps *ProxyServer) start() error {
 			ps.startServer(serverTransport, clientTransport)
 
 			retryCh := make(chan struct{})
-
 			if closable, ok := clientTransport.(transport.Closable); ok {
-				go monitorClosable(closable, retryCh)
+				go monitorClosable(closable, retryCh, ps.shutDownCh)
 			}
 
 			if closable, ok := serverTransport.(transport.Closable); ok {
-				go monitorClosable(closable, retryCh)
+				go monitorClosable(closable, retryCh, ps.shutDownCh)
 			}
 
 			select {
@@ -149,7 +152,7 @@ func (ps *ProxyServer) start() error {
 				ps.stopServer()
 				return
 			case <-retryCh:
-				// One of the closable transport is closed. Stop server and try re-open transport
+				// If any closable transport is closed, try to restart the proxy server.
 				ps.stopServer()
 			}
 		}

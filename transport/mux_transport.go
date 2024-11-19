@@ -27,14 +27,14 @@ type (
 	muxTransportImpl struct {
 		session *yamux.Session
 		conn    net.Conn
-		closeCh chan struct{}
+		closeCh chan struct{} // if closed, means transport is closed (or disconnected).
 	}
 
 	muxConnectMananger struct {
 		config       config.MuxTransportConfig
 		muxTransport *muxTransportImpl
 		shutdownCh   chan struct{}
-		connectedCh  chan struct{}
+		connectedCh  chan struct{} // if closed, means transport is connected.
 		mu           sync.Mutex
 		wg           sync.WaitGroup
 		logger       log.Logger
@@ -93,17 +93,17 @@ func (m *muxConnectMananger) open() (MuxTransport, error) {
 
 	// Wait for transport to be connected
 	// We use a lock here to prevent from reading stale muxTransport data:
-	//   t0: (this) open is wait from <-connectedCh
+	//   t0: (this) open is wait for <-connectedCh
 	//   t1: (loop) muxTransport is set and connectedCh is closed
 	//   t2: (loop) muxTransport is closed
 	//   t3: (loop) muxTransport is set to nil
 	//   t4: (this) read muxTransport = nil
 	//
-	// Have <-m.connectedCh with holding lock should not lead to deadlock:
+	// Holding a lock when reading from <-connectedCh should not cause deadlock.
 	// Deadlock can happen if:
 	//  1. (this) has the lock
-	//  2. (loop) try to acquire the lock while <-m.connectedCh is open
-	// #2 can't happen (see waitForReconnect)
+	//  2. (loop) tries to acquire the lock while <-connectedCh is open
+	// #2 can't happen because connectedCh is closed before (loop) tries to acquire the lock (see waitForReconnect)
 
 	// TODO: Add some timeout here in case connection can't be fulfilled.
 	var muxTransport *muxTransportImpl
@@ -151,7 +151,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 			case <-m.shutdownCh:
 				return
 			default:
-				m.logger.Debug("listener accept new connection")
+				m.logger.Debug("listener accepting new connection")
 				// Accept a TCP connection
 				server, err := listener.Accept()
 				if err != nil {
@@ -188,7 +188,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 	go func() {
 		// wait for shutdown
 		<-m.shutdownCh
-		listener.Close()
+		listener.Close() // this will cause listener.Accept to fail.
 	}()
 
 	return nil
