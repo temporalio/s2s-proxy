@@ -500,9 +500,12 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 					echoClient.stop()
 					echoServer.stop()
 				}()
-				resp, err := echoClient.DescribeMutableState(&adminservice.DescribeMutableStateRequest{
-					Namespace: ts.clientNamespace,
-				})
+
+				resp, err := retry(func() (*adminservice.DescribeMutableStateResponse, error) {
+					return echoClient.DescribeMutableState(&adminservice.DescribeMutableStateRequest{
+						Namespace: ts.clientNamespace,
+					})
+				}, 5, logger)
 				s.NoError(err)
 				s.Require().NotNil(resp)
 			},

@@ -105,6 +105,7 @@ func (m *muxConnectMananger) open() (MuxTransport, error) {
 	//  2. (loop) try to acquire the lock while <-m.connectedCh is open
 	// #2 can't happen (see waitForReconnect)
 
+	// TODO: Add some timeout here in case connection can't be fulfilled.
 	var muxTransport *muxTransportImpl
 	m.mu.Lock()
 	select {
