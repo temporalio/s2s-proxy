@@ -112,6 +112,7 @@ func monitorClosable(closable transport.Closable, retryCh chan struct{}, shutDow
 	case <-retryCh:
 		return
 	case <-closable.CloseChan():
+		// TODO: avoid retryCh to be closed twice.
 		close(retryCh)
 	}
 }
