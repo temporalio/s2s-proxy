@@ -92,9 +92,29 @@ func (m *muxConnectMananger) open() (MuxTransport, error) {
 	}
 
 	// Wait for transport to be connected
+	// We use a lock here to prevent from reading stale muxTransport data:
+	//   t0: (this) open is wait from <-connectedCh
+	//   t1: (loop) muxTransport is set and connectedCh is closed
+	//   t2: (loop) muxTransport is closed
+	//   t3: (loop) muxTransport is set to nil
+	//   t4: (this) read muxTransport = nil
+	//
+	// Have <-m.connectedCh with holding lock should not lead to deadlock:
+	// Deadlock can happen if:
+	//  1. (this) has the lock
+	//  2. (loop) try to acquire the lock while <-m.connectedCh is open
+	// #2 can't happen (see waitForReconnect)
+
+	var muxTransport *muxTransportImpl
 	m.mu.Lock()
-	<-m.connectedCh
-	muxTransport := m.muxTransport
+	select {
+	case <-m.shutdownCh:
+		m.mu.Unlock()
+		return nil, fmt.Errorf("Connection manager is not running.")
+
+	case <-m.connectedCh:
+		muxTransport = m.muxTransport
+	}
 	m.mu.Unlock()
 
 	if muxTransport.session.IsClosed() {
@@ -285,7 +305,7 @@ func (m *muxConnectMananger) waitForReconnect() {
 
 	m.logger.Debug("disconnected")
 
-	// Initialize connectedCh and muxTransport
+	// Initialize connectedCh and muxTransport. Invariant: connectCh is closed.
 	m.mu.Lock()
 	m.connectedCh = make(chan struct{})
 	muxTransport := m.muxTransport
