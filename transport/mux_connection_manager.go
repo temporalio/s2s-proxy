@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/yamux"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"go.temporal.io/server/common/backoff"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 )
@@ -21,6 +22,17 @@ const (
 	statusInitialized status = iota
 	statusStarted
 	statusStopped
+)
+
+const (
+	throttleRetryInitialInterval = time.Second
+	throttleRetryMaxInterval     = 30 * time.Second
+)
+
+var (
+	retryPolicy = backoff.NewExponentialRetryPolicy(throttleRetryInitialInterval).
+		WithBackoffCoefficient(1.5).
+		WithMaximumInterval(throttleRetryMaxInterval)
 )
 
 type (
@@ -172,18 +184,25 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
-	Loop:
 		for {
 			select {
 			case <-m.shutdownCh:
 				return
 			default:
-				m.logger.Debug("mux client dialing server")
+				m.logger.Info("mux client dialing server")
 
-				client, err := net.DialTimeout("tcp", setting.ServerAddress, 5*time.Second)
-				if err != nil {
+				var client net.Conn
+				op := func() error {
+					var err error
+					client, err = net.DialTimeout("tcp", setting.ServerAddress, 5*time.Second)
+					return err
+				}
+
+				if err := backoff.ThrottleRetry(op, retryPolicy, func(err error) bool {
+					return !m.isShuttingDown()
+				}); err != nil {
 					m.logger.Error("mux client failed to dial", tag.Error(err))
-					continue Loop
+					return
 				}
 
 				var conn net.Conn
