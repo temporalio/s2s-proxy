@@ -39,12 +39,17 @@ type (
 		remoteClusterInfo clusterInfo
 		clientProvider    client.ClientProvider
 		logger            log.Logger
+		echoService       *echoAdminService
 	}
 
 	watermarkInfo struct {
 		Watermark int64
 		Timestamp time.Time
 	}
+)
+
+const (
+	defaultPayloadSize = 1024
 )
 
 // Echo server for testing replication calls with or without proxies.
@@ -67,6 +72,7 @@ func newEchoServer(
 		serviceName: serviceName,
 		logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.serverAddress)),
 		namespaces:  ns,
+		payloadSize: defaultPayloadSize,
 	}
 
 	senderWorkflowService := &echoWorkflowService{
@@ -167,12 +173,17 @@ func newEchoServer(
 			nil,
 			serverTransport,
 			logger),
+		echoService:       senderAdminService,
 		proxy:             proxy,
 		clusterInfo:       localClusterInfo,
 		remoteClusterInfo: remoteClusterInfo,
 		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, logger), logger),
 		logger:            logger,
 	}
+}
+
+func (s *echoServer) setPayloadSize(size int) {
+	s.echoService.payloadSize = size
 }
 
 func (s *echoServer) start() {
@@ -234,6 +245,20 @@ func (s *echoServer) DescribeMutableState(req *adminservice.DescribeMutableState
 	return adminClient.DescribeMutableState(context.Background(), req)
 }
 
+func (s *echoServer) CreateStreamClient() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
+	metaData := history.EncodeClusterShardMD(s.clusterInfo.clusterShardID, s.remoteClusterInfo.clusterShardID)
+	targetContext := metadata.NewOutgoingContext(context.TODO(), metaData)
+
+	adminClient, err := s.clientProvider.GetAdminClient()
+	if err != nil {
+		return nil, err
+	}
+
+	return retry(func() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
+		return adminClient.StreamWorkflowReplicationMessages(targetContext)
+	}, 5, s.logger)
+}
+
 // Method for testing replication stream.
 //
 // It starts a bi-directional stream by connecting to remote server (which acts as stream sender).
@@ -241,17 +266,7 @@ func (s *echoServer) DescribeMutableState(req *adminservice.DescribeMutableState
 // to reply.
 func (s *echoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
 	echoed := make(map[int64]bool)
-	metaData := history.EncodeClusterShardMD(s.clusterInfo.clusterShardID, s.remoteClusterInfo.clusterShardID)
-	targetContext := metadata.NewOutgoingContext(context.TODO(), metaData)
-
-	adminClient, err := s.clientProvider.GetAdminClient()
-	if err != nil {
-		return echoed, err
-	}
-
-	stream, err := retry(func() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
-		return adminClient.StreamWorkflowReplicationMessages(targetContext)
-	}, 5, s.logger)
+	stream, err := s.CreateStreamClient()
 	if err != nil {
 		return echoed, err
 	}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 
+	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
@@ -25,6 +26,7 @@ type (
 		serviceName string
 		namespaces  map[string]bool
 		logger      log.Logger
+		payloadSize int
 	}
 )
 
@@ -206,6 +208,15 @@ func (s *echoAdminService) StreamWorkflowReplicationMessages(
 	var wg sync.WaitGroup
 	wg.Add(1)
 
+	buffer := make([]byte, s.payloadSize)
+	message := &replicationpb.WorkflowReplicationMessages{}
+	task := replicationpb.ReplicationTask{
+		Data: &commonpb.DataBlob{
+			Data: buffer,
+		},
+	}
+	message.ReplicationTasks = append(message.ReplicationTasks, &task)
+
 	go func() {
 		defer wg.Done()
 
@@ -223,11 +234,10 @@ func (s *echoAdminService) StreamWorkflowReplicationMessages(
 
 			switch attr := req.GetAttributes().(type) {
 			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
+				message.ExclusiveHighWatermark = attr.SyncReplicationState.HighPriorityState.InclusiveLowWatermark
 				req := &adminservice.StreamWorkflowReplicationMessagesResponse{
 					Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
-						Messages: &replicationpb.WorkflowReplicationMessages{
-							ExclusiveHighWatermark: attr.SyncReplicationState.HighPriorityState.InclusiveLowWatermark,
-						},
+						Messages: message,
 					}}
 
 				if err = targetStreamServer.Send(req); err != nil {
