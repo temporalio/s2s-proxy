@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func BenchmarkStreamSendRecvWithoutProxy(b *testing.B) {
+func benchmarkStreamSendRecvWithoutProxy(b *testing.B, payloadSize int) {
 
 	echoServerInfo := clusterInfo{
 		serverAddress:  echoServerAddress,
@@ -22,10 +22,10 @@ func BenchmarkStreamSendRecvWithoutProxy(b *testing.B) {
 		clusterShardID: clientClusterShard,
 	}
 
-	runSendRecvBench(b, echoServerInfo, echoClientInfo)
+	runSendRecvBench(b, echoServerInfo, echoClientInfo, payloadSize)
 }
 
-func BenchmarkStreamSendRecvWithMuxProxy(b *testing.B) {
+func benchmarkStreamSendRecvWithMuxProxy(b *testing.B, payloadSize int) {
 	b.Log("Start BenchmarkStreamSendRecv")
 	muxTransportName := "muxed"
 
@@ -86,13 +86,15 @@ func BenchmarkStreamSendRecvWithMuxProxy(b *testing.B) {
 		s2sProxyConfig: echoClientConfig,
 	}
 
-	runSendRecvBench(b, echoServerInfo, echoClientInfo)
+	runSendRecvBench(b, echoServerInfo, echoClientInfo, payloadSize)
 }
 
-func runSendRecvBench(b *testing.B, echoServerInfo clusterInfo, echoClientInfo clusterInfo) {
+func runSendRecvBench(b *testing.B, echoServerInfo clusterInfo, echoClientInfo clusterInfo, payloadSize int) {
 	logger := log.NewTestLogger()
 	echoServer := newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
 	echoClient := newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
+
+	echoServer.setPayloadSize(payloadSize)
 
 	echoClient.start()
 	echoServer.start()
@@ -146,4 +148,12 @@ func runSendRecvBench(b *testing.B, echoServerInfo clusterInfo, echoClientInfo c
 	}
 
 	<-errCh
+}
+
+func BenchmarkStreamSendRecvWithoutProxy_1k(b *testing.B) {
+	benchmarkStreamSendRecvWithoutProxy(b, 1024)
+}
+
+func BenchmarkStreamSendRecvWithMuxProxy_1K(b *testing.B) {
+	benchmarkStreamSendRecvWithMuxProxy(b, 1024)
 }
