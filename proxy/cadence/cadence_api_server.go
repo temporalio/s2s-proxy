@@ -1,0 +1,69 @@
+package cadence
+
+import (
+	apiv1 "github.com/uber/cadence-idl/go/proto/api/v1"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
+	"go.uber.org/yarpc"
+	"go.uber.org/yarpc/transport/grpc"
+	"net"
+)
+
+type (
+	CadenceAPIServer struct {
+		serviceName    string
+		GRPCAddress    string
+		workflowServer workflowServiceProxyServer
+		domainServer   domainServiceProxyServer
+		dispatcher     *yarpc.Dispatcher
+		logger         log.Logger
+	}
+)
+
+func NewCadenceAPIServer(logger log.Logger) *CadenceAPIServer {
+	return &CadenceAPIServer{
+		serviceName:    "cadence-frontend",
+		GRPCAddress:    "localhost:7833",
+		logger:         logger,
+		domainServer:   domainServiceProxyServer{logger: logger},
+		workflowServer: workflowServiceProxyServer{logger: logger},
+	}
+}
+
+func (s *CadenceAPIServer) Start() {
+	s.logger.Info("Starting Cadence API server", tag.Address(s.GRPCAddress))
+
+	inbounds := yarpc.Inbounds{}
+	grpcTransport := grpc.NewTransport()
+	if len(s.GRPCAddress) > 0 {
+		listener, err := net.Listen("tcp", s.GRPCAddress)
+		if err != nil {
+			s.logger.Fatal("Failed to listen on GRPC port", tag.Error(err))
+		}
+
+		//var inboundOptions []grpc.InboundOption
+		//if p.InboundTLS != nil {
+		//	inboundOptions = append(inboundOptions, grpc.InboundCredentials(credentials.NewTLS(p.InboundTLS)))
+		//}
+
+		inbounds = append(inbounds, grpcTransport.NewInbound(listener))
+		s.logger.Info("Listening for GRPC requests", tag.Address(s.GRPCAddress))
+	}
+
+	s.dispatcher = yarpc.NewDispatcher(yarpc.Config{
+		Name:     s.serviceName,
+		Inbounds: inbounds,
+	})
+
+	s.dispatcher.Register(apiv1.BuildDomainAPIYARPCProcedures(s.domainServer))
+	s.dispatcher.Register(apiv1.BuildWorkflowAPIYARPCProcedures(s.workflowServer))
+	err := s.dispatcher.Start()
+	if err != nil {
+		s.logger.Fatal("Failed to start dispatcher", tag.Error(err))
+	}
+}
+
+func (s *CadenceAPIServer) Stop() {
+	s.logger.Info("Stopping Cadence API server")
+	s.dispatcher.Stop()
+}

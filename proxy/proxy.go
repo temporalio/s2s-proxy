@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"github.com/temporalio/s2s-proxy/proxy/cadence"
 
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
@@ -29,6 +30,8 @@ type (
 		transManager   *transport.TransportManager
 		outboundServer *ProxyServer
 		inboundServer  *ProxyServer
+		cadenceServer  *cadence.CadenceAPIServer
+		logger         log.Logger
 	}
 
 	proxyOptions struct {
@@ -191,6 +194,7 @@ func NewProxy(
 	proxy := &Proxy{
 		config:       s2sConfig,
 		transManager: transManager,
+		logger:       logger,
 	}
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
@@ -242,6 +246,9 @@ func (s *Proxy) Start() error {
 			return err
 		}
 	}
+
+	s.cadenceServer = cadence.NewCadenceAPIServer(s.logger)
+	s.cadenceServer.Start()
 
 	return nil
 }

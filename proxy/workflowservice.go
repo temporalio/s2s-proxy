@@ -7,7 +7,6 @@ import (
 	feclient "github.com/temporalio/s2s-proxy/client/frontend"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
-
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/common/log"
 )
