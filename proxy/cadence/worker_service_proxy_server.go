@@ -2,8 +2,9 @@ package cadence
 
 import (
 	"context"
+	"github.com/temporalio/s2s-proxy/proxy/cadence/cadencetype"
+	"github.com/temporalio/s2s-proxy/proxy/cadence/temporaltype"
 	apiv1 "github.com/uber/cadence-idl/go/proto/api/v1"
-	"go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/common/log"
 )
@@ -27,31 +28,9 @@ func NewWorkerServiceProxyServer(
 
 func (w workerServiceProxyServer) PollForDecisionTask(ctx context.Context, req *apiv1.PollForDecisionTaskRequest) (*apiv1.PollForDecisionTaskResponse, error) {
 	w.logger.Info("Cadence API server: PollForDecisionTask called.")
-	tReq := &workflowservice.PollWorkflowTaskQueueRequest{
-		Namespace: req.GetDomain(),
-		TaskQueue: &taskqueue.TaskQueue{
-			Name: req.GetTaskList().GetName(),
-			Kind: toTemporalTaskQueueKind(req.GetTaskList().GetKind()),
-		},
-		Identity: req.GetIdentity(),
-	}
-
+	tReq := temporaltype.PollWorkflowTaskQueueRequest(req)
 	resp, err := w.workflowServiceClient.PollWorkflowTaskQueue(ctx, tReq)
-	return toPollForDecisionTaskResponse(resp, err)
-}
-
-func toPollForDecisionTaskResponse(resp *workflowservice.PollWorkflowTaskQueueResponse, err error) (*apiv1.PollForDecisionTaskResponse, error) {
-	if err != nil {
-		return nil, err
-	}
-
-	return &apiv1.PollForDecisionTaskResponse{
-		TaskToken:              resp.GetTaskToken(),
-		WorkflowExecution:      toCadenceWorkflowExecution(resp.GetWorkflowExecution()),
-		WorkflowType:           toCadenceWorkflowType(resp.GetWorkflowType()),
-		PreviousStartedEventId: toInt64ValuePtr(resp.GetPreviousStartedEventId()),
-		StartedEventId:         resp.GetStartedEventId(),
-	}, nil
+	return cadencetype.PollWorkflowTaskQueueResponse(resp), cadencetype.Error(err)
 }
 
 func (w workerServiceProxyServer) RespondDecisionTaskCompleted(ctx context.Context, request *apiv1.RespondDecisionTaskCompletedRequest) (*apiv1.RespondDecisionTaskCompletedResponse, error) {
