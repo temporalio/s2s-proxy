@@ -1,6 +1,9 @@
 package cadence
 
 import (
+	"github.com/temporalio/s2s-proxy/client"
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/transport"
 	apiv1 "github.com/uber/cadence-idl/go/proto/api/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -13,20 +16,28 @@ type (
 	CadenceAPIServer struct {
 		serviceName    string
 		GRPCAddress    string
-		workflowServer workflowServiceProxyServer
-		domainServer   domainServiceProxyServer
+		clientConfig   config.ProxyClientConfig
+		transManager   *transport.TransportManager
+		workflowServer apiv1.WorkflowAPIYARPCServer
+		domainServer   apiv1.DomainAPIYARPCServer
+		workerServer   apiv1.WorkerAPIYARPCServer
 		dispatcher     *yarpc.Dispatcher
 		logger         log.Logger
 	}
 )
 
-func NewCadenceAPIServer(logger log.Logger) *CadenceAPIServer {
+func NewCadenceAPIServer(
+	logger log.Logger,
+	clientConfig config.ProxyClientConfig,
+	clientFactory client.ClientFactory,
+) *CadenceAPIServer {
 	return &CadenceAPIServer{
 		serviceName:    "cadence-frontend",
 		GRPCAddress:    "localhost:7833",
 		logger:         logger,
-		domainServer:   domainServiceProxyServer{logger: logger},
-		workflowServer: workflowServiceProxyServer{logger: logger},
+		domainServer:   NewDomainServiceProxyServer(clientConfig, clientFactory, logger),
+		workflowServer: NewWorkflowServiceProxyServer(clientConfig, clientFactory, logger),
+		workerServer:   NewWorkerServiceProxyServer(clientConfig, clientFactory, logger),
 	}
 }
 
@@ -57,6 +68,7 @@ func (s *CadenceAPIServer) Start() {
 
 	s.dispatcher.Register(apiv1.BuildDomainAPIYARPCProcedures(s.domainServer))
 	s.dispatcher.Register(apiv1.BuildWorkflowAPIYARPCProcedures(s.workflowServer))
+	s.dispatcher.Register(apiv1.BuildWorkerAPIYARPCProcedures(s.workerServer))
 	err := s.dispatcher.Start()
 	if err != nil {
 		s.logger.Fatal("Failed to start dispatcher", tag.Error(err))

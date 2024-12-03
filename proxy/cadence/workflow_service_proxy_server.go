@@ -3,6 +3,9 @@ package cadence
 import (
 	"context"
 	"github.com/gogo/protobuf/types"
+	"github.com/temporalio/s2s-proxy/client"
+	feclient "github.com/temporalio/s2s-proxy/client/frontend"
+	"github.com/temporalio/s2s-proxy/config"
 	apiv1 "github.com/uber/cadence-idl/go/proto/api/v1"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
@@ -20,9 +23,12 @@ type (
 	}
 )
 
-var _ apiv1.WorkflowAPIYARPCServer = workflowServiceProxyServer{}
-
 func (s workflowServiceProxyServer) RestartWorkflowExecution(ctx context.Context, request *apiv1.RestartWorkflowExecutionRequest) (*apiv1.RestartWorkflowExecutionResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s workflowServiceProxyServer) StartWorkflowExecution(ctx context.Context, request *apiv1.StartWorkflowExecutionRequest) (*apiv1.StartWorkflowExecutionResponse, error) {
 	//TODO implement me
 	panic("implement me")
 }
@@ -32,12 +38,42 @@ func (s workflowServiceProxyServer) StartWorkflowExecutionAsync(ctx context.Cont
 	panic("implement me")
 }
 
+func (s workflowServiceProxyServer) SignalWorkflowExecution(ctx context.Context, request *apiv1.SignalWorkflowExecutionRequest) (*apiv1.SignalWorkflowExecutionResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s workflowServiceProxyServer) SignalWithStartWorkflowExecution(ctx context.Context, request *apiv1.SignalWithStartWorkflowExecutionRequest) (*apiv1.SignalWithStartWorkflowExecutionResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (s workflowServiceProxyServer) SignalWithStartWorkflowExecutionAsync(ctx context.Context, request *apiv1.SignalWithStartWorkflowExecutionAsyncRequest) (*apiv1.SignalWithStartWorkflowExecutionAsyncResponse, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
+func (s workflowServiceProxyServer) ResetWorkflowExecution(ctx context.Context, request *apiv1.ResetWorkflowExecutionRequest) (*apiv1.ResetWorkflowExecutionResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s workflowServiceProxyServer) RequestCancelWorkflowExecution(ctx context.Context, request *apiv1.RequestCancelWorkflowExecutionRequest) (*apiv1.RequestCancelWorkflowExecutionResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s workflowServiceProxyServer) TerminateWorkflowExecution(ctx context.Context, request *apiv1.TerminateWorkflowExecutionRequest) (*apiv1.TerminateWorkflowExecutionResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (s workflowServiceProxyServer) GetTaskListsByDomain(ctx context.Context, request *apiv1.GetTaskListsByDomainRequest) (*apiv1.GetTaskListsByDomainResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s workflowServiceProxyServer) GetWorkflowExecutionHistory(ctx context.Context, request *apiv1.GetWorkflowExecutionHistoryRequest) (*apiv1.GetWorkflowExecutionHistoryResponse, error) {
 	//TODO implement me
 	panic("implement me")
 }
@@ -52,9 +88,24 @@ func (s workflowServiceProxyServer) DiagnoseWorkflowExecution(ctx context.Contex
 	panic("implement me")
 }
 
-func (s workflowServiceProxyServer) StartWorkflowExecution(ctx context.Context, req *apiv1.StartWorkflowExecutionRequest) (*apiv1.StartWorkflowExecutionResponse, error) {
-	return toStartWorkflowExecutionResponse(s.workflowServiceClient.StartWorkflowExecution(ctx, toStartWorkflowExecutionRequest(req)))
+func NewWorkflowServiceProxyServer(
+	clientConfig config.ProxyClientConfig,
+	clientFactory client.ClientFactory,
+	logger log.Logger,
+) apiv1.WorkflowAPIYARPCServer {
+	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
+
+	return workflowServiceProxyServer{
+		workflowServiceClient: feclient.NewLazyClient(clientProvider),
+		logger:                logger,
+	}
 }
+
+var _ apiv1.WorkflowAPIYARPCServer = workflowServiceProxyServer{}
+
+//func (s workflowServiceProxyServer) StartWorkflowExecution(ctx context.Context, req *apiv1.StartWorkflowExecutionRequest) (*apiv1.StartWorkflowExecutionResponse, error) {
+//	return toStartWorkflowExecutionResponse(s.workflowServiceClient.StartWorkflowExecution(ctx, toStartWorkflowExecutionRequest(req)))
+//}
 
 func toStartWorkflowExecutionRequest(req *apiv1.StartWorkflowExecutionRequest) *workflowservice.StartWorkflowExecutionRequest {
 	return &workflowservice.StartWorkflowExecutionRequest{
@@ -74,85 +125,6 @@ func toStartWorkflowExecutionResponse(resp *workflowservice.StartWorkflowExecuti
 	return &apiv1.StartWorkflowExecutionResponse{
 		RunId: resp.GetRunId(),
 	}, nil
-}
-
-func (s workflowServiceProxyServer) GetWorkflowExecutionHistory(ctx context.Context, req *apiv1.GetWorkflowExecutionHistoryRequest) (*apiv1.GetWorkflowExecutionHistoryResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method GetWorkflowExecutionHistory not implemented")
-}
-
-func (s workflowServiceProxyServer) PollForDecisionTask(ctx context.Context, req *apiv1.PollForDecisionTaskRequest) (*apiv1.PollForDecisionTaskResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method PollForDecisionTask not implemented")
-}
-
-func (s workflowServiceProxyServer) RespondDecisionTaskCompleted(ctx context.Context, req *apiv1.RespondDecisionTaskCompletedRequest) (*apiv1.RespondDecisionTaskCompletedResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method RespondDecisionTaskCompleted not implemented")
-}
-
-func (s workflowServiceProxyServer) PollForActivityTask(ctx context.Context, req *apiv1.PollForActivityTaskRequest) (*apiv1.PollForActivityTaskResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method PollForActivityTask not implemented")
-}
-
-func (s workflowServiceProxyServer) RecordActivityTaskHeartbeat(ctx context.Context, req *apiv1.RecordActivityTaskHeartbeatRequest) (*apiv1.RecordActivityTaskHeartbeatResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method RecordActivityTaskHeartbeat not implemented")
-}
-
-func (s *workflowServiceProxyServer) RespondActivityTaskCompleted(ctx context.Context, req *apiv1.RespondActivityTaskCompletedRequest) (*apiv1.RespondActivityTaskCompletedResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method RespondActivityTaskCompleted not implemented")
-}
-
-func (s workflowServiceProxyServer) RespondActivityTaskFailed(ctx context.Context, req *apiv1.RespondActivityTaskFailedRequest) (*apiv1.RespondActivityTaskFailedResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method RespondActivityTaskFailed not implemented")
-}
-
-func (s workflowServiceProxyServer) RespondActivityTaskCanceled(ctx context.Context, req *apiv1.RespondActivityTaskCanceledRequest) (*apiv1.RespondActivityTaskCanceledResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method RespondActivityTaskCanceled not implemented")
-}
-
-func (s workflowServiceProxyServer) RequestCancelWorkflowExecution(ctx context.Context, req *apiv1.RequestCancelWorkflowExecutionRequest) (*apiv1.RequestCancelWorkflowExecutionResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method RequestCancelWorkflowExecution not implemented")
-}
-
-func (s workflowServiceProxyServer) SignalWorkflowExecution(ctx context.Context, req *apiv1.SignalWorkflowExecutionRequest) (*apiv1.SignalWorkflowExecutionResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method SignalWorkflowExecution not implemented")
-}
-
-func (s workflowServiceProxyServer) SignalWithStartWorkflowExecution(ctx context.Context, req *apiv1.SignalWithStartWorkflowExecutionRequest) (*apiv1.SignalWithStartWorkflowExecutionResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method SignalWithStartWorkflowExecution not implemented")
-}
-
-func (s workflowServiceProxyServer) ResetWorkflowExecution(ctx context.Context, req *apiv1.ResetWorkflowExecutionRequest) (*apiv1.ResetWorkflowExecutionResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method ResetWorkflowExecution not implemented")
-}
-
-func (s workflowServiceProxyServer) TerminateWorkflowExecution(ctx context.Context, req *apiv1.TerminateWorkflowExecutionRequest) (*apiv1.TerminateWorkflowExecutionResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method TerminateWorkflowExecution not implemented")
-}
-
-func (s workflowServiceProxyServer) ListOpenWorkflowExecutions(ctx context.Context, req *apiv1.ListOpenWorkflowExecutionsRequest) (*apiv1.ListOpenWorkflowExecutionsResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method ListOpenWorkflowExecutions not implemented")
-}
-
-func (s workflowServiceProxyServer) ListClosedWorkflowExecutions(ctx context.Context, req *apiv1.ListClosedWorkflowExecutionsRequest) (*apiv1.ListClosedWorkflowExecutionsResponse, error) {
-	// Implement the method logic here
-	return nil, yarpcerrors.UnimplementedErrorf("method ListClosedWorkflowExecutions not implemented")
-}
-
-func (s workflowServiceProxyServer) ListWorkflowExecutions(ctx context.Context, req *apiv1.ListWorkflowExecutionsRequest) (*apiv1.ListWorkflowExecutionsResponse, error) {
-	return toListWorkflowExecutionsResponse(s.workflowServiceClient.ListWorkflowExecutions(ctx, toListWorkflowExecutionsRequest(req)))
 }
 
 func toListWorkflowExecutionsRequest(req *apiv1.ListWorkflowExecutionsRequest) *workflowservice.ListWorkflowExecutionsRequest {

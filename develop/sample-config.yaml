@@ -10,7 +10,7 @@ inbound:
         requireClientAuth: true
   client:
     tcp:
-      serverAddress:
+      serverAddress: "127.0.0.1:7233"
       tls:
         certificatePath: ""
         keyPath: ""
