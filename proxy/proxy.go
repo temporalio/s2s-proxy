@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
@@ -25,10 +26,12 @@ type (
 	}
 
 	Proxy struct {
-		config         config.S2SProxyConfig
-		transManager   *transport.TransportManager
-		outboundServer *ProxyServer
-		inboundServer  *ProxyServer
+		config            config.S2SProxyConfig
+		transManager      *transport.TransportManager
+		outboundServer    *ProxyServer
+		inboundServer     *ProxyServer
+		healthCheckServer *http.Server
+		logger            log.Logger
 	}
 
 	proxyOptions struct {
@@ -191,6 +194,7 @@ func NewProxy(
 	proxy := &Proxy{
 		config:       s2sConfig,
 		transManager: transManager,
+		logger:       logger,
 	}
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
@@ -226,7 +230,43 @@ func NewProxy(
 	return proxy
 }
 
+func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
+}
+
+func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
+	if cfg.Protocol != config.HTTP {
+		return fmt.Errorf("Not supported health check protocol %s", cfg.Protocol)
+	}
+
+	// Define the server and its settings
+	s.healthCheckServer = &http.Server{
+		Addr:    cfg.ListenAddress,
+		Handler: nil, // Default HTTP handler (using http.HandleFunc registrations)
+	}
+
+	// Register the health check endpoint
+	http.HandleFunc("/health", healthCheckHandler)
+
+	go func() {
+		s.logger.Info("Starting health check server", tag.Address(cfg.ListenAddress))
+		if err := s.healthCheckServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			s.logger.Error("Error starting server: %v\n", tag.Error(err))
+		}
+	}()
+
+	return nil
+}
+
 func (s *Proxy) Start() error {
+	if s.config.HealthCheck != nil {
+		if err := s.startHealthCheckHandler(*s.config.HealthCheck); err != nil {
+			return err
+		}
+	}
+
 	if err := s.transManager.Start(); err != nil {
 		return err
 	}
@@ -247,6 +287,11 @@ func (s *Proxy) Start() error {
 }
 
 func (s *Proxy) Stop() {
+	if s.healthCheckServer != nil {
+		// Clos without waiting for in-flight requests to complete.
+		s.healthCheckServer.Close()
+	}
+
 	if s.inboundServer != nil {
 		s.inboundServer.stop()
 	}
