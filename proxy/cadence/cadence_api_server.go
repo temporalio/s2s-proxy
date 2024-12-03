@@ -2,6 +2,7 @@ package cadence
 
 import (
 	"github.com/temporalio/s2s-proxy/client"
+	feclient "github.com/temporalio/s2s-proxy/client/frontend"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/transport"
 	apiv1 "github.com/uber/cadence-idl/go/proto/api/v1"
@@ -14,15 +15,18 @@ import (
 
 type (
 	CadenceAPIServer struct {
-		serviceName    string
-		GRPCAddress    string
-		clientConfig   config.ProxyClientConfig
-		transManager   *transport.TransportManager
-		workflowServer apiv1.WorkflowAPIYARPCServer
-		domainServer   apiv1.DomainAPIYARPCServer
-		workerServer   apiv1.WorkerAPIYARPCServer
-		dispatcher     *yarpc.Dispatcher
-		logger         log.Logger
+		serviceName  string
+		GRPCAddress  string
+		clientConfig config.ProxyClientConfig
+		transManager *transport.TransportManager
+		dispatcher   *yarpc.Dispatcher
+		logger       log.Logger
+
+		workflowProxy   apiv1.WorkflowAPIYARPCServer
+		domainProxy     apiv1.DomainAPIYARPCServer
+		workerProxy     apiv1.WorkerAPIYARPCServer
+		visibilityProxy apiv1.VisibilityAPIYARPCServer
+		metaProxy       apiv1.MetaAPIYARPCServer
 	}
 )
 
@@ -31,13 +35,17 @@ func NewCadenceAPIServer(
 	clientConfig config.ProxyClientConfig,
 	clientFactory client.ClientFactory,
 ) *CadenceAPIServer {
+	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
+	workflowServiceClient := feclient.NewLazyClient(clientProvider)
 	return &CadenceAPIServer{
-		serviceName:    "cadence-frontend",
-		GRPCAddress:    "localhost:7833",
-		logger:         logger,
-		domainServer:   NewDomainServiceProxyServer(clientConfig, clientFactory, logger),
-		workflowServer: NewWorkflowServiceProxyServer(clientConfig, clientFactory, logger),
-		workerServer:   NewWorkerServiceProxyServer(clientConfig, clientFactory, logger),
+		serviceName:     "cadence-frontend",
+		GRPCAddress:     "localhost:7833",
+		logger:          logger,
+		domainProxy:     NewDomainServiceProxyServer(logger, workflowServiceClient),
+		workflowProxy:   NewWorkflowServiceProxyServer(logger, workflowServiceClient),
+		workerProxy:     NewWorkerServiceProxyServer(logger, workflowServiceClient),
+		visibilityProxy: NewVisibilityServiceProxyServer(logger, workflowServiceClient),
+		metaProxy:       NewMetaServiceProxyServer(logger, workflowServiceClient),
 	}
 }
 
@@ -66,9 +74,9 @@ func (s *CadenceAPIServer) Start() {
 		Inbounds: inbounds,
 	})
 
-	s.dispatcher.Register(apiv1.BuildDomainAPIYARPCProcedures(s.domainServer))
-	s.dispatcher.Register(apiv1.BuildWorkflowAPIYARPCProcedures(s.workflowServer))
-	s.dispatcher.Register(apiv1.BuildWorkerAPIYARPCProcedures(s.workerServer))
+	s.dispatcher.Register(apiv1.BuildDomainAPIYARPCProcedures(s.domainProxy))
+	s.dispatcher.Register(apiv1.BuildWorkflowAPIYARPCProcedures(s.workflowProxy))
+	s.dispatcher.Register(apiv1.BuildWorkerAPIYARPCProcedures(s.workerProxy))
 	err := s.dispatcher.Start()
 	if err != nil {
 		s.logger.Fatal("Failed to start dispatcher", tag.Error(err))

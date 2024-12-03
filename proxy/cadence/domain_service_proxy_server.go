@@ -3,9 +3,6 @@ package cadence
 import (
 	"context"
 	"github.com/gogo/protobuf/types"
-	"github.com/temporalio/s2s-proxy/client"
-	feclient "github.com/temporalio/s2s-proxy/client/frontend"
-	"github.com/temporalio/s2s-proxy/config"
 	apiv1 "github.com/uber/cadence-idl/go/proto/api/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -16,19 +13,16 @@ import (
 var _ apiv1.DomainAPIYARPCServer = domainServiceProxyServer{}
 
 type domainServiceProxyServer struct {
-	workflowServiceClient workflowservice.WorkflowServiceClient
 	logger                log.Logger
+	workflowServiceClient workflowservice.WorkflowServiceClient
 }
 
 func NewDomainServiceProxyServer(
-	clientConfig config.ProxyClientConfig,
-	clientFactory client.ClientFactory,
 	logger log.Logger,
+	workflowServiceClient workflowservice.WorkflowServiceClient,
 ) apiv1.DomainAPIYARPCServer {
-	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
-
 	return domainServiceProxyServer{
-		workflowServiceClient: feclient.NewLazyClient(clientProvider),
+		workflowServiceClient: workflowServiceClient,
 		logger:                logger,
 	}
 }

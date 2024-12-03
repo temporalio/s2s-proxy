@@ -2,9 +2,6 @@ package cadence
 
 import (
 	"context"
-	"github.com/temporalio/s2s-proxy/client"
-	feclient "github.com/temporalio/s2s-proxy/client/frontend"
-	"github.com/temporalio/s2s-proxy/config"
 	apiv1 "github.com/uber/cadence-idl/go/proto/api/v1"
 	"go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -19,14 +16,11 @@ type workerServiceProxyServer struct {
 var _ apiv1.WorkerAPIYARPCServer = workerServiceProxyServer{}
 
 func NewWorkerServiceProxyServer(
-	clientConfig config.ProxyClientConfig,
-	clientFactory client.ClientFactory,
 	logger log.Logger,
+	workflowServiceClient workflowservice.WorkflowServiceClient,
 ) apiv1.WorkerAPIYARPCServer {
-	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
-
 	return workerServiceProxyServer{
-		workflowServiceClient: feclient.NewLazyClient(clientProvider),
+		workflowServiceClient: workflowServiceClient,
 		logger:                logger,
 	}
 }

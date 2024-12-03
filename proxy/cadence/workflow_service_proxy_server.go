@@ -3,9 +3,6 @@ package cadence
 import (
 	"context"
 	"github.com/gogo/protobuf/types"
-	"github.com/temporalio/s2s-proxy/client"
-	feclient "github.com/temporalio/s2s-proxy/client/frontend"
-	"github.com/temporalio/s2s-proxy/config"
 	apiv1 "github.com/uber/cadence-idl/go/proto/api/v1"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
@@ -89,14 +86,11 @@ func (s workflowServiceProxyServer) DiagnoseWorkflowExecution(ctx context.Contex
 }
 
 func NewWorkflowServiceProxyServer(
-	clientConfig config.ProxyClientConfig,
-	clientFactory client.ClientFactory,
 	logger log.Logger,
+	workflowServiceClient workflowservice.WorkflowServiceClient,
 ) apiv1.WorkflowAPIYARPCServer {
-	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
-
 	return workflowServiceProxyServer{
-		workflowServiceClient: feclient.NewLazyClient(clientProvider),
+		workflowServiceClient: workflowServiceClient,
 		logger:                logger,
 	}
 }
