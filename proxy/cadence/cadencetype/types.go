@@ -5,12 +5,13 @@ import (
 	cadence "github.com/uber/cadence-idl/go/proto/api/v1"
 	temporal "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/taskqueue/v1"
+	"go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"log"
 )
 
 type CadenceWorkflowExecution struct {
@@ -43,7 +44,7 @@ func Int64ValuePtr(i int64) *types.Int64Value {
 	}
 }
 
-func PollWorkflowTaskQueueResponse(resp *workflowservice.PollWorkflowTaskQueueResponse) *cadence.PollForDecisionTaskResponse {
+func PollForDecisionTaskResponse(resp *workflowservice.PollWorkflowTaskQueueResponse) *cadence.PollForDecisionTaskResponse {
 	if resp == nil {
 		return nil
 	}
@@ -76,18 +77,147 @@ func History(h *history.History) *cadence.History {
 }
 
 func HistoryEvent(e *history.HistoryEvent) *cadence.HistoryEvent {
-	jsonData, err := protojson.Marshal(e)
-	if err != nil {
-		log.Fatal("Marshaling error:", err)
+	event := &cadence.HistoryEvent{
+		EventId:   e.GetEventId(),
+		EventTime: Timestamp(e.GetEventTime()),
+		Version:   e.GetVersion(),
+		TaskId:    e.GetTaskId(),
 	}
 
-	event := &cadence.HistoryEvent{}
-	err = event.Unmarshal(jsonData)
-	if err != nil {
-		log.Fatal("Unmarshaling error: ", err)
+	switch e.Attributes.(type) {
+	case *history.HistoryEvent_WorkflowExecutionStartedEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_WorkflowExecutionStartedEventAttributes).WorkflowExecutionStartedEventAttributes
+		event.Attributes = &cadence.HistoryEvent_WorkflowExecutionStartedEventAttributes{
+			WorkflowExecutionStartedEventAttributes: &cadence.WorkflowExecutionStartedEventAttributes{
+				WorkflowType:                 WorkflowType(attributes.GetWorkflowType()),
+				ParentExecutionInfo:          ParentExecutionInfo(attributes.GetParentWorkflowExecution()),
+				TaskList:                     TaskList(attributes.GetTaskQueue()),
+				Input:                        Payloads(attributes.GetInput()),
+				ExecutionStartToCloseTimeout: Duration(attributes.GetWorkflowExecutionTimeout()),
+				//TaskStartToCloseTimeout:      nil,
+				ContinuedExecutionRunId:  attributes.GetContinuedExecutionRunId(),
+				Initiator:                Initiator(attributes.GetInitiator()),
+				ContinuedFailure:         Failure(attributes.GetContinuedFailure()),
+				LastCompletionResult:     Payloads(attributes.GetLastCompletionResult()),
+				OriginalExecutionRunId:   attributes.GetOriginalExecutionRunId(),
+				Identity:                 attributes.GetIdentity(),
+				FirstExecutionRunId:      attributes.GetFirstExecutionRunId(),
+				RetryPolicy:              RetryPolicy(attributes.GetRetryPolicy()),
+				Attempt:                  attributes.GetAttempt(),
+				ExpirationTime:           Timestamp(attributes.GetWorkflowExecutionExpirationTime()),
+				CronSchedule:             attributes.GetCronSchedule(),
+				FirstDecisionTaskBackoff: Duration(attributes.GetFirstWorkflowTaskBackoff()),
+				Memo:                     Memo(attributes.GetMemo()),
+				SearchAttributes:         SearchAttributes(attributes.GetSearchAttributes()),
+				PrevAutoResetPoints:      ReseetPoints(attributes.GetPrevAutoResetPoints()),
+				Header:                   Header(attributes.GetHeader()),
+				FirstScheduledTime:       nil,
+				//PartitionConfig:              nil,
+				//RequestId:                    "",
+			},
+		}
 	}
 
 	return event
+}
+
+func ParentExecutionInfo(parentExecution *temporal.WorkflowExecution) *cadence.ParentExecutionInfo {
+	if parentExecution == nil {
+		return nil
+	}
+
+	return &cadence.ParentExecutionInfo{
+		//DomainId:          "",
+		//DomainName:        "",
+		WorkflowExecution: &cadence.WorkflowExecution{
+			WorkflowId: parentExecution.GetWorkflowId(),
+			RunId:      parentExecution.GetRunId(),
+		},
+		//InitiatedId:       0,
+	}
+}
+
+func Initiator(initiator enums.ContinueAsNewInitiator) cadence.ContinueAsNewInitiator {
+	switch initiator {
+	case enums.CONTINUE_AS_NEW_INITIATOR_WORKFLOW:
+		return cadence.ContinueAsNewInitiator_CONTINUE_AS_NEW_INITIATOR_DECIDER
+	case enums.CONTINUE_AS_NEW_INITIATOR_RETRY:
+		return cadence.ContinueAsNewInitiator_CONTINUE_AS_NEW_INITIATOR_RETRY_POLICY
+	case enums.CONTINUE_AS_NEW_INITIATOR_CRON_SCHEDULE:
+		return cadence.ContinueAsNewInitiator_CONTINUE_AS_NEW_INITIATOR_CRON_SCHEDULE
+	default:
+		return cadence.ContinueAsNewInitiator_CONTINUE_AS_NEW_INITIATOR_INVALID
+	}
+}
+
+func ReseetPoints(points *workflow.ResetPoints) *cadence.ResetPoints {
+	return nil
+}
+
+func Header(header *temporal.Header) *cadence.Header {
+	return nil
+}
+
+func SearchAttributes(attributes *temporal.SearchAttributes) *cadence.SearchAttributes {
+	return nil
+}
+
+func Memo(memo *temporal.Memo) *cadence.Memo {
+	return nil
+}
+
+func RetryPolicy(policy *temporal.RetryPolicy) *cadence.RetryPolicy {
+	if policy == nil {
+		return nil
+	}
+
+	return &cadence.RetryPolicy{
+		InitialInterval:          Duration(policy.GetInitialInterval()),
+		BackoffCoefficient:       policy.GetBackoffCoefficient(),
+		MaximumInterval:          Duration(policy.GetMaximumInterval()),
+		MaximumAttempts:          policy.GetMaximumAttempts(),
+		NonRetryableErrorReasons: policy.GetNonRetryableErrorTypes(),
+		//ExpirationInterval:       nil,
+	}
+}
+
+func Payloads(payloads *temporal.Payloads) *cadence.Payload {
+	if payloads == nil || len(payloads.GetPayloads()) == 0 {
+		return nil
+	}
+
+	return Payload(payloads.GetPayloads()[0])
+}
+
+func Payload(payload *temporal.Payload) *cadence.Payload {
+	if payload == nil {
+		return nil
+	}
+
+	return &cadence.Payload{
+		Data: payload.GetData(),
+	}
+}
+
+func Failure(failure *failure.Failure) *cadence.Failure {
+	if failure == nil {
+		return nil
+	}
+
+	return &cadence.Failure{
+		Reason: failure.GetMessage(),
+	}
+}
+
+func Duration(d *durationpb.Duration) *types.Duration {
+	if d == nil {
+		return nil
+	}
+
+	return &types.Duration{
+		Seconds: d.GetSeconds(),
+		Nanos:   d.GetNanos(),
+	}
 }
 
 func TaskList(tq *taskqueue.TaskQueue) *cadence.TaskList {
@@ -127,4 +257,12 @@ func Timestamp(t *timestamppb.Timestamp) *types.Timestamp {
 
 func Error(err error) error {
 	return err
+}
+
+func RespondDecisionTaskCompletedResponse(resp *workflowservice.RespondWorkflowTaskCompletedResponse) *cadence.RespondDecisionTaskCompletedResponse {
+	if resp == nil {
+		return nil
+	}
+
+	return &cadence.RespondDecisionTaskCompletedResponse{}
 }

@@ -26,16 +26,19 @@ func NewWorkerServiceProxyServer(
 	}
 }
 
-func (w workerServiceProxyServer) PollForDecisionTask(ctx context.Context, req *apiv1.PollForDecisionTaskRequest) (*apiv1.PollForDecisionTaskResponse, error) {
+func (w workerServiceProxyServer) PollForDecisionTask(ctx context.Context, request *apiv1.PollForDecisionTaskRequest) (*apiv1.PollForDecisionTaskResponse, error) {
 	w.logger.Info("Cadence API server: PollForDecisionTask called.")
-	tReq := temporaltype.PollWorkflowTaskQueueRequest(req)
+	tReq := temporaltype.PollWorkflowTaskQueueRequest(request)
 	resp, err := w.workflowServiceClient.PollWorkflowTaskQueue(ctx, tReq)
-	return cadencetype.PollWorkflowTaskQueueResponse(resp), cadencetype.Error(err)
+	cresp := cadencetype.PollForDecisionTaskResponse(resp)
+	return cresp, cadencetype.Error(err)
 }
 
 func (w workerServiceProxyServer) RespondDecisionTaskCompleted(ctx context.Context, request *apiv1.RespondDecisionTaskCompletedRequest) (*apiv1.RespondDecisionTaskCompletedResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	w.logger.Info("Cadence API server: RespondDecisionTaskCompleted called.")
+	tReq := temporaltype.RespondWorkflowTaskCompletedRequest(request)
+	resp, err := w.workflowServiceClient.RespondWorkflowTaskCompleted(ctx, tReq)
+	return cadencetype.RespondDecisionTaskCompletedResponse(resp), cadencetype.Error(err)
 }
 
 func (w workerServiceProxyServer) RespondDecisionTaskFailed(ctx context.Context, request *apiv1.RespondDecisionTaskFailedRequest) (*apiv1.RespondDecisionTaskFailedResponse, error) {
