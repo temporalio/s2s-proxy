@@ -151,7 +151,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 					conn = server
 				}
 
-				m.logger.Info("new connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
+				m.logger.Info("Accept new connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
 
 				session, err := yamux.Server(conn, nil)
 				if err != nil {

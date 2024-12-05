@@ -30,8 +30,8 @@ type (
 		transManager   *transport.TransportManager
 		outboundServer *ProxyServer
 		inboundServer  *ProxyServer
-		logger         log.Logger
 		shutDownCh     chan struct{}
+		logger         log.Logger
 	}
 
 	proxyOptions struct {
@@ -194,8 +194,8 @@ func NewProxy(
 	proxy := &Proxy{
 		config:       s2sConfig,
 		transManager: transManager,
-		logger:       logger,
 		shutDownCh:   make(chan struct{}),
+		logger:       logger,
 	}
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
@@ -231,14 +231,14 @@ func NewProxy(
 	return proxy
 }
 
-func (s *Proxy) startHealthCheck(cfg config.HealthCheckConfig) error {
+func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 	// Create a listener for incoming connections
 	listener, err := net.Listen("tcp", cfg.ListenAddress)
 	if err != nil {
 		return err
 	}
 
-	s.logger.Info("Start health check ", tag.Address(cfg.ListenAddress))
+	s.logger.Info("Start health check handler", tag.Address(cfg.ListenAddress))
 	// Accept and handle incoming connections
 	go func() {
 		defer listener.Close()
@@ -256,7 +256,7 @@ func (s *Proxy) startHealthCheck(cfg config.HealthCheckConfig) error {
 				}
 
 				// Log connection details
-				s.logger.Debug("Health check connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
+				s.logger.Debug("Received health check connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
 
 				// Respond and close connection
 				conn.Close()
@@ -269,7 +269,7 @@ func (s *Proxy) startHealthCheck(cfg config.HealthCheckConfig) error {
 
 func (s *Proxy) Start() error {
 	if s.config.HealthCheck != nil {
-		if err := s.startHealthCheck(*s.config.HealthCheck); err != nil {
+		if err := s.startHealthCheckHandler(*s.config.HealthCheck); err != nil {
 			return err
 		}
 	}
