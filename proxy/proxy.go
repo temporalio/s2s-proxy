@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"net"
 
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
@@ -29,6 +30,8 @@ type (
 		transManager   *transport.TransportManager
 		outboundServer *ProxyServer
 		inboundServer  *ProxyServer
+		logger         log.Logger
+		shutDownCh     chan struct{}
 	}
 
 	proxyOptions struct {
@@ -191,6 +194,8 @@ func NewProxy(
 	proxy := &Proxy{
 		config:       s2sConfig,
 		transManager: transManager,
+		logger:       logger,
+		shutDownCh:   make(chan struct{}),
 	}
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
@@ -226,7 +231,49 @@ func NewProxy(
 	return proxy
 }
 
+func (s *Proxy) startHealthCheck(cfg config.HealthCheckConfig) error {
+	// Create a listener for incoming connections
+	listener, err := net.Listen("tcp", cfg.ListenAddress)
+	if err != nil {
+		return err
+	}
+
+	s.logger.Info("Start health check ", tag.Address(cfg.ListenAddress))
+	// Accept and handle incoming connections
+	go func() {
+		defer listener.Close()
+
+		for {
+			select {
+			case <-s.shutDownCh:
+				return
+
+			default:
+				conn, err := listener.Accept()
+				if err != nil {
+					s.logger.Error("Error accepting connection: %s\n", tag.Error(err))
+					continue
+				}
+
+				// Log connection details
+				s.logger.Debug("Health check connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
+
+				// Respond and close connection
+				conn.Close()
+			}
+		}
+	}()
+
+	return nil
+}
+
 func (s *Proxy) Start() error {
+	if s.config.HealthCheck != nil {
+		if err := s.startHealthCheck(*s.config.HealthCheck); err != nil {
+			return err
+		}
+	}
+
 	if err := s.transManager.Start(); err != nil {
 		return err
 	}
@@ -254,4 +301,5 @@ func (s *Proxy) Stop() {
 		s.outboundServer.stop()
 	}
 	s.transManager.Stop()
+	close(s.shutDownCh)
 }

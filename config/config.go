@@ -75,10 +75,15 @@ type (
 		Server TCPServerSetting `yaml:"server"`
 	}
 
+	HealthCheckConfig struct {
+		ListenAddress string `yaml:"listenAddress"`
+	}
+
 	S2SProxyConfig struct {
 		Inbound       *ProxyConfig         `yaml:"inbound"`
 		Outbound      *ProxyConfig         `yaml:"outbound"`
 		MuxTransports []MuxTransportConfig `yaml:"mux"`
+		HealthCheck   *HealthCheckConfig   `yaml:"healthCheck"`
 	}
 
 	NamespaceNameTranslationConfig struct {
