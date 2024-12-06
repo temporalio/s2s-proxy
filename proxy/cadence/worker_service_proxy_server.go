@@ -42,61 +42,61 @@ func (w workerServiceProxyServer) RespondDecisionTaskCompleted(ctx context.Conte
 }
 
 func (w workerServiceProxyServer) RespondDecisionTaskFailed(ctx context.Context, request *apiv1.RespondDecisionTaskFailedRequest) (*apiv1.RespondDecisionTaskFailedResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: RespondDecisionTaskFailed called.")
 	panic("implement me")
 }
 
 func (w workerServiceProxyServer) PollForActivityTask(ctx context.Context, request *apiv1.PollForActivityTaskRequest) (*apiv1.PollForActivityTaskResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: PollForActivityTask called.")
 	panic("implement me")
 }
 
 func (w workerServiceProxyServer) RespondActivityTaskCompleted(ctx context.Context, request *apiv1.RespondActivityTaskCompletedRequest) (*apiv1.RespondActivityTaskCompletedResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: RespondActivityTaskCompleted called.")
 	panic("implement me")
 }
 
 func (w workerServiceProxyServer) RespondActivityTaskCompletedByID(ctx context.Context, request *apiv1.RespondActivityTaskCompletedByIDRequest) (*apiv1.RespondActivityTaskCompletedByIDResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: RespondActivityTaskCompletedByID called.")
 	panic("implement me")
 }
 
 func (w workerServiceProxyServer) RespondActivityTaskFailed(ctx context.Context, request *apiv1.RespondActivityTaskFailedRequest) (*apiv1.RespondActivityTaskFailedResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: RespondActivityTaskFailed called.")
 	panic("implement me")
 }
 
 func (w workerServiceProxyServer) RespondActivityTaskFailedByID(ctx context.Context, request *apiv1.RespondActivityTaskFailedByIDRequest) (*apiv1.RespondActivityTaskFailedByIDResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: RespondActivityTaskFailedByID called.")
 	panic("implement me")
 }
 
 func (w workerServiceProxyServer) RespondActivityTaskCanceled(ctx context.Context, request *apiv1.RespondActivityTaskCanceledRequest) (*apiv1.RespondActivityTaskCanceledResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: RespondActivityTaskCanceled called.")
 	panic("implement me")
 }
 
 func (w workerServiceProxyServer) RespondActivityTaskCanceledByID(ctx context.Context, request *apiv1.RespondActivityTaskCanceledByIDRequest) (*apiv1.RespondActivityTaskCanceledByIDResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: RespondActivityTaskCanceledByID called.")
 	panic("implement me")
 }
 
 func (w workerServiceProxyServer) RecordActivityTaskHeartbeat(ctx context.Context, request *apiv1.RecordActivityTaskHeartbeatRequest) (*apiv1.RecordActivityTaskHeartbeatResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: RecordActivityTaskHeartbeat called.")
 	panic("implement me")
 }
 
 func (w workerServiceProxyServer) RecordActivityTaskHeartbeatByID(ctx context.Context, request *apiv1.RecordActivityTaskHeartbeatByIDRequest) (*apiv1.RecordActivityTaskHeartbeatByIDResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: RecordActivityTaskHeartbeatByID called.")
 	panic("implement me")
 }
 
 func (w workerServiceProxyServer) RespondQueryTaskCompleted(ctx context.Context, request *apiv1.RespondQueryTaskCompletedRequest) (*apiv1.RespondQueryTaskCompletedResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: RespondQueryTaskCompleted called.")
 	panic("implement me")
 }
 
 func (w workerServiceProxyServer) ResetStickyTaskList(ctx context.Context, request *apiv1.ResetStickyTaskListRequest) (*apiv1.ResetStickyTaskListResponse, error) {
-	//TODO implement me
+	w.logger.Info("Cadence API server: ResetStickyTaskList called.")
 	panic("implement me")
 }

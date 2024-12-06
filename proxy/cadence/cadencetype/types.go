@@ -69,7 +69,7 @@ func History(h *history.History) *cadence.History {
 	if h == nil {
 		return nil
 	}
-	events := make([]*cadence.HistoryEvent, len(h.GetEvents()))
+	events := make([]*cadence.HistoryEvent, 0, len(h.GetEvents()))
 	for _, e := range h.Events {
 		events = append(events, HistoryEvent(e))
 	}
