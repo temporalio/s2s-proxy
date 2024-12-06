@@ -87,38 +87,98 @@ func HistoryEvent(e *history.HistoryEvent) *cadence.HistoryEvent {
 	switch e.Attributes.(type) {
 	case *history.HistoryEvent_WorkflowExecutionStartedEventAttributes:
 		attributes := e.Attributes.(*history.HistoryEvent_WorkflowExecutionStartedEventAttributes).WorkflowExecutionStartedEventAttributes
-		event.Attributes = &cadence.HistoryEvent_WorkflowExecutionStartedEventAttributes{
-			WorkflowExecutionStartedEventAttributes: &cadence.WorkflowExecutionStartedEventAttributes{
-				WorkflowType:                 WorkflowType(attributes.GetWorkflowType()),
-				ParentExecutionInfo:          ParentExecutionInfo(attributes.GetParentWorkflowExecution()),
-				TaskList:                     TaskList(attributes.GetTaskQueue()),
-				Input:                        Payloads(attributes.GetInput()),
-				ExecutionStartToCloseTimeout: Duration(attributes.GetWorkflowExecutionTimeout()),
-				//TaskStartToCloseTimeout:      nil,
-				ContinuedExecutionRunId:  attributes.GetContinuedExecutionRunId(),
-				Initiator:                Initiator(attributes.GetInitiator()),
-				ContinuedFailure:         Failure(attributes.GetContinuedFailure()),
-				LastCompletionResult:     Payloads(attributes.GetLastCompletionResult()),
-				OriginalExecutionRunId:   attributes.GetOriginalExecutionRunId(),
-				Identity:                 attributes.GetIdentity(),
-				FirstExecutionRunId:      attributes.GetFirstExecutionRunId(),
-				RetryPolicy:              RetryPolicy(attributes.GetRetryPolicy()),
-				Attempt:                  attributes.GetAttempt(),
-				ExpirationTime:           Timestamp(attributes.GetWorkflowExecutionExpirationTime()),
-				CronSchedule:             attributes.GetCronSchedule(),
-				FirstDecisionTaskBackoff: Duration(attributes.GetFirstWorkflowTaskBackoff()),
-				Memo:                     Memo(attributes.GetMemo()),
-				SearchAttributes:         SearchAttributes(attributes.GetSearchAttributes()),
-				PrevAutoResetPoints:      ReseetPoints(attributes.GetPrevAutoResetPoints()),
-				Header:                   Header(attributes.GetHeader()),
-				FirstScheduledTime:       nil,
-				//PartitionConfig:              nil,
-				//RequestId:                    "",
-			},
-		}
+		event.Attributes = WorkflowExecutionStartedEventAttributes(attributes)
+	case *history.HistoryEvent_WorkflowTaskScheduledEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_WorkflowTaskScheduledEventAttributes).WorkflowTaskScheduledEventAttributes
+		event.Attributes = WorkflowTaskScheduledEventAttributes(attributes)
+	case *history.HistoryEvent_WorkflowTaskStartedEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_WorkflowTaskStartedEventAttributes).WorkflowTaskStartedEventAttributes
+		event.Attributes = WorkflowTaskStartedEventAttributes(attributes)
+	case *history.HistoryEvent_WorkflowTaskTimedOutEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_WorkflowTaskTimedOutEventAttributes).WorkflowTaskTimedOutEventAttributes
+		event.Attributes = WorkflowTaskTimedOutEventAttributes(attributes)
 	}
 
 	return event
+}
+
+func WorkflowTaskTimedOutEventAttributes(attributes *history.WorkflowTaskTimedOutEventAttributes) *cadence.HistoryEvent_DecisionTaskTimedOutEventAttributes {
+	return &cadence.HistoryEvent_DecisionTaskTimedOutEventAttributes{
+		DecisionTaskTimedOutEventAttributes: &cadence.DecisionTaskTimedOutEventAttributes{
+			ScheduledEventId: attributes.GetScheduledEventId(),
+			StartedEventId:   attributes.GetStartedEventId(),
+			TimeoutType:      TimeoutType(attributes.GetTimeoutType()),
+			//BaseRunId:        "",
+			//NewRunId:         "",
+			//ForkEventVersion: 0,
+			//Reason:           "",
+			//Cause:            0,
+			//RequestId:        "",
+		},
+	}
+
+}
+
+func TimeoutType(timeoutType enums.TimeoutType) cadence.TimeoutType {
+	return cadence.TimeoutType(timeoutType)
+}
+
+func WorkflowTaskStartedEventAttributes(
+	attributes *history.WorkflowTaskStartedEventAttributes,
+) *cadence.HistoryEvent_DecisionTaskStartedEventAttributes {
+	return &cadence.HistoryEvent_DecisionTaskStartedEventAttributes{
+		DecisionTaskStartedEventAttributes: &cadence.DecisionTaskStartedEventAttributes{
+			ScheduledEventId: attributes.GetScheduledEventId(),
+			Identity:         attributes.GetIdentity(),
+			RequestId:        attributes.GetRequestId(),
+		},
+	}
+}
+
+func WorkflowTaskScheduledEventAttributes(
+	attributes *history.WorkflowTaskScheduledEventAttributes,
+) *cadence.HistoryEvent_DecisionTaskScheduledEventAttributes {
+	return &cadence.HistoryEvent_DecisionTaskScheduledEventAttributes{
+		DecisionTaskScheduledEventAttributes: &cadence.DecisionTaskScheduledEventAttributes{
+			TaskList:            TaskList(attributes.GetTaskQueue()),
+			StartToCloseTimeout: Duration(attributes.GetStartToCloseTimeout()),
+			Attempt:             attributes.GetAttempt(),
+		},
+	}
+}
+
+func WorkflowExecutionStartedEventAttributes(
+	attributes *history.WorkflowExecutionStartedEventAttributes,
+) *cadence.HistoryEvent_WorkflowExecutionStartedEventAttributes {
+	return &cadence.HistoryEvent_WorkflowExecutionStartedEventAttributes{
+		WorkflowExecutionStartedEventAttributes: &cadence.WorkflowExecutionStartedEventAttributes{
+			WorkflowType:                 WorkflowType(attributes.GetWorkflowType()),
+			ParentExecutionInfo:          ParentExecutionInfo(attributes.GetParentWorkflowExecution()),
+			TaskList:                     TaskList(attributes.GetTaskQueue()),
+			Input:                        Payloads(attributes.GetInput()),
+			ExecutionStartToCloseTimeout: Duration(attributes.GetWorkflowExecutionTimeout()),
+			//TaskStartToCloseTimeout:      nil,
+			ContinuedExecutionRunId:  attributes.GetContinuedExecutionRunId(),
+			Initiator:                Initiator(attributes.GetInitiator()),
+			ContinuedFailure:         Failure(attributes.GetContinuedFailure()),
+			LastCompletionResult:     Payloads(attributes.GetLastCompletionResult()),
+			OriginalExecutionRunId:   attributes.GetOriginalExecutionRunId(),
+			Identity:                 attributes.GetIdentity(),
+			FirstExecutionRunId:      attributes.GetFirstExecutionRunId(),
+			RetryPolicy:              RetryPolicy(attributes.GetRetryPolicy()),
+			Attempt:                  attributes.GetAttempt(),
+			ExpirationTime:           Timestamp(attributes.GetWorkflowExecutionExpirationTime()),
+			CronSchedule:             attributes.GetCronSchedule(),
+			FirstDecisionTaskBackoff: Duration(attributes.GetFirstWorkflowTaskBackoff()),
+			Memo:                     Memo(attributes.GetMemo()),
+			SearchAttributes:         SearchAttributes(attributes.GetSearchAttributes()),
+			PrevAutoResetPoints:      ReseetPoints(attributes.GetPrevAutoResetPoints()),
+			Header:                   Header(attributes.GetHeader()),
+			FirstScheduledTime:       nil,
+			//PartitionConfig:              nil,
+			//RequestId:                    "",
+		},
+	}
 }
 
 func ParentExecutionInfo(parentExecution *temporal.WorkflowExecution) *cadence.ParentExecutionInfo {
