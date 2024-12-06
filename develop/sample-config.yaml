@@ -52,3 +52,6 @@ outbound:
     mappings:
       - localName: "example"
         remoteName: "example.cloud"
+healthCheck:
+  protocol: "http"
+  listenAddress: ""
