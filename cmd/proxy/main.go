@@ -47,6 +47,11 @@ func buildCLIOptions() *cli.App {
 					Usage:    "path to proxy config yaml file",
 					Required: true,
 				},
+				&cli.StringFlag{
+					Name:     config.LogLevelFlag,
+					Usage:    "Set log level(debug, info, warn, error). Default level is info",
+					Required: false,
+				},
 			},
 			Action: startProxy,
 		},
@@ -58,9 +63,16 @@ func buildCLIOptions() *cli.App {
 func startProxy(c *cli.Context) error {
 	var proxyParams ProxyParams
 
+	var logCfg log.Config
+	if logLevel := c.String(config.LogLevelFlag); len(logLevel) != 0 {
+		logCfg.Level = logLevel
+	}
+
 	app := fx.New(
 		fx.Provide(func() *cli.Context { return c }),
-		fx.Provide(func() log.Logger { return log.NewCLILogger() }),
+		fx.Provide(func() log.Logger {
+			return log.NewZapLogger(log.BuildZapLogger(logCfg))
+		}),
 		config.Module,
 		transport.Module,
 		client.Module,

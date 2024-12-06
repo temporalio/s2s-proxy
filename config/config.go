@@ -13,6 +13,7 @@ import (
 
 const (
 	ConfigPathFlag = "config"
+	LogLevelFlag   = "level"
 )
 
 type TransportType string
