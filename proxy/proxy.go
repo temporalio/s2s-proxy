@@ -288,7 +288,7 @@ func (s *Proxy) Start() error {
 
 func (s *Proxy) Stop() {
 	if s.healthCheckServer != nil {
-		// Clos without waiting for in-flight requests to complete.
+		// Close without waiting for in-flight requests to complete.
 		s.healthCheckServer.Close()
 	}
 
