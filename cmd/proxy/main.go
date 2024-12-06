@@ -49,7 +49,7 @@ func buildCLIOptions() *cli.App {
 				},
 				&cli.StringFlag{
 					Name:     config.LogLevelFlag,
-					Usage:    "Set log level(debug, info, warn, error)",
+					Usage:    "Set log level(debug, info, warn, error). Default level is info",
 					Required: false,
 				},
 			},
