@@ -29,6 +29,12 @@ const (
 	ServerMode MuxMode = "server" // server of underly tcp connection in mux mode.
 )
 
+type HealthCheckProtocol string
+
+const (
+	HTTP HealthCheckProtocol = "http"
+)
+
 type (
 	ConfigProvider interface {
 		GetS2SProxyConfig() S2SProxyConfig
@@ -76,7 +82,8 @@ type (
 	}
 
 	HealthCheckConfig struct {
-		ListenAddress string `yaml:"listenAddress"`
+		Protocol      HealthCheckProtocol `yaml:"protocol"`
+		ListenAddress string              `yaml:"listenAddress"`
 	}
 
 	S2SProxyConfig struct {

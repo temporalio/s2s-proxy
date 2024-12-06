@@ -2,7 +2,7 @@ package proxy
 
 import (
 	"fmt"
-	"net"
+	"net/http"
 
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
@@ -26,12 +26,13 @@ type (
 	}
 
 	Proxy struct {
-		config         config.S2SProxyConfig
-		transManager   *transport.TransportManager
-		outboundServer *ProxyServer
-		inboundServer  *ProxyServer
-		shutDownCh     chan struct{}
-		logger         log.Logger
+		config            config.S2SProxyConfig
+		transManager      *transport.TransportManager
+		outboundServer    *ProxyServer
+		inboundServer     *ProxyServer
+		healthCheckServer *http.Server
+		shutDownCh        chan struct{}
+		logger            log.Logger
 	}
 
 	proxyOptions struct {
@@ -231,36 +232,30 @@ func NewProxy(
 	return proxy
 }
 
+func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
+}
+
 func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
-	// Create a listener for incoming connections
-	listener, err := net.Listen("tcp", cfg.ListenAddress)
-	if err != nil {
-		return err
+	if cfg.Protocol != config.HTTP {
+		return fmt.Errorf("Not supported health check protocol %s", cfg.Protocol)
 	}
 
-	s.logger.Info("Start health check handler", tag.Address(cfg.ListenAddress))
-	// Accept and handle incoming connections
+	// Define the server and its settings
+	s.healthCheckServer = &http.Server{
+		Addr:    cfg.ListenAddress,
+		Handler: nil, // Default HTTP handler (using http.HandleFunc registrations)
+	}
+
+	// Register the health check endpoint
+	http.HandleFunc("/health", healthCheckHandler)
+
 	go func() {
-		defer listener.Close()
-
-		for {
-			select {
-			case <-s.shutDownCh:
-				return
-
-			default:
-				conn, err := listener.Accept()
-				if err != nil {
-					s.logger.Error("Error accepting connection: %s\n", tag.Error(err))
-					continue
-				}
-
-				// Log connection details
-				s.logger.Debug("Received health check connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
-
-				// Respond and close connection
-				conn.Close()
-			}
+		s.logger.Info("Starting health check server", tag.Address(cfg.ListenAddress))
+		if err := s.healthCheckServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			s.logger.Error("Error starting server: %v\n", tag.Error(err))
 		}
 	}()
 
@@ -294,6 +289,11 @@ func (s *Proxy) Start() error {
 }
 
 func (s *Proxy) Stop() {
+	if s.healthCheckServer != nil {
+		// Clos without waiting for in-flight requests to complete.
+		s.healthCheckServer.Close()
+	}
+
 	if s.inboundServer != nil {
 		s.inboundServer.stop()
 	}

@@ -53,4 +53,5 @@ outbound:
       - localName: "example"
         remoteName: "example.cloud"
 healthCheck:
+  protocol: "http"
   listenAddress: ""
