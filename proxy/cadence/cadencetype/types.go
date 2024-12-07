@@ -1,6 +1,7 @@
 package cadencetype
 
 import (
+	"fmt"
 	"github.com/gogo/protobuf/types"
 	cadence "github.com/uber/cadence-idl/go/proto/api/v1"
 	temporal "go.temporal.io/api/common/v1"
@@ -13,17 +14,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-type CadenceWorkflowExecution struct {
-	cadence.WorkflowExecution
-}
-
-func (e *CadenceWorkflowExecution) toTemporal() temporal.WorkflowExecution {
-	return temporal.WorkflowExecution{
-		WorkflowId: e.GetWorkflowId(),
-		RunId:      e.GetRunId(),
-	}
-}
 
 func WorkflowExecution(e *temporal.WorkflowExecution) *cadence.WorkflowExecution {
 	return &cadence.WorkflowExecution{
@@ -97,12 +87,191 @@ func HistoryEvent(e *history.HistoryEvent) *cadence.HistoryEvent {
 	case *history.HistoryEvent_WorkflowTaskTimedOutEventAttributes:
 		attributes := e.Attributes.(*history.HistoryEvent_WorkflowTaskTimedOutEventAttributes).WorkflowTaskTimedOutEventAttributes
 		event.Attributes = WorkflowTaskTimedOutEventAttributes(attributes)
+	case *history.HistoryEvent_WorkflowTaskFailedEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_WorkflowTaskFailedEventAttributes).WorkflowTaskFailedEventAttributes
+		event.Attributes = WorkflowTaskFailedEventAttributes(attributes)
+	case *history.HistoryEvent_WorkflowTaskCompletedEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_WorkflowTaskCompletedEventAttributes).WorkflowTaskCompletedEventAttributes
+		event.Attributes = WorkflowTaskCompletedEventAttributes(attributes)
+	case *history.HistoryEvent_ActivityTaskScheduledEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskScheduledEventAttributes).ActivityTaskScheduledEventAttributes
+		event.Attributes = ActivityTaskScheduledEventAttributes(attributes)
+	case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskStartedEventAttributes).ActivityTaskStartedEventAttributes
+		event.Attributes = ActivityTaskStartedEventAttributes(attributes)
+	case *history.HistoryEvent_ActivityTaskCompletedEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskCompletedEventAttributes).ActivityTaskCompletedEventAttributes
+		event.Attributes = ActivityTaskCompletedEventAttributes(attributes)
+	case *history.HistoryEvent_ActivityTaskFailedEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskFailedEventAttributes).ActivityTaskFailedEventAttributes
+		event.Attributes = ActivityTaskFailedEventAttributes(attributes)
+	case *history.HistoryEvent_ActivityTaskTimedOutEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskTimedOutEventAttributes).ActivityTaskTimedOutEventAttributes
+		event.Attributes = ActivityTaskTimedOutEventAttributes(attributes)
+	case *history.HistoryEvent_ActivityTaskCancelRequestedEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskCancelRequestedEventAttributes).ActivityTaskCancelRequestedEventAttributes
+		event.Attributes = ActivityTaskCancelRequestedEventAttributes(attributes)
+	default:
+		fmt.Printf("Liang: event type not converted %T to cadence type\n", e.Attributes)
 	}
 
 	return event
 }
 
-func WorkflowTaskTimedOutEventAttributes(attributes *history.WorkflowTaskTimedOutEventAttributes) *cadence.HistoryEvent_DecisionTaskTimedOutEventAttributes {
+func ActivityTaskCancelRequestedEventAttributes(attributes *history.ActivityTaskCancelRequestedEventAttributes) *cadence.HistoryEvent_ActivityTaskCancelRequestedEventAttributes {
+	return &cadence.HistoryEvent_ActivityTaskCancelRequestedEventAttributes{
+		ActivityTaskCancelRequestedEventAttributes: &cadence.ActivityTaskCancelRequestedEventAttributes{
+			//ActivityId:                   attributes.GetScheduledEventId(),
+			DecisionTaskCompletedEventId: attributes.GetWorkflowTaskCompletedEventId(),
+		},
+	}
+}
+
+func ActivityTaskTimedOutEventAttributes(attributes *history.ActivityTaskTimedOutEventAttributes) *cadence.HistoryEvent_ActivityTaskTimedOutEventAttributes {
+	return &cadence.HistoryEvent_ActivityTaskTimedOutEventAttributes{
+		ActivityTaskTimedOutEventAttributes: &cadence.ActivityTaskTimedOutEventAttributes{
+			//Details:          Payloads(attributes.GetRetryState()),
+			ScheduledEventId: attributes.GetScheduledEventId(),
+			StartedEventId:   attributes.GetStartedEventId(),
+			//TimeoutType:      TimeoutType(attributes.GetTimeoutType()),
+			LastFailure: Failure(attributes.GetFailure()),
+		},
+	}
+}
+
+func ActivityTaskFailedEventAttributes(attributes *history.ActivityTaskFailedEventAttributes) *cadence.HistoryEvent_ActivityTaskFailedEventAttributes {
+	return &cadence.HistoryEvent_ActivityTaskFailedEventAttributes{
+		ActivityTaskFailedEventAttributes: &cadence.ActivityTaskFailedEventAttributes{
+			Failure:          Failure(attributes.GetFailure()),
+			ScheduledEventId: attributes.GetScheduledEventId(),
+			StartedEventId:   attributes.GetStartedEventId(),
+			Identity:         attributes.GetIdentity(),
+		},
+	}
+}
+
+func ActivityTaskCompletedEventAttributes(attributes *history.ActivityTaskCompletedEventAttributes) *cadence.HistoryEvent_ActivityTaskCompletedEventAttributes {
+	return &cadence.HistoryEvent_ActivityTaskCompletedEventAttributes{
+		ActivityTaskCompletedEventAttributes: &cadence.ActivityTaskCompletedEventAttributes{
+			Result:           Payloads(attributes.GetResult()),
+			ScheduledEventId: attributes.GetScheduledEventId(),
+			StartedEventId:   attributes.GetStartedEventId(),
+			Identity:         attributes.GetIdentity(),
+		},
+	}
+}
+
+func ActivityTaskStartedEventAttributes(attributes *history.ActivityTaskStartedEventAttributes) *cadence.HistoryEvent_ActivityTaskStartedEventAttributes {
+	return &cadence.HistoryEvent_ActivityTaskStartedEventAttributes{
+		ActivityTaskStartedEventAttributes: &cadence.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: attributes.GetScheduledEventId(),
+			Identity:         attributes.GetIdentity(),
+			RequestId:        attributes.GetRequestId(),
+			Attempt:          attributes.GetAttempt(),
+			LastFailure:      Failure(attributes.GetLastFailure()),
+		},
+	}
+}
+
+func ActivityTaskScheduledEventAttributes(
+	attributes *history.ActivityTaskScheduledEventAttributes,
+) *cadence.HistoryEvent_ActivityTaskScheduledEventAttributes {
+	return &cadence.HistoryEvent_ActivityTaskScheduledEventAttributes{
+		ActivityTaskScheduledEventAttributes: &cadence.ActivityTaskScheduledEventAttributes{
+			ActivityId:   attributes.GetActivityId(),
+			ActivityType: ActivityType(attributes.GetActivityType()),
+			//Domain:                     "",
+			TaskList:                     TaskList(attributes.GetTaskQueue()),
+			Input:                        Payloads(attributes.GetInput()),
+			ScheduleToCloseTimeout:       Duration(attributes.GetScheduleToCloseTimeout()),
+			ScheduleToStartTimeout:       Duration(attributes.GetScheduleToStartTimeout()),
+			StartToCloseTimeout:          Duration(attributes.GetStartToCloseTimeout()),
+			HeartbeatTimeout:             Duration(attributes.GetHeartbeatTimeout()),
+			DecisionTaskCompletedEventId: attributes.GetWorkflowTaskCompletedEventId(),
+			RetryPolicy:                  RetryPolicy(attributes.GetRetryPolicy()),
+			Header:                       Header(attributes.GetHeader()),
+		},
+	}
+}
+
+func ActivityType(activityType *temporal.ActivityType) *cadence.ActivityType {
+	if activityType == nil {
+		return nil
+	}
+
+	return &cadence.ActivityType{
+		Name: activityType.GetName(),
+	}
+}
+
+func WorkflowTaskCompletedEventAttributes(
+	attributes *history.WorkflowTaskCompletedEventAttributes,
+) *cadence.HistoryEvent_DecisionTaskCompletedEventAttributes {
+	return &cadence.HistoryEvent_DecisionTaskCompletedEventAttributes{
+		DecisionTaskCompletedEventAttributes: &cadence.DecisionTaskCompletedEventAttributes{
+			ScheduledEventId: attributes.GetScheduledEventId(),
+			StartedEventId:   attributes.GetStartedEventId(),
+			Identity:         attributes.GetIdentity(),
+			BinaryChecksum:   attributes.GetBinaryChecksum(),
+			//ExecutionContext: nil,
+		},
+	}
+}
+
+func WorkflowTaskFailedEventAttributes(
+	attributes *history.WorkflowTaskFailedEventAttributes,
+) *cadence.HistoryEvent_DecisionTaskFailedEventAttributes {
+	return &cadence.HistoryEvent_DecisionTaskFailedEventAttributes{
+		DecisionTaskFailedEventAttributes: &cadence.DecisionTaskFailedEventAttributes{
+			ScheduledEventId: attributes.GetScheduledEventId(),
+			StartedEventId:   attributes.GetStartedEventId(),
+			Cause:            DecisionTaskFailedCause(attributes.GetCause()),
+			Failure:          Failure(attributes.GetFailure()),
+			Identity:         attributes.GetIdentity(),
+			BaseRunId:        attributes.GetBaseRunId(),
+			NewRunId:         attributes.GetNewRunId(),
+			ForkEventVersion: attributes.GetForkEventVersion(),
+			BinaryChecksum:   attributes.GetBinaryChecksum(),
+			//RequestId:        attributes.GetRequestId(),
+		},
+	}
+
+}
+
+func DecisionTaskFailedCause(cause enums.WorkflowTaskFailedCause) cadence.DecisionTaskFailedCause {
+	switch cause {
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_UNHANDLED_COMMAND:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_UNHANDLED_DECISION
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_BAD_SCHEDULE_ACTIVITY_ATTRIBUTES:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_BAD_SCHEDULE_ACTIVITY_ATTRIBUTES
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_BAD_REQUEST_CANCEL_ACTIVITY_ATTRIBUTES:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_BAD_REQUEST_CANCEL_ACTIVITY_ATTRIBUTES
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_BAD_START_TIMER_ATTRIBUTES:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_BAD_START_TIMER_ATTRIBUTES
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_BAD_CANCEL_TIMER_ATTRIBUTES:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_BAD_CANCEL_TIMER_ATTRIBUTES
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_BAD_RECORD_MARKER_ATTRIBUTES:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_BAD_RECORD_MARKER_ATTRIBUTES
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_BAD_CONTINUE_AS_NEW_ATTRIBUTES:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_BAD_CONTINUE_AS_NEW_ATTRIBUTES
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_RESET_STICKY_TASK_QUEUE:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_RESET_STICKY_TASK_LIST
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_BAD_SIGNAL_INPUT_SIZE:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_BAD_SIGNAL_INPUT_SIZE
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_RESET_WORKFLOW:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_RESET_WORKFLOW
+	case enums.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_INVALID
+	default:
+		return cadence.DecisionTaskFailedCause_DECISION_TASK_FAILED_CAUSE_INVALID
+	}
+}
+
+func WorkflowTaskTimedOutEventAttributes(
+	attributes *history.WorkflowTaskTimedOutEventAttributes,
+) *cadence.HistoryEvent_DecisionTaskTimedOutEventAttributes {
 	return &cadence.HistoryEvent_DecisionTaskTimedOutEventAttributes{
 		DecisionTaskTimedOutEventAttributes: &cadence.DecisionTaskTimedOutEventAttributes{
 			ScheduledEventId: attributes.GetScheduledEventId(),
@@ -319,7 +488,9 @@ func Error(err error) error {
 	return err
 }
 
-func RespondDecisionTaskCompletedResponse(resp *workflowservice.RespondWorkflowTaskCompletedResponse) *cadence.RespondDecisionTaskCompletedResponse {
+func RespondDecisionTaskCompletedResponse(
+	resp *workflowservice.RespondWorkflowTaskCompletedResponse,
+) *cadence.RespondDecisionTaskCompletedResponse {
 	if resp == nil {
 		return nil
 	}
