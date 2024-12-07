@@ -48,12 +48,18 @@ func (w workerServiceProxyServer) RespondDecisionTaskFailed(ctx context.Context,
 
 func (w workerServiceProxyServer) PollForActivityTask(ctx context.Context, request *apiv1.PollForActivityTaskRequest) (*apiv1.PollForActivityTaskResponse, error) {
 	w.logger.Info("Cadence API server: PollForActivityTask called.")
-	panic("implement me")
+
+	tReq := temporaltype.PollActivityTaskQueueRequest(request)
+	resp, err := w.workflowServiceClient.PollActivityTaskQueue(ctx, tReq)
+	return cadencetype.PollForActivityTaskResponse(resp), cadencetype.Error(err)
 }
 
 func (w workerServiceProxyServer) RespondActivityTaskCompleted(ctx context.Context, request *apiv1.RespondActivityTaskCompletedRequest) (*apiv1.RespondActivityTaskCompletedResponse, error) {
 	w.logger.Info("Cadence API server: RespondActivityTaskCompleted called.")
-	panic("implement me")
+
+	tReq := temporaltype.RespondActivityTaskCompletedRequest(request)
+	resp, err := w.workflowServiceClient.RespondActivityTaskCompleted(ctx, tReq)
+	return cadencetype.RespondActivityTaskCompletedResponse(resp), cadencetype.Error(err)
 }
 
 func (w workerServiceProxyServer) RespondActivityTaskCompletedByID(ctx context.Context, request *apiv1.RespondActivityTaskCompletedByIDRequest) (*apiv1.RespondActivityTaskCompletedByIDResponse, error) {
@@ -63,7 +69,10 @@ func (w workerServiceProxyServer) RespondActivityTaskCompletedByID(ctx context.C
 
 func (w workerServiceProxyServer) RespondActivityTaskFailed(ctx context.Context, request *apiv1.RespondActivityTaskFailedRequest) (*apiv1.RespondActivityTaskFailedResponse, error) {
 	w.logger.Info("Cadence API server: RespondActivityTaskFailed called.")
-	panic("implement me")
+
+	tReq := temporaltype.RespondActivityTaskFailedRequest(request)
+	resp, err := w.workflowServiceClient.RespondActivityTaskFailed(ctx, tReq)
+	return cadencetype.RespondActivityTaskFailedResponse(resp), cadencetype.Error(err)
 }
 
 func (w workerServiceProxyServer) RespondActivityTaskFailedByID(ctx context.Context, request *apiv1.RespondActivityTaskFailedByIDRequest) (*apiv1.RespondActivityTaskFailedByIDResponse, error) {

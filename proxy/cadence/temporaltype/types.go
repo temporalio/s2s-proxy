@@ -6,6 +6,7 @@ import (
 	"go.temporal.io/api/command/v1"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/query/v1"
 	"go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -192,5 +193,64 @@ func Duration(d *types.Duration) *durationpb.Duration {
 	return &durationpb.Duration{
 		Seconds: d.GetSeconds(),
 		Nanos:   d.GetNanos(),
+	}
+}
+
+func PollActivityTaskQueueRequest(request *cadence.PollForActivityTaskRequest) *workflowservice.PollActivityTaskQueueRequest {
+	if request == nil {
+		return nil
+	}
+
+	return &workflowservice.PollActivityTaskQueueRequest{
+		Namespace: request.GetDomain(),
+		TaskQueue: TaskQueue(request.GetTaskList()),
+		Identity:  request.GetIdentity(),
+		//TaskQueueMetadata:         nil,
+		//WorkerVersionCapabilities: nil,
+	}
+}
+
+func RespondActivityTaskCompletedRequest(request *cadence.RespondActivityTaskCompletedRequest) *workflowservice.RespondActivityTaskCompletedRequest {
+	if request == nil {
+		return nil
+	}
+
+	return &workflowservice.RespondActivityTaskCompletedRequest{
+		TaskToken: request.GetTaskToken(),
+		Result:    Payload(request.GetResult()),
+		Identity:  request.GetIdentity(),
+		//Namespace:     "",
+		//WorkerVersion: nil,
+	}
+
+}
+
+func RespondActivityTaskFailedRequest(request *cadence.RespondActivityTaskFailedRequest) *workflowservice.RespondActivityTaskFailedRequest {
+	if request == nil {
+		return nil
+	}
+
+	return &workflowservice.RespondActivityTaskFailedRequest{
+		TaskToken: request.GetTaskToken(),
+		Failure:   Failure(request.GetFailure()),
+		Identity:  request.GetIdentity(),
+		//Namespace:     "",
+		//LastHeartbeatDetails:,
+		//WorkerVersion: nil,
+	}
+}
+
+func Failure(f *cadence.Failure) *failure.Failure {
+	if f == nil {
+		return nil
+	}
+
+	return &failure.Failure{
+		Message: f.GetReason(),
+		//Source:            "",
+		//StackTrace:        "",
+		//EncodedAttributes: nil,
+		//Cause:             nil,
+		//FailureInfo:       nil,
 	}
 }

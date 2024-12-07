@@ -497,3 +497,45 @@ func RespondDecisionTaskCompletedResponse(
 
 	return &cadence.RespondDecisionTaskCompletedResponse{}
 }
+
+func PollForActivityTaskResponse(resp *workflowservice.PollActivityTaskQueueResponse) *cadence.PollForActivityTaskResponse {
+	if resp == nil {
+		return nil
+	}
+
+	return &cadence.PollForActivityTaskResponse{
+		TaskToken:                  resp.GetTaskToken(),
+		WorkflowExecution:          WorkflowExecution(resp.GetWorkflowExecution()),
+		ActivityId:                 resp.GetActivityId(),
+		ActivityType:               ActivityType(resp.GetActivityType()),
+		Input:                      Payloads(resp.GetInput()),
+		ScheduledTime:              Timestamp(resp.GetScheduledTime()),
+		StartedTime:                Timestamp(resp.GetStartedTime()),
+		ScheduleToCloseTimeout:     Duration(resp.GetScheduleToCloseTimeout()),
+		StartToCloseTimeout:        Duration(resp.GetStartToCloseTimeout()),
+		HeartbeatTimeout:           Duration(resp.GetHeartbeatTimeout()),
+		Attempt:                    resp.GetAttempt(),
+		ScheduledTimeOfThisAttempt: Timestamp(resp.GetCurrentAttemptScheduledTime()),
+		HeartbeatDetails:           Payloads(resp.GetHeartbeatDetails()),
+		WorkflowType:               WorkflowType(resp.GetWorkflowType()),
+		WorkflowDomain:             resp.GetWorkflowNamespace(),
+		Header:                     Header(resp.GetHeader()),
+		//AutoConfigHint:             nil,
+	}
+}
+
+func RespondActivityTaskCompletedResponse(resp *workflowservice.RespondActivityTaskCompletedResponse) *cadence.RespondActivityTaskCompletedResponse {
+	if resp == nil {
+		return nil
+	}
+
+	return &cadence.RespondActivityTaskCompletedResponse{}
+}
+
+func RespondActivityTaskFailedResponse(resp *workflowservice.RespondActivityTaskFailedResponse) *cadence.RespondActivityTaskFailedResponse {
+	if resp == nil {
+		return nil
+	}
+
+	return &cadence.RespondActivityTaskFailedResponse{}
+}
