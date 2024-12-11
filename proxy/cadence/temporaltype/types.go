@@ -12,8 +12,9 @@ import (
 	"go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
+	servercommon "go.temporal.io/server/common"
+	"golang.org/x/net/context"
 	"google.golang.org/protobuf/types/known/durationpb"
-	"strconv"
 )
 
 func PollWorkflowTaskQueueRequest(req *cadence.PollForDecisionTaskRequest) *workflowservice.PollWorkflowTaskQueueRequest {
@@ -55,6 +56,7 @@ func TaskQueueKind(kind cadence.TaskListKind) enums.TaskQueueKind {
 
 func RespondWorkflowTaskCompletedRequest(
 	request *cadence.RespondDecisionTaskCompletedRequest,
+	wsClient workflowservice.WorkflowServiceClient,
 ) *workflowservice.RespondWorkflowTaskCompletedRequest {
 	if request == nil {
 		return nil
@@ -62,7 +64,7 @@ func RespondWorkflowTaskCompletedRequest(
 
 	return &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  request.GetTaskToken(),
-		Commands:                   Commands(request.GetDecisions()),
+		Commands:                   Commands(request.GetDecisions(), wsClient, request.GetTaskToken()),
 		Identity:                   request.GetIdentity(),
 		StickyAttributes:           StickyAttributes(request.GetStickyAttributes()),
 		ReturnNewWorkflowTask:      request.GetReturnNewDecisionTask(),
@@ -85,19 +87,23 @@ func StickyAttributes(attributes *cadence.StickyExecutionAttributes) *taskqueue.
 	return nil
 }
 
-func Commands(decisions []*cadence.Decision) []*command.Command {
+func Commands(decisions []*cadence.Decision, wsClient workflowservice.WorkflowServiceClient, taskToken []byte) []*command.Command {
 	if decisions == nil {
 		return nil
 	}
 
 	commands := make([]*command.Command, len(decisions))
 	for i, decision := range decisions {
-		commands[i] = Command(decision)
+		commands[i] = Command(decision, wsClient, taskToken)
 	}
 	return commands
 }
 
-func Command(decision *cadence.Decision) *command.Command {
+func Command(
+	decision *cadence.Decision,
+	wsClient workflowservice.WorkflowServiceClient,
+	taskToken []byte,
+) *command.Command {
 	if decision == nil {
 		return nil
 	}
@@ -117,7 +123,7 @@ func Command(decision *cadence.Decision) *command.Command {
 		c.Attributes = FailWorkflowExecutionCommandAttributes(decision.GetFailWorkflowExecutionDecisionAttributes())
 	case *cadence.Decision_RequestCancelActivityTaskDecisionAttributes:
 		c.CommandType = enums.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK
-		c.Attributes = RequestCancelActivityTaskCommandAttributes(decision.GetRequestCancelActivityTaskDecisionAttributes())
+		c.Attributes = RequestCancelActivityTaskCommandAttributes(decision.GetRequestCancelActivityTaskDecisionAttributes(), wsClient, taskToken)
 	case *cadence.Decision_CancelTimerDecisionAttributes:
 		panic("not implemented" + decision.String())
 	case *cadence.Decision_CancelWorkflowExecutionDecisionAttributes:
@@ -135,7 +141,7 @@ func Command(decision *cadence.Decision) *command.Command {
 	case *cadence.Decision_UpsertWorkflowSearchAttributesDecisionAttributes:
 		panic("not implemented" + decision.String())
 	default:
-		panic("unknown decision type")
+		panic(fmt.Sprintf("not implemented decision type conversion: %T", decision.Attributes))
 	}
 
 	return c
@@ -143,18 +149,58 @@ func Command(decision *cadence.Decision) *command.Command {
 
 func RequestCancelActivityTaskCommandAttributes(
 	attributes *cadence.RequestCancelActivityTaskDecisionAttributes,
+	wsClient workflowservice.WorkflowServiceClient,
+	taskToken []byte,
 ) *command.Command_RequestCancelActivityTaskCommandAttributes {
-
-	activityID, err := strconv.ParseInt(attributes.GetActivityId(), 10, 64)
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse activity id: %v", err))
-	}
+	activityID := getScheduledEventIDByActivityID(attributes.GetActivityId(), wsClient, taskToken)
 
 	return &command.Command_RequestCancelActivityTaskCommandAttributes{
 		RequestCancelActivityTaskCommandAttributes: &command.RequestCancelActivityTaskCommandAttributes{
 			ScheduledEventId: activityID,
 		},
 	}
+}
+
+func getScheduledEventIDByActivityID(activityID string, wsClient workflowservice.WorkflowServiceClient, token []byte) int64 {
+	taskToken, err := servercommon.NewProtoTaskTokenSerializer().Deserialize(token)
+	if err != nil {
+		panic(fmt.Sprintf("failed to deserialize task token: %v", err))
+	}
+
+	descNSResq, err := wsClient.DescribeNamespace(context.Background(), &workflowservice.DescribeNamespaceRequest{
+		Id: taskToken.GetNamespaceId(),
+	})
+	if err != nil {
+		panic(fmt.Sprintf("failed to describe namespace: %v", err))
+	}
+
+	getHistoryResp, err := wsClient.GetWorkflowExecutionHistory(context.Background(), &workflowservice.GetWorkflowExecutionHistoryRequest{
+		Namespace: descNSResq.GetNamespaceInfo().GetName(),
+		Execution: &common.WorkflowExecution{
+			WorkflowId: taskToken.GetWorkflowId(),
+			RunId:      taskToken.GetRunId(),
+		},
+		MaximumPageSize: 0,
+		NextPageToken:   nil,
+		WaitNewEvent:    false,
+		SkipArchival:    true,
+	})
+
+	if err != nil {
+		panic(fmt.Sprintf("failed to get workflow history: %v", err))
+	}
+
+	events := getHistoryResp.GetHistory().GetEvents()
+	for _, event := range events {
+		if event.GetEventType() == enums.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED {
+			attributes := event.GetActivityTaskScheduledEventAttributes()
+			if attributes.GetActivityId() == activityID {
+				return event.GetEventId()
+			}
+		}
+	}
+
+	panic(fmt.Sprintf("activity not found: %s", activityID))
 }
 
 func FailWorkflowExecutionCommandAttributes(
@@ -293,5 +339,58 @@ func Failure(f *cadence.Failure) *failure.Failure {
 		//EncodedAttributes: nil,
 		//Cause:             nil,
 		//FailureInfo:       nil,
+	}
+}
+
+func RecordActivityTaskHeartbeatRequest(
+	request *cadence.RecordActivityTaskHeartbeatRequest,
+) *workflowservice.RecordActivityTaskHeartbeatRequest {
+	if request == nil {
+		return nil
+	}
+
+	return &workflowservice.RecordActivityTaskHeartbeatRequest{
+		TaskToken: request.GetTaskToken(),
+		Details:   Payload(request.GetDetails()),
+		Identity:  request.GetIdentity(),
+		//Namespace: "",
+	}
+}
+
+func ResetStickyTaskQueueRequest(
+	request *cadence.ResetStickyTaskListRequest,
+) *workflowservice.ResetStickyTaskQueueRequest {
+	if request == nil {
+		return nil
+	}
+
+	return &workflowservice.ResetStickyTaskQueueRequest{
+		Namespace: request.GetDomain(),
+		Execution: WorkflowExecution(request.GetWorkflowExecution()),
+	}
+}
+
+func WorkflowExecution(execution *cadence.WorkflowExecution) *common.WorkflowExecution {
+	if execution == nil {
+		return nil
+	}
+
+	return &common.WorkflowExecution{
+		WorkflowId: execution.GetWorkflowId(),
+		RunId:      execution.GetRunId(),
+	}
+}
+
+func RespondActivityTaskCanceledRequest(request *cadence.RespondActivityTaskCanceledRequest) *workflowservice.RespondActivityTaskCanceledRequest {
+	if request == nil {
+		return nil
+	}
+
+	return &workflowservice.RespondActivityTaskCanceledRequest{
+		TaskToken: request.GetTaskToken(),
+		Details:   Payload(request.GetDetails()),
+		Identity:  request.GetIdentity(),
+		//Namespace:     "",
+		//WorkerVersion: nil,
 	}
 }

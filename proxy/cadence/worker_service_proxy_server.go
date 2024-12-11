@@ -30,13 +30,13 @@ func (w workerServiceProxyServer) PollForDecisionTask(ctx context.Context, reque
 	w.logger.Info("Cadence API server: PollForDecisionTask called.")
 	tReq := temporaltype.PollWorkflowTaskQueueRequest(request)
 	resp, err := w.workflowServiceClient.PollWorkflowTaskQueue(ctx, tReq)
-	cresp := cadencetype.PollForDecisionTaskResponse(resp)
+	cresp := cadencetype.PollForDecisionTaskResponse(resp, w.workflowServiceClient)
 	return cresp, cadencetype.Error(err)
 }
 
 func (w workerServiceProxyServer) RespondDecisionTaskCompleted(ctx context.Context, request *apiv1.RespondDecisionTaskCompletedRequest) (*apiv1.RespondDecisionTaskCompletedResponse, error) {
 	w.logger.Info("Cadence API server: RespondDecisionTaskCompleted called.")
-	tReq := temporaltype.RespondWorkflowTaskCompletedRequest(request)
+	tReq := temporaltype.RespondWorkflowTaskCompletedRequest(request, w.workflowServiceClient)
 	resp, err := w.workflowServiceClient.RespondWorkflowTaskCompleted(ctx, tReq)
 	return cadencetype.RespondDecisionTaskCompletedResponse(resp), cadencetype.Error(err)
 }
@@ -82,7 +82,10 @@ func (w workerServiceProxyServer) RespondActivityTaskFailedByID(ctx context.Cont
 
 func (w workerServiceProxyServer) RespondActivityTaskCanceled(ctx context.Context, request *apiv1.RespondActivityTaskCanceledRequest) (*apiv1.RespondActivityTaskCanceledResponse, error) {
 	w.logger.Info("Cadence API server: RespondActivityTaskCanceled called.")
-	panic("implement me")
+
+	tReq := temporaltype.RespondActivityTaskCanceledRequest(request)
+	resp, err := w.workflowServiceClient.RespondActivityTaskCanceled(ctx, tReq)
+	return cadencetype.RespondActivityTaskCanceledResponse(resp), cadencetype.Error(err)
 }
 
 func (w workerServiceProxyServer) RespondActivityTaskCanceledByID(ctx context.Context, request *apiv1.RespondActivityTaskCanceledByIDRequest) (*apiv1.RespondActivityTaskCanceledByIDResponse, error) {
@@ -92,7 +95,10 @@ func (w workerServiceProxyServer) RespondActivityTaskCanceledByID(ctx context.Co
 
 func (w workerServiceProxyServer) RecordActivityTaskHeartbeat(ctx context.Context, request *apiv1.RecordActivityTaskHeartbeatRequest) (*apiv1.RecordActivityTaskHeartbeatResponse, error) {
 	w.logger.Info("Cadence API server: RecordActivityTaskHeartbeat called.")
-	panic("implement me")
+
+	tReq := temporaltype.RecordActivityTaskHeartbeatRequest(request)
+	resp, err := w.workflowServiceClient.RecordActivityTaskHeartbeat(ctx, tReq)
+	return cadencetype.RecordActivityTaskHeartbeatResponse(resp), cadencetype.Error(err)
 }
 
 func (w workerServiceProxyServer) RecordActivityTaskHeartbeatByID(ctx context.Context, request *apiv1.RecordActivityTaskHeartbeatByIDRequest) (*apiv1.RecordActivityTaskHeartbeatByIDResponse, error) {
@@ -107,5 +113,8 @@ func (w workerServiceProxyServer) RespondQueryTaskCompleted(ctx context.Context,
 
 func (w workerServiceProxyServer) ResetStickyTaskList(ctx context.Context, request *apiv1.ResetStickyTaskListRequest) (*apiv1.ResetStickyTaskListResponse, error) {
 	w.logger.Info("Cadence API server: ResetStickyTaskList called.")
-	panic("implement me")
+
+	tReq := temporaltype.ResetStickyTaskQueueRequest(request)
+	resp, err := w.workflowServiceClient.ResetStickyTaskQueue(ctx, tReq)
+	return cadencetype.ResetStickyTaskListResponse(resp), cadencetype.Error(err)
 }

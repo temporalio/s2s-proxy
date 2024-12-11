@@ -1,6 +1,7 @@
 package cadencetype
 
 import (
+	"context"
 	"fmt"
 	"github.com/gogo/protobuf/types"
 	cadence "github.com/uber/cadence-idl/go/proto/api/v1"
@@ -11,6 +12,7 @@ import (
 	"go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	servercommon "go.temporal.io/server/common"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -34,7 +36,10 @@ func Int64ValuePtr(i int64) *types.Int64Value {
 	}
 }
 
-func PollForDecisionTaskResponse(resp *workflowservice.PollWorkflowTaskQueueResponse) *cadence.PollForDecisionTaskResponse {
+func PollForDecisionTaskResponse(
+	resp *workflowservice.PollWorkflowTaskQueueResponse,
+	wsClient workflowservice.WorkflowServiceClient,
+) *cadence.PollForDecisionTaskResponse {
 	if resp == nil {
 		return nil
 	}
@@ -47,7 +52,7 @@ func PollForDecisionTaskResponse(resp *workflowservice.PollWorkflowTaskQueueResp
 		StartedEventId:            resp.GetStartedEventId(),
 		Attempt:                   int64(resp.GetAttempt()),
 		BacklogCountHint:          resp.GetBacklogCountHint(),
-		History:                   History(resp.GetHistory()),
+		History:                   History(resp.GetHistory(), wsClient, resp.GetTaskToken()),
 		NextPageToken:             resp.GetNextPageToken(),
 		WorkflowExecutionTaskList: TaskList(resp.GetWorkflowExecutionTaskQueue()),
 		ScheduledTime:             Timestamp(resp.GetScheduledTime()),
@@ -55,18 +60,18 @@ func PollForDecisionTaskResponse(resp *workflowservice.PollWorkflowTaskQueueResp
 	}
 }
 
-func History(h *history.History) *cadence.History {
+func History(h *history.History, wsClient workflowservice.WorkflowServiceClient, taskToken []byte) *cadence.History {
 	if h == nil {
 		return nil
 	}
 	events := make([]*cadence.HistoryEvent, 0, len(h.GetEvents()))
 	for _, e := range h.Events {
-		events = append(events, HistoryEvent(e))
+		events = append(events, HistoryEvent(e, wsClient, taskToken))
 	}
 	return &cadence.History{Events: events}
 }
 
-func HistoryEvent(e *history.HistoryEvent) *cadence.HistoryEvent {
+func HistoryEvent(e *history.HistoryEvent, wsClient workflowservice.WorkflowServiceClient, taskToken []byte) *cadence.HistoryEvent {
 	event := &cadence.HistoryEvent{
 		EventId:   e.GetEventId(),
 		EventTime: Timestamp(e.GetEventTime()),
@@ -76,49 +81,70 @@ func HistoryEvent(e *history.HistoryEvent) *cadence.HistoryEvent {
 
 	switch e.Attributes.(type) {
 	case *history.HistoryEvent_WorkflowExecutionStartedEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_WorkflowExecutionStartedEventAttributes).WorkflowExecutionStartedEventAttributes
-		event.Attributes = WorkflowExecutionStartedEventAttributes(attributes)
+		event.Attributes = WorkflowExecutionStartedEventAttributes(e.GetWorkflowExecutionStartedEventAttributes())
 	case *history.HistoryEvent_WorkflowTaskScheduledEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_WorkflowTaskScheduledEventAttributes).WorkflowTaskScheduledEventAttributes
-		event.Attributes = WorkflowTaskScheduledEventAttributes(attributes)
+		event.Attributes = WorkflowTaskScheduledEventAttributes(e.GetWorkflowTaskScheduledEventAttributes())
 	case *history.HistoryEvent_WorkflowTaskStartedEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_WorkflowTaskStartedEventAttributes).WorkflowTaskStartedEventAttributes
-		event.Attributes = WorkflowTaskStartedEventAttributes(attributes)
+		event.Attributes = WorkflowTaskStartedEventAttributes(e.GetWorkflowTaskStartedEventAttributes())
 	case *history.HistoryEvent_WorkflowTaskTimedOutEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_WorkflowTaskTimedOutEventAttributes).WorkflowTaskTimedOutEventAttributes
-		event.Attributes = WorkflowTaskTimedOutEventAttributes(attributes)
+		event.Attributes = WorkflowTaskTimedOutEventAttributes(e.GetWorkflowTaskTimedOutEventAttributes())
 	case *history.HistoryEvent_WorkflowTaskFailedEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_WorkflowTaskFailedEventAttributes).WorkflowTaskFailedEventAttributes
-		event.Attributes = WorkflowTaskFailedEventAttributes(attributes)
+		event.Attributes = WorkflowTaskFailedEventAttributes(e.GetWorkflowTaskFailedEventAttributes())
 	case *history.HistoryEvent_WorkflowTaskCompletedEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_WorkflowTaskCompletedEventAttributes).WorkflowTaskCompletedEventAttributes
-		event.Attributes = WorkflowTaskCompletedEventAttributes(attributes)
+		event.Attributes = WorkflowTaskCompletedEventAttributes(e.GetWorkflowTaskCompletedEventAttributes())
 	case *history.HistoryEvent_ActivityTaskScheduledEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskScheduledEventAttributes).ActivityTaskScheduledEventAttributes
-		event.Attributes = ActivityTaskScheduledEventAttributes(attributes)
+		event.Attributes = ActivityTaskScheduledEventAttributes(e.GetActivityTaskScheduledEventAttributes())
 	case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskStartedEventAttributes).ActivityTaskStartedEventAttributes
-		event.Attributes = ActivityTaskStartedEventAttributes(attributes)
+		event.Attributes = ActivityTaskStartedEventAttributes(e.GetActivityTaskStartedEventAttributes())
 	case *history.HistoryEvent_ActivityTaskCompletedEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskCompletedEventAttributes).ActivityTaskCompletedEventAttributes
-		event.Attributes = ActivityTaskCompletedEventAttributes(attributes)
+		event.Attributes = ActivityTaskCompletedEventAttributes(e.GetActivityTaskCompletedEventAttributes())
 	case *history.HistoryEvent_ActivityTaskFailedEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskFailedEventAttributes).ActivityTaskFailedEventAttributes
-		event.Attributes = ActivityTaskFailedEventAttributes(attributes)
+		event.Attributes = ActivityTaskFailedEventAttributes(e.GetActivityTaskFailedEventAttributes())
 	case *history.HistoryEvent_ActivityTaskTimedOutEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskTimedOutEventAttributes).ActivityTaskTimedOutEventAttributes
-		event.Attributes = ActivityTaskTimedOutEventAttributes(attributes)
+		event.Attributes = ActivityTaskTimedOutEventAttributes(e.GetActivityTaskTimedOutEventAttributes())
 	case *history.HistoryEvent_ActivityTaskCancelRequestedEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskCancelRequestedEventAttributes).ActivityTaskCancelRequestedEventAttributes
-		event.Attributes = ActivityTaskCancelRequestedEventAttributes(attributes)
+		event.Attributes = ActivityTaskCancelRequestedEventAttributes(e.GetActivityTaskCancelRequestedEventAttributes(), wsClient, taskToken)
 	case *history.HistoryEvent_WorkflowExecutionSignaledEventAttributes:
-		attributes := e.Attributes.(*history.HistoryEvent_WorkflowExecutionSignaledEventAttributes).WorkflowExecutionSignaledEventAttributes
-		event.Attributes = WorkflowExecutionSignaledEventAttributes(attributes)
+		event.Attributes = WorkflowExecutionSignaledEventAttributes(e.GetWorkflowExecutionSignaledEventAttributes())
+	case *history.HistoryEvent_WorkflowExecutionCancelRequestedEventAttributes:
+		event.Attributes = WorkflowExecutionCancelRequestedEventAttributes(e.GetWorkflowExecutionCancelRequestedEventAttributes())
+	case *history.HistoryEvent_ActivityTaskCanceledEventAttributes:
+		event.Attributes = ActivityTaskCanceledEventAttributes(e.GetActivityTaskCanceledEventAttributes())
 	default:
 		fmt.Printf("Liang: event type not converted %T to cadence type\n", e.Attributes)
 	}
 
 	return event
+}
+
+func ActivityTaskCanceledEventAttributes(
+	attributes *history.ActivityTaskCanceledEventAttributes,
+) *cadence.HistoryEvent_ActivityTaskCanceledEventAttributes {
+	return &cadence.HistoryEvent_ActivityTaskCanceledEventAttributes{
+		ActivityTaskCanceledEventAttributes: &cadence.ActivityTaskCanceledEventAttributes{
+			Details:                      Payloads(attributes.GetDetails()),
+			LatestCancelRequestedEventId: attributes.GetLatestCancelRequestedEventId(),
+			ScheduledEventId:             attributes.GetScheduledEventId(),
+			StartedEventId:               attributes.GetStartedEventId(),
+			Identity:                     attributes.GetIdentity(),
+		},
+	}
+}
+
+func WorkflowExecutionCancelRequestedEventAttributes(
+	attributes *history.WorkflowExecutionCancelRequestedEventAttributes,
+) *cadence.HistoryEvent_WorkflowExecutionCancelRequestedEventAttributes {
+	return &cadence.HistoryEvent_WorkflowExecutionCancelRequestedEventAttributes{
+		WorkflowExecutionCancelRequestedEventAttributes: &cadence.WorkflowExecutionCancelRequestedEventAttributes{
+			Cause:    attributes.GetCause(),
+			Identity: attributes.GetIdentity(),
+			ExternalExecutionInfo: &cadence.ExternalExecutionInfo{
+				InitiatedId:       attributes.GetExternalInitiatedEventId(),
+				WorkflowExecution: WorkflowExecution(attributes.GetExternalWorkflowExecution()),
+			},
+			//RequestId:             "",
+		},
+	}
 }
 
 func WorkflowExecutionSignaledEventAttributes(
@@ -135,13 +161,58 @@ func WorkflowExecutionSignaledEventAttributes(
 
 func ActivityTaskCancelRequestedEventAttributes(
 	attributes *history.ActivityTaskCancelRequestedEventAttributes,
+	wsClient workflowservice.WorkflowServiceClient,
+	token []byte,
 ) *cadence.HistoryEvent_ActivityTaskCancelRequestedEventAttributes {
+	activityID := getActivityIDFromScheduledEventID(attributes, wsClient, token)
+
 	return &cadence.HistoryEvent_ActivityTaskCancelRequestedEventAttributes{
 		ActivityTaskCancelRequestedEventAttributes: &cadence.ActivityTaskCancelRequestedEventAttributes{
-			//ActivityId:                   attributes.GetScheduledEventId(),
+			ActivityId:                   activityID,
 			DecisionTaskCompletedEventId: attributes.GetWorkflowTaskCompletedEventId(),
 		},
 	}
+}
+
+func getActivityIDFromScheduledEventID(attributes *history.ActivityTaskCancelRequestedEventAttributes, wsClient workflowservice.WorkflowServiceClient, token []byte) string {
+	taskToken, err := servercommon.NewProtoTaskTokenSerializer().Deserialize(token)
+	if err != nil {
+		panic(fmt.Sprintf("failed to deserialize task token: %v", err))
+	}
+
+	descNSResq, err := wsClient.DescribeNamespace(context.Background(), &workflowservice.DescribeNamespaceRequest{
+		Id: taskToken.GetNamespaceId(),
+	})
+	if err != nil {
+		panic(fmt.Sprintf("failed to describe namespace: %v", err))
+	}
+
+	getHistoryResp, err := wsClient.GetWorkflowExecutionHistory(context.Background(), &workflowservice.GetWorkflowExecutionHistoryRequest{
+		Namespace: descNSResq.GetNamespaceInfo().GetName(),
+		Execution: &temporal.WorkflowExecution{
+			WorkflowId: taskToken.GetWorkflowId(),
+			RunId:      taskToken.GetRunId(),
+		},
+		MaximumPageSize: 0,
+		NextPageToken:   nil,
+		WaitNewEvent:    false,
+		SkipArchival:    true,
+	})
+
+	if err != nil {
+		panic(fmt.Sprintf("failed to get workflow history: %v", err))
+	}
+
+	for _, e := range getHistoryResp.GetHistory().GetEvents() {
+		if e.GetEventId() == attributes.GetScheduledEventId() {
+			if e.GetEventType() != enums.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED {
+				panic(fmt.Sprintf("scheduled event is not activity task scheduled: %v", e))
+			}
+			return e.GetActivityTaskScheduledEventAttributes().GetActivityId()
+		}
+	}
+
+	panic(fmt.Sprintf("scheduled event not found: %v", attributes.GetScheduledEventId()))
 }
 
 func ActivityTaskTimedOutEventAttributes(attributes *history.ActivityTaskTimedOutEventAttributes) *cadence.HistoryEvent_ActivityTaskTimedOutEventAttributes {
@@ -553,10 +624,40 @@ func RespondActivityTaskCompletedResponse(resp *workflowservice.RespondActivityT
 	return &cadence.RespondActivityTaskCompletedResponse{}
 }
 
-func RespondActivityTaskFailedResponse(resp *workflowservice.RespondActivityTaskFailedResponse) *cadence.RespondActivityTaskFailedResponse {
+func RespondActivityTaskFailedResponse(
+	resp *workflowservice.RespondActivityTaskFailedResponse,
+) *cadence.RespondActivityTaskFailedResponse {
 	if resp == nil {
 		return nil
 	}
 
 	return &cadence.RespondActivityTaskFailedResponse{}
+}
+
+func RecordActivityTaskHeartbeatResponse(
+	resp *workflowservice.RecordActivityTaskHeartbeatResponse,
+) *cadence.RecordActivityTaskHeartbeatResponse {
+	if resp == nil {
+		return nil
+	}
+
+	return &cadence.RecordActivityTaskHeartbeatResponse{
+		CancelRequested: resp.GetCancelRequested(),
+	}
+}
+
+func ResetStickyTaskListResponse(resp *workflowservice.ResetStickyTaskQueueResponse) *cadence.ResetStickyTaskListResponse {
+	if resp == nil {
+		return nil
+	}
+
+	return &cadence.ResetStickyTaskListResponse{}
+}
+
+func RespondActivityTaskCanceledResponse(resp *workflowservice.RespondActivityTaskCanceledResponse) *cadence.RespondActivityTaskCanceledResponse {
+	if resp == nil {
+		return nil
+	}
+
+	return &cadence.RespondActivityTaskCanceledResponse{}
 }
