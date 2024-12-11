@@ -1,6 +1,7 @@
 package temporaltype
 
 import (
+	"fmt"
 	"github.com/gogo/protobuf/types"
 	cadence "github.com/uber/cadence-idl/go/proto/api/v1"
 	"go.temporal.io/api/command/v1"
@@ -10,6 +11,7 @@ import (
 	"go.temporal.io/api/query/v1"
 	"go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/converter"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -176,12 +178,10 @@ func Payload(input *cadence.Payload) *common.Payloads {
 		return nil
 	}
 
-	return &common.Payloads{
-		Payloads: []*common.Payload{
-			{
-				Data: input.GetData(),
-			},
-		},
+	if payloads, err := converter.GetDefaultDataConverter().ToPayloads(input.GetData()); err != nil {
+		panic(fmt.Sprintf("failed to convert cadence payload to temporal: %v", err))
+	} else {
+		return payloads
 	}
 }
 

@@ -415,6 +415,10 @@ func Payloads(payloads *temporal.Payloads) *cadence.Payload {
 		return nil
 	}
 
+	if len(payloads.GetPayloads()) > 1 {
+		panic(fmt.Sprintf("more than one payload is not supported: %v", payloads.GetPayloads()))
+	}
+
 	return Payload(payloads.GetPayloads()[0])
 }
 
