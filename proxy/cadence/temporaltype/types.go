@@ -13,6 +13,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"strconv"
 )
 
 func PollWorkflowTaskQueueRequest(req *cadence.PollForDecisionTaskRequest) *workflowservice.PollWorkflowTaskQueueRequest {
@@ -112,15 +113,27 @@ func Command(decision *cadence.Decision) *command.Command {
 		c.CommandType = enums.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION
 		c.Attributes = CompleteWorkflowExecutionCommandAttributes(decision.GetCompleteWorkflowExecutionDecisionAttributes())
 	case *cadence.Decision_FailWorkflowExecutionDecisionAttributes:
+		c.CommandType = enums.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION
+		c.Attributes = FailWorkflowExecutionCommandAttributes(decision.GetFailWorkflowExecutionDecisionAttributes())
 	case *cadence.Decision_RequestCancelActivityTaskDecisionAttributes:
+		c.CommandType = enums.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK
+		c.Attributes = RequestCancelActivityTaskCommandAttributes(decision.GetRequestCancelActivityTaskDecisionAttributes())
 	case *cadence.Decision_CancelTimerDecisionAttributes:
+		panic("not implemented" + decision.String())
 	case *cadence.Decision_CancelWorkflowExecutionDecisionAttributes:
+		panic("not implemented" + decision.String())
 	case *cadence.Decision_RequestCancelExternalWorkflowExecutionDecisionAttributes:
+		panic("not implemented" + decision.String())
 	case *cadence.Decision_RecordMarkerDecisionAttributes:
+		panic("not implemented" + decision.String())
 	case *cadence.Decision_ContinueAsNewWorkflowExecutionDecisionAttributes:
+		panic("not implemented" + decision.String())
 	case *cadence.Decision_StartChildWorkflowExecutionDecisionAttributes:
+		panic("not implemented" + decision.String())
 	case *cadence.Decision_SignalExternalWorkflowExecutionDecisionAttributes:
+		panic("not implemented" + decision.String())
 	case *cadence.Decision_UpsertWorkflowSearchAttributesDecisionAttributes:
+		panic("not implemented" + decision.String())
 	default:
 		panic("unknown decision type")
 	}
@@ -128,7 +141,35 @@ func Command(decision *cadence.Decision) *command.Command {
 	return c
 }
 
-func CompleteWorkflowExecutionCommandAttributes(attributes *cadence.CompleteWorkflowExecutionDecisionAttributes) *command.Command_CompleteWorkflowExecutionCommandAttributes {
+func RequestCancelActivityTaskCommandAttributes(
+	attributes *cadence.RequestCancelActivityTaskDecisionAttributes,
+) *command.Command_RequestCancelActivityTaskCommandAttributes {
+
+	activityID, err := strconv.ParseInt(attributes.GetActivityId(), 10, 64)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse activity id: %v", err))
+	}
+
+	return &command.Command_RequestCancelActivityTaskCommandAttributes{
+		RequestCancelActivityTaskCommandAttributes: &command.RequestCancelActivityTaskCommandAttributes{
+			ScheduledEventId: activityID,
+		},
+	}
+}
+
+func FailWorkflowExecutionCommandAttributes(
+	attributes *cadence.FailWorkflowExecutionDecisionAttributes,
+) *command.Command_FailWorkflowExecutionCommandAttributes {
+	return &command.Command_FailWorkflowExecutionCommandAttributes{
+		FailWorkflowExecutionCommandAttributes: &command.FailWorkflowExecutionCommandAttributes{
+			Failure: Failure(attributes.GetFailure()),
+		},
+	}
+}
+
+func CompleteWorkflowExecutionCommandAttributes(
+	attributes *cadence.CompleteWorkflowExecutionDecisionAttributes,
+) *command.Command_CompleteWorkflowExecutionCommandAttributes {
 	return &command.Command_CompleteWorkflowExecutionCommandAttributes{
 		CompleteWorkflowExecutionCommandAttributes: &command.CompleteWorkflowExecutionCommandAttributes{
 			Result: Payload(attributes.GetResult()),

@@ -111,6 +111,9 @@ func HistoryEvent(e *history.HistoryEvent) *cadence.HistoryEvent {
 	case *history.HistoryEvent_ActivityTaskCancelRequestedEventAttributes:
 		attributes := e.Attributes.(*history.HistoryEvent_ActivityTaskCancelRequestedEventAttributes).ActivityTaskCancelRequestedEventAttributes
 		event.Attributes = ActivityTaskCancelRequestedEventAttributes(attributes)
+	case *history.HistoryEvent_WorkflowExecutionSignaledEventAttributes:
+		attributes := e.Attributes.(*history.HistoryEvent_WorkflowExecutionSignaledEventAttributes).WorkflowExecutionSignaledEventAttributes
+		event.Attributes = WorkflowExecutionSignaledEventAttributes(attributes)
 	default:
 		fmt.Printf("Liang: event type not converted %T to cadence type\n", e.Attributes)
 	}
@@ -118,7 +121,21 @@ func HistoryEvent(e *history.HistoryEvent) *cadence.HistoryEvent {
 	return event
 }
 
-func ActivityTaskCancelRequestedEventAttributes(attributes *history.ActivityTaskCancelRequestedEventAttributes) *cadence.HistoryEvent_ActivityTaskCancelRequestedEventAttributes {
+func WorkflowExecutionSignaledEventAttributes(
+	attributes *history.WorkflowExecutionSignaledEventAttributes,
+) *cadence.HistoryEvent_WorkflowExecutionSignaledEventAttributes {
+	return &cadence.HistoryEvent_WorkflowExecutionSignaledEventAttributes{
+		WorkflowExecutionSignaledEventAttributes: &cadence.WorkflowExecutionSignaledEventAttributes{
+			SignalName: attributes.GetSignalName(),
+			Input:      Payloads(attributes.GetInput()),
+			Identity:   attributes.GetIdentity(),
+		},
+	}
+}
+
+func ActivityTaskCancelRequestedEventAttributes(
+	attributes *history.ActivityTaskCancelRequestedEventAttributes,
+) *cadence.HistoryEvent_ActivityTaskCancelRequestedEventAttributes {
 	return &cadence.HistoryEvent_ActivityTaskCancelRequestedEventAttributes{
 		ActivityTaskCancelRequestedEventAttributes: &cadence.ActivityTaskCancelRequestedEventAttributes{
 			//ActivityId:                   attributes.GetScheduledEventId(),
