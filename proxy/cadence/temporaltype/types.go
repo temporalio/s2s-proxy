@@ -3,6 +3,7 @@ package temporaltype
 import (
 	"fmt"
 	"github.com/gogo/protobuf/types"
+	adminv1 "github.com/uber/cadence-idl/go/proto/admin/v1"
 	cadence "github.com/uber/cadence-idl/go/proto/api/v1"
 	"go.temporal.io/api/command/v1"
 	"go.temporal.io/api/common/v1"
@@ -12,6 +13,8 @@ import (
 	"go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/server/api/adminservice/v1"
+	repication "go.temporal.io/server/api/replication/v1"
 	servercommon "go.temporal.io/server/common"
 	"golang.org/x/net/context"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -393,4 +396,32 @@ func RespondActivityTaskCanceledRequest(request *cadence.RespondActivityTaskCanc
 		//Namespace:     "",
 		//WorkerVersion: nil,
 	}
+}
+
+func GetReplicationMessagesRequest(request *adminv1.GetReplicationMessagesRequest) *adminservice.GetReplicationMessagesRequest {
+	if request == nil {
+		return nil
+	}
+
+	return &adminservice.GetReplicationMessagesRequest{
+		Tokens:      ReplicationToken(request.GetTokens()),
+		ClusterName: request.GetClusterName(),
+	}
+}
+
+func ReplicationToken(tokens []*adminv1.ReplicationToken) []*repication.ReplicationToken {
+	if tokens == nil {
+		return nil
+	}
+
+	result := make([]*repication.ReplicationToken, len(tokens))
+	for i, token := range tokens {
+		result[i] = &repication.ReplicationToken{
+			ShardId:                token.GetShardId(),
+			LastRetrievedMessageId: token.GetLastRetrievedMessageId(),
+			LastProcessedMessageId: token.GetLastProcessedMessageId(),
+			//LastProcessedVisibilityTime: nil,
+		}
+	}
+	return result
 }

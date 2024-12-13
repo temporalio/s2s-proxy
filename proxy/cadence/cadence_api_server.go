@@ -2,9 +2,11 @@ package cadence
 
 import (
 	"github.com/temporalio/s2s-proxy/client"
+	adminclient "github.com/temporalio/s2s-proxy/client/admin"
 	feclient "github.com/temporalio/s2s-proxy/client/frontend"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/transport"
+	adminv1 "github.com/uber/cadence-idl/go/proto/admin/v1"
 	apiv1 "github.com/uber/cadence-idl/go/proto/api/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -27,6 +29,7 @@ type (
 		workerProxy     apiv1.WorkerAPIYARPCServer
 		visibilityProxy apiv1.VisibilityAPIYARPCServer
 		metaProxy       apiv1.MetaAPIYARPCServer
+		adminProxy      adminv1.AdminAPIYARPCServer
 	}
 )
 
@@ -37,6 +40,7 @@ func NewCadenceAPIServer(
 ) *CadenceAPIServer {
 	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
 	workflowServiceClient := feclient.NewLazyClient(clientProvider)
+	adminServiceClient := adminclient.NewLazyClient(clientProvider)
 	return &CadenceAPIServer{
 		serviceName:     "cadence-frontend",
 		GRPCAddress:     "localhost:7833",
@@ -46,6 +50,7 @@ func NewCadenceAPIServer(
 		workerProxy:     NewWorkerServiceProxyServer(logger, workflowServiceClient),
 		visibilityProxy: NewVisibilityServiceProxyServer(logger, workflowServiceClient),
 		metaProxy:       NewMetaServiceProxyServer(logger, workflowServiceClient),
+		adminProxy:      NewAdminServiceProxyServer(logger, adminServiceClient),
 	}
 }
 
@@ -77,6 +82,9 @@ func (s *CadenceAPIServer) Start() {
 	s.dispatcher.Register(apiv1.BuildDomainAPIYARPCProcedures(s.domainProxy))
 	s.dispatcher.Register(apiv1.BuildWorkflowAPIYARPCProcedures(s.workflowProxy))
 	s.dispatcher.Register(apiv1.BuildWorkerAPIYARPCProcedures(s.workerProxy))
+	s.dispatcher.Register(apiv1.BuildVisibilityAPIYARPCProcedures(s.visibilityProxy))
+	s.dispatcher.Register(apiv1.BuildMetaAPIYARPCProcedures(s.metaProxy))
+
 	err := s.dispatcher.Start()
 	if err != nil {
 		s.logger.Fatal("Failed to start dispatcher", tag.Error(err))

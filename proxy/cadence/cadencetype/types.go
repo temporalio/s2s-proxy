@@ -4,14 +4,20 @@ import (
 	"context"
 	"fmt"
 	"github.com/gogo/protobuf/types"
+	adminv1 "github.com/uber/cadence-idl/go/proto/admin/v1"
 	cadence "github.com/uber/cadence-idl/go/proto/api/v1"
 	temporal "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/history/v1"
+	"go.temporal.io/api/namespace/v1"
+	"go.temporal.io/api/replication/v1"
 	"go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/server/api/adminservice/v1"
+	enumsspb "go.temporal.io/server/api/enums/v1"
+	repication "go.temporal.io/server/api/replication/v1"
 	servercommon "go.temporal.io/server/common"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -660,4 +666,187 @@ func RespondActivityTaskCanceledResponse(resp *workflowservice.RespondActivityTa
 	}
 
 	return &cadence.RespondActivityTaskCanceledResponse{}
+}
+
+func GetReplicationMessagesResponse(resp *adminservice.GetReplicationMessagesResponse) *adminv1.GetReplicationMessagesResponse {
+	if resp == nil {
+		return nil
+	}
+
+	return &adminv1.GetReplicationMessagesResponse{
+		ShardMessages: ShardMessages(resp.GetShardMessages()),
+	}
+}
+
+func ShardMessages(messages map[int32]*repication.ReplicationMessages) map[int32]*adminv1.ReplicationMessages {
+	if messages == nil {
+		return nil
+	}
+
+	result := make(map[int32]*adminv1.ReplicationMessages, len(messages))
+	for k, v := range messages {
+		result[k] = ReplicationMessages(v)
+	}
+	return result
+}
+
+func ReplicationMessages(v *repication.ReplicationMessages) *adminv1.ReplicationMessages {
+	if v == nil {
+		return nil
+	}
+
+	return &adminv1.ReplicationMessages{
+		ReplicationTasks:       ReplicationTasks(v.GetReplicationTasks()),
+		LastRetrievedMessageId: v.GetLastRetrievedMessageId(),
+		HasMore:                v.GetHasMore(),
+		SyncShardStatus:        SyncShardStatus(v.GetSyncShardStatus()),
+	}
+}
+
+func SyncShardStatus(status *repication.SyncShardStatus) *adminv1.SyncShardStatus {
+	if status == nil {
+		return nil
+	}
+
+	return &adminv1.SyncShardStatus{
+		Timestamp: Timestamp(status.GetStatusTime()),
+	}
+}
+
+func ReplicationTasks(tasks []*repication.ReplicationTask) []*adminv1.ReplicationTask {
+	if tasks == nil {
+		return nil
+	}
+
+	result := make([]*adminv1.ReplicationTask, 0, len(tasks))
+	for _, t := range tasks {
+		result = append(result, ReplicationTask(t))
+	}
+	return result
+}
+
+func ReplicationTask(t *repication.ReplicationTask) *adminv1.ReplicationTask {
+	if t == nil {
+		return nil
+	}
+
+	replicationTask := &adminv1.ReplicationTask{
+		SourceTaskId: t.GetSourceTaskId(),
+		CreationTime: Timestamp(t.GetVisibilityTime()),
+	}
+
+	switch t.GetTaskType() {
+	case enumsspb.REPLICATION_TASK_TYPE_NAMESPACE_TASK:
+		replicationTask.TaskType = adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_DOMAIN
+		replicationTask.Attributes = DomainTaskAttributes(t.GetNamespaceTaskAttributes())
+	case enumsspb.REPLICATION_TASK_TYPE_HISTORY_TASK:
+		replicationTask.TaskType = adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_HISTORY
+	case enumsspb.REPLICATION_TASK_TYPE_SYNC_SHARD_STATUS_TASK:
+		replicationTask.TaskType = adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_SYNC_SHARD_STATUS
+	case enumsspb.REPLICATION_TASK_TYPE_SYNC_ACTIVITY_TASK:
+		replicationTask.TaskType = adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_SYNC_ACTIVITY
+	case enumsspb.REPLICATION_TASK_TYPE_HISTORY_METADATA_TASK:
+		replicationTask.TaskType = adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_HISTORY_METADATA
+	case enumsspb.REPLICATION_TASK_TYPE_HISTORY_V2_TASK:
+		replicationTask.TaskType = adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_HISTORY_V2
+	default:
+		panic(fmt.Sprintf("unsupported replication task type: %v", t.GetTaskType()))
+	}
+
+	return replicationTask
+}
+
+func DomainTaskAttributes(attributes *repication.NamespaceTaskAttributes) *adminv1.ReplicationTask_DomainTaskAttributes {
+	if attributes == nil {
+		return nil
+	}
+
+	return &adminv1.ReplicationTask_DomainTaskAttributes{
+		DomainTaskAttributes: &adminv1.DomainTaskAttributes{
+			DomainOperation: DomainOperation(attributes.GetNamespaceOperation()),
+			Id:              attributes.GetId(),
+			Domain:          Domain(attributes.GetInfo(), attributes.GetConfig(), attributes.GetReplicationConfig(), attributes.GetFailoverVersion()),
+			ConfigVersion:   attributes.GetConfigVersion(),
+			FailoverVersion: attributes.GetFailoverVersion(),
+			//PreviousFailoverVersion: 0,
+		},
+	}
+}
+
+func Domain(
+	info *namespace.NamespaceInfo,
+	config *namespace.NamespaceConfig,
+	replicationConfig *replication.NamespaceReplicationConfig,
+	failoverVersion int64,
+) *cadence.Domain {
+	if info == nil {
+		return nil
+	}
+
+	return &cadence.Domain{
+		Id:                               info.GetId(),
+		Name:                             info.GetName(),
+		Status:                           DomainStatus(info.GetState()),
+		Description:                      info.GetDescription(),
+		OwnerEmail:                       info.GetOwnerEmail(),
+		Data:                             info.GetData(),
+		WorkflowExecutionRetentionPeriod: Duration(config.GetWorkflowExecutionRetentionTtl()),
+		BadBinaries:                      BadBinaries(config.GetBadBinaries()),
+		HistoryArchivalStatus:            ArchivalStatus(config.GetHistoryArchivalState()),
+		HistoryArchivalUri:               config.GetVisibilityArchivalUri(),
+		VisibilityArchivalStatus:         ArchivalStatus(config.GetVisibilityArchivalState()),
+		VisibilityArchivalUri:            config.GetVisibilityArchivalUri(),
+		ActiveClusterName:                replicationConfig.GetActiveClusterName(),
+		Clusters:                         Clusters(replicationConfig.GetClusters()),
+		FailoverVersion:                  failoverVersion,
+		IsGlobalDomain:                   true,
+		//FailoverInfo:                     nil,
+		//IsolationGroups:                  nil,
+		//AsyncWorkflowConfig:              nil,
+	}
+}
+
+func Clusters(clusters []*replication.ClusterReplicationConfig) []*cadence.ClusterReplicationConfiguration {
+	if clusters == nil {
+		return nil
+	}
+
+	result := make([]*cadence.ClusterReplicationConfiguration, 0, len(clusters))
+	for _, c := range clusters {
+		result = append(result, &cadence.ClusterReplicationConfiguration{
+			ClusterName: c.GetClusterName(),
+		})
+	}
+	return result
+}
+
+func ArchivalStatus(state enums.ArchivalState) cadence.ArchivalStatus {
+	return cadence.ArchivalStatus(state)
+}
+
+func BadBinaries(badBinaries *namespace.BadBinaries) *cadence.BadBinaries {
+	if badBinaries == nil {
+		return nil
+	}
+
+	binaries := make(map[string]*cadence.BadBinaryInfo, len(badBinaries.GetBinaries()))
+	for k, v := range badBinaries.GetBinaries() {
+		binaries[k] = &cadence.BadBinaryInfo{
+			Reason:      v.GetReason(),
+			Operator:    v.GetOperator(),
+			CreatedTime: Timestamp(v.GetCreateTime()),
+		}
+	}
+
+	return &cadence.BadBinaries{
+		Binaries: binaries,
+	}
+}
+
+func DomainStatus(state enums.NamespaceState) cadence.DomainStatus {
+	return cadence.DomainStatus(state)
+}
+
+func DomainOperation(operation enumsspb.NamespaceOperation) adminv1.DomainOperation {
+	return adminv1.DomainOperation(operation)
 }
