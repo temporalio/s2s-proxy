@@ -9,15 +9,19 @@ import (
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/failure/v1"
+	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/query/v1"
+	"go.temporal.io/api/replication/v1"
 	"go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/server/api/adminservice/v1"
+	enumsspb "go.temporal.io/server/api/enums/v1"
 	repication "go.temporal.io/server/api/replication/v1"
 	servercommon "go.temporal.io/server/common"
 	"golang.org/x/net/context"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func PollWorkflowTaskQueueRequest(req *cadence.PollForDecisionTaskRequest) *workflowservice.PollWorkflowTaskQueueRequest {
@@ -424,4 +428,170 @@ func ReplicationToken(tokens []*adminv1.ReplicationToken) []*repication.Replicat
 		}
 	}
 	return result
+}
+
+func GetReplicationMessagesResponse(resp *adminv1.GetReplicationMessagesResponse) *adminservice.GetReplicationMessagesResponse {
+	if resp == nil {
+		return nil
+	}
+
+	messages := make(map[int32]*repication.ReplicationMessages, len(resp.GetShardMessages()))
+	for i, m := range resp.GetShardMessages() {
+		messages[i] = &repication.ReplicationMessages{
+			ReplicationTasks:       ReplicationTasks(m.GetReplicationTasks()),
+			LastRetrievedMessageId: m.GetLastRetrievedMessageId(),
+			HasMore:                m.GetHasMore(),
+			SyncShardStatus:        SyncShardStatus(m.GetSyncShardStatus()),
+		}
+	}
+
+	return &adminservice.GetReplicationMessagesResponse{
+		ShardMessages: messages,
+	}
+}
+
+func ReplicationTasks(tasks []*adminv1.ReplicationTask) []*repication.ReplicationTask {
+	if tasks == nil {
+		return nil
+	}
+
+	result := make([]*repication.ReplicationTask, len(tasks))
+	for i, task := range tasks {
+		result[i] = ReplicationTask(task)
+	}
+	return result
+}
+
+func ReplicationTask(t *adminv1.ReplicationTask) *repication.ReplicationTask {
+	task := &repication.ReplicationTask{
+		SourceTaskId:   t.GetSourceTaskId(),
+		VisibilityTime: Timestamp(t.GetCreationTime()),
+	}
+
+	switch t.GetTaskType() {
+	case adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_HISTORY:
+		task.TaskType = enumsspb.REPLICATION_TASK_TYPE_HISTORY_TASK
+		task.Attributes = &repication.ReplicationTask_HistoryTaskAttributes{
+			HistoryTaskAttributes: &repication.HistoryTaskAttributes{},
+		}
+	case adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_SYNC_SHARD_STATUS:
+		task.TaskType = enumsspb.REPLICATION_TASK_TYPE_SYNC_SHARD_STATUS_TASK
+	case adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_DOMAIN:
+		task.TaskType = enumsspb.REPLICATION_TASK_TYPE_NAMESPACE_TASK
+		task.Attributes = NamespaceTaskAttributes(t.GetDomainTaskAttributes())
+	case adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_SYNC_ACTIVITY:
+		task.TaskType = enumsspb.REPLICATION_TASK_TYPE_SYNC_ACTIVITY_TASK
+	default:
+		panic(fmt.Sprintf("unknown Cadence replication task type: %v", t.GetTaskType()))
+	}
+
+	return task
+}
+
+func NamespaceTaskAttributes(attributes *adminv1.DomainTaskAttributes) *repication.ReplicationTask_NamespaceTaskAttributes {
+	return &repication.ReplicationTask_NamespaceTaskAttributes{
+		NamespaceTaskAttributes: &repication.NamespaceTaskAttributes{
+			NamespaceOperation: NamespaceOperation(attributes.GetDomainOperation()),
+			Id:                 attributes.GetId(),
+			Info:               NamespaceInfo(attributes.GetDomain()),
+			Config:             NamespaceConfig(attributes.GetDomain()),
+			ReplicationConfig:  ReplicationConfig(attributes),
+			ConfigVersion:      attributes.GetConfigVersion(),
+			FailoverVersion:    attributes.GetDomain().GetFailoverVersion(),
+			//FailoverHistory:       nil,
+			//NexusOutgoingServices: nil,
+		},
+	}
+}
+
+func ReplicationConfig(attributes *adminv1.DomainTaskAttributes) *replication.NamespaceReplicationConfig {
+	var clusters []*replication.ClusterReplicationConfig
+	for _, cluster := range attributes.GetDomain().GetClusters() {
+		clusters = append(clusters, &replication.ClusterReplicationConfig{
+			ClusterName: cluster.GetClusterName(),
+		})
+	}
+
+	return &replication.NamespaceReplicationConfig{
+		ActiveClusterName: attributes.GetDomain().GetActiveClusterName(),
+		Clusters:          clusters,
+		State:             enums.REPLICATION_STATE_NORMAL,
+	}
+}
+
+func NamespaceConfig(domain *cadence.Domain) *namespace.NamespaceConfig {
+	if domain == nil {
+		return nil
+	}
+
+	return &namespace.NamespaceConfig{
+		WorkflowExecutionRetentionTtl: Duration(domain.GetWorkflowExecutionRetentionPeriod()),
+		BadBinaries:                   BadBinaries(domain.GetBadBinaries()),
+		HistoryArchivalState:          enums.ArchivalState(domain.GetHistoryArchivalStatus()),
+		HistoryArchivalUri:            domain.GetHistoryArchivalUri(),
+		VisibilityArchivalState:       enums.ArchivalState(domain.GetVisibilityArchivalStatus()),
+		VisibilityArchivalUri:         domain.GetVisibilityArchivalUri(),
+		//CustomSearchAttributeAliases:  nil,
+	}
+}
+
+func BadBinaries(binaries *cadence.BadBinaries) *namespace.BadBinaries {
+	if binaries == nil {
+		return nil
+	}
+
+	badBinaries := make(map[string]*namespace.BadBinaryInfo)
+	for k, v := range binaries.GetBinaries() {
+		badBinaries[k] = &namespace.BadBinaryInfo{
+			Reason:     v.GetReason(),
+			Operator:   v.GetOperator(),
+			CreateTime: Timestamp(v.GetCreatedTime()),
+		}
+	}
+
+	return &namespace.BadBinaries{
+		Binaries: badBinaries,
+	}
+}
+
+func NamespaceInfo(domain *cadence.Domain) *namespace.NamespaceInfo {
+	if domain == nil {
+		return nil
+	}
+
+	return &namespace.NamespaceInfo{
+		Name:        domain.GetName(),
+		State:       enums.NamespaceState(domain.GetStatus()),
+		Description: domain.GetDescription(),
+		OwnerEmail:  domain.GetOwnerEmail(),
+		Data:        domain.GetData(),
+		Id:          domain.GetId(),
+		//Capabilities:      nil,
+		//SupportsSchedules: false,
+	}
+}
+
+func NamespaceOperation(operation adminv1.DomainOperation) enumsspb.NamespaceOperation {
+	return enumsspb.NamespaceOperation(operation)
+}
+
+func SyncShardStatus(status *adminv1.SyncShardStatus) *repication.SyncShardStatus {
+	if status == nil {
+		return nil
+	}
+
+	return &repication.SyncShardStatus{
+		StatusTime: Timestamp(status.GetTimestamp()),
+	}
+}
+
+func Timestamp(timestamp *types.Timestamp) *timestamppb.Timestamp {
+	if timestamp == nil {
+		return nil
+	}
+
+	return &timestamppb.Timestamp{
+		Seconds: timestamp.GetSeconds(),
+		Nanos:   timestamp.GetNanos(),
+	}
 }

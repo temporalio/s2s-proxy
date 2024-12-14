@@ -850,3 +850,23 @@ func DomainStatus(state enums.NamespaceState) cadence.DomainStatus {
 func DomainOperation(operation enumsspb.NamespaceOperation) adminv1.DomainOperation {
 	return adminv1.DomainOperation(operation)
 }
+
+func GetReplicationMessagesRequest(request *adminservice.GetReplicationMessagesRequest) *adminv1.GetReplicationMessagesRequest {
+	if request == nil {
+		return nil
+	}
+
+	var tokens []*adminv1.ReplicationToken
+	for _, t := range request.GetTokens() {
+		tokens = append(tokens, &adminv1.ReplicationToken{
+			ShardId:                t.GetShardId(),
+			LastRetrievedMessageId: t.GetLastRetrievedMessageId(),
+			LastProcessedMessageId: t.GetLastProcessedMessageId(),
+		})
+	}
+
+	return &adminv1.GetReplicationMessagesRequest{
+		Tokens:      tokens,
+		ClusterName: request.GetClusterName(),
+	}
+}
