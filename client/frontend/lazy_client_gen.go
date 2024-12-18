@@ -23,10 +23,11 @@ func (c *lazyClient) CountWorkflowExecutions(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.CountWorkflowExecutions, request: %v", string(output)))
-
-	return client.CountWorkflowExecutions(ctx, request, opts...)
+	resp, err = client.CountWorkflowExecutions(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.CountWorkflowExecutions, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) CreateSchedule(
@@ -40,10 +41,11 @@ func (c *lazyClient) CreateSchedule(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.CreateSchedule, request: %v", string(output)))
-
-	return client.CreateSchedule(ctx, request, opts...)
+	resp, err = client.CreateSchedule(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.CreateSchedule, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) DeleteSchedule(
@@ -57,10 +59,11 @@ func (c *lazyClient) DeleteSchedule(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.DeleteSchedule, request: %v", string(output)))
-
-	return client.DeleteSchedule(ctx, request, opts...)
+	resp, err = client.DeleteSchedule(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.DeleteSchedule, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) DeleteWorkflowExecution(
@@ -74,10 +77,11 @@ func (c *lazyClient) DeleteWorkflowExecution(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.DeleteWorkflowExecution, request: %v", string(output)))
-
-	return client.DeleteWorkflowExecution(ctx, request, opts...)
+	resp, err = client.DeleteWorkflowExecution(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.DeleteWorkflowExecution, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) DeprecateNamespace(
@@ -91,10 +95,11 @@ func (c *lazyClient) DeprecateNamespace(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.DeprecateNamespace, request: %v", string(output)))
-
-	return client.DeprecateNamespace(ctx, request, opts...)
+	resp, err = client.DeprecateNamespace(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.DeprecateNamespace, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) DescribeBatchOperation(
@@ -108,10 +113,11 @@ func (c *lazyClient) DescribeBatchOperation(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.DescribeBatchOperation, request: %v", string(output)))
-
-	return client.DescribeBatchOperation(ctx, request, opts...)
+	resp, err = client.DescribeBatchOperation(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.DescribeBatchOperation, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) DescribeNamespace(
@@ -125,10 +131,11 @@ func (c *lazyClient) DescribeNamespace(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.DescribeNamespace, request: %v", string(output)))
-
-	return client.DescribeNamespace(ctx, request, opts...)
+	resp, err = client.DescribeNamespace(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.DescribeNamespace, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) DescribeSchedule(
@@ -142,10 +149,11 @@ func (c *lazyClient) DescribeSchedule(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.DescribeSchedule, request: %v", string(output)))
-
-	return client.DescribeSchedule(ctx, request, opts...)
+	resp, err = client.DescribeSchedule(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.DescribeSchedule, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) DescribeTaskQueue(
@@ -159,10 +167,11 @@ func (c *lazyClient) DescribeTaskQueue(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.DescribeTaskQueue, request: %v", string(output)))
-
-	return client.DescribeTaskQueue(ctx, request, opts...)
+	resp, err = client.DescribeTaskQueue(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.DescribeTaskQueue, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) DescribeWorkflowExecution(
@@ -176,10 +185,11 @@ func (c *lazyClient) DescribeWorkflowExecution(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.DescribeWorkflowExecution, request: %v", string(output)))
-
-	return client.DescribeWorkflowExecution(ctx, request, opts...)
+	resp, err = client.DescribeWorkflowExecution(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.DescribeWorkflowExecution, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ExecuteMultiOperation(
@@ -193,10 +203,11 @@ func (c *lazyClient) ExecuteMultiOperation(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ExecuteMultiOperation, request: %v", string(output)))
-
-	return client.ExecuteMultiOperation(ctx, request, opts...)
+	resp, err = client.ExecuteMultiOperation(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ExecuteMultiOperation, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) GetClusterInfo(
@@ -210,10 +221,11 @@ func (c *lazyClient) GetClusterInfo(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.GetClusterInfo, request: %v", string(output)))
-
-	return client.GetClusterInfo(ctx, request, opts...)
+	resp, err = client.GetClusterInfo(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.GetClusterInfo, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) GetSearchAttributes(
@@ -227,10 +239,11 @@ func (c *lazyClient) GetSearchAttributes(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.GetSearchAttributes, request: %v", string(output)))
-
-	return client.GetSearchAttributes(ctx, request, opts...)
+	resp, err = client.GetSearchAttributes(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.GetSearchAttributes, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) GetSystemInfo(
@@ -244,10 +257,11 @@ func (c *lazyClient) GetSystemInfo(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.GetSystemInfo, request: %v", string(output)))
-
-	return client.GetSystemInfo(ctx, request, opts...)
+	resp, err = client.GetSystemInfo(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.GetSystemInfo, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) GetWorkerBuildIdCompatibility(
@@ -261,10 +275,11 @@ func (c *lazyClient) GetWorkerBuildIdCompatibility(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.GetWorkerBuildIdCompatibility, request: %v", string(output)))
-
-	return client.GetWorkerBuildIdCompatibility(ctx, request, opts...)
+	resp, err = client.GetWorkerBuildIdCompatibility(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.GetWorkerBuildIdCompatibility, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) GetWorkerTaskReachability(
@@ -278,10 +293,11 @@ func (c *lazyClient) GetWorkerTaskReachability(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.GetWorkerTaskReachability, request: %v", string(output)))
-
-	return client.GetWorkerTaskReachability(ctx, request, opts...)
+	resp, err = client.GetWorkerTaskReachability(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.GetWorkerTaskReachability, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) GetWorkerVersioningRules(
@@ -295,10 +311,11 @@ func (c *lazyClient) GetWorkerVersioningRules(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.GetWorkerVersioningRules, request: %v", string(output)))
-
-	return client.GetWorkerVersioningRules(ctx, request, opts...)
+	resp, err = client.GetWorkerVersioningRules(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.GetWorkerVersioningRules, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) GetWorkflowExecutionHistory(
@@ -312,10 +329,11 @@ func (c *lazyClient) GetWorkflowExecutionHistory(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.GetWorkflowExecutionHistory, request: %v", string(output)))
-
-	return client.GetWorkflowExecutionHistory(ctx, request, opts...)
+	resp, err = client.GetWorkflowExecutionHistory(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.GetWorkflowExecutionHistory, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) GetWorkflowExecutionHistoryReverse(
@@ -329,10 +347,11 @@ func (c *lazyClient) GetWorkflowExecutionHistoryReverse(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.GetWorkflowExecutionHistoryReverse, request: %v", string(output)))
-
-	return client.GetWorkflowExecutionHistoryReverse(ctx, request, opts...)
+	resp, err = client.GetWorkflowExecutionHistoryReverse(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.GetWorkflowExecutionHistoryReverse, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ListArchivedWorkflowExecutions(
@@ -346,10 +365,11 @@ func (c *lazyClient) ListArchivedWorkflowExecutions(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ListArchivedWorkflowExecutions, request: %v", string(output)))
-
-	return client.ListArchivedWorkflowExecutions(ctx, request, opts...)
+	resp, err = client.ListArchivedWorkflowExecutions(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ListArchivedWorkflowExecutions, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ListBatchOperations(
@@ -363,10 +383,11 @@ func (c *lazyClient) ListBatchOperations(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ListBatchOperations, request: %v", string(output)))
-
-	return client.ListBatchOperations(ctx, request, opts...)
+	resp, err = client.ListBatchOperations(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ListBatchOperations, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ListClosedWorkflowExecutions(
@@ -380,10 +401,11 @@ func (c *lazyClient) ListClosedWorkflowExecutions(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ListClosedWorkflowExecutions, request: %v", string(output)))
-
-	return client.ListClosedWorkflowExecutions(ctx, request, opts...)
+	resp, err = client.ListClosedWorkflowExecutions(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ListClosedWorkflowExecutions, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ListNamespaces(
@@ -397,10 +419,11 @@ func (c *lazyClient) ListNamespaces(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ListNamespaces, request: %v", string(output)))
-
-	return client.ListNamespaces(ctx, request, opts...)
+	resp, err = client.ListNamespaces(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ListNamespaces, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ListOpenWorkflowExecutions(
@@ -414,10 +437,11 @@ func (c *lazyClient) ListOpenWorkflowExecutions(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ListOpenWorkflowExecutions, request: %v", string(output)))
-
-	return client.ListOpenWorkflowExecutions(ctx, request, opts...)
+	resp, err = client.ListOpenWorkflowExecutions(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ListOpenWorkflowExecutions, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ListScheduleMatchingTimes(
@@ -431,10 +455,11 @@ func (c *lazyClient) ListScheduleMatchingTimes(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ListScheduleMatchingTimes, request: %v", string(output)))
-
-	return client.ListScheduleMatchingTimes(ctx, request, opts...)
+	resp, err = client.ListScheduleMatchingTimes(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ListScheduleMatchingTimes, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ListSchedules(
@@ -448,10 +473,11 @@ func (c *lazyClient) ListSchedules(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ListSchedules, request: %v", string(output)))
-
-	return client.ListSchedules(ctx, request, opts...)
+	resp, err = client.ListSchedules(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ListSchedules, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ListTaskQueuePartitions(
@@ -465,10 +491,11 @@ func (c *lazyClient) ListTaskQueuePartitions(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ListTaskQueuePartitions, request: %v", string(output)))
-
-	return client.ListTaskQueuePartitions(ctx, request, opts...)
+	resp, err = client.ListTaskQueuePartitions(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ListTaskQueuePartitions, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ListWorkflowExecutions(
@@ -482,10 +509,11 @@ func (c *lazyClient) ListWorkflowExecutions(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ListWorkflowExecutions, request: %v", string(output)))
-
-	return client.ListWorkflowExecutions(ctx, request, opts...)
+	resp, err = client.ListWorkflowExecutions(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ListWorkflowExecutions, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) PatchSchedule(
@@ -499,10 +527,11 @@ func (c *lazyClient) PatchSchedule(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.PatchSchedule, request: %v", string(output)))
-
-	return client.PatchSchedule(ctx, request, opts...)
+	resp, err = client.PatchSchedule(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.PatchSchedule, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) PollActivityTaskQueue(
@@ -516,10 +545,11 @@ func (c *lazyClient) PollActivityTaskQueue(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.PollActivityTaskQueue, request: %v", string(output)))
-
-	return client.PollActivityTaskQueue(ctx, request, opts...)
+	resp, err = client.PollActivityTaskQueue(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.PollActivityTaskQueue, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) PollNexusTaskQueue(
@@ -533,10 +563,11 @@ func (c *lazyClient) PollNexusTaskQueue(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.PollNexusTaskQueue, request: %v", string(output)))
-
-	return client.PollNexusTaskQueue(ctx, request, opts...)
+	resp, err = client.PollNexusTaskQueue(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.PollNexusTaskQueue, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) PollWorkflowExecutionUpdate(
@@ -550,10 +581,11 @@ func (c *lazyClient) PollWorkflowExecutionUpdate(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.PollWorkflowExecutionUpdate, request: %v", string(output)))
-
-	return client.PollWorkflowExecutionUpdate(ctx, request, opts...)
+	resp, err = client.PollWorkflowExecutionUpdate(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.PollWorkflowExecutionUpdate, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) PollWorkflowTaskQueue(
@@ -567,10 +599,11 @@ func (c *lazyClient) PollWorkflowTaskQueue(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.PollWorkflowTaskQueue, request: %v", string(output)))
-
-	return client.PollWorkflowTaskQueue(ctx, request, opts...)
+	resp, err = client.PollWorkflowTaskQueue(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.PollWorkflowTaskQueue, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) QueryWorkflow(
@@ -584,10 +617,11 @@ func (c *lazyClient) QueryWorkflow(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.QueryWorkflow, request: %v", string(output)))
-
-	return client.QueryWorkflow(ctx, request, opts...)
+	resp, err = client.QueryWorkflow(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.QueryWorkflow, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RecordActivityTaskHeartbeat(
@@ -601,10 +635,11 @@ func (c *lazyClient) RecordActivityTaskHeartbeat(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RecordActivityTaskHeartbeat, request: %v", string(output)))
-
-	return client.RecordActivityTaskHeartbeat(ctx, request, opts...)
+	resp, err = client.RecordActivityTaskHeartbeat(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RecordActivityTaskHeartbeat, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RecordActivityTaskHeartbeatById(
@@ -618,10 +653,11 @@ func (c *lazyClient) RecordActivityTaskHeartbeatById(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RecordActivityTaskHeartbeatById, request: %v", string(output)))
-
-	return client.RecordActivityTaskHeartbeatById(ctx, request, opts...)
+	resp, err = client.RecordActivityTaskHeartbeatById(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RecordActivityTaskHeartbeatById, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RegisterNamespace(
@@ -635,10 +671,11 @@ func (c *lazyClient) RegisterNamespace(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RegisterNamespace, request: %v", string(output)))
-
-	return client.RegisterNamespace(ctx, request, opts...)
+	resp, err = client.RegisterNamespace(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RegisterNamespace, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RequestCancelWorkflowExecution(
@@ -652,10 +689,11 @@ func (c *lazyClient) RequestCancelWorkflowExecution(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RequestCancelWorkflowExecution, request: %v", string(output)))
-
-	return client.RequestCancelWorkflowExecution(ctx, request, opts...)
+	resp, err = client.RequestCancelWorkflowExecution(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RequestCancelWorkflowExecution, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ResetStickyTaskQueue(
@@ -669,10 +707,11 @@ func (c *lazyClient) ResetStickyTaskQueue(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ResetStickyTaskQueue, request: %v", string(output)))
-
-	return client.ResetStickyTaskQueue(ctx, request, opts...)
+	resp, err = client.ResetStickyTaskQueue(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ResetStickyTaskQueue, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ResetWorkflowExecution(
@@ -686,10 +725,11 @@ func (c *lazyClient) ResetWorkflowExecution(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ResetWorkflowExecution, request: %v", string(output)))
-
-	return client.ResetWorkflowExecution(ctx, request, opts...)
+	resp, err = client.ResetWorkflowExecution(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ResetWorkflowExecution, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RespondActivityTaskCanceled(
@@ -703,10 +743,11 @@ func (c *lazyClient) RespondActivityTaskCanceled(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCanceled, request: %v", string(output)))
-
-	return client.RespondActivityTaskCanceled(ctx, request, opts...)
+	resp, err = client.RespondActivityTaskCanceled(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCanceled, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RespondActivityTaskCanceledById(
@@ -720,10 +761,11 @@ func (c *lazyClient) RespondActivityTaskCanceledById(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCanceledById, request: %v", string(output)))
-
-	return client.RespondActivityTaskCanceledById(ctx, request, opts...)
+	resp, err = client.RespondActivityTaskCanceledById(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCanceledById, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RespondActivityTaskCompleted(
@@ -737,10 +779,11 @@ func (c *lazyClient) RespondActivityTaskCompleted(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCompleted, request: %v", string(output)))
-
-	return client.RespondActivityTaskCompleted(ctx, request, opts...)
+	resp, err = client.RespondActivityTaskCompleted(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCompleted, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RespondActivityTaskCompletedById(
@@ -754,10 +797,11 @@ func (c *lazyClient) RespondActivityTaskCompletedById(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCompletedById, request: %v", string(output)))
-
-	return client.RespondActivityTaskCompletedById(ctx, request, opts...)
+	resp, err = client.RespondActivityTaskCompletedById(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCompletedById, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RespondActivityTaskFailed(
@@ -771,10 +815,11 @@ func (c *lazyClient) RespondActivityTaskFailed(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskFailed, request: %v", string(output)))
-
-	return client.RespondActivityTaskFailed(ctx, request, opts...)
+	resp, err = client.RespondActivityTaskFailed(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskFailed, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RespondActivityTaskFailedById(
@@ -788,10 +833,11 @@ func (c *lazyClient) RespondActivityTaskFailedById(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskFailedById, request: %v", string(output)))
-
-	return client.RespondActivityTaskFailedById(ctx, request, opts...)
+	resp, err = client.RespondActivityTaskFailedById(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskFailedById, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RespondNexusTaskCompleted(
@@ -805,10 +851,11 @@ func (c *lazyClient) RespondNexusTaskCompleted(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RespondNexusTaskCompleted, request: %v", string(output)))
-
-	return client.RespondNexusTaskCompleted(ctx, request, opts...)
+	resp, err = client.RespondNexusTaskCompleted(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RespondNexusTaskCompleted, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RespondNexusTaskFailed(
@@ -822,10 +869,11 @@ func (c *lazyClient) RespondNexusTaskFailed(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RespondNexusTaskFailed, request: %v", string(output)))
-
-	return client.RespondNexusTaskFailed(ctx, request, opts...)
+	resp, err = client.RespondNexusTaskFailed(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RespondNexusTaskFailed, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RespondQueryTaskCompleted(
@@ -839,10 +887,11 @@ func (c *lazyClient) RespondQueryTaskCompleted(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RespondQueryTaskCompleted, request: %v", string(output)))
-
-	return client.RespondQueryTaskCompleted(ctx, request, opts...)
+	resp, err = client.RespondQueryTaskCompleted(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RespondQueryTaskCompleted, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RespondWorkflowTaskCompleted(
@@ -856,10 +905,11 @@ func (c *lazyClient) RespondWorkflowTaskCompleted(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RespondWorkflowTaskCompleted, request: %v", string(output)))
-
-	return client.RespondWorkflowTaskCompleted(ctx, request, opts...)
+	resp, err = client.RespondWorkflowTaskCompleted(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RespondWorkflowTaskCompleted, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) RespondWorkflowTaskFailed(
@@ -873,10 +923,11 @@ func (c *lazyClient) RespondWorkflowTaskFailed(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.RespondWorkflowTaskFailed, request: %v", string(output)))
-
-	return client.RespondWorkflowTaskFailed(ctx, request, opts...)
+	resp, err = client.RespondWorkflowTaskFailed(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.RespondWorkflowTaskFailed, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) ScanWorkflowExecutions(
@@ -890,10 +941,11 @@ func (c *lazyClient) ScanWorkflowExecutions(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.ScanWorkflowExecutions, request: %v", string(output)))
-
-	return client.ScanWorkflowExecutions(ctx, request, opts...)
+	resp, err = client.ScanWorkflowExecutions(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.ScanWorkflowExecutions, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) SignalWithStartWorkflowExecution(
@@ -907,10 +959,11 @@ func (c *lazyClient) SignalWithStartWorkflowExecution(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.SignalWithStartWorkflowExecution, request: %v", string(output)))
-
-	return client.SignalWithStartWorkflowExecution(ctx, request, opts...)
+	resp, err = client.SignalWithStartWorkflowExecution(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.SignalWithStartWorkflowExecution, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) SignalWorkflowExecution(
@@ -924,10 +977,11 @@ func (c *lazyClient) SignalWorkflowExecution(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.SignalWorkflowExecution, request: %v", string(output)))
-
-	return client.SignalWorkflowExecution(ctx, request, opts...)
+	resp, err = client.SignalWorkflowExecution(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.SignalWorkflowExecution, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) StartBatchOperation(
@@ -941,10 +995,11 @@ func (c *lazyClient) StartBatchOperation(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.StartBatchOperation, request: %v", string(output)))
-
-	return client.StartBatchOperation(ctx, request, opts...)
+	resp, err = client.StartBatchOperation(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.StartBatchOperation, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) StartWorkflowExecution(
@@ -958,10 +1013,11 @@ func (c *lazyClient) StartWorkflowExecution(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.StartWorkflowExecution, request: %v", string(output)))
-
-	return client.StartWorkflowExecution(ctx, request, opts...)
+	resp, err = client.StartWorkflowExecution(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.StartWorkflowExecution, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) StopBatchOperation(
@@ -975,10 +1031,11 @@ func (c *lazyClient) StopBatchOperation(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.StopBatchOperation, request: %v", string(output)))
-
-	return client.StopBatchOperation(ctx, request, opts...)
+	resp, err = client.StopBatchOperation(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.StopBatchOperation, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) TerminateWorkflowExecution(
@@ -992,10 +1049,11 @@ func (c *lazyClient) TerminateWorkflowExecution(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.TerminateWorkflowExecution, request: %v", string(output)))
-
-	return client.TerminateWorkflowExecution(ctx, request, opts...)
+	resp, err = client.TerminateWorkflowExecution(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.TerminateWorkflowExecution, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) UpdateNamespace(
@@ -1009,10 +1067,11 @@ func (c *lazyClient) UpdateNamespace(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.UpdateNamespace, request: %v", string(output)))
-
-	return client.UpdateNamespace(ctx, request, opts...)
+	resp, err = client.UpdateNamespace(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.UpdateNamespace, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) UpdateSchedule(
@@ -1026,10 +1085,11 @@ func (c *lazyClient) UpdateSchedule(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.UpdateSchedule, request: %v", string(output)))
-
-	return client.UpdateSchedule(ctx, request, opts...)
+	resp, err = client.UpdateSchedule(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.UpdateSchedule, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) UpdateWorkerBuildIdCompatibility(
@@ -1043,10 +1103,11 @@ func (c *lazyClient) UpdateWorkerBuildIdCompatibility(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.UpdateWorkerBuildIdCompatibility, request: %v", string(output)))
-
-	return client.UpdateWorkerBuildIdCompatibility(ctx, request, opts...)
+	resp, err = client.UpdateWorkerBuildIdCompatibility(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.UpdateWorkerBuildIdCompatibility, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) UpdateWorkerVersioningRules(
@@ -1060,10 +1121,11 @@ func (c *lazyClient) UpdateWorkerVersioningRules(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.UpdateWorkerVersioningRules, request: %v", string(output)))
-
-	return client.UpdateWorkerVersioningRules(ctx, request, opts...)
+	resp, err = client.UpdateWorkerVersioningRules(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.UpdateWorkerVersioningRules, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
 
 func (c *lazyClient) UpdateWorkflowExecution(
@@ -1077,8 +1139,9 @@ func (c *lazyClient) UpdateWorkflowExecution(
 		return resp, err
 	}
 
-	output, _ := json.Marshal(request)
-	c.logger.Info(fmt.Sprintf("frontend.UpdateWorkflowExecution, request: %v", string(output)))
-
-	return client.UpdateWorkflowExecution(ctx, request, opts...)
+	resp, err = client.UpdateWorkflowExecution(ctx, request, opts...)
+	in, _ := json.Marshal(request)
+	out, _ := json.Marshal(resp)
+	c.logger.Info(fmt.Sprintf("frontend.UpdateWorkflowExecution, request: %v, resp: %v", string(in), string(out)))
+	return resp, err
 }
