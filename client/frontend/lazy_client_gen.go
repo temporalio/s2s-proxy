@@ -5,6 +5,8 @@ package frontend
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"	
 
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
@@ -21,6 +23,9 @@ func (c *lazyClient) CountWorkflowExecutions(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.CountWorkflowExecutions, request: %v", string(output)))
+
 	return client.CountWorkflowExecutions(ctx, request, opts...)
 }
 
@@ -34,6 +39,9 @@ func (c *lazyClient) CreateSchedule(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.CreateSchedule, request: %v", string(output)))
 
 	return client.CreateSchedule(ctx, request, opts...)
 }
@@ -49,6 +57,9 @@ func (c *lazyClient) DeleteSchedule(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.DeleteSchedule, request: %v", string(output)))
+
 	return client.DeleteSchedule(ctx, request, opts...)
 }
 
@@ -62,6 +73,9 @@ func (c *lazyClient) DeleteWorkflowExecution(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.DeleteWorkflowExecution, request: %v", string(output)))
 
 	return client.DeleteWorkflowExecution(ctx, request, opts...)
 }
@@ -77,6 +91,9 @@ func (c *lazyClient) DeprecateNamespace(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.DeprecateNamespace, request: %v", string(output)))
+
 	return client.DeprecateNamespace(ctx, request, opts...)
 }
 
@@ -90,6 +107,9 @@ func (c *lazyClient) DescribeBatchOperation(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.DescribeBatchOperation, request: %v", string(output)))
 
 	return client.DescribeBatchOperation(ctx, request, opts...)
 }
@@ -105,6 +125,9 @@ func (c *lazyClient) DescribeNamespace(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.DescribeNamespace, request: %v", string(output)))
+
 	return client.DescribeNamespace(ctx, request, opts...)
 }
 
@@ -118,6 +141,9 @@ func (c *lazyClient) DescribeSchedule(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.DescribeSchedule, request: %v", string(output)))
 
 	return client.DescribeSchedule(ctx, request, opts...)
 }
@@ -133,6 +159,9 @@ func (c *lazyClient) DescribeTaskQueue(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.DescribeTaskQueue, request: %v", string(output)))
+
 	return client.DescribeTaskQueue(ctx, request, opts...)
 }
 
@@ -146,6 +175,9 @@ func (c *lazyClient) DescribeWorkflowExecution(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.DescribeWorkflowExecution, request: %v", string(output)))
 
 	return client.DescribeWorkflowExecution(ctx, request, opts...)
 }
@@ -161,6 +193,9 @@ func (c *lazyClient) ExecuteMultiOperation(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ExecuteMultiOperation, request: %v", string(output)))
+
 	return client.ExecuteMultiOperation(ctx, request, opts...)
 }
 
@@ -174,6 +209,9 @@ func (c *lazyClient) GetClusterInfo(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.GetClusterInfo, request: %v", string(output)))
 
 	return client.GetClusterInfo(ctx, request, opts...)
 }
@@ -189,6 +227,9 @@ func (c *lazyClient) GetSearchAttributes(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.GetSearchAttributes, request: %v", string(output)))
+
 	return client.GetSearchAttributes(ctx, request, opts...)
 }
 
@@ -202,6 +243,9 @@ func (c *lazyClient) GetSystemInfo(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.GetSystemInfo, request: %v", string(output)))
 
 	return client.GetSystemInfo(ctx, request, opts...)
 }
@@ -217,6 +261,9 @@ func (c *lazyClient) GetWorkerBuildIdCompatibility(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.GetWorkerBuildIdCompatibility, request: %v", string(output)))
+
 	return client.GetWorkerBuildIdCompatibility(ctx, request, opts...)
 }
 
@@ -230,6 +277,9 @@ func (c *lazyClient) GetWorkerTaskReachability(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.GetWorkerTaskReachability, request: %v", string(output)))
 
 	return client.GetWorkerTaskReachability(ctx, request, opts...)
 }
@@ -245,6 +295,9 @@ func (c *lazyClient) GetWorkerVersioningRules(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.GetWorkerVersioningRules, request: %v", string(output)))
+
 	return client.GetWorkerVersioningRules(ctx, request, opts...)
 }
 
@@ -258,6 +311,9 @@ func (c *lazyClient) GetWorkflowExecutionHistory(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.GetWorkflowExecutionHistory, request: %v", string(output)))
 
 	return client.GetWorkflowExecutionHistory(ctx, request, opts...)
 }
@@ -273,6 +329,9 @@ func (c *lazyClient) GetWorkflowExecutionHistoryReverse(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.GetWorkflowExecutionHistoryReverse, request: %v", string(output)))
+
 	return client.GetWorkflowExecutionHistoryReverse(ctx, request, opts...)
 }
 
@@ -286,6 +345,9 @@ func (c *lazyClient) ListArchivedWorkflowExecutions(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ListArchivedWorkflowExecutions, request: %v", string(output)))
 
 	return client.ListArchivedWorkflowExecutions(ctx, request, opts...)
 }
@@ -301,6 +363,9 @@ func (c *lazyClient) ListBatchOperations(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ListBatchOperations, request: %v", string(output)))
+
 	return client.ListBatchOperations(ctx, request, opts...)
 }
 
@@ -314,6 +379,9 @@ func (c *lazyClient) ListClosedWorkflowExecutions(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ListClosedWorkflowExecutions, request: %v", string(output)))
 
 	return client.ListClosedWorkflowExecutions(ctx, request, opts...)
 }
@@ -329,6 +397,9 @@ func (c *lazyClient) ListNamespaces(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ListNamespaces, request: %v", string(output)))
+
 	return client.ListNamespaces(ctx, request, opts...)
 }
 
@@ -342,6 +413,9 @@ func (c *lazyClient) ListOpenWorkflowExecutions(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ListOpenWorkflowExecutions, request: %v", string(output)))
 
 	return client.ListOpenWorkflowExecutions(ctx, request, opts...)
 }
@@ -357,6 +431,9 @@ func (c *lazyClient) ListScheduleMatchingTimes(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ListScheduleMatchingTimes, request: %v", string(output)))
+
 	return client.ListScheduleMatchingTimes(ctx, request, opts...)
 }
 
@@ -370,6 +447,9 @@ func (c *lazyClient) ListSchedules(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ListSchedules, request: %v", string(output)))
 
 	return client.ListSchedules(ctx, request, opts...)
 }
@@ -385,6 +465,9 @@ func (c *lazyClient) ListTaskQueuePartitions(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ListTaskQueuePartitions, request: %v", string(output)))
+
 	return client.ListTaskQueuePartitions(ctx, request, opts...)
 }
 
@@ -398,6 +481,9 @@ func (c *lazyClient) ListWorkflowExecutions(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ListWorkflowExecutions, request: %v", string(output)))
 
 	return client.ListWorkflowExecutions(ctx, request, opts...)
 }
@@ -413,6 +499,9 @@ func (c *lazyClient) PatchSchedule(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.PatchSchedule, request: %v", string(output)))
+
 	return client.PatchSchedule(ctx, request, opts...)
 }
 
@@ -426,6 +515,9 @@ func (c *lazyClient) PollActivityTaskQueue(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.PollActivityTaskQueue, request: %v", string(output)))
 
 	return client.PollActivityTaskQueue(ctx, request, opts...)
 }
@@ -441,6 +533,9 @@ func (c *lazyClient) PollNexusTaskQueue(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.PollNexusTaskQueue, request: %v", string(output)))
+
 	return client.PollNexusTaskQueue(ctx, request, opts...)
 }
 
@@ -454,6 +549,9 @@ func (c *lazyClient) PollWorkflowExecutionUpdate(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.PollWorkflowExecutionUpdate, request: %v", string(output)))
 
 	return client.PollWorkflowExecutionUpdate(ctx, request, opts...)
 }
@@ -469,6 +567,9 @@ func (c *lazyClient) PollWorkflowTaskQueue(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.PollWorkflowTaskQueue, request: %v", string(output)))
+
 	return client.PollWorkflowTaskQueue(ctx, request, opts...)
 }
 
@@ -482,6 +583,9 @@ func (c *lazyClient) QueryWorkflow(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.QueryWorkflow, request: %v", string(output)))
 
 	return client.QueryWorkflow(ctx, request, opts...)
 }
@@ -497,6 +601,9 @@ func (c *lazyClient) RecordActivityTaskHeartbeat(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RecordActivityTaskHeartbeat, request: %v", string(output)))
+
 	return client.RecordActivityTaskHeartbeat(ctx, request, opts...)
 }
 
@@ -510,6 +617,9 @@ func (c *lazyClient) RecordActivityTaskHeartbeatById(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RecordActivityTaskHeartbeatById, request: %v", string(output)))
 
 	return client.RecordActivityTaskHeartbeatById(ctx, request, opts...)
 }
@@ -525,6 +635,9 @@ func (c *lazyClient) RegisterNamespace(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RegisterNamespace, request: %v", string(output)))
+
 	return client.RegisterNamespace(ctx, request, opts...)
 }
 
@@ -538,6 +651,9 @@ func (c *lazyClient) RequestCancelWorkflowExecution(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RequestCancelWorkflowExecution, request: %v", string(output)))
 
 	return client.RequestCancelWorkflowExecution(ctx, request, opts...)
 }
@@ -553,6 +669,9 @@ func (c *lazyClient) ResetStickyTaskQueue(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ResetStickyTaskQueue, request: %v", string(output)))
+
 	return client.ResetStickyTaskQueue(ctx, request, opts...)
 }
 
@@ -566,6 +685,9 @@ func (c *lazyClient) ResetWorkflowExecution(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ResetWorkflowExecution, request: %v", string(output)))
 
 	return client.ResetWorkflowExecution(ctx, request, opts...)
 }
@@ -581,6 +703,9 @@ func (c *lazyClient) RespondActivityTaskCanceled(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCanceled, request: %v", string(output)))
+
 	return client.RespondActivityTaskCanceled(ctx, request, opts...)
 }
 
@@ -594,6 +719,9 @@ func (c *lazyClient) RespondActivityTaskCanceledById(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCanceledById, request: %v", string(output)))
 
 	return client.RespondActivityTaskCanceledById(ctx, request, opts...)
 }
@@ -609,6 +737,9 @@ func (c *lazyClient) RespondActivityTaskCompleted(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCompleted, request: %v", string(output)))
+
 	return client.RespondActivityTaskCompleted(ctx, request, opts...)
 }
 
@@ -622,6 +753,9 @@ func (c *lazyClient) RespondActivityTaskCompletedById(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskCompletedById, request: %v", string(output)))
 
 	return client.RespondActivityTaskCompletedById(ctx, request, opts...)
 }
@@ -637,6 +771,9 @@ func (c *lazyClient) RespondActivityTaskFailed(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskFailed, request: %v", string(output)))
+
 	return client.RespondActivityTaskFailed(ctx, request, opts...)
 }
 
@@ -650,6 +787,9 @@ func (c *lazyClient) RespondActivityTaskFailedById(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RespondActivityTaskFailedById, request: %v", string(output)))
 
 	return client.RespondActivityTaskFailedById(ctx, request, opts...)
 }
@@ -665,6 +805,9 @@ func (c *lazyClient) RespondNexusTaskCompleted(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RespondNexusTaskCompleted, request: %v", string(output)))
+
 	return client.RespondNexusTaskCompleted(ctx, request, opts...)
 }
 
@@ -678,6 +821,9 @@ func (c *lazyClient) RespondNexusTaskFailed(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RespondNexusTaskFailed, request: %v", string(output)))
 
 	return client.RespondNexusTaskFailed(ctx, request, opts...)
 }
@@ -693,6 +839,9 @@ func (c *lazyClient) RespondQueryTaskCompleted(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RespondQueryTaskCompleted, request: %v", string(output)))
+
 	return client.RespondQueryTaskCompleted(ctx, request, opts...)
 }
 
@@ -706,6 +855,9 @@ func (c *lazyClient) RespondWorkflowTaskCompleted(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RespondWorkflowTaskCompleted, request: %v", string(output)))
 
 	return client.RespondWorkflowTaskCompleted(ctx, request, opts...)
 }
@@ -721,6 +873,9 @@ func (c *lazyClient) RespondWorkflowTaskFailed(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.RespondWorkflowTaskFailed, request: %v", string(output)))
+
 	return client.RespondWorkflowTaskFailed(ctx, request, opts...)
 }
 
@@ -734,6 +889,9 @@ func (c *lazyClient) ScanWorkflowExecutions(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.ScanWorkflowExecutions, request: %v", string(output)))
 
 	return client.ScanWorkflowExecutions(ctx, request, opts...)
 }
@@ -749,6 +907,9 @@ func (c *lazyClient) SignalWithStartWorkflowExecution(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.SignalWithStartWorkflowExecution, request: %v", string(output)))
+
 	return client.SignalWithStartWorkflowExecution(ctx, request, opts...)
 }
 
@@ -762,6 +923,9 @@ func (c *lazyClient) SignalWorkflowExecution(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.SignalWorkflowExecution, request: %v", string(output)))
 
 	return client.SignalWorkflowExecution(ctx, request, opts...)
 }
@@ -777,6 +941,9 @@ func (c *lazyClient) StartBatchOperation(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.StartBatchOperation, request: %v", string(output)))
+
 	return client.StartBatchOperation(ctx, request, opts...)
 }
 
@@ -790,6 +957,9 @@ func (c *lazyClient) StartWorkflowExecution(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.StartWorkflowExecution, request: %v", string(output)))
 
 	return client.StartWorkflowExecution(ctx, request, opts...)
 }
@@ -805,6 +975,9 @@ func (c *lazyClient) StopBatchOperation(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.StopBatchOperation, request: %v", string(output)))
+
 	return client.StopBatchOperation(ctx, request, opts...)
 }
 
@@ -818,6 +991,9 @@ func (c *lazyClient) TerminateWorkflowExecution(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.TerminateWorkflowExecution, request: %v", string(output)))
 
 	return client.TerminateWorkflowExecution(ctx, request, opts...)
 }
@@ -833,6 +1009,9 @@ func (c *lazyClient) UpdateNamespace(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.UpdateNamespace, request: %v", string(output)))
+
 	return client.UpdateNamespace(ctx, request, opts...)
 }
 
@@ -846,6 +1025,9 @@ func (c *lazyClient) UpdateSchedule(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.UpdateSchedule, request: %v", string(output)))
 
 	return client.UpdateSchedule(ctx, request, opts...)
 }
@@ -861,6 +1043,9 @@ func (c *lazyClient) UpdateWorkerBuildIdCompatibility(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.UpdateWorkerBuildIdCompatibility, request: %v", string(output)))
+
 	return client.UpdateWorkerBuildIdCompatibility(ctx, request, opts...)
 }
 
@@ -875,6 +1060,9 @@ func (c *lazyClient) UpdateWorkerVersioningRules(
 		return resp, err
 	}
 
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.UpdateWorkerVersioningRules, request: %v", string(output)))
+
 	return client.UpdateWorkerVersioningRules(ctx, request, opts...)
 }
 
@@ -888,6 +1076,9 @@ func (c *lazyClient) UpdateWorkflowExecution(
 	if err != nil {
 		return resp, err
 	}
+
+	output, _ := json.Marshal(request)
+	c.logger.Info(fmt.Sprintf("frontend.UpdateWorkflowExecution, request: %v", string(output)))
 
 	return client.UpdateWorkflowExecution(ctx, request, opts...)
 }

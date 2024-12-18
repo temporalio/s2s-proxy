@@ -68,6 +68,7 @@ func startProxy(c *cli.Context) error {
 		logCfg.Level = logLevel
 	}
 
+	logCfg.Stdout = true
 	app := fx.New(
 		fx.Provide(func() *cli.Context { return c }),
 		fx.Provide(func() log.Logger {

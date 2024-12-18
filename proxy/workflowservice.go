@@ -32,7 +32,7 @@ func NewWorkflowServiceProxyServer(
 	logger = log.With(logger, common.ServiceTag(serviceName))
 	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
 	return &workflowServiceProxyServer{
-		workflowServiceClient: feclient.NewLazyClient(clientProvider),
+		workflowServiceClient: feclient.NewLazyClient(clientProvider, logger),
 		logger:                logger,
 	}
 }
