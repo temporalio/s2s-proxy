@@ -19,6 +19,8 @@ import (
 	enumsspb "go.temporal.io/server/api/enums/v1"
 	repication "go.temporal.io/server/api/replication/v1"
 	servercommon "go.temporal.io/server/common"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -582,7 +584,10 @@ func Timestamp(t *timestamppb.Timestamp) *types.Timestamp {
 	}
 }
 
-func Error(err error) error {
+func Error(err error, logger log.Logger) error {
+	if err != nil {
+		logger.Error("Operation error", tag.Error(err))
+	}
 	return err
 }
 

@@ -75,7 +75,7 @@ func (a adminServiceAdaptor) GetWorkflowExecutionRawHistory(ctx context.Context,
 }
 
 func (a adminServiceAdaptor) GetReplicationMessages(ctx context.Context, in *adminservice.GetReplicationMessagesRequest, opts ...grpc.CallOption) (*adminservice.GetReplicationMessagesResponse, error) {
-	a.logger.Debug("Cadence client: GetReplicationMessages called.")
+	// a.logger.Debug("Cadence client: GetReplicationMessages called.")
 
 	tReq := cadencetype.GetReplicationMessagesRequest(in)
 	resp, err := a.cadenceClient.GetReplicationMessages(ctx, tReq)
@@ -83,7 +83,7 @@ func (a adminServiceAdaptor) GetReplicationMessages(ctx context.Context, in *adm
 }
 
 func (a adminServiceAdaptor) GetNamespaceReplicationMessages(ctx context.Context, in *adminservice.GetNamespaceReplicationMessagesRequest, opts ...grpc.CallOption) (*adminservice.GetNamespaceReplicationMessagesResponse, error) {
-	a.logger.Debug("Cadence client: GetNamespaceReplicationMessages called.")
+	//a.logger.Debug("Cadence client: GetNamespaceReplicationMessages called.")
 
 	tReq := cadencetype.GetNamespaceReplicationMessagesRequest(in)
 	resp, err := a.cadenceClient.GetDomainReplicationMessages(ctx, tReq)

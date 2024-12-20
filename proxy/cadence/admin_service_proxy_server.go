@@ -7,7 +7,6 @@ import (
 	adminv1 "github.com/uber/cadence-idl/go/proto/admin/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
 )
 
 var _ adminv1.AdminAPIYARPCServer = adminServiceProxyServer{}
@@ -65,11 +64,11 @@ func (a adminServiceProxyServer) GetWorkflowExecutionRawHistoryV2(ctx context.Co
 }
 
 func (a adminServiceProxyServer) GetReplicationMessages(ctx context.Context, request *adminv1.GetReplicationMessagesRequest) (*adminv1.GetReplicationMessagesResponse, error) {
-	a.logger.Info("Cadence Admin Proxy: GetReplicationMessages called.")
+	// a.logger.Info("Cadence Admin Proxy: GetReplicationMessages called.")
 
 	tReq := temporaltype.GetReplicationMessagesRequest(request)
 	resp, err := a.adminClient.GetReplicationMessages(ctx, tReq)
-	return cadencetype.GetReplicationMessagesResponse(resp), cadencetype.Error(err)
+	return cadencetype.GetReplicationMessagesResponse(resp), cadencetype.Error(err, a.logger)
 }
 
 func (a adminServiceProxyServer) GetDLQReplicationMessages(ctx context.Context, request *adminv1.GetDLQReplicationMessagesRequest) (*adminv1.GetDLQReplicationMessagesResponse, error) {
@@ -78,15 +77,11 @@ func (a adminServiceProxyServer) GetDLQReplicationMessages(ctx context.Context, 
 }
 
 func (a adminServiceProxyServer) GetDomainReplicationMessages(ctx context.Context, request *adminv1.GetDomainReplicationMessagesRequest) (*adminv1.GetDomainReplicationMessagesResponse, error) {
-	a.logger.Info("Cadence Admin Proxy: GetDomainReplicationMessages called.")
+	//a.logger.Info("Cadence Admin Proxy: GetDomainReplicationMessages called.")
 
 	tReq := temporaltype.GetNamespaceReplicationMessagesRequest(request)
 	resp, err := a.adminClient.GetNamespaceReplicationMessages(ctx, tReq)
-	if err != nil {
-		a.logger.Error("GetDomainReplicationMessages failed", tag.Error(err))
-	}
-
-	return cadencetype.GetDomainReplicationMessagesResponse(resp), cadencetype.Error(err)
+	return cadencetype.GetDomainReplicationMessagesResponse(resp), cadencetype.Error(err, a.logger)
 }
 
 func (a adminServiceProxyServer) ReapplyEvents(ctx context.Context, request *adminv1.ReapplyEventsRequest) (*adminv1.ReapplyEventsResponse, error) {

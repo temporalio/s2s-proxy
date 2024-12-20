@@ -65,9 +65,9 @@ func NewProxy(
 	}
 
 	proxy.cadenceServer = newCadenceProxyServer(
-		*s2sConfig.Inbound,
+		*s2sConfig.Outbound,
 		proxyOptions{
-			IsInbound: true,
+			IsInbound: false,
 			Config:    s2sConfig,
 		},
 		transManager,
