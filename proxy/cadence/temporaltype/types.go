@@ -3,7 +3,7 @@ package temporaltype
 import (
 	"fmt"
 	"github.com/gogo/protobuf/types"
-	adminv1 "github.com/uber/cadence-idl/go/proto/admin/v1"
+	cadenceadmin "github.com/uber/cadence-idl/go/proto/admin/v1"
 	cadence "github.com/uber/cadence-idl/go/proto/api/v1"
 	"go.temporal.io/api/command/v1"
 	"go.temporal.io/api/common/v1"
@@ -15,7 +15,7 @@ import (
 	"go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/server/api/adminservice/v1"
+	temporaladmin "go.temporal.io/server/api/adminservice/v1"
 	enumsspb "go.temporal.io/server/api/enums/v1"
 	repication "go.temporal.io/server/api/replication/v1"
 	servercommon "go.temporal.io/server/common"
@@ -402,18 +402,18 @@ func RespondActivityTaskCanceledRequest(request *cadence.RespondActivityTaskCanc
 	}
 }
 
-func GetReplicationMessagesRequest(request *adminv1.GetReplicationMessagesRequest) *adminservice.GetReplicationMessagesRequest {
+func GetReplicationMessagesRequest(request *cadenceadmin.GetReplicationMessagesRequest) *temporaladmin.GetReplicationMessagesRequest {
 	if request == nil {
 		return nil
 	}
 
-	return &adminservice.GetReplicationMessagesRequest{
+	return &temporaladmin.GetReplicationMessagesRequest{
 		Tokens:      ReplicationToken(request.GetTokens()),
 		ClusterName: request.GetClusterName(),
 	}
 }
 
-func ReplicationToken(tokens []*adminv1.ReplicationToken) []*repication.ReplicationToken {
+func ReplicationToken(tokens []*cadenceadmin.ReplicationToken) []*repication.ReplicationToken {
 	if tokens == nil {
 		return nil
 	}
@@ -421,7 +421,7 @@ func ReplicationToken(tokens []*adminv1.ReplicationToken) []*repication.Replicat
 	result := make([]*repication.ReplicationToken, len(tokens))
 	for i, token := range tokens {
 		result[i] = &repication.ReplicationToken{
-			ShardId:                token.GetShardId(),
+			ShardId:                token.GetShardId() + 1,
 			LastRetrievedMessageId: token.GetLastRetrievedMessageId(),
 			LastProcessedMessageId: token.GetLastProcessedMessageId(),
 			//LastProcessedVisibilityTime: nil,
@@ -430,14 +430,14 @@ func ReplicationToken(tokens []*adminv1.ReplicationToken) []*repication.Replicat
 	return result
 }
 
-func GetReplicationMessagesResponse(resp *adminv1.GetReplicationMessagesResponse) *adminservice.GetReplicationMessagesResponse {
+func GetReplicationMessagesResponse(resp *cadenceadmin.GetReplicationMessagesResponse) *temporaladmin.GetReplicationMessagesResponse {
 	if resp == nil {
 		return nil
 	}
 
 	messages := make(map[int32]*repication.ReplicationMessages, len(resp.GetShardMessages()))
 	for i, m := range resp.GetShardMessages() {
-		messages[i] = &repication.ReplicationMessages{
+		messages[i+1] = &repication.ReplicationMessages{
 			ReplicationTasks:       ReplicationTasks(m.GetReplicationTasks()),
 			LastRetrievedMessageId: m.GetLastRetrievedMessageId(),
 			HasMore:                m.GetHasMore(),
@@ -445,12 +445,12 @@ func GetReplicationMessagesResponse(resp *adminv1.GetReplicationMessagesResponse
 		}
 	}
 
-	return &adminservice.GetReplicationMessagesResponse{
+	return &temporaladmin.GetReplicationMessagesResponse{
 		ShardMessages: messages,
 	}
 }
 
-func ReplicationTasks(tasks []*adminv1.ReplicationTask) []*repication.ReplicationTask {
+func ReplicationTasks(tasks []*cadenceadmin.ReplicationTask) []*repication.ReplicationTask {
 	if tasks == nil {
 		return nil
 	}
@@ -462,24 +462,24 @@ func ReplicationTasks(tasks []*adminv1.ReplicationTask) []*repication.Replicatio
 	return result
 }
 
-func ReplicationTask(t *adminv1.ReplicationTask) *repication.ReplicationTask {
+func ReplicationTask(t *cadenceadmin.ReplicationTask) *repication.ReplicationTask {
 	task := &repication.ReplicationTask{
 		SourceTaskId:   t.GetSourceTaskId(),
 		VisibilityTime: Timestamp(t.GetCreationTime()),
 	}
 
 	switch t.GetTaskType() {
-	case adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_HISTORY:
+	case cadenceadmin.ReplicationTaskType_REPLICATION_TASK_TYPE_HISTORY:
 		task.TaskType = enumsspb.REPLICATION_TASK_TYPE_HISTORY_TASK
 		task.Attributes = &repication.ReplicationTask_HistoryTaskAttributes{
 			HistoryTaskAttributes: &repication.HistoryTaskAttributes{},
 		}
-	case adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_SYNC_SHARD_STATUS:
+	case cadenceadmin.ReplicationTaskType_REPLICATION_TASK_TYPE_SYNC_SHARD_STATUS:
 		task.TaskType = enumsspb.REPLICATION_TASK_TYPE_SYNC_SHARD_STATUS_TASK
-	case adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_DOMAIN:
+	case cadenceadmin.ReplicationTaskType_REPLICATION_TASK_TYPE_DOMAIN:
 		task.TaskType = enumsspb.REPLICATION_TASK_TYPE_NAMESPACE_TASK
 		task.Attributes = NamespaceTaskAttributes(t.GetDomainTaskAttributes())
-	case adminv1.ReplicationTaskType_REPLICATION_TASK_TYPE_SYNC_ACTIVITY:
+	case cadenceadmin.ReplicationTaskType_REPLICATION_TASK_TYPE_SYNC_ACTIVITY:
 		task.TaskType = enumsspb.REPLICATION_TASK_TYPE_SYNC_ACTIVITY_TASK
 	default:
 		panic(fmt.Sprintf("unknown Cadence replication task type: %v", t.GetTaskType()))
@@ -488,7 +488,7 @@ func ReplicationTask(t *adminv1.ReplicationTask) *repication.ReplicationTask {
 	return task
 }
 
-func NamespaceTaskAttributes(attributes *adminv1.DomainTaskAttributes) *repication.ReplicationTask_NamespaceTaskAttributes {
+func NamespaceTaskAttributes(attributes *cadenceadmin.DomainTaskAttributes) *repication.ReplicationTask_NamespaceTaskAttributes {
 	return &repication.ReplicationTask_NamespaceTaskAttributes{
 		NamespaceTaskAttributes: &repication.NamespaceTaskAttributes{
 			NamespaceOperation: NamespaceOperation(attributes.GetDomainOperation()),
@@ -504,7 +504,7 @@ func NamespaceTaskAttributes(attributes *adminv1.DomainTaskAttributes) *repicati
 	}
 }
 
-func ReplicationConfig(attributes *adminv1.DomainTaskAttributes) *replication.NamespaceReplicationConfig {
+func ReplicationConfig(attributes *cadenceadmin.DomainTaskAttributes) *replication.NamespaceReplicationConfig {
 	var clusters []*replication.ClusterReplicationConfig
 	for _, cluster := range attributes.GetDomain().GetClusters() {
 		clusters = append(clusters, &replication.ClusterReplicationConfig{
@@ -571,11 +571,11 @@ func NamespaceInfo(domain *cadence.Domain) *namespace.NamespaceInfo {
 	}
 }
 
-func NamespaceOperation(operation adminv1.DomainOperation) enumsspb.NamespaceOperation {
+func NamespaceOperation(operation cadenceadmin.DomainOperation) enumsspb.NamespaceOperation {
 	return enumsspb.NamespaceOperation(operation)
 }
 
-func SyncShardStatus(status *adminv1.SyncShardStatus) *repication.SyncShardStatus {
+func SyncShardStatus(status *cadenceadmin.SyncShardStatus) *repication.SyncShardStatus {
 	if status == nil {
 		return nil
 	}
@@ -596,12 +596,12 @@ func Timestamp(timestamp *types.Timestamp) *timestamppb.Timestamp {
 	}
 }
 
-func DescribeClusterResponse(resp *adminv1.DescribeClusterResponse) *adminservice.DescribeClusterResponse {
+func DescribeClusterResponse(resp *cadenceadmin.DescribeClusterResponse) *temporaladmin.DescribeClusterResponse {
 	if resp == nil {
 		return nil
 	}
 
-	return &adminservice.DescribeClusterResponse{
+	return &temporaladmin.DescribeClusterResponse{
 		SupportedClients:         nil,
 		ServerVersion:            "",
 		MembershipInfo:           nil,
@@ -618,7 +618,7 @@ func DescribeClusterResponse(resp *adminv1.DescribeClusterResponse) *adminservic
 	}
 }
 
-func GetNamespaceReplicationMessagesResponse(resp *adminv1.GetDomainReplicationMessagesResponse) *adminservice.GetNamespaceReplicationMessagesResponse {
+func GetNamespaceReplicationMessagesResponse(resp *cadenceadmin.GetDomainReplicationMessagesResponse) *temporaladmin.GetNamespaceReplicationMessagesResponse {
 	if resp == nil || resp.GetMessages() == nil {
 		return nil
 	}
@@ -630,17 +630,17 @@ func GetNamespaceReplicationMessagesResponse(resp *adminv1.GetDomainReplicationM
 		SyncShardStatus:        SyncShardStatus(resp.GetMessages().GetSyncShardStatus()),
 	}
 
-	return &adminservice.GetNamespaceReplicationMessagesResponse{
+	return &temporaladmin.GetNamespaceReplicationMessagesResponse{
 		Messages: messages,
 	}
 }
 
-func GetNamespaceReplicationMessagesRequest(request *adminv1.GetDomainReplicationMessagesRequest) *adminservice.GetNamespaceReplicationMessagesRequest {
+func GetNamespaceReplicationMessagesRequest(request *cadenceadmin.GetDomainReplicationMessagesRequest) *temporaladmin.GetNamespaceReplicationMessagesRequest {
 	if request == nil {
 		return nil
 	}
 
-	return &adminservice.GetNamespaceReplicationMessagesRequest{
+	return &temporaladmin.GetNamespaceReplicationMessagesRequest{
 		ClusterName:            request.GetClusterName(),
 		LastRetrievedMessageId: Int64Value(request.GetLastRetrievedMessageId()),
 		LastProcessedMessageId: Int64Value(request.GetLastProcessedMessageId()),
