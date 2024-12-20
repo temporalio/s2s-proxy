@@ -1,4 +1,4 @@
-package proxy
+package client
 
 import (
 	"context"
@@ -16,6 +16,13 @@ type adminServiceAdaptor struct {
 }
 
 var _ adminservice.AdminServiceClient = adminServiceAdaptor{}
+
+func NewAdminServiceAdaptor(logger log.Logger, cadenceClient adminv1.AdminAPIYARPCClient) adminservice.AdminServiceClient {
+	return adminServiceAdaptor{
+		logger:        logger,
+		cadenceClient: cadenceClient,
+	}
+}
 
 func (a adminServiceAdaptor) RebuildMutableState(ctx context.Context, in *adminservice.RebuildMutableStateRequest, opts ...grpc.CallOption) (*adminservice.RebuildMutableStateResponse, error) {
 	//TODO implement me
@@ -68,7 +75,7 @@ func (a adminServiceAdaptor) GetWorkflowExecutionRawHistory(ctx context.Context,
 }
 
 func (a adminServiceAdaptor) GetReplicationMessages(ctx context.Context, in *adminservice.GetReplicationMessagesRequest, opts ...grpc.CallOption) (*adminservice.GetReplicationMessagesResponse, error) {
-	a.logger.Info("Cadence client: GetReplicationMessages called.")
+	a.logger.Debug("Cadence client: GetReplicationMessages called.")
 
 	tReq := cadencetype.GetReplicationMessagesRequest(in)
 	resp, err := a.cadenceClient.GetReplicationMessages(ctx, tReq)
@@ -76,8 +83,11 @@ func (a adminServiceAdaptor) GetReplicationMessages(ctx context.Context, in *adm
 }
 
 func (a adminServiceAdaptor) GetNamespaceReplicationMessages(ctx context.Context, in *adminservice.GetNamespaceReplicationMessagesRequest, opts ...grpc.CallOption) (*adminservice.GetNamespaceReplicationMessagesResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	a.logger.Debug("Cadence client: GetNamespaceReplicationMessages called.")
+
+	tReq := cadencetype.GetNamespaceReplicationMessagesRequest(in)
+	resp, err := a.cadenceClient.GetDomainReplicationMessages(ctx, tReq)
+	return temporaltype.GetNamespaceReplicationMessagesResponse(resp), err
 }
 
 func (a adminServiceAdaptor) GetDLQReplicationMessages(ctx context.Context, in *adminservice.GetDLQReplicationMessagesRequest, opts ...grpc.CallOption) (*adminservice.GetDLQReplicationMessagesResponse, error) {
@@ -106,8 +116,11 @@ func (a adminServiceAdaptor) GetSearchAttributes(ctx context.Context, in *admins
 }
 
 func (a adminServiceAdaptor) DescribeCluster(ctx context.Context, in *adminservice.DescribeClusterRequest, opts ...grpc.CallOption) (*adminservice.DescribeClusterResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	a.logger.Info("Cadence client: DescribeCluster called.")
+
+	tReq := cadencetype.DescribeClusterRequest(in)
+	resp, err := a.cadenceClient.DescribeCluster(ctx, tReq)
+	return temporaltype.DescribeClusterResponse(resp), err
 }
 
 func (a adminServiceAdaptor) ListClusters(ctx context.Context, in *adminservice.ListClustersRequest, opts ...grpc.CallOption) (*adminservice.ListClustersResponse, error) {

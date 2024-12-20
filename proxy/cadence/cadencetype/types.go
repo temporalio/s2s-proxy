@@ -870,3 +870,39 @@ func GetReplicationMessagesRequest(request *adminservice.GetReplicationMessagesR
 		ClusterName: request.GetClusterName(),
 	}
 }
+
+func DescribeClusterRequest(in *adminservice.DescribeClusterRequest) *adminv1.DescribeClusterRequest {
+	if in == nil {
+		return nil
+	}
+
+	return &adminv1.DescribeClusterRequest{}
+}
+
+func GetNamespaceReplicationMessagesRequest(in *adminservice.GetNamespaceReplicationMessagesRequest) *adminv1.GetDomainReplicationMessagesRequest {
+	if in == nil {
+		return nil
+	}
+
+	return &adminv1.GetDomainReplicationMessagesRequest{
+		LastRetrievedMessageId: Int64Value(in.GetLastRetrievedMessageId()),
+		LastProcessedMessageId: Int64Value(in.GetLastProcessedMessageId()),
+		ClusterName:            in.GetClusterName(),
+	}
+}
+
+func Int64Value(id int64) *types.Int64Value {
+	return &types.Int64Value{
+		Value: id,
+	}
+}
+
+func GetDomainReplicationMessagesResponse(resp *adminservice.GetNamespaceReplicationMessagesResponse) *adminv1.GetDomainReplicationMessagesResponse {
+	if resp == nil {
+		return nil
+	}
+
+	return &adminv1.GetDomainReplicationMessagesResponse{
+		Messages: ReplicationMessages(resp.GetMessages()),
+	}
+}

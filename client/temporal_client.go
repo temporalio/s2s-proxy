@@ -2,14 +2,20 @@ package client
 
 import (
 	"fmt"
-	"sync"
-
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/transport"
-
+	adminv1 "github.com/uber/cadence-idl/go/proto/admin/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
+	"go.uber.org/yarpc"
+	"go.uber.org/yarpc/transport/grpc"
+	"sync"
+)
+
+const (
+	HostPort       = "localhost:7833"
+	CadenceService = "cadence-frontend"
 )
 
 type (
@@ -61,12 +67,28 @@ func (c *clientProvider) GetAdminClient() (adminservice.AdminServiceClient, erro
 		defer c.adminClientsLock.Unlock()
 
 		c.logger.Info(fmt.Sprintf("Create adminclient with config: %v", c.clientConfig))
-		adminClient, err := c.clientFactory.NewRemoteAdminClient(c.clientConfig)
-		if err != nil {
-			return nil, err
-		}
 
-		c.adminClient = adminClient
+		if c.clientConfig.Type == config.CadenceTransport {
+			dispatcher := yarpc.NewDispatcher(yarpc.Config{
+				Name: "cadence-proxy-client",
+				Outbounds: yarpc.Outbounds{
+					CadenceService: {Unary: grpc.NewTransport().NewSingleOutbound(HostPort)},
+				},
+			})
+			if err := dispatcher.Start(); err != nil {
+				return nil, fmt.Errorf("failed to start dispatcher: %v", err)
+			}
+
+			clientConfig := dispatcher.ClientConfig(CadenceService)
+			c.adminClient = NewAdminServiceAdaptor(c.logger, adminv1.NewAdminAPIYARPCClient(clientConfig))
+		} else {
+			adminClient, err := c.clientFactory.NewRemoteAdminClient(c.clientConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			c.adminClient = adminClient
+		}
 	}
 
 	return c.adminClient, nil

@@ -497,7 +497,7 @@ func NamespaceTaskAttributes(attributes *adminv1.DomainTaskAttributes) *repicati
 			Config:             NamespaceConfig(attributes.GetDomain()),
 			ReplicationConfig:  ReplicationConfig(attributes),
 			ConfigVersion:      attributes.GetConfigVersion(),
-			FailoverVersion:    attributes.GetDomain().GetFailoverVersion(),
+			FailoverVersion:    attributes.GetFailoverVersion(),
 			//FailoverHistory:       nil,
 			//NexusOutgoingServices: nil,
 		},
@@ -594,4 +594,64 @@ func Timestamp(timestamp *types.Timestamp) *timestamppb.Timestamp {
 		Seconds: timestamp.GetSeconds(),
 		Nanos:   timestamp.GetNanos(),
 	}
+}
+
+func DescribeClusterResponse(resp *adminv1.DescribeClusterResponse) *adminservice.DescribeClusterResponse {
+	if resp == nil {
+		return nil
+	}
+
+	return &adminservice.DescribeClusterResponse{
+		SupportedClients:         nil,
+		ServerVersion:            "",
+		MembershipInfo:           nil,
+		ClusterId:                "cadence-uuid",
+		ClusterName:              "cadence-2",
+		HistoryShardCount:        4,
+		PersistenceStore:         "",
+		VisibilityStore:          "",
+		VersionInfo:              nil,
+		FailoverVersionIncrement: 10,
+		InitialFailoverVersion:   2,
+		IsGlobalNamespaceEnabled: true,
+		Tags:                     nil,
+	}
+}
+
+func GetNamespaceReplicationMessagesResponse(resp *adminv1.GetDomainReplicationMessagesResponse) *adminservice.GetNamespaceReplicationMessagesResponse {
+	if resp == nil || resp.GetMessages() == nil {
+		return nil
+	}
+
+	messages := &repication.ReplicationMessages{
+		ReplicationTasks:       ReplicationTasks(resp.GetMessages().GetReplicationTasks()),
+		LastRetrievedMessageId: resp.GetMessages().GetLastRetrievedMessageId(),
+		HasMore:                resp.GetMessages().GetHasMore(),
+		SyncShardStatus:        SyncShardStatus(resp.GetMessages().GetSyncShardStatus()),
+	}
+
+	return &adminservice.GetNamespaceReplicationMessagesResponse{
+		Messages: messages,
+	}
+}
+
+func GetNamespaceReplicationMessagesRequest(request *adminv1.GetDomainReplicationMessagesRequest) *adminservice.GetNamespaceReplicationMessagesRequest {
+	if request == nil {
+		return nil
+	}
+
+	return &adminservice.GetNamespaceReplicationMessagesRequest{
+		ClusterName:            request.GetClusterName(),
+		LastRetrievedMessageId: Int64Value(request.GetLastRetrievedMessageId()),
+		LastProcessedMessageId: Int64Value(request.GetLastProcessedMessageId()),
+	}
+
+}
+
+func Int64Value(id *types.Int64Value) int64 {
+	if id == nil {
+		return 0
+	}
+
+	return id.GetValue()
 }

@@ -43,7 +43,7 @@ func NewCadenceAPIServer(
 	adminServiceClient := adminclient.NewLazyClient(clientProvider)
 	return &CadenceAPIServer{
 		serviceName:     "cadence-frontend",
-		GRPCAddress:     "localhost:7833",
+		GRPCAddress:     "localhost:7733",
 		logger:          logger,
 		domainProxy:     NewDomainServiceProxyServer(logger, workflowServiceClient),
 		workflowProxy:   NewWorkflowServiceProxyServer(logger, workflowServiceClient),
@@ -84,6 +84,7 @@ func (s *CadenceAPIServer) Start() {
 	s.dispatcher.Register(apiv1.BuildWorkerAPIYARPCProcedures(s.workerProxy))
 	s.dispatcher.Register(apiv1.BuildVisibilityAPIYARPCProcedures(s.visibilityProxy))
 	s.dispatcher.Register(apiv1.BuildMetaAPIYARPCProcedures(s.metaProxy))
+	s.dispatcher.Register(adminv1.BuildAdminAPIYARPCProcedures(s.adminProxy))
 
 	err := s.dispatcher.Start()
 	if err != nil {

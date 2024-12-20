@@ -18,8 +18,9 @@ const (
 type TransportType string
 
 const (
-	TCPTransport TransportType = "tcp"
-	MuxTransport TransportType = "mux" // transport based on multiplexing over TCP
+	TCPTransport     TransportType = "tcp"
+	MuxTransport     TransportType = "mux" // transport based on multiplexing over TCP
+	CadenceTransport TransportType = "cadence"
 )
 
 type MuxMode string
