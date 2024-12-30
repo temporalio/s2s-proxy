@@ -9,9 +9,11 @@ require (
 	github.com/hashicorp/yamux v0.1.2
 	github.com/keilerkonzept/visit v1.1.1
 	github.com/stretchr/testify v1.9.0
+	github.com/uber/cadence v1.2.14
 	github.com/uber/cadence-idl v0.0.0-20241126065313-57bd6876d48f
 	github.com/urfave/cli/v2 v2.27.4
 	go.temporal.io/api v1.32.1
+	go.temporal.io/sdk v1.26.1
 	go.temporal.io/server v1.24.2
 	go.uber.org/fx v1.21.1
 	go.uber.org/yarpc v1.70.3
@@ -61,8 +63,8 @@ require (
 	go.opentelemetry.io/otel/sdk v1.26.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.26.0 // indirect
 	go.opentelemetry.io/otel/trace v1.26.0 // indirect
-	go.temporal.io/sdk v1.26.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
+	go.uber.org/cadence v0.19.0 // indirect
 	go.uber.org/dig v1.17.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/net/metrics v1.3.0 // indirect
