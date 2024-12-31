@@ -25,6 +25,16 @@ func WorkflowType(workflowType *cadence.WorkflowType) *common.WorkflowType {
 	}
 }
 
+func ActivityType(activityType *cadence.ActivityType) *common.ActivityType {
+	if activityType == nil {
+		return nil
+	}
+
+	return &common.ActivityType{
+		Name: activityType.Name,
+	}
+}
+
 func TaskQueue(taskList *cadence.TaskList) *taskqueue.TaskQueue {
 	if taskList == nil {
 		return nil
@@ -90,9 +100,15 @@ func Duration(d *types.Duration) *durationpb.Duration {
 	}
 }
 
-func DurationFromSeconds(seconds int32) *durationpb.Duration {
+func DurationFromInt32Seconds(seconds int32) *durationpb.Duration {
 	return &durationpb.Duration{
 		Seconds: int64(seconds),
+	}
+}
+
+func DurationFromInt64Seconds(seconds int64) *durationpb.Duration {
+	return &durationpb.Duration{
+		Seconds: seconds,
 	}
 }
 
@@ -141,7 +157,7 @@ func Int64Value(id *types.Int64Value) int64 {
 	return id.GetValue()
 }
 
-func Int64Ptr(id *int64) int64 {
+func Int64(id *int64) int64 {
 	if id == nil {
 		return 0
 	}
