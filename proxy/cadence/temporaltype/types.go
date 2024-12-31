@@ -196,7 +196,7 @@ func DescribeClusterResponse(resp *cadenceadmin.DescribeClusterResponse) *tempor
 		MembershipInfo:           nil,
 		ClusterId:                "cadence-uuid",
 		ClusterName:              "cadence-2",
-		HistoryShardCount:        4,
+		HistoryShardCount:        1,
 		PersistenceStore:         "",
 		VisibilityStore:          "",
 		VersionInfo:              nil,

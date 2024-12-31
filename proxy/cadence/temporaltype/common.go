@@ -13,6 +13,7 @@ import (
 	"go.temporal.io/sdk/converter"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"time"
 )
 
 func WorkflowType(workflowType *cadence.WorkflowType) *common.WorkflowType {
@@ -164,15 +165,12 @@ func Int64(id *int64) int64 {
 	return *id
 }
 
-func TimestampFromInt64(timestamp *int64) *timestamppb.Timestamp {
-	if timestamp == nil {
+func TimestampFromInt64(t *int64) *timestamppb.Timestamp {
+	if t == nil {
 		return nil
 	}
 
-	return &timestamppb.Timestamp{
-		Seconds: *timestamp / 1000,
-		Nanos:   int32((*timestamp % 1000) * 1000000),
-	}
+	return timestamppb.New(time.Unix(0, *t))
 }
 
 func SearchAttributes(attributes *cadence.SearchAttributes) *common.SearchAttributes {
