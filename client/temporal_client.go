@@ -5,6 +5,7 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/transport"
 	adminv1 "github.com/uber/cadence-idl/go/proto/admin/v1"
+	apiv1 "github.com/uber/cadence-idl/go/proto/api/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
@@ -80,7 +81,7 @@ func (c *clientProvider) GetAdminClient() (adminservice.AdminServiceClient, erro
 			}
 
 			clientConfig := dispatcher.ClientConfig(CadenceService)
-			c.adminClient = NewAdminServiceAdaptor(c.logger, adminv1.NewAdminAPIYARPCClient(clientConfig))
+			c.adminClient = NewAdminServiceAdaptor(c.logger, adminv1.NewAdminAPIYARPCClient(clientConfig), apiv1.NewDomainAPIYARPCClient(clientConfig))
 		} else {
 			adminClient, err := c.clientFactory.NewRemoteAdminClient(c.clientConfig)
 			if err != nil {

@@ -3,10 +3,8 @@ package temporaltype
 import (
 	cadenceadmin "github.com/uber/cadence-idl/go/proto/admin/v1"
 	cadence "github.com/uber/cadence-idl/go/proto/api/v1"
-	"go.temporal.io/api/query/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	temporaladmin "go.temporal.io/server/api/adminservice/v1"
-	repication "go.temporal.io/server/api/replication/v1"
 )
 
 func PollWorkflowTaskQueueRequest(req *cadence.PollForDecisionTaskRequest) *workflowservice.PollWorkflowTaskQueueRequest {
@@ -45,10 +43,6 @@ func RespondWorkflowTaskCompletedRequest(
 		//SdkMetadata:                nil,
 		//MeteringMetadata:           nil,
 	}
-}
-
-func QueryResults(results map[string]*cadence.WorkflowQueryResult) map[string]*query.WorkflowQueryResult {
-	return nil
 }
 
 func PollActivityTaskQueueRequest(request *cadence.PollForActivityTaskRequest) *workflowservice.PollActivityTaskQueueRequest {
@@ -145,82 +139,6 @@ func GetReplicationMessagesRequest(request *cadenceadmin.GetReplicationMessagesR
 	return &temporaladmin.GetReplicationMessagesRequest{
 		Tokens:      ReplicationToken(request.GetTokens()),
 		ClusterName: request.GetClusterName(),
-	}
-}
-
-func ReplicationToken(tokens []*cadenceadmin.ReplicationToken) []*repication.ReplicationToken {
-	if tokens == nil {
-		return nil
-	}
-
-	result := make([]*repication.ReplicationToken, len(tokens))
-	for i, token := range tokens {
-		result[i] = &repication.ReplicationToken{
-			ShardId:                token.GetShardId() + 1,
-			LastRetrievedMessageId: token.GetLastRetrievedMessageId(),
-			LastProcessedMessageId: token.GetLastProcessedMessageId(),
-			//LastProcessedVisibilityTime: nil,
-		}
-	}
-	return result
-}
-
-func GetReplicationMessagesResponse(resp *cadenceadmin.GetReplicationMessagesResponse) *temporaladmin.GetReplicationMessagesResponse {
-	if resp == nil {
-		return nil
-	}
-
-	messages := make(map[int32]*repication.ReplicationMessages, len(resp.GetShardMessages()))
-	for i, m := range resp.GetShardMessages() {
-		messages[i+1] = &repication.ReplicationMessages{
-			ReplicationTasks:       ReplicationTasks(m.GetReplicationTasks()),
-			LastRetrievedMessageId: m.GetLastRetrievedMessageId(),
-			HasMore:                m.GetHasMore(),
-			SyncShardStatus:        SyncShardStatus(m.GetSyncShardStatus()),
-		}
-	}
-
-	return &temporaladmin.GetReplicationMessagesResponse{
-		ShardMessages: messages,
-	}
-}
-
-func DescribeClusterResponse(resp *cadenceadmin.DescribeClusterResponse) *temporaladmin.DescribeClusterResponse {
-	if resp == nil {
-		return nil
-	}
-
-	return &temporaladmin.DescribeClusterResponse{
-		SupportedClients:         nil,
-		ServerVersion:            "",
-		MembershipInfo:           nil,
-		ClusterId:                "cadence-uuid",
-		ClusterName:              "cadence-2",
-		HistoryShardCount:        1,
-		PersistenceStore:         "",
-		VisibilityStore:          "",
-		VersionInfo:              nil,
-		FailoverVersionIncrement: 10,
-		InitialFailoverVersion:   2,
-		IsGlobalNamespaceEnabled: true,
-		Tags:                     nil,
-	}
-}
-
-func GetNamespaceReplicationMessagesResponse(resp *cadenceadmin.GetDomainReplicationMessagesResponse) *temporaladmin.GetNamespaceReplicationMessagesResponse {
-	if resp == nil || resp.GetMessages() == nil {
-		return nil
-	}
-
-	messages := &repication.ReplicationMessages{
-		ReplicationTasks:       ReplicationTasks(resp.GetMessages().GetReplicationTasks()),
-		LastRetrievedMessageId: resp.GetMessages().GetLastRetrievedMessageId(),
-		HasMore:                resp.GetMessages().GetHasMore(),
-		SyncShardStatus:        SyncShardStatus(resp.GetMessages().GetSyncShardStatus()),
-	}
-
-	return &temporaladmin.GetNamespaceReplicationMessagesResponse{
-		Messages: messages,
 	}
 }
 

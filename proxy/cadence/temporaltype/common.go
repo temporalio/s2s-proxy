@@ -8,6 +8,7 @@ import (
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/failure/v1"
+	"go.temporal.io/api/query/v1"
 	"go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflow/v1"
 	"go.temporal.io/sdk/converter"
@@ -201,4 +202,8 @@ func Initiator(o cadencetypes.ContinueAsNewInitiator) enums.ContinueAsNewInitiat
 		panic("unknown ContinueAsNewInitiator " + o.String())
 		return enums.CONTINUE_AS_NEW_INITIATOR_UNSPECIFIED
 	}
+}
+
+func QueryResults(results map[string]*cadence.WorkflowQueryResult) map[string]*query.WorkflowQueryResult {
+	return nil
 }

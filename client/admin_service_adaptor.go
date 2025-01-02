@@ -5,6 +5,7 @@ import (
 	"github.com/temporalio/s2s-proxy/proxy/cadence/cadencetype"
 	"github.com/temporalio/s2s-proxy/proxy/cadence/temporaltype"
 	adminv1 "github.com/uber/cadence-idl/go/proto/admin/v1"
+	apiv1 "github.com/uber/cadence-idl/go/proto/api/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
@@ -13,14 +14,20 @@ import (
 type adminServiceAdaptor struct {
 	logger        log.Logger
 	cadenceClient adminv1.AdminAPIYARPCClient
+	domainClient  apiv1.DomainAPIYARPCClient
 }
 
 var _ adminservice.AdminServiceClient = adminServiceAdaptor{}
 
-func NewAdminServiceAdaptor(logger log.Logger, cadenceClient adminv1.AdminAPIYARPCClient) adminservice.AdminServiceClient {
+func NewAdminServiceAdaptor(
+	logger log.Logger,
+	cadenceClient adminv1.AdminAPIYARPCClient,
+	domainClient apiv1.DomainAPIYARPCClient,
+) adminservice.AdminServiceClient {
 	return adminServiceAdaptor{
 		logger:        logger,
 		cadenceClient: cadenceClient,
+		domainClient:  domainClient,
 	}
 }
 
@@ -65,8 +72,11 @@ func (a adminServiceAdaptor) RemoveTask(ctx context.Context, in *adminservice.Re
 }
 
 func (a adminServiceAdaptor) GetWorkflowExecutionRawHistoryV2(ctx context.Context, in *adminservice.GetWorkflowExecutionRawHistoryV2Request, opts ...grpc.CallOption) (*adminservice.GetWorkflowExecutionRawHistoryV2Response, error) {
-	//TODO implement me
-	panic("implement me")
+	a.logger.Info("Cadence client: GetWorkflowExecutionRawHistoryV2 called.")
+
+	tReq := cadencetype.GetWorkflowExecutionRawHistoryV2Request(ctx, in, a.domainClient)
+	resp, err := a.cadenceClient.GetWorkflowExecutionRawHistoryV2(ctx, tReq)
+	return temporaltype.GetWorkflowExecutionRawHistoryV2Response(resp), err
 }
 
 func (a adminServiceAdaptor) GetWorkflowExecutionRawHistory(ctx context.Context, in *adminservice.GetWorkflowExecutionRawHistoryRequest, opts ...grpc.CallOption) (*adminservice.GetWorkflowExecutionRawHistoryResponse, error) {

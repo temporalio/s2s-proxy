@@ -170,3 +170,31 @@ func SyncShardStatus(status *cadenceadmin.SyncShardStatus) *repication.SyncShard
 		StatusTime: Timestamp(status.GetTimestamp()),
 	}
 }
+
+func ReplicationToken(tokens []*cadenceadmin.ReplicationToken) []*repication.ReplicationToken {
+	if tokens == nil {
+		return nil
+	}
+
+	result := make([]*repication.ReplicationToken, len(tokens))
+	for i, token := range tokens {
+		result[i] = &repication.ReplicationToken{
+			ShardId:                token.GetShardId() + 1,
+			LastRetrievedMessageId: token.GetLastRetrievedMessageId(),
+			LastProcessedMessageId: token.GetLastProcessedMessageId(),
+			//LastProcessedVisibilityTime: nil,
+		}
+	}
+	return result
+}
+
+func VersionHistory(vh *cadenceadmin.VersionHistory) *history.VersionHistory {
+	if vh == nil {
+		return nil
+	}
+
+	return &history.VersionHistory{
+		BranchToken: vh.GetBranchToken(),
+		Items:       VersionHistoryItems(vh.GetItems()),
+	}
+}
