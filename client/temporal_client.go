@@ -73,7 +73,7 @@ func (c *clientProvider) GetAdminClient() (adminservice.AdminServiceClient, erro
 			dispatcher := yarpc.NewDispatcher(yarpc.Config{
 				Name: "cadence-proxy-client",
 				Outbounds: yarpc.Outbounds{
-					CadenceService: {Unary: grpc.NewTransport().NewSingleOutbound(HostPort)},
+					CadenceService: {Unary: grpc.NewTransport().NewSingleOutbound(c.clientConfig.ServerAddress)},
 				},
 			})
 			if err := dispatcher.Start(); err != nil {

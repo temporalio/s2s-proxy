@@ -1,0 +1,23 @@
+outbound:
+  name: "outbound-proxy"
+  server:
+    type: "cadence"
+    tcp:
+      listenAddress: "127.0.0.1:7733"
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        clientCAPath: ""
+        requireClientAuth: true
+  client:
+    tcp:
+      serverAddress: "127.0.0.1:7233"
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        serverCAPath: ""
+        serverName: ""
+  namespaceNameTranslation:
+    mappings:
+      - localName: "example"
+        remoteName: "example.cloud"

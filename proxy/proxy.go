@@ -41,15 +41,27 @@ func NewProxy(
 	// Here a remote server can be another proxy as well.
 	//    server-a <-> proxy-a <-> proxy-b <-> server-b
 	if s2sConfig.Outbound != nil {
-		proxy.outboundServer = newProxyServer(
-			*s2sConfig.Outbound,
-			proxyOptions{
-				IsInbound: false,
-				Config:    s2sConfig,
-			},
-			transManager,
-			logger,
-		)
+		if s2sConfig.Outbound.Server.Type == config.CadenceTransport {
+			proxy.cadenceServer = newCadenceProxyServer(
+				*s2sConfig.Outbound,
+				proxyOptions{
+					IsInbound: false,
+					Config:    s2sConfig,
+				},
+				transManager,
+				logger,
+			)
+		} else {
+			proxy.outboundServer = newProxyServer(
+				*s2sConfig.Outbound,
+				proxyOptions{
+					IsInbound: false,
+					Config:    s2sConfig,
+				},
+				transManager,
+				logger,
+			)
+		}
 	}
 
 	if s2sConfig.Inbound != nil {
@@ -63,16 +75,6 @@ func NewProxy(
 			logger,
 		)
 	}
-
-	proxy.cadenceServer = newCadenceProxyServer(
-		*s2sConfig.Outbound,
-		proxyOptions{
-			IsInbound: false,
-			Config:    s2sConfig,
-		},
-		transManager,
-		logger,
-	)
 
 	return proxy
 }

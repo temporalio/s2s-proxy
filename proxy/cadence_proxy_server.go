@@ -40,7 +40,7 @@ func (ps *CadenceProxyServer) startServer(
 	cfg := ps.config
 
 	clientFactory := client.NewClientFactory(clientTransport, ps.logger)
-	ps.server = cadence.NewCadenceAPIServer(ps.logger, cfg.Client, clientFactory)
+	ps.server = cadence.NewCadenceAPIServer(ps.logger, cfg.Client, clientFactory, ps.config.Server)
 
 	ps.logger.Info(fmt.Sprintf("Starting Cadence ProxyServer %s with ServerConfig: %v, ClientConfig: %v", cfg.Name, cfg.Server, cfg.Client))
 	ps.server.Start()

@@ -37,13 +37,14 @@ func NewCadenceAPIServer(
 	logger log.Logger,
 	clientConfig config.ProxyClientConfig,
 	clientFactory client.ClientFactory,
+	server config.ProxyServerConfig,
 ) *CadenceAPIServer {
 	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
 	workflowServiceClient := feclient.NewLazyClient(clientProvider)
 	adminServiceClient := adminclient.NewLazyClient(clientProvider)
 	return &CadenceAPIServer{
 		serviceName:     "cadence-frontend",
-		GRPCAddress:     "localhost:7733",
+		GRPCAddress:     server.ListenAddress,
 		logger:          logger,
 		domainProxy:     NewDomainServiceProxyServer(logger, workflowServiceClient),
 		workflowProxy:   NewWorkflowServiceProxyServer(logger, workflowServiceClient),
