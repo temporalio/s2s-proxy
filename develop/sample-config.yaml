@@ -48,10 +48,10 @@ outbound:
         keyPath: ""
         serverCAPath: ""
         serverName: ""
-  namespaceNameTranslation:
-    mappings:
-      - localName: "example"
-        remoteName: "example.cloud"
 healthCheck:
   protocol: "http"
   listenAddress: ""
+namespaceNameTranslation:
+  mappings:
+    - localName: "example"
+      remoteName: "example.cloud"

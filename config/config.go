@@ -68,11 +68,10 @@ type (
 	}
 
 	ProxyConfig struct {
-		Name                     string                         `yaml:"name"`
-		Server                   ProxyServerConfig              `yaml:"server"`
-		Client                   ProxyClientConfig              `yaml:"client"`
-		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
-		ACLPolicy                *ACLPolicy                     `yaml:"aclPolicy"`
+		Name             string            `yaml:"name"`
+		Server           ProxyServerConfig `yaml:"server"`
+		Client           ProxyClientConfig `yaml:"client"`
+		ACLPolicy        *ACLPolicy        `yaml:"aclPolicy"`
 	}
 
 	MuxTransportConfig struct {
@@ -88,10 +87,11 @@ type (
 	}
 
 	S2SProxyConfig struct {
-		Inbound       *ProxyConfig         `yaml:"inbound"`
-		Outbound      *ProxyConfig         `yaml:"outbound"`
-		MuxTransports []MuxTransportConfig `yaml:"mux"`
-		HealthCheck   *HealthCheckConfig   `yaml:"healthCheck"`
+		Inbound                  *ProxyConfig                   `yaml:"inbound"`
+		Outbound                 *ProxyConfig                   `yaml:"outbound"`
+		MuxTransports            []MuxTransportConfig           `yaml:"mux"`
+		HealthCheck              *HealthCheckConfig             `yaml:"healthCheck"`
+		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
 	}
 
 	NamespaceNameTranslationConfig struct {

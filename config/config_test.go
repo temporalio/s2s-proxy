@@ -19,7 +19,7 @@ func TestLoadS2SConfig(t *testing.T) {
 			LocalName:  "example",
 			RemoteName: "example.cloud",
 		},
-	}, s2sConfig.Outbound.NamespaceNameTranslation.Mappings)
+	}, s2sConfig.NamespaceNameTranslation.Mappings)
 
 	aclConfig := s2sConfig.Inbound.ACLPolicy
 	assert.NotEmpty(t, aclConfig)
