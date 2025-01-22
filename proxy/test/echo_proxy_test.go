@@ -101,13 +101,9 @@ func withServerConfig(serverCfg config.ProxyServerConfig, inbound bool) cfgOptio
 	}
 }
 
-func withNamespaceTranslation(mapping []config.NameMappingConfig, inbound bool) cfgOption {
+func withNamespaceTranslation(mapping []config.NameMappingConfig, _ bool) cfgOption {
 	return func(c *config.S2SProxyConfig) {
-		if inbound {
-			c.Inbound.NamespaceNameTranslation.Mappings = mapping
-		} else {
-			c.Outbound.NamespaceNameTranslation.Mappings = mapping
-		}
+		c.NamespaceNameTranslation.Mappings = mapping
 	}
 }
 

@@ -23,10 +23,11 @@ func NewNamespaceNameTranslator(
 	logger log.Logger,
 	cfg config.ProxyConfig,
 	isInbound bool,
+	nameTranslations config.NamespaceNameTranslationConfig,
 ) *NamespaceNameTranslator {
 	requestNameMapping := map[string]string{}
 	responseNameMapping := map[string]string{}
-	for _, tr := range cfg.NamespaceNameTranslation.Mappings {
+	for _, tr := range nameTranslations.Mappings {
 		if isInbound {
 			// For inbound listener,
 			//   - incoming requests from remote server are modifed to match local server
