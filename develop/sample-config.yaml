@@ -55,3 +55,7 @@ namespaceNameTranslation:
   mappings:
     - localName: "example"
       remoteName: "example.cloud"
+metrics:
+  prometheus:
+      framework: "tally"
+      listenAddress: "127.0.0.1:8002"

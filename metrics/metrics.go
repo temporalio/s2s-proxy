@@ -103,7 +103,6 @@ func newMetricsScope(
 				return nil, err
 			}
 			scopeOpts := tally.ScopeOptions{
-				// TODO: refactor to use env var provider
 				Tags: map[string]string{
 					"service_name":          "s2s-proxy",
 					"temporal_service_type": "s2s-proxy",

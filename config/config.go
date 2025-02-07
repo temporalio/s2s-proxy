@@ -120,7 +120,7 @@ type (
 
 	PrometheusConfig struct {
 		ListenAddress string `yaml:"listenAddress"`
-		Framework     string `yaml:"famework"`
+		Framework     string `yaml:"framework"`
 	}
 
 	MetricsConfig struct {
