@@ -9,6 +9,7 @@ import (
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/transport"
+	"github.com/uber-go/tally/v4"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
@@ -189,6 +190,7 @@ func NewProxy(
 	configProvider config.ConfigProvider,
 	transManager *transport.TransportManager,
 	logger log.Logger,
+	scope tally.Scope,
 ) *Proxy {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	proxy := &Proxy{
@@ -196,6 +198,8 @@ func NewProxy(
 		transManager: transManager,
 		logger:       logger,
 	}
+
+	scope.Counter("proxy_start").Inc(1)
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
 	//    local server -> proxy(outbound) -> remote server

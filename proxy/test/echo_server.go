@@ -21,6 +21,7 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 	"github.com/temporalio/s2s-proxy/transport"
+	"github.com/uber-go/tally/v4"
 )
 
 type (
@@ -116,6 +117,7 @@ func newEchoServer(
 			configProvider,
 			transport.NewTransportManager(configProvider, logger),
 			logger,
+			tally.NoopScope,
 		)
 
 		if err != nil {
