@@ -283,7 +283,7 @@ func proxyStream(
 
 			if err != nil {
 				logger.Error("targetStreamServer.Recv encountered error", tag.Error(err))
-				finalErr.Store(true)
+				//finalErr.Store(true)
 				return
 			}
 
@@ -318,7 +318,7 @@ func proxyStream(
 
 			if err != nil {
 				logger.Error("sourceStreamClient.Recv encountered error", tag.Error(err))
-				finalErr.Store(true)
+				//finalErr.Store(true)
 				return
 			}
 			switch attr := resp.GetAttributes().(type) {
