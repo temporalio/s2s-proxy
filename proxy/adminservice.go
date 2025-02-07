@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"github.com/temporalio/s2s-proxy/client"
 	adminclient "github.com/temporalio/s2s-proxy/client/admin"
@@ -210,10 +211,12 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	targetMetadata, ok := metadata.FromIncomingContext(targetStreamServer.Context())
 	if !ok {
+		s.logger.Error("StreamWorkflowReplicationMessages missing cluster & shard ID metadata")
 		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
 	}
 	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(targetMetadata)
 	if err != nil {
+		s.logger.Error("StreamWorkflowReplicationMessages failed to decode cluster & shard ID metadata")
 		return err
 	}
 
@@ -224,18 +227,40 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	logger.Info("AdminStreamReplicationMessages started.")
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
+	for {
+		err := proxyStream(
+			logger,
+			targetStreamServer,
+			targetMetadata,
+			s.adminClient,
+		)
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func proxyStream(
+	logger log.Logger,
+	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	targetMetadata metadata.MD,
+	adminClient adminservice.AdminServiceClient,
+) error {
 	// simply forwarding target metadata
 	outgoingContext := metadata.NewOutgoingContext(targetStreamServer.Context(), targetMetadata)
 	outgoingContext, cancel := context.WithCancel(outgoingContext)
 	defer cancel()
 
-	sourceStreamClient, err := s.adminClient.StreamWorkflowReplicationMessages(outgoingContext)
+	sourceStreamClient, err := adminClient.StreamWorkflowReplicationMessages(outgoingContext)
 	if err != nil {
 		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err
 	}
 
 	shutdownChan := channel.NewShutdownOnce()
+	var finalErr atomic.Bool
+	finalErr.Store(false)
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
@@ -252,11 +277,13 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		for !shutdownChan.IsShutdown() {
 			req, err := targetStreamServer.Recv()
 			if err == io.EOF {
+				finalErr.Store(true)
 				return
 			}
 
 			if err != nil {
 				logger.Error("targetStreamServer.Recv encountered error", tag.Error(err))
+				finalErr.Store(true)
 				return
 			}
 
@@ -285,11 +312,13 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		for !shutdownChan.IsShutdown() {
 			resp, err := sourceStreamClient.Recv()
 			if err == io.EOF {
+				finalErr.Store(true)
 				return
 			}
 
 			if err != nil {
 				logger.Error("sourceStreamClient.Recv encountered error", tag.Error(err))
+				finalErr.Store(true)
 				return
 			}
 			switch attr := resp.GetAttributes().(type) {
@@ -310,7 +339,10 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			}
 		}
 	}()
-
 	wg.Wait()
+
+	if finalErr.Load() {
+		return fmt.Errorf("non-retryable err")
+	}
 	return nil
 }
