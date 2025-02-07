@@ -68,10 +68,10 @@ type (
 	}
 
 	ProxyConfig struct {
-		Name             string            `yaml:"name"`
-		Server           ProxyServerConfig `yaml:"server"`
-		Client           ProxyClientConfig `yaml:"client"`
-		ACLPolicy        *ACLPolicy        `yaml:"aclPolicy"`
+		Name      string            `yaml:"name"`
+		Server    ProxyServerConfig `yaml:"server"`
+		Client    ProxyClientConfig `yaml:"client"`
+		ACLPolicy *ACLPolicy        `yaml:"aclPolicy"`
 	}
 
 	MuxTransportConfig struct {
@@ -92,6 +92,7 @@ type (
 		MuxTransports            []MuxTransportConfig           `yaml:"mux"`
 		HealthCheck              *HealthCheckConfig             `yaml:"healthCheck"`
 		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
+		Metrics                  *MetricsConfig                 `yaml:"metrics"`
 	}
 
 	NamespaceNameTranslationConfig struct {
@@ -115,6 +116,15 @@ type (
 	ACLPolicy struct {
 		AllowedMethods    AllowedMethods `yaml:"allowedMethods"`
 		AllowedNamespaces []string       `yaml:"allowedNamespaces"`
+	}
+
+	PrometheusConfig struct {
+		ListenAddress string `yaml:"listenAddress"`
+		Framework     string `yaml:"famework"`
+	}
+
+	MetricsConfig struct {
+		Prometheus PrometheusConfig `yaml:"prometheus"`
 	}
 )
 
