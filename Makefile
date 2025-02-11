@@ -35,7 +35,14 @@ lint:
 clean-mocks:
 	@find . -name '*_mock.go' -delete
 
+MOCKGEN_VER = v0.4.0
 mocks: clean-mocks
+	@if [ "$$(mockgen -version)" != "$(MOCKGEN_VER)" ]; then \
+		echo -e "ERROR: mockgen is not version $(MOCKGEN_VER)\n"; \
+		echo -e "  Run go install go.uber.org/mock/mockgen@$(MOCKGEN_VER)\n"; \
+		echo -e "  Or, bump MOCKGEN_VER in the Makefile\n"; \
+		exit 1; \
+	fi;
 	@mockgen -source config/config.go -destination mocks/config/config_mock.go -package config
 	@mockgen -source client/temporal_client.go -destination mocks/client/temporal_client_mock.go -package client
 
