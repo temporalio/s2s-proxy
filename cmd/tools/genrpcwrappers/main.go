@@ -433,6 +433,8 @@ func writeTemplatedMethod(w io.Writer, service service, impl string, m reflect.M
 		"RequestType":  reqType.String(),
 		"ResponseType": respType.String(),
 		"MetricPrefix": fmt.Sprintf("%s%sClient", strings.ToUpper(service.name[:1]), service.name[1:]),
+		// s2s-proxy customization
+		"GetLazyClient": lazyClientMap[service.name],
 	}
 	if longPollContext[key] {
 		fields["LongPoll"] = "LongPoll"
@@ -665,4 +667,12 @@ func main() {
 	callWithFile(svc.clientGenerator, svc, "client", licenseText)
 	callWithFile(generateMetricClient, svc, "metric_client", licenseText)
 	callWithFile(generateRetryableClient, svc, "retryable_client", licenseText)
+
+	// s2s-proxy customizations
+	if svc.name == "admin" || svc.name == "frontend" {
+		callWithFile(generateLazyClient, svc, "lazy_client", "")
+	}
+	if svc.name == "admin" {
+		callWithFile(generateACLServer, svc, "acl_server", "")
+	}
 }

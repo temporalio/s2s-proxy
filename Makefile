@@ -51,6 +51,20 @@ $(TEST_CERT): scripts/generate-certs.sh
 
 generate-test-certs: $(TEST_CERT)
 
+GENRPCWRAPPERS_DIR = ./cmd/tools/genrpcwrappers
+generate-rpcwrappers:
+	rm -rf $(GENRPCWRAPPERS_DIR)/*_gen.go
+	cd $(GENRPCWRAPPERS_DIR); go run .  -service frontend -license_file ../../../LICENSE
+	cp $(GENRPCWRAPPERS_DIR)/lazy_client_gen.go client/frontend/lazy_client_gen.go
+
+	rm -rf ./cmd/tools/genrpcwrappers/*_gen.go
+	cd $(GENRPCWRAPPERS_DIR); go run .  -service admin -license_file ../../../LICENSE
+	cp ./cmd/tools/genrpcwrappers/lazy_client_gen.go client/admin/lazy_client_gen.go
+
+	rm -rf ./cmd/tools/genrpcwrappers/*_gen.go
+
+	go fmt ./client/...
+
 test: generate-test-certs
 	go test $(TEST_ARG) ./...
 
