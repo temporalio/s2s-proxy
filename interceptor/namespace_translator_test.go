@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/command/v1"
+	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
@@ -12,6 +13,8 @@ import (
 	"go.temporal.io/server/api/adminservice/v1"
 	enumsspb "go.temporal.io/server/api/enums/v1"
 	replicationspb "go.temporal.io/server/api/replication/v1"
+	"go.temporal.io/server/common/persistence/serialization"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type (
@@ -46,7 +49,7 @@ type (
 	}
 )
 
-func generateNamespaceObjCases() []objCase {
+func generateNamespaceObjCases(t *testing.T) []objCase {
 	return []objCase{
 		{
 			objName: "Namespace field",
@@ -165,6 +168,64 @@ func generateNamespaceObjCases() []objCase {
 					//StartedTime:                &timestamppb.Timestamp{},
 					//Queries:                    map[string]*query.WorkflowQuery{},
 					//Messages:                   []*protocol.Message{},
+				}
+			},
+			containsNamespace: true,
+		},
+		{
+			objName: "GetWorkflowExecutionRawHistoryV2Response",
+			makeType: func(ns string) any {
+				return &adminservice.GetWorkflowExecutionRawHistoryV2Response{
+					NextPageToken: []byte("some-token"),
+					HistoryBatches: []*common.DataBlob{
+						makeHistoryEventsBlob(t, ns),
+						makeHistoryEventsBlob(t, ns),
+					},
+					HistoryNodeIds: []int64{123},
+				}
+			},
+			containsNamespace: true,
+		},
+		{
+			objName: "StreamWorkflowReplicationMessagesResponse",
+			makeType: func(ns string) any {
+				return &adminservice.StreamWorkflowReplicationMessagesResponse{
+					Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
+						Messages: &replicationspb.WorkflowReplicationMessages{
+							ReplicationTasks: []*replicationspb.ReplicationTask{
+								{
+									TaskType:     0,
+									SourceTaskId: 0,
+									Attributes: &replicationspb.ReplicationTask_HistoryTaskAttributes{
+										HistoryTaskAttributes: &replicationspb.HistoryTaskAttributes{
+											NamespaceId:  "some-ns-id",
+											WorkflowId:   "some-wf-id",
+											RunId:        "some-run-id",
+											Events:       makeHistoryEventsBlob(t, ns),
+											NewRunEvents: makeHistoryEventsBlob(t, ns),
+										},
+									},
+									//Data: makeHistoryEventsBlob(t, ns),
+								},
+								{
+									TaskType:     0,
+									SourceTaskId: 0,
+									Attributes: &replicationspb.ReplicationTask_HistoryTaskAttributes{
+										HistoryTaskAttributes: &replicationspb.HistoryTaskAttributes{
+											NamespaceId:  "some-ns-id",
+											WorkflowId:   "some-wf-id-2",
+											RunId:        "some-run-id-2",
+											Events:       makeHistoryEventsBlob(t, ns),
+											NewRunEvents: makeHistoryEventsBlob(t, ns),
+										},
+									},
+									//Data: makeHistoryEventsBlob(t, ns),
+								},
+							},
+							ExclusiveHighWatermark:     0,
+							ExclusiveHighWatermarkTime: &timestamppb.Timestamp{},
+						},
+					},
 				}
 			},
 			containsNamespace: true,
@@ -379,8 +440,40 @@ func testTranslateNamespace(t *testing.T, objCases []objCase) {
 	}
 }
 
+func makeHistoryEventsBlob(t *testing.T, ns string) *common.DataBlob {
+	evts := []*history.HistoryEvent{
+		{
+			EventId:   1,
+			EventType: enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
+			Version:   1,
+			TaskId:    100,
+			Attributes: &history.HistoryEvent_SignalExternalWorkflowExecutionInitiatedEventAttributes{
+				SignalExternalWorkflowExecutionInitiatedEventAttributes: &history.SignalExternalWorkflowExecutionInitiatedEventAttributes{
+					Namespace: ns,
+				},
+			},
+		},
+		{
+			EventId:   2,
+			EventType: enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
+			Version:   1,
+			TaskId:    101,
+			Attributes: &history.HistoryEvent_RequestCancelExternalWorkflowExecutionInitiatedEventAttributes{
+				RequestCancelExternalWorkflowExecutionInitiatedEventAttributes: &history.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes{
+					Namespace: ns,
+				},
+			},
+		},
+	}
+
+	s := serialization.NewSerializer()
+	blob, err := s.SerializeEvents(evts, enums.ENCODING_TYPE_PROTO3)
+	require.NoError(t, err)
+	return blob
+}
+
 func TestTranslateNamespaceName(t *testing.T) {
-	testTranslateNamespace(t, generateNamespaceObjCases())
+	testTranslateNamespace(t, generateNamespaceObjCases(t))
 }
 
 func TestTranslateNamespaceReplicationMessages(t *testing.T) {
