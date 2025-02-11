@@ -103,7 +103,7 @@ func (i *NamespaceNameTranslator) InterceptStream(
 		tag.NewAnyTag("requestMap", i.requestNameMapping),
 		tag.NewAnyTag("responseMap", i.responseNameMapping),
 	)
-	err := handler(srv, newWrappedStream(
+	err := handler(srv, newStreamTranslator(
 		ss,
 		i.logger,
 		i.requestNameMapping,
@@ -136,7 +136,7 @@ func (w *streamTranslator) SendMsg(m any) error {
 	return w.ServerStream.SendMsg(m)
 }
 
-func newWrappedStream(
+func newStreamTranslator(
 	s grpc.ServerStream,
 	logger log.Logger,
 	requestMapping map[string]string,

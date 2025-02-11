@@ -162,12 +162,6 @@ func generateNamespaceObjCases(t *testing.T) []objCase {
 						},
 					},
 					NextPageToken: []byte{},
-					//Query:                      &query.WorkflowQuery{},
-					//WorkflowExecutionTaskQueue: &taskqueue.TaskQueue{},
-					//ScheduledTime:              &timestamppb.Timestamp{},
-					//StartedTime:                &timestamppb.Timestamp{},
-					//Queries:                    map[string]*query.WorkflowQuery{},
-					//Messages:                   []*protocol.Message{},
 				}
 			},
 			containsNamespace: true,
