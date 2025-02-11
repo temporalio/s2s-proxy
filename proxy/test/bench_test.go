@@ -109,7 +109,9 @@ func runSendRecvBench(b *testing.B, echoServerInfo clusterInfo, echoClientInfo c
 		b.Fatalf("err: %v", err)
 	}
 
-	defer streamClient.CloseSend()
+	defer func() {
+		_ = streamClient.CloseSend()
+	}()
 
 	b.ReportAllocs()
 	b.ResetTimer()

@@ -17,9 +17,6 @@ type (
 	tcpServer struct {
 		config config.TCPServerSetting
 	}
-
-	tcpConnectManager struct {
-	}
 )
 
 func (c *tcpClient) Connect() (*grpc.ClientConn, error) {

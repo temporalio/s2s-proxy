@@ -141,7 +141,10 @@ func (ps *ProxyServer) start() error {
 				return
 			}
 
-			ps.startServer(serverTransport, clientTransport)
+			if err := ps.startServer(serverTransport, clientTransport); err != nil {
+				ps.logger.Error("Failed to start server", tag.Error(err))
+				return
+			}
 
 			retryCh := make(chan struct{})
 			if closable, ok := clientTransport.(transport.Closable); ok {
