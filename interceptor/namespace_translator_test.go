@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/command/v1"
 	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -128,6 +129,42 @@ func generateNamespaceObjCases() []objCase {
 					},
 					Identity:  "do-not-change",
 					Namespace: ns,
+				}
+			},
+			containsNamespace: true,
+		},
+		{
+			objName: "PollWorkflowTaskQueueResponse",
+			makeType: func(ns string) any {
+				return &workflowservice.PollWorkflowTaskQueueResponse{
+					TaskToken:              []byte{},
+					PreviousStartedEventId: 0,
+					StartedEventId:         0,
+					Attempt:                0,
+					BacklogCountHint:       0,
+					History: &history.History{
+						Events: []*history.HistoryEvent{
+							{
+								EventId:         0,
+								EventType:       enums.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
+								Version:         0,
+								TaskId:          0,
+								WorkerMayIgnore: false,
+								Attributes: &history.HistoryEvent_SignalExternalWorkflowExecutionInitiatedEventAttributes{
+									SignalExternalWorkflowExecutionInitiatedEventAttributes: &history.SignalExternalWorkflowExecutionInitiatedEventAttributes{
+										Namespace: ns,
+									},
+								},
+							},
+						},
+					},
+					NextPageToken: []byte{},
+					//Query:                      &query.WorkflowQuery{},
+					//WorkflowExecutionTaskQueue: &taskqueue.TaskQueue{},
+					//ScheduledTime:              &timestamppb.Timestamp{},
+					//StartedTime:                &timestamppb.Timestamp{},
+					//Queries:                    map[string]*query.WorkflowQuery{},
+					//Messages:                   []*protocol.Message{},
 				}
 			},
 			containsNamespace: true,
