@@ -98,7 +98,7 @@ func (i *NamespaceNameTranslator) InterceptStream(
 	info *grpc.StreamServerInfo,
 	handler grpc.StreamHandler,
 ) error {
-	i.logger.Debug("InterceptStream!",
+	i.logger.Debug("InterceptStream",
 		tag.NewAnyTag("method", info.FullMethod),
 		tag.NewAnyTag("requestMap", i.requestNameMapping),
 		tag.NewAnyTag("responseMap", i.responseNameMapping),
@@ -110,28 +110,28 @@ func (i *NamespaceNameTranslator) InterceptStream(
 		i.responseNameMapping,
 	))
 	if err != nil {
-		i.logger.Error("RPC failed with error: %v", tag.Error(err))
+		i.logger.Error("grpc handler with error: %v", tag.Error(err))
 	}
 	return err
 }
 
 type streamTranslator struct {
 	grpc.ServerStream
-	logger              log.Logger
-	requestNameMapping  map[string]string
-	responseNameMapping map[string]string
+	logger             log.Logger
+	requestTranslator  matcher
+	responseTranslator matcher
 }
 
 func (w *streamTranslator) RecvMsg(m any) error {
 	w.logger.Debug("Intercept RecvMsg", tag.NewAnyTag("message", m))
-	changed, trErr := visitNamespace(m, createNameTranslator(w.requestNameMapping))
+	changed, trErr := visitNamespace(m, w.requestTranslator)
 	logTranslateNamespaceResult(w.logger, changed, trErr, "RecvMsg", m)
 	return w.ServerStream.RecvMsg(m)
 }
 
 func (w *streamTranslator) SendMsg(m any) error {
 	w.logger.Debug("Intercept SendMsg", tag.NewStringTag("type", fmt.Sprintf("%T", m)), tag.NewAnyTag("message", m))
-	changed, trErr := visitNamespace(m, createNameTranslator(w.responseNameMapping))
+	changed, trErr := visitNamespace(m, w.responseTranslator)
 	logTranslateNamespaceResult(w.logger, changed, trErr, "SendMsg", m)
 	return w.ServerStream.SendMsg(m)
 }
@@ -143,10 +143,10 @@ func newStreamTranslator(
 	responseMapping map[string]string,
 ) grpc.ServerStream {
 	return &streamTranslator{
-		ServerStream:        s,
-		logger:              logger,
-		requestNameMapping:  requestMapping,
-		responseNameMapping: responseMapping,
+		ServerStream:       s,
+		logger:             logger,
+		requestTranslator:  createNameTranslator(requestMapping),
+		responseTranslator: createNameTranslator(responseMapping),
 	}
 }
 
