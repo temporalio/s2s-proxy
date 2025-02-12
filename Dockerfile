@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM --platform=$BUILDPLATFORM temporalio/base-builder:1.15.0 AS builder
+FROM --platform=$BUILDPLATFORM temporalio/base-builder:1.15.3 AS builder
 
 # Install build tools
 RUN apk add --update --no-cache ca-certificates git make openssh
@@ -27,7 +27,7 @@ FROM temporalio/admin-tools:1.22 AS temporal-admin-tools
 
 FROM alpine:3.17 AS base
 
-# Install tools 
+# Install tools
 RUN apk add bash ca-certificates openssh jq
 
 COPY --from=builder /s2s-proxy/bins/s2s-proxy /usr/local/bin/

@@ -2,7 +2,6 @@ package interceptor
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/gogo/status"
@@ -74,7 +73,7 @@ func (i *AccessControlInterceptor) Intercept(
 	if i.adminServiceAccess != nil && strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
 		methodName := api.MethodName(info.FullMethod)
 		if !i.adminServiceAccess.IsAllowed(methodName) {
-			return nil, status.Errorf(codes.PermissionDenied, fmt.Sprintf("Calling method %s is not allowed.", methodName))
+			return nil, status.Errorf(codes.PermissionDenied, "Calling method %s is not allowed.", methodName)
 		}
 	}
 
@@ -90,10 +89,10 @@ func (i *AccessControlInterceptor) Intercept(
 					tag.NewAnyTag("obj", req),
 				)
 
-				logger.Error("namespace access control error", tag.NewErrorTag(err))
+				logger.Error("namespace access control error", tag.Error(err))
 			}
 
-			return nil, status.Errorf(codes.PermissionDenied, fmt.Sprintf("Calling method %s is not allowed.", methodName))
+			return nil, status.Errorf(codes.PermissionDenied, "Calling method %s is not allowed.", methodName)
 		}
 	}
 
@@ -109,7 +108,7 @@ func (i *AccessControlInterceptor) StreamIntercept(
 	if i.adminServiceAccess != nil && strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
 		methodName := api.MethodName(info.FullMethod)
 		if !i.adminServiceAccess.IsAllowed(methodName) {
-			return status.Errorf(codes.PermissionDenied, fmt.Sprintf("Calling method %s is not allowed.", methodName))
+			return status.Errorf(codes.PermissionDenied, "Calling method %s is not allowed.", methodName)
 		}
 	}
 

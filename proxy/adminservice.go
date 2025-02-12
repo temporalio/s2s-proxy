@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/channel"
+	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc/metadata"
@@ -212,7 +213,9 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	if !ok {
 		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
 	}
-	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(targetMetadata)
+	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(
+		headers.NewGRPCHeaderGetter(targetStreamServer.Context()),
+	)
 	if err != nil {
 		return err
 	}

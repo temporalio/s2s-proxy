@@ -136,9 +136,9 @@ func TestMuxTransport(t *testing.T) {
 
 func TestMuxTransportTLS(t *testing.T) {
 	pwd, _ := os.Getwd()
-	os.Chdir(filepath.Join("..", "develop"))
+	require.NoError(t, os.Chdir(filepath.Join("..", "develop")))
 	defer func() {
-		os.Chdir(pwd)
+		require.NoError(t, os.Chdir(pwd))
 	}()
 
 	muxClientCfgTLS := testMuxClientCfg
@@ -191,7 +191,7 @@ func TestMuxTransporWaitForClose(t *testing.T) {
 		require.False(t, ok)
 
 		// Reconnect transport
-		closeTs, waitForCloseTs = connect(t, closeCM, waitForCloseCM)
+		_, _ = connect(t, closeCM, waitForCloseCM)
 	}
 
 	runTests(t, testClose)
