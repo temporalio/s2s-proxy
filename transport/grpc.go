@@ -64,5 +64,8 @@ func dial(hostName string, tlsConfig *tls.Config, dialer func(ctx context.Contex
 			grpc.WithContextDialer(dialer))
 	}
 
-	return grpc.NewClient(hostName, dialOptions...)
+	return grpc.Dial(
+		hostName,
+		dialOptions...,
+	)
 }
