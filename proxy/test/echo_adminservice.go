@@ -11,10 +11,10 @@ import (
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/client/history"
+	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	codes "google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	status "google.golang.org/grpc/status"
 
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
@@ -70,7 +70,7 @@ func (s *echoAdminService) DescribeHistoryHost(ctx context.Context, in0 *adminse
 
 func (s *echoAdminService) DescribeMutableState(ctx context.Context, in0 *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
 	if !s.namespaces[in0.Namespace] {
-		return nil, status.Errorf(codes.NotFound, fmt.Sprintf("namespace %s is not found", in0.Namespace))
+		return nil, status.Errorf(codes.NotFound, "namespace %s is not found", in0.Namespace)
 	}
 
 	return &adminservice.DescribeMutableStateResponse{}, nil
@@ -189,11 +189,9 @@ func (s *echoAdminService) StreamWorkflowReplicationMessages(
 ) (retError error) {
 	defer log.CapturePanic(s.logger, &retError)
 
-	targetMetadata, ok := metadata.FromIncomingContext(targetStreamServer.Context())
-	if !ok {
-		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
-	}
-	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(targetMetadata)
+	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(
+		headers.NewGRPCHeaderGetter(targetStreamServer.Context()),
+	)
 	if err != nil {
 		return err
 	}

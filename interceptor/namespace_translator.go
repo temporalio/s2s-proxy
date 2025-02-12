@@ -157,7 +157,7 @@ func logTranslateNamespaceResult(logger log.Logger, changed bool, err error, met
 		tag.NewAnyTag("obj", obj),
 	)
 	if err != nil {
-		logger.Error("namespace translation error", tag.NewErrorTag(err))
+		logger.Error("namespace translation error", tag.Error(err))
 	} else if changed {
 		logger.Debug("namespace translation applied")
 	} else {
