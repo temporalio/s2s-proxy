@@ -48,7 +48,9 @@ func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool
 	if len(nameTranslations.Mappings) > 0 {
 		// NamespaceNameTranslator needs to be called before namespace access control so that
 		// local name can be used in namespace allowed list.
-		unaryInterceptors = append(unaryInterceptors, interceptor.NewNamespaceNameTranslator(logger, cfg, isInbound, nameTranslations).Intercept)
+		translator := interceptor.NewNamespaceNameTranslator(logger, cfg, isInbound, nameTranslations)
+		unaryInterceptors = append(unaryInterceptors, translator.Intercept)
+		streamInterceptors = append(streamInterceptors, translator.InterceptStream)
 	}
 
 	if isInbound && cfg.ACLPolicy != nil {

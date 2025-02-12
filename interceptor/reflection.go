@@ -3,20 +3,30 @@ package interceptor
 import (
 	"fmt"
 	"reflect"
-	"slices"
 
 	"github.com/keilerkonzept/visit"
-	replicationspb "go.temporal.io/server/api/replication/v1"
+	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/namespace/v1"
+	"go.temporal.io/server/common/persistence/serialization"
 )
 
 const (
-	namespaceTaskAttributesFieldName = "NamespaceTaskAttributes"
+	namespaceInfoFieldName = "Info"
 )
 
 var (
-	namespaceFieldNames = []string{
-		"Namespace",
-		"WorkflowNamespace", // PollActivityTaskQueueResponse
+	namespaceFieldNames = map[string]bool{
+		"Namespace":               true,
+		"WorkflowNamespace":       true, // PollActivityTaskQueueResponse
+		"ParentWorkflowNamespace": true, // WorkflowExecutionStartedEventAttributes
+	}
+	dataBlobFieldNames = map[string]bool{
+		"Events":         true, // HistoryTaskAttributes
+		"NewRunEvents":   true, // HistoryTaskAttributes
+		"EventBatch":     true, // NewRunInfo type
+		"EventBatches":   true, // BackfillHistoryTaskAttributes, VersionedTransitionArtifact
+		"EventsBatches":  true, // HistoryTaskAttributes
+		"HistoryBatches": true, // GetWorkflowExecutionRawHistoryV2
 	}
 )
 
@@ -43,31 +53,57 @@ func visitNamespace(obj any, match matcher) (bool, error) {
 			return visit.Skip, nil
 		}
 
-		if fieldType.Name == namespaceTaskAttributesFieldName {
-			// Handle NamespaceTaskAttributes.Info.Name in replication task attributes
-			attrs, ok := vwp.Interface().(*replicationspb.NamespaceTaskAttributes)
-			if !ok {
-				return visit.Stop, fmt.Errorf("failed to cast *NamespaceTaskAttributes")
-			}
-			if attrs == nil || attrs.Info == nil {
+		if fieldType.Name == namespaceInfoFieldName {
+			// Handle the NamespaceInfo.Name (in replication task attributes)
+			info, ok := vwp.Interface().(*namespace.NamespaceInfo)
+			if !ok || info == nil {
 				return visit.Continue, nil
 			}
-
-			newName, ok := match(attrs.Info.Name)
+			newName, ok := match(info.Name)
 			if !ok {
 				return visit.Continue, nil
 			}
-			if attrs.Info.Name != newName {
-				attrs.Info.Name = newName
+			if info.Name != newName {
+				info.Name = newName
 			}
 			matched = matched || ok
-		} else if vwp.Kind() == reflect.String && slices.Contains(namespaceFieldNames, fieldType.Name) {
-			newName, ok := match(vwp.String())
+		} else if dataBlobFieldNames[fieldType.Name] {
+			switch evt := vwp.Interface().(type) {
+			case []*common.DataBlob:
+				newEvts, changed, err := translateDataBlobs(match, evt...)
+				if err != nil {
+					return visit.Stop, err
+				}
+				if changed {
+					if err := visit.Assign(vwp, reflect.ValueOf(newEvts)); err != nil {
+						return visit.Stop, err
+					}
+				}
+				matched = matched || changed
+			case *common.DataBlob:
+				newEvt, changed, err := translateOneDataBlob(match, evt)
+				if err != nil {
+					return visit.Stop, err
+				}
+				if changed {
+					if err := visit.Assign(vwp, reflect.ValueOf(newEvt)); err != nil {
+						return visit.Stop, err
+					}
+				}
+				matched = matched || changed
+			default:
+				return visit.Continue, nil
+			}
+		} else if namespaceFieldNames[fieldType.Name] {
+			name, ok := vwp.Interface().(string)
 			if !ok {
 				return visit.Continue, nil
 			}
-
-			if vwp.String() != newName {
+			newName, ok := match(name)
+			if !ok {
+				return visit.Continue, nil
+			}
+			if name != newName {
 				if err := visit.Assign(vwp, reflect.ValueOf(newName)); err != nil {
 					return visit.Stop, err
 				}
@@ -78,4 +114,48 @@ func visitNamespace(obj any, match matcher) (bool, error) {
 		return visit.Continue, nil
 	})
 	return matched, err
+}
+
+func translateOneDataBlob(match matcher, blob *common.DataBlob) (*common.DataBlob, bool, error) {
+	if blob == nil || len(blob.Data) == 0 {
+		return blob, false, nil
+	}
+	blobs, changed, err := translateDataBlobs(match, blob)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(blobs) != 1 {
+		return nil, false, fmt.Errorf("failed to translate single data blob")
+	}
+	return blobs[0], changed, err
+}
+
+func translateDataBlobs(match matcher, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
+	if len(blobs) == 0 {
+		return blobs, false, nil
+	}
+
+	s := serialization.NewSerializer()
+
+	var anyChanged bool
+	for i, blob := range blobs {
+		evt, err := s.DeserializeEvents(blob)
+		if err != nil {
+			return blobs, anyChanged, err
+		}
+
+		changed, err := visitNamespace(evt, match)
+		if err != nil {
+			return blobs, anyChanged, err
+		}
+		anyChanged = anyChanged || changed
+
+		newBlob, err := s.SerializeEvents(evt, blob.EncodingType)
+		if err != nil {
+			return blobs, anyChanged, err
+		}
+		blobs[i] = newBlob
+	}
+
+	return blobs, anyChanged, nil
 }

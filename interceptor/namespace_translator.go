@@ -2,6 +2,7 @@ package interceptor
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/temporalio/s2s-proxy/config"
@@ -51,6 +52,7 @@ func NewNamespaceNameTranslator(
 }
 
 var _ grpc.UnaryServerInterceptor = (*NamespaceNameTranslator)(nil).Intercept
+var _ grpc.StreamServerInterceptor = (*NamespaceNameTranslator)(nil).InterceptStream
 
 func createNameTranslator(mapping map[string]string) matcher {
 	return func(name string) (string, bool) {
@@ -87,6 +89,64 @@ func (i *NamespaceNameTranslator) Intercept(
 		return resp, err
 	} else {
 		return handler(ctx, req)
+	}
+}
+
+func (i *NamespaceNameTranslator) InterceptStream(
+	srv any,
+	ss grpc.ServerStream,
+	info *grpc.StreamServerInfo,
+	handler grpc.StreamHandler,
+) error {
+	i.logger.Debug("InterceptStream",
+		tag.NewAnyTag("method", info.FullMethod),
+		tag.NewAnyTag("requestMap", i.requestNameMapping),
+		tag.NewAnyTag("responseMap", i.responseNameMapping),
+	)
+	err := handler(srv, newStreamTranslator(
+		ss,
+		i.logger,
+		i.requestNameMapping,
+		i.responseNameMapping,
+	))
+	if err != nil {
+		i.logger.Error("grpc handler with error: %v", tag.Error(err))
+	}
+	return err
+}
+
+type streamTranslator struct {
+	grpc.ServerStream
+	logger             log.Logger
+	requestTranslator  matcher
+	responseTranslator matcher
+}
+
+func (w *streamTranslator) RecvMsg(m any) error {
+	w.logger.Debug("Intercept RecvMsg", tag.NewAnyTag("message", m))
+	changed, trErr := visitNamespace(m, w.requestTranslator)
+	logTranslateNamespaceResult(w.logger, changed, trErr, "RecvMsg", m)
+	return w.ServerStream.RecvMsg(m)
+}
+
+func (w *streamTranslator) SendMsg(m any) error {
+	w.logger.Debug("Intercept SendMsg", tag.NewStringTag("type", fmt.Sprintf("%T", m)), tag.NewAnyTag("message", m))
+	changed, trErr := visitNamespace(m, w.responseTranslator)
+	logTranslateNamespaceResult(w.logger, changed, trErr, "SendMsg", m)
+	return w.ServerStream.SendMsg(m)
+}
+
+func newStreamTranslator(
+	s grpc.ServerStream,
+	logger log.Logger,
+	requestMapping map[string]string,
+	responseMapping map[string]string,
+) grpc.ServerStream {
+	return &streamTranslator{
+		ServerStream:       s,
+		logger:             logger,
+		requestTranslator:  createNameTranslator(requestMapping),
+		responseTranslator: createNameTranslator(responseMapping),
 	}
 }
 

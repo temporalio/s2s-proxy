@@ -134,6 +134,6 @@ func testNamespaceAccessControl(t *testing.T, objCases []objCase) {
 }
 
 func TestNamespaceAccessControl(t *testing.T) {
-	testNamespaceAccessControl(t, generateNamespaceObjCases())
+	testNamespaceAccessControl(t, generateNamespaceObjCases(t))
 	testNamespaceAccessControl(t, generateNamespaceReplicationMessages())
 }
