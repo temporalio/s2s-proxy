@@ -2,7 +2,7 @@
 
 ##### Arguments ######
 GOOS          ?= $(shell go env GOOS)
-GOARCH        ?= $(shell go env GOARCH)
+GOARCH        ?= $(if $(TARGETARCH),$(TARGETARCH),$(shell go env GOARCH))
 GOPATH        ?= $(shell go env GOPATH)
 GOLANGCI_LINT ?= $(shell which golangci-lint)
 
