@@ -24,6 +24,7 @@ type (
 		server       *TemporalAPIServer
 		transManager *transport.TransportManager
 		shutDownCh   chan struct{}
+		stoppedCh    chan struct{}
 	}
 
 	Proxy struct {
@@ -128,6 +129,8 @@ func (ps *ProxyServer) start() error {
 	clientConfig := ps.config.Client
 
 	go func() {
+		defer close(ps.stoppedCh)
+
 		for {
 			// If using mux transport underneath, Open call will be blocked until
 			// underlying connection is established.
@@ -188,6 +191,7 @@ func newProxyServer(
 		transManager: transManager,
 		logger:       logger,
 		shutDownCh:   make(chan struct{}),
+		stoppedCh:    make(chan struct{}),
 	}
 }
 

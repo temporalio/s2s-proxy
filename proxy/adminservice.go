@@ -243,21 +243,16 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	go func() {
 		defer func() {
-			logger.Info("targetStreamServer.Recv Shutdown.")
+			logger.Info("Shutdown targetStreamServer.Recv loop.")
 			shutdownChan.Shutdown()
 
-			// err = sourceStreamClient.CloseSend()
-			// if err != nil {
-			// 	logger.Error("Failed to close sourceStreamClient", tag.Error(err))
-			// }
+			err = sourceStreamClient.CloseSend()
+			if err != nil {
+				logger.Error("Failed to close sourceStreamClient", tag.Error(err))
+			}
 		}()
 
-		logger.Info("targetStreamServer.Recv Loop start.")
 		for !shutdownChan.IsShutdown() {
-			if sourceClusterShardID.ShardID == 25 {
-				logger.Info("targetStreamServer.Recv call")
-			}
-
 			req, err := targetStreamServer.Recv()
 			if err == io.EOF {
 				return
@@ -271,10 +266,6 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			switch attr := req.GetAttributes().(type) {
 			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
 				logger.Debug(fmt.Sprintf("forwarding SyncReplicationState: inclusive %v", attr.SyncReplicationState.InclusiveLowWatermark))
-
-				if sourceClusterShardID.ShardID == 25 {
-					logger.Info("sourceStreamClient.Send call")
-				}
 				if err = sourceStreamClient.Send(req); err != nil {
 					logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
 					return
@@ -291,18 +282,12 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	wg.Add(1)
 	go func() {
 		defer func() {
-			logger.Info("sourceStreamClient.Recv Shutdown.")
+			logger.Info("Shutdown sourceStreamClient.Recv loop.")
 
 			shutdownChan.Shutdown()
 			wg.Done()
-
-			err = sourceStreamClient.CloseSend()
-			if err != nil {
-				logger.Error("Failed to close sourceStreamClient", tag.Error(err))
-			}
 		}()
 
-		logger.Info("sourceStreamClient.Recv Loop start.")
 		for !shutdownChan.IsShutdown() {
 			resp, err := sourceStreamClient.Recv()
 			if err == io.EOF {
@@ -333,7 +318,5 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}()
 
 	wg.Wait()
-
-	logger.Info("AdminStreamReplicationMessages Finish.")
 	return nil
 }
