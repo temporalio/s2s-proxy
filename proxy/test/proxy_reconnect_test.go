@@ -17,7 +17,7 @@ var (
 		}}
 )
 
-func (s *proxyTestSuite) Test_RestartStreamServer() {
+func (s *proxyTestSuite) Test_ForceStopSourceServer() {
 	logger := log.NewTestLogger()
 
 	echoServerInfo := clusterInfo{
@@ -39,15 +39,22 @@ func (s *proxyTestSuite) Test_RestartStreamServer() {
 
 	stream, err := echoClient.CreateStreamClient()
 	s.NoError(err)
-	_, err = echo(stream, []int64{1})
+	_, err = sendRecv(stream, []int64{1})
 	s.NoError(err)
 
 	echoServer.server.ForceStop()
 
+	// ForceStop cause sourceStreamClient.Recv in Upstream loop within
+	// StreamWorkflowReplicationMessages handler to fail. Wait for
+	// StreamWorkflowReplicationMessages handler returns, which stop
+	// Downstream loop.
 	time.Sleep(time.Second)
 
 	err = stream.Send(emptyReq)
+
+	// This should fail because StreamWorkflowReplicationMessages handler stopped.
 	s.ErrorContains(err, "EOF")
+
 	stream.CloseSend()
 	echoClient.stop()
 }

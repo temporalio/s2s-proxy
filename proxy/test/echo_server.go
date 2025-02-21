@@ -257,7 +257,7 @@ func (s *echoServer) CreateStreamClient() (adminservice.AdminService_StreamWorkf
 	}, 5, s.logger)
 }
 
-func echo(stream adminservice.AdminService_StreamWorkflowReplicationMessagesClient, sequence []int64) (map[int64]bool, error) {
+func sendRecv(stream adminservice.AdminService_StreamWorkflowReplicationMessagesClient, sequence []int64) (map[int64]bool, error) {
 	echoed := make(map[int64]bool)
 	var err error
 	for _, waterMark := range sequence {
@@ -311,7 +311,7 @@ func (s *echoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
 	}
 
 	s.logger.Info("==== SendAndRecv starting ====")
-	echoed, err = echo(stream, sequence)
+	echoed, err = sendRecv(stream, sequence)
 	_ = stream.CloseSend()
 	s.logger.Info("==== SendAndRecv completed ====")
 	return echoed, nil

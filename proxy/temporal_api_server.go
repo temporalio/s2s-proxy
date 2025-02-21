@@ -75,5 +75,4 @@ func (s *TemporalAPIServer) Stop() {
 func (s *TemporalAPIServer) ForceStop() {
 	s.logger.Info(fmt.Sprintf("Stopping %s forcefully", s.serviceName))
 	s.server.Stop()
-	s.logger.Info(fmt.Sprintf("Stopped %s", s.serviceName))
 }
