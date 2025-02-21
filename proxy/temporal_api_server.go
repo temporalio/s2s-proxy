@@ -69,4 +69,5 @@ func (s *TemporalAPIServer) Start() {
 func (s *TemporalAPIServer) Stop() {
 	s.logger.Info(fmt.Sprintf("Stopping %s", s.serviceName))
 	s.server.GracefulStop()
+	s.logger.Info(fmt.Sprintf("Stopped %s", s.serviceName))
 }
