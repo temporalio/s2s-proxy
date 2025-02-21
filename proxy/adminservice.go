@@ -281,9 +281,9 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	// Upstream (sourceStreamClient) recv loop
 	// If Upstream recv loop failed (sourceStream server restart for example), StreamWorkflowReplicationMessages
-	// will return without wait for Downstream loop stops. The reason is that Downstream loop can be blocked at
-	// targetStreamServer.Recv and we need both loops running to ensure bi-directional communication.
-	// Return from StreamWorkflowReplicationMessages will unblock targetStreamServer.Recv
+	// returns without waiting for Downstream loop to stop. This is because Downstream loop can be blocked at
+	// targetStreamServer.Recv, which prevent StreamWorkflowReplicationMessages from returning.
+	// Once StreamWorkflowReplicationMessages returns, targetStreamServer.Recv will be unblocked
 	// (see https://stackoverflow.com/questions/68218469/how-to-un-wedge-go-grpc-bidi-streaming-server-from-the-blocking-recv-call)
 	var wg sync.WaitGroup
 	wg.Add(1)
