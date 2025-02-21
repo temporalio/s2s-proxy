@@ -1,6 +1,8 @@
 # Stage 1: Build
 FROM --platform=$BUILDPLATFORM temporalio/base-builder:1.15.3 AS builder
 
+ARG TARGETARCH
+
 # Install build tools
 RUN apk add --update --no-cache ca-certificates git make openssh
 
