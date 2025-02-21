@@ -109,10 +109,6 @@ func newEchoServer(
 		}
 
 		configProvider := config.NewMockConfigProvider(*localClusterInfo.s2sProxyConfig)
-		if err != nil {
-			logger.Fatal("Failed to create transport provider", tag.Error(err))
-		}
-
 		proxy = s2sproxy.NewProxy(
 			configProvider,
 			transport.NewTransportManager(configProvider, logger),
@@ -261,20 +257,9 @@ func (s *echoServer) CreateStreamClient() (adminservice.AdminService_StreamWorkf
 	}, 5, s.logger)
 }
 
-// Method for testing replication stream.
-//
-// It starts a bi-directional stream by connecting to remote server (which acts as stream sender).
-// It sends a sequence of numbers as SyncReplicationState message and then wait for remote server
-// to reply.
-func (s *echoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
+func sendRecv(stream adminservice.AdminService_StreamWorkflowReplicationMessagesClient, sequence []int64) (map[int64]bool, error) {
 	echoed := make(map[int64]bool)
-	stream, err := s.CreateStreamClient()
-	if err != nil {
-		return echoed, err
-	}
-
-	s.logger.Info("==== SendAndRecv starting ====")
-
+	var err error
 	for _, waterMark := range sequence {
 		highWatermarkInfo := &watermarkInfo{
 			Watermark: waterMark,
@@ -310,6 +295,23 @@ func (s *echoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
 		}
 	}
 
+	return echoed, nil
+}
+
+// Method for testing replication stream.
+//
+// It starts a bi-directional stream by connecting to remote server (which acts as stream sender).
+// It sends a sequence of numbers as SyncReplicationState message and then wait for remote server
+// to reply.
+func (s *echoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
+	echoed := make(map[int64]bool)
+	stream, err := s.CreateStreamClient()
+	if err != nil {
+		return echoed, err
+	}
+
+	s.logger.Info("==== SendAndRecv starting ====")
+	echoed, err = sendRecv(stream, sequence)
 	_ = stream.CloseSend()
 	s.logger.Info("==== SendAndRecv completed ====")
 	return echoed, nil

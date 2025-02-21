@@ -239,12 +239,12 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 
 	shutdownChan := channel.NewShutdownOnce()
-	var wg sync.WaitGroup
-	wg.Add(2)
+
+	// Downstream (targetStreamServer) recv loop
 	go func() {
 		defer func() {
+			logger.Info("Shutdown targetStreamServer.Recv loop.")
 			shutdownChan.Shutdown()
-			wg.Done()
 
 			err = sourceStreamClient.CloseSend()
 			if err != nil {
@@ -266,7 +266,6 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			switch attr := req.GetAttributes().(type) {
 			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
 				logger.Debug(fmt.Sprintf("forwarding SyncReplicationState: inclusive %v", attr.SyncReplicationState.InclusiveLowWatermark))
-
 				if err = sourceStreamClient.Send(req); err != nil {
 					logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
 					return
@@ -279,8 +278,19 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			}
 		}
 	}()
+
+	// Upstream (sourceStreamClient) recv loop
+	// If Upstream recv loop failed (sourceStream server restart for example), StreamWorkflowReplicationMessages
+	// returns without waiting for Downstream loop to stop. This is because Downstream loop can be blocked at
+	// targetStreamServer.Recv, which prevent StreamWorkflowReplicationMessages from returning.
+	// Once StreamWorkflowReplicationMessages returns, targetStreamServer.Recv will be unblocked
+	// (see https://stackoverflow.com/questions/68218469/how-to-un-wedge-go-grpc-bidi-streaming-server-from-the-blocking-recv-call)
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
 		defer func() {
+			logger.Info("Shutdown sourceStreamClient.Recv loop.")
+
 			shutdownChan.Shutdown()
 			wg.Done()
 		}()
