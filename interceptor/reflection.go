@@ -49,11 +49,8 @@ func visitNamespace(obj any, match matcher) (bool, error) {
 			return visit.Skip, nil
 		}
 
-		if info, ok := vwp.Interface().(*namespace.NamespaceInfo); ok {
-			// Handle the NamespaceInfo.Name (in replication task attributes)
-			if !ok || info == nil {
-				return visit.Continue, nil
-			}
+		if info, ok := vwp.Interface().(*namespace.NamespaceInfo); ok && info != nil {
+			// Handle NamespaceInfo.Name in any message.
 			newName, ok := match(info.Name)
 			if !ok {
 				return visit.Continue, nil
