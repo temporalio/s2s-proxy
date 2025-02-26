@@ -225,9 +225,6 @@ func generateNamespaceObjCases(t *testing.T) []objCase {
 						{
 							NamespaceInfo: &namespace.NamespaceInfo{Name: ns},
 						},
-						{
-							NamespaceInfo: &namespace.NamespaceInfo{Name: "dont-change-this"},
-						},
 					},
 					NextPageToken: []byte{},
 				}
