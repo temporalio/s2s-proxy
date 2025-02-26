@@ -10,10 +10,6 @@ import (
 	"go.temporal.io/server/common/persistence/serialization"
 )
 
-const (
-	namespaceInfoFieldName = "Info"
-)
-
 var (
 	namespaceFieldNames = map[string]bool{
 		"Namespace":               true,
@@ -53,9 +49,8 @@ func visitNamespace(obj any, match matcher) (bool, error) {
 			return visit.Skip, nil
 		}
 
-		if fieldType.Name == namespaceInfoFieldName {
+		if info, ok := vwp.Interface().(*namespace.NamespaceInfo); ok {
 			// Handle the NamespaceInfo.Name (in replication task attributes)
-			info, ok := vwp.Interface().(*namespace.NamespaceInfo)
 			if !ok || info == nil {
 				return visit.Continue, nil
 			}
