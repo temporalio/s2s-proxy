@@ -1,0 +1,8 @@
+inbound:
+  name: "inbound-server"
+  server:
+    tcp:
+      listenAddress: "0.0.0.0:6233"
+  client:
+    tcp:
+      serverAddress: "localhost:7233"

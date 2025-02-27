@@ -1,0 +1,129 @@
+log:
+  stdout: true
+  level: info
+
+persistence:
+  defaultStore: sqlite-default
+  visibilityStore: sqlite-visibility
+  numHistoryShards: 32
+  datastores:
+    sqlite-default:
+      sql:
+        pluginName: "sqlite"
+        databaseName: "default-a"
+        connectAddr: "localhost"
+        connectProtocol: "tcp"
+        connectAttributes:
+          cache: "private"
+          setup: true
+        tls:
+          enabled: false
+          caFile: ""
+          certFile: ""
+          keyFile: ""
+          enableHostVerification: false
+          serverName: ""
+
+    sqlite-visibility:
+      sql:
+        pluginName: "sqlite"
+        databaseName: "default-vis-a"
+        connectAddr: "localhost"
+        connectProtocol: "tcp"
+        connectAttributes:
+          cache: "private"
+          setup: true
+        tls:
+          enabled: false
+          caFile: ""
+          certFile: ""
+          keyFile: ""
+          enableHostVerification: false
+          serverName: ""
+
+global:
+  membership:
+    maxJoinDuration: 30s
+    broadcastAddress: "127.0.0.1"
+  pprof:
+    port: 7936
+  metrics:
+    prometheus:
+#      # specify framework to use new approach for initializing metrics and/or use opentelemetry
+#      framework: "opentelemetry"
+      framework: "tally"
+      timerType: "histogram"
+      listenAddress: "127.0.0.1:8000"
+
+services:
+  frontend:
+    rpc:
+      grpcPort: 7233
+      membershipPort: 6933
+      bindOnLocalHost: true
+      httpPort: 7243
+
+  matching:
+    rpc:
+      grpcPort: 7235
+      membershipPort: 6935
+      bindOnLocalHost: true
+
+  history:
+    rpc:
+      grpcPort: 7234
+      membershipPort: 6934
+      bindOnLocalHost: true
+
+  worker:
+    rpc:
+      grpcPort: 7239
+      membershipPort: 6939
+      bindOnLocalHost: true
+
+clusterMetadata:
+  enableGlobalNamespace: true
+  failoverVersionIncrement: 1000000
+  masterClusterName: "cluster-a"
+  currentClusterName: "cluster-a"
+  clusterInformation:
+    cluster-a:
+      enabled: true
+      initialFailoverVersion: 9
+      rpcName: "frontend"
+      rpcAddress: "localhost:7233"
+
+dcRedirectionPolicy:
+  policy: "all-apis-forwarding"
+
+archival:
+  history:
+    state: "enabled"
+    enableRead: true
+    provider:
+      filestore:
+        fileMode: "0666"
+        dirMode: "0766"
+      gstorage:
+        credentialsPath: "/tmp/gcloud/keyfile.json"
+  visibility:
+    state: "enabled"
+    enableRead: true
+    provider:
+      filestore:
+        fileMode: "0666"
+        dirMode: "0766"
+
+namespaceDefaults:
+  archival:
+    history:
+      state: "disabled"
+      URI: "file:///tmp/temporal_archival/development"
+    visibility:
+      state: "disabled"
+      URI: "file:///tmp/temporal_vis_archival/development"
+
+dynamicConfigClient:
+  filepath: "dynamic-config.yaml"
+  pollInterval: "10s"
+
