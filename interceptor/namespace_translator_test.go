@@ -9,6 +9,7 @@ import (
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
+	"go.temporal.io/api/replication/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	enumsspb "go.temporal.io/server/api/enums/v1"
@@ -179,6 +180,56 @@ func generateNamespaceObjCases(t *testing.T) []objCase {
 					HistoryNodeIds: []int64{123},
 				}
 			},
+		},
+		{
+			objName:           "DescribeNamespaceResponse",
+			containsNamespace: true,
+			makeType: func(ns string) any {
+				return workflowservice.DescribeNamespaceResponse{
+					NamespaceInfo: &namespace.NamespaceInfo{
+						Name: ns,
+					},
+				}
+			},
+			expError: "",
+		},
+		{
+			objName:           "UpdateNamespaceResponse",
+			containsNamespace: true,
+			makeType: func(ns string) any {
+				return workflowservice.UpdateNamespaceResponse{
+					NamespaceInfo: &namespace.NamespaceInfo{
+						Name:        ns,
+						State:       1,
+						Description: "test",
+					},
+					Config: &namespace.NamespaceConfig{},
+					ReplicationConfig: &replication.NamespaceReplicationConfig{
+						ActiveClusterName: "active",
+						Clusters: []*replication.ClusterReplicationConfig{
+							{
+								ClusterName: "some-cluster",
+							},
+						},
+					},
+				}
+			},
+			expError: "",
+		},
+		{
+			objName:           "ListNamespacesResponse",
+			containsNamespace: true,
+			makeType: func(ns string) any {
+				return &workflowservice.ListNamespacesResponse{
+					Namespaces: []*workflowservice.DescribeNamespaceResponse{
+						{
+							NamespaceInfo: &namespace.NamespaceInfo{Name: ns},
+						},
+					},
+					NextPageToken: []byte{},
+				}
+			},
+			expError: "",
 		},
 		{
 			objName:           "StreamWorkflowReplicationMessagesResponse",
