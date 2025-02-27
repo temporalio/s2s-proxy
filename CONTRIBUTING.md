@@ -45,7 +45,7 @@ make test
 Start Temporal server with sample configs
 
 ```
-cd ${temporal_sever_folder}
+cd ${temporal_server_folder}
 make start-dependencies
 make bins
 ./temporal-server --config ${s2s_proxy_folder}/develop/config --env cluster-a --allow-no-auth start
