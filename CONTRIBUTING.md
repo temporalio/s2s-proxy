@@ -38,6 +38,14 @@ Run tests
 make test
 ```
 
+Build and push docker image
+
+```
+make docker-login AWS_ECR_REGION=${region} AWS_ECR_PROFILE=${profile} DOCKER_REPO=${ecr_repro}
+
+make docker-build-push AWS_ECR_REGION=${region} AWS_ECR_PROFILE=${profile} DOCKER_REPO=${ecr_repro}
+```
+
 ## Test locally
 
 ### Run proxy with inbound mode
