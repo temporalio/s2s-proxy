@@ -72,7 +72,7 @@ temporal operator --address 127.0.0.1:6233 cluster describe
 
 Request will be forwarded from proxy (port :6233) to local server (port :7233).
 
-### Connect two Temporal servers via s2s-proxies with Mux (uni-directional) mode
+### Connect two Temporal servers via s2s-proxies with multiplexing ("mux") mode
 
 Start servers
 ```
