@@ -31,7 +31,7 @@ func TestLoadS2SConfig(t *testing.T) {
 func TestLoadS2SConfigMux(t *testing.T) {
 	configFiles := []string{
 		"cluster-a-mux-client-proxy.yaml",
-		"cluster-a-mux-server-proxy.yaml",
+		"cluster-b-mux-server-proxy.yaml",
 	}
 
 	for _, file := range configFiles {

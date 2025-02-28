@@ -1,5 +1,13 @@
+inbound:
+  name: "b-inbound-server"
+  server:
+    type: "mux"
+    mux: "muxed"
+  client:
+    tcp:
+      serverAddress: "localhost:8233"
 outbound:
-  name: "outbound-server"
+  name: "b-outbound-server"
   server:
     tcp:
       listenAddress: "0.0.0.0:6333"
