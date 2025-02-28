@@ -99,7 +99,7 @@ DOCKER_IMAGE ?= temporal-s2s-proxy
 
 .PHONY: docker-login
 docker-login:
-	@omni aws ecr get-login-password --region ${AWS_ECR_REGION} --profile "${AWS_ECR_PROFILE}" \
+	@aws ecr get-login-password --region ${AWS_ECR_REGION} --profile "${AWS_ECR_PROFILE}" \
 	| docker login --username AWS --password-stdin $(DOCKER_REPO)
 
 .PHONY: docker-build-push
