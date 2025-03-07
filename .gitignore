@@ -22,8 +22,8 @@ go.work
 go.work.sum
 
 # misc file
-*.yaml
-*.yml
+/*.yaml
+/*.yml
 *.pem
 *.key
 build/
