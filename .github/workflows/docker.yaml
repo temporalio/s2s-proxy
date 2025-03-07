@@ -49,7 +49,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: temporaliotest/my-image
+          images: temporaliotest/s2s-proxy
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
