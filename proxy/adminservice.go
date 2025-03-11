@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"sync"
 
 	"github.com/temporalio/s2s-proxy/client"
@@ -14,6 +15,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
+	servercommon "go.temporal.io/server/common"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
@@ -77,7 +79,17 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 }
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
-	return s.adminClient.DescribeCluster(ctx, in0)
+	resp, err := s.adminClient.DescribeCluster(ctx, in0)
+	if err != nil {
+		return resp, err
+	}
+
+	if cfg := s.Config.ShardCountConfig; cfg.Mode == config.ShardCountLCM {
+		// Present a fake number of shards. In LCM mode, we present the least
+		// common multiple of both cluster shard counts.
+		resp.HistoryShardCount = common.LCM(cfg.RemoteShardCount, cfg.LocalShardCount)
+	}
+	return resp, err
 }
 
 func (s *adminServiceProxyServer) DescribeDLQJob(ctx context.Context, in0 *adminservice.DescribeDLQJobRequest) (*adminservice.DescribeDLQJobResponse, error) {
@@ -213,7 +225,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	if !ok {
 		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
 	}
-	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(
+	clientShardID, serverShardID, err := history.DecodeClusterShardMD(
 		headers.NewGRPCHeaderGetter(targetStreamServer.Context()),
 	)
 	if err != nil {
@@ -221,13 +233,48 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 
 	logger := log.With(s.logger,
-		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
-		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
+		tag.NewStringTag("client", ClusterShardIDtoString(clientShardID)),
+		tag.NewStringTag("server", ClusterShardIDtoString(serverShardID)),
+	)
 
 	logger.Info("AdminStreamReplicationMessages started.")
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
-	// simply forwarding target metadata
+	if cfg := s.Config.ShardCountConfig; cfg.Mode == config.ShardCountLCM {
+		// Abitrary shard count support.
+		//
+		// Temporal only supports shard counts where one shard count is an even multiple of the other.
+		// The trick in this mode is the proxy will present the Least Common Multiple of both cluster shard counts.
+		// Temporal establishes outbound replication streams to the proxy for all unqiue shard id pairs between
+		// itself and the proxy's shard count. Then the proxy directly forwards those streams along to the target
+		// cluster, remapping proxy stream shard ids to the target cluster shard ids.
+		newClientShardID := history.ClusterShardID{
+			ClusterID: clientShardID.ClusterID,
+			ShardID:   serverShardID.ShardID, // proxy fake shard id
+		}
+		newServerShardID := history.ClusterShardID{
+			ClusterID: serverShardID.ClusterID,
+		}
+		LCM := common.LCM(cfg.LocalShardCount, cfg.RemoteShardCount)
+		if s.IsInbound {
+			// Stream is going to local server. Remap shard id by local server shard count.
+			newServerShardID.ShardID = mapShardIDUnique(LCM, cfg.LocalShardCount, serverShardID.ShardID)
+		} else {
+			// Stream is going to remote server. Remap shard id by remote server shard count.
+			newServerShardID.ShardID = mapShardIDUnique(LCM, cfg.RemoteShardCount, serverShardID.ShardID)
+		}
+
+		logger = log.With(logger,
+			tag.NewStringTag("newClient", ClusterShardIDtoString(newClientShardID)),
+			tag.NewStringTag("newServer", ClusterShardIDtoString(newServerShardID)))
+
+		// Maybe there's a cleaner way. Trying to preserve any other metadata.
+		targetMetadata.Set(history.MetadataKeyClientClusterID, strconv.Itoa(int(newClientShardID.ClusterID)))
+		targetMetadata.Set(history.MetadataKeyClientShardID, strconv.Itoa(int(newClientShardID.ShardID)))
+		targetMetadata.Set(history.MetadataKeyServerClusterID, strconv.Itoa(int(newServerShardID.ClusterID)))
+		targetMetadata.Set(history.MetadataKeyServerShardID, strconv.Itoa(int(newServerShardID.ShardID)))
+	}
+
 	outgoingContext := metadata.NewOutgoingContext(targetStreamServer.Context(), targetMetadata)
 	outgoingContext, cancel := context.WithCancel(outgoingContext)
 	defer cancel()
@@ -326,4 +373,13 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	wg.Wait()
 	return nil
+}
+
+func mapShardIDUnique(sourceShardCount, targetShardCount, sourceShardID int32) int32 {
+	targetShardID := servercommon.MapShardID(sourceShardCount, targetShardCount, sourceShardID)
+	if len(targetShardID) != 1 {
+		panic(fmt.Sprintf("remapping shard count error: sourceShardCount=%d targetShardCount=%d sourceShardID=%d targetShardID=%v\n",
+			sourceShardCount, targetShardCount, sourceShardID, targetShardID))
+	}
+	return targetShardID[0]
 }
