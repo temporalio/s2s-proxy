@@ -13,6 +13,7 @@ import (
 	reflect "reflect"
 
 	config "github.com/temporalio/s2s-proxy/config"
+	operatorservice "go.temporal.io/api/operatorservice/v1"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	adminservice "go.temporal.io/server/api/adminservice/v1"
 	gomock "go.uber.org/mock/gomock"
@@ -42,18 +43,33 @@ func (m *MockClientFactory) EXPECT() *MockClientFactoryMockRecorder {
 }
 
 // NewRemoteAdminClient mocks base method.
-func (m *MockClientFactory) NewRemoteAdminClient(clientConfig config.ProxyClientConfig) (adminservice.AdminServiceClient, error) {
+func (m *MockClientFactory) NewRemoteAdminClient() (adminservice.AdminServiceClient, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewRemoteAdminClient", clientConfig)
+	ret := m.ctrl.Call(m, "NewRemoteAdminClient")
 	ret0, _ := ret[0].(adminservice.AdminServiceClient)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // NewRemoteAdminClient indicates an expected call of NewRemoteAdminClient.
-func (mr *MockClientFactoryMockRecorder) NewRemoteAdminClient(clientConfig any) *gomock.Call {
+func (mr *MockClientFactoryMockRecorder) NewRemoteAdminClient() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewRemoteAdminClient", reflect.TypeOf((*MockClientFactory)(nil).NewRemoteAdminClient), clientConfig)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewRemoteAdminClient", reflect.TypeOf((*MockClientFactory)(nil).NewRemoteAdminClient))
+}
+
+// NewRemoteOperatorClient mocks base method.
+func (m *MockClientFactory) NewRemoteOperatorClient() (operatorservice.OperatorServiceClient, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewRemoteOperatorClient")
+	ret0, _ := ret[0].(operatorservice.OperatorServiceClient)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// NewRemoteOperatorClient indicates an expected call of NewRemoteOperatorClient.
+func (mr *MockClientFactoryMockRecorder) NewRemoteOperatorClient() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewRemoteOperatorClient", reflect.TypeOf((*MockClientFactory)(nil).NewRemoteOperatorClient))
 }
 
 // NewRemoteWorkflowServiceClient mocks base method.
@@ -107,6 +123,21 @@ func (m *MockClientProvider) GetAdminClient() (adminservice.AdminServiceClient, 
 func (mr *MockClientProviderMockRecorder) GetAdminClient() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAdminClient", reflect.TypeOf((*MockClientProvider)(nil).GetAdminClient))
+}
+
+// GetOperatorClient mocks base method.
+func (m *MockClientProvider) GetOperatorClient() (operatorservice.OperatorServiceClient, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetOperatorClient")
+	ret0, _ := ret[0].(operatorservice.OperatorServiceClient)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOperatorClient indicates an expected call of GetOperatorClient.
+func (mr *MockClientProviderMockRecorder) GetOperatorClient() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOperatorClient", reflect.TypeOf((*MockClientProvider)(nil).GetOperatorClient))
 }
 
 // GetWorkflowServiceClient mocks base method.

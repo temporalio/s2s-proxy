@@ -5,6 +5,7 @@ import "io"
 var (
 	lazyClientMap = map[string]string{
 		"admin":    "GetAdminClient",
+		"operator": "GetOperatorClient",
 		"frontend": "GetWorkflowServiceClient",
 	}
 )
@@ -12,26 +13,6 @@ var (
 func init() {
 	ignoreMethod["lazyClient.admin.StreamWorkflowReplicationMessages"] = true
 	ignoreMethod["aclServer.admin.StreamWorkflowReplicationMessages"] = true
-}
-
-func generateACLServer(w io.Writer, service service) {
-	writeTemplatedCode(w, service, `
-package {{.ServiceName}}
-import (
-	"context"
-	"{{.ServicePackagePath}}"
-	"google.golang.org/grpc"
-)
-`)
-
-	writeTemplatedMethods(w, service, "aclServer", `
-func (s *adminServiceAuth) {{.Method}}(ctx context.Context, in0 {{.RequestType}}) ({{.ResponseType}}, error) {
-	if !s.access.IsAllowed("{{.Method}}") {
-		return nil, status.Errorf(codes.PermissionDenied, "Calling method {{.Method}} is not allowed.")
-	}
-	return s.delegate.{{.Method}}(ctx, in0)
-}
-`)
 }
 
 func generateLazyClient(w io.Writer, service service) {
