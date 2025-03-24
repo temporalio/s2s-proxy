@@ -45,6 +45,12 @@ func (c *routingClient) AddSearchAttributes(
 	opts ...grpc.CallOption,
 ) (*adminservice.AddSearchAttributesResponse, error) {
 	return c.adminClient.AddSearchAttributes(ctx, request, opts...)
+	operatorRequest := convertAddSearchAttributesRequest(request)
+	operatorResponse, err := c.operatorClient.AddSearchAttributes(ctx, operatorRequest, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return convertAddSearchAttributesResponse(operatorResponse), nil
 }
 
 func (c *routingClient) AddTasks(
@@ -196,7 +202,12 @@ func (c *routingClient) GetSearchAttributes(
 	request *adminservice.GetSearchAttributesRequest,
 	opts ...grpc.CallOption,
 ) (*adminservice.GetSearchAttributesResponse, error) {
-	return c.adminClient.GetSearchAttributes(ctx, request, opts...)
+	operatorRequest := convertGetSearchAttributesRequest(request)
+	operatorResponse, err := c.operatorClient.ListSearchAttributes(ctx, operatorRequest, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return convertGetSearchAttributesResponse(operatorResponse), nil
 }
 
 func (c *routingClient) GetShard(
@@ -349,7 +360,12 @@ func (c *routingClient) RemoveSearchAttributes(
 	request *adminservice.RemoveSearchAttributesRequest,
 	opts ...grpc.CallOption,
 ) (*adminservice.RemoveSearchAttributesResponse, error) {
-	return c.adminClient.RemoveSearchAttributes(ctx, request, opts...)
+	operatorRequest := convertRemoveSearchAttributesRequest(request)
+	operatorResponse, err := c.operatorClient.RemoveSearchAttributes(ctx, operatorRequest, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return convertRemoveSearchAttributesResponse(operatorResponse), nil
 }
 
 func (c *routingClient) RemoveTask(

@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/temporalio/s2s-proxy/client"
-	adminclient "github.com/temporalio/s2s-proxy/client/admin"
+	dualclient "github.com/temporalio/s2s-proxy/client/dual"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 
@@ -40,7 +40,7 @@ func NewAdminServiceProxyServer(
 	logger = log.With(logger, common.ServiceTag(serviceName))
 	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
 	return &adminServiceProxyServer{
-		adminClient:  adminclient.NewLazyClient(clientProvider),
+		adminClient:  dualclient.NewRoutingClient(clientProvider),
 		logger:       logger,
 		proxyOptions: opts,
 	}
