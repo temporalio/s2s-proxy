@@ -53,6 +53,7 @@ func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, 
 		// from the local temporal server, or the proxy may be deployed behind a load balancer.
 		in0.FrontendAddress = outbound.Server.ExternalAddress
 	}
+
 	return s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
 }
 
@@ -77,7 +78,24 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 }
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
-	return s.adminClient.DescribeCluster(ctx, in0)
+	resp, err := s.adminClient.DescribeCluster(ctx, in0)
+
+	apply := func(overrides *config.APIOverridesConfig) {
+		if overrides != nil && overrides.DescribeCluster != nil {
+			responseOverride := overrides.DescribeCluster.Response
+			if responseOverride.FailoverVersionIncrement != nil {
+				resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
+			}
+		}
+	}
+
+	if inbound := s.Config.Inbound; s.IsInbound && inbound != nil {
+		apply(inbound.APIOverrides)
+	} else if outbound := s.Config.Outbound; !s.IsInbound && outbound != nil {
+		apply(inbound.APIOverrides)
+	}
+
+	return resp, err
 }
 
 func (s *adminServiceProxyServer) DescribeDLQJob(ctx context.Context, in0 *adminservice.DescribeDLQJobRequest) (*adminservice.DescribeDLQJobResponse, error) {

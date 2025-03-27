@@ -30,6 +30,11 @@ inbound:
       - namespace1
       - namespace2
 
+  api_overrides:
+    DescribeCluster:
+      response:
+        failover_version_increment : 100
+
 outbound:
   name: "outbound-proxy"
   server:
