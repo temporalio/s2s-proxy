@@ -2,12 +2,6 @@ package auth
 
 import "slices"
 
-type (
-	ActionGroup struct {
-		Actions []string
-	}
-)
-
 var (
 	workflowServiceDisallowedAPIs = []string{
 		"DeprecateNamespace",
