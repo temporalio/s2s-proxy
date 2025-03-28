@@ -1,4 +1,4 @@
-package config
+package auth
 
 type (
 	ActionGroup struct {
@@ -102,6 +102,7 @@ func appendActions(actionsLists ...[]string) []string {
 	return res
 }
 
+// These are the set of workflow actions allowed to be forwarded between servers.
 func IsAllowedWorkflowAction(action string) bool {
 	for _, ag := range AllowedWorkflowActionGroup.Actions {
 		if ag == action {

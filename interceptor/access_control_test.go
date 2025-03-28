@@ -83,6 +83,43 @@ func TestMethodAccessControlInterceptor(t *testing.T) {
 	}
 }
 
+func TestWorkflowActionAllowedForForwarding(t *testing.T) {
+	cases := []struct {
+		methodName string
+		notAllowed bool
+	}{
+		{
+			methodName: "StartWorkflowExecution",
+		},
+		{
+			methodName: "ListNamespaces",
+			notAllowed: true,
+		},
+	}
+
+	logger := log.NewTestLogger()
+	i := NewAccessControlInterceptor(logger, nil)
+
+	unaryHandler := func(ctx context.Context, req any) (any, error) {
+		return nil, nil
+	}
+
+	for _, c := range cases {
+		t.Run(c.methodName, func(t *testing.T) {
+			unaryInfo := &grpc.UnaryServerInfo{
+				FullMethod: api.WorkflowServicePrefix + "/" + c.methodName,
+			}
+
+			_, err := i.Intercept(context.Background(), nil, unaryInfo, unaryHandler)
+			if c.notAllowed {
+				require.ErrorContains(t, err, "PermissionDenied")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func testNamespaceAccessControl(t *testing.T, objCases []objCase) {
 	testcases := []struct {
 		testName    string

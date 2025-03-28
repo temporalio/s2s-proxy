@@ -66,8 +66,11 @@ func (i *AccessControlInterceptor) Intercept(
 	info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler,
 ) (any, error) {
-	if i.adminServiceAccess == nil || i.namespaceAccess == nil {
-		return handler(ctx, req)
+	if strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) {
+		methodName := api.MethodName(info.FullMethod)
+		if !auth.IsAllowedWorkflowAction(methodName) {
+			return nil, status.Errorf(codes.PermissionDenied, "Calling method %s is not allowed.", methodName)
+		}
 	}
 
 	if i.adminServiceAccess != nil && strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
