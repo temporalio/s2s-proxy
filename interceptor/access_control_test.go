@@ -14,8 +14,7 @@ import (
 
 func TestMethodAccessControlInterceptor(t *testing.T) {
 	cases := []struct {
-		name string
-
+		name       string
 		policy     *config.ACLPolicy
 		notAllowed bool
 	}{
@@ -86,14 +85,15 @@ func TestMethodAccessControlInterceptor(t *testing.T) {
 func TestWorkflowActionAllowedForForwarding(t *testing.T) {
 	cases := []struct {
 		methodName string
-		notAllowed bool
+		expAllowed bool
 	}{
 		{
 			methodName: "StartWorkflowExecution",
+			expAllowed: true,
 		},
 		{
 			methodName: "ListNamespaces",
-			notAllowed: true,
+			expAllowed: false,
 		},
 	}
 
@@ -111,7 +111,7 @@ func TestWorkflowActionAllowedForForwarding(t *testing.T) {
 			}
 
 			_, err := i.Intercept(context.Background(), nil, unaryInfo, unaryHandler)
-			if c.notAllowed {
+			if !c.expAllowed {
 				require.ErrorContains(t, err, "PermissionDenied")
 			} else {
 				require.NoError(t, err)
