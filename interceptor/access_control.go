@@ -68,7 +68,7 @@ func (i *AccessControlInterceptor) Intercept(
 ) (any, error) {
 	if strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) {
 		methodName := api.MethodName(info.FullMethod)
-		if !auth.IsAllowedWorkflowAction(methodName) {
+		if !auth.IsAllowedWorkflowMigrationAPIs(methodName) {
 			return nil, status.Errorf(codes.PermissionDenied, "Calling method %s is not allowed.", methodName)
 		}
 	}

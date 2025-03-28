@@ -82,7 +82,7 @@ func TestMethodAccessControlInterceptor(t *testing.T) {
 	}
 }
 
-func TestWorkflowActionAllowedForForwarding(t *testing.T) {
+func TestAllowedWorkflowMigrationAPIs(t *testing.T) {
 	cases := []struct {
 		methodName string
 		expAllowed bool
