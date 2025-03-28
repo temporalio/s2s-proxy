@@ -77,8 +77,8 @@ func (i *AccessControlInterceptor) Intercept(
 		}
 	}
 
-	if i.namespaceAccess != nil && strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) ||
-		strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
+	if i.namespaceAccess != nil &&
+		(strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) || strings.HasPrefix(info.FullMethod, api.AdminServicePrefix)) {
 		allowed, err := isNamespaceAccessAllowed(req, i.namespaceAccess)
 		if !allowed || err != nil {
 			methodName := api.MethodName(info.FullMethod)
