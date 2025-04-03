@@ -67,11 +67,28 @@ type (
 		MuxTransportName string `yaml:"mux"`
 	}
 
+	DescribeClusterResponseOverrides struct {
+		FailoverVersionIncrement *int64 `yaml:"failover_version_increment,omitempty"`
+	}
+
+	DescribeClusterOverride struct {
+		Response DescribeClusterResponseOverrides `yaml:"response"`
+	}
+
+	AdminServiceOverrides struct {
+		DescribeCluster *DescribeClusterOverride `yaml:"DescribeCluster"`
+	}
+
+	APIOverridesConfig struct {
+		AdminSerivce AdminServiceOverrides `yaml:"adminService"`
+	}
+
 	ProxyConfig struct {
-		Name      string            `yaml:"name"`
-		Server    ProxyServerConfig `yaml:"server"`
-		Client    ProxyClientConfig `yaml:"client"`
-		ACLPolicy *ACLPolicy        `yaml:"aclPolicy"`
+		Name         string              `yaml:"name"`
+		Server       ProxyServerConfig   `yaml:"server"`
+		Client       ProxyClientConfig   `yaml:"client"`
+		ACLPolicy    *ACLPolicy          `yaml:"aclPolicy"`
+		APIOverrides *APIOverridesConfig `yaml:"api_overrides"`
 	}
 
 	MuxTransportConfig struct {

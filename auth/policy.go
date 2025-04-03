@@ -7,7 +7,6 @@ var (
 		"DeprecateNamespace",
 		"ListNamespaces",
 		"RegisterNamespace",
-		"GetSystemInfo",
 	}
 )
 

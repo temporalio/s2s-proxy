@@ -136,3 +136,78 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 		})
 	}
 }
+
+func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
+	req := &adminservice.DescribeClusterRequest{}
+	resp := &adminservice.DescribeClusterResponse{
+		FailoverVersionIncrement: 1,
+	}
+
+	overrideValue := int64(100)
+	overrideResp := &adminservice.DescribeClusterResponse{
+		FailoverVersionIncrement: overrideValue,
+	}
+
+	createOverride := func() *config.ProxyConfig {
+		return &config.ProxyConfig{
+			APIOverrides: &config.APIOverridesConfig{
+				AdminSerivce: config.AdminServiceOverrides{
+					DescribeCluster: &config.DescribeClusterOverride{
+						Response: config.DescribeClusterResponseOverrides{
+							FailoverVersionIncrement: &overrideValue,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	cases := []struct {
+		name     string
+		opts     proxyOptions
+		mockResp *adminservice.DescribeClusterResponse
+		expResp  *adminservice.DescribeClusterResponse
+	}{
+		{
+			name: "nil override config",
+			opts: proxyOptions{
+				IsInbound: true,
+			},
+			mockResp: resp,
+			expResp:  resp,
+		},
+		{
+			name: "override inbound",
+			opts: proxyOptions{
+				IsInbound: true,
+				Config: config.S2SProxyConfig{
+					Inbound: createOverride(),
+				},
+			},
+			mockResp: resp,
+			expResp:  overrideResp,
+		},
+		{
+			name: "override outbound",
+			opts: proxyOptions{
+				IsInbound: false,
+				Config: config.S2SProxyConfig{
+					Outbound: createOverride(),
+				},
+			},
+			mockResp: resp,
+			expResp:  overrideResp,
+		},
+	}
+
+	for _, c := range cases {
+		s.Run(c.name, func() {
+			ctx := context.Background()
+			server := s.newAdminServiceProxyServer(c.opts)
+			s.adminClientMock.EXPECT().DescribeCluster(ctx, gomock.Any()).Return(c.mockResp, nil)
+			resp, err := server.DescribeCluster(ctx, req)
+			s.NoError(err)
+			s.Equal(c.expResp, resp)
+		})
+	}
+}
