@@ -29,7 +29,6 @@ inbound:
     allowedNamespaces:
       - namespace1
       - namespace2
-
   api_overrides:
     DescribeCluster:
       response:

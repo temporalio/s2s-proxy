@@ -92,7 +92,7 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 	if inbound := s.Config.Inbound; s.IsInbound && inbound != nil {
 		apply(inbound.APIOverrides)
 	} else if outbound := s.Config.Outbound; !s.IsInbound && outbound != nil {
-		apply(inbound.APIOverrides)
+		apply(outbound.APIOverrides)
 	}
 
 	return resp, err
