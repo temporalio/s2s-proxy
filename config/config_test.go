@@ -26,6 +26,7 @@ func TestLoadS2SConfig(t *testing.T) {
 	assert.Greater(t, len(aclConfig.AllowedMethods.AdminService), 0)
 	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.AllowedNamespaces)
 	assert.Equal(t, HTTP, s2sConfig.HealthCheck.Protocol)
+	assert.Equal(t, int64(100), *s2sConfig.Inbound.APIOverrides.AdminSerivce.DescribeCluster.Response.FailoverVersionIncrement)
 }
 
 func TestLoadS2SConfigMux(t *testing.T) {

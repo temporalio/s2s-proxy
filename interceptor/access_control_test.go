@@ -14,8 +14,7 @@ import (
 
 func TestMethodAccessControlInterceptor(t *testing.T) {
 	cases := []struct {
-		name string
-
+		name       string
 		policy     *config.ACLPolicy
 		notAllowed bool
 	}{
@@ -75,6 +74,44 @@ func TestMethodAccessControlInterceptor(t *testing.T) {
 
 			err = i.StreamIntercept(nil, nil, streamInfo, streamHandler)
 			if c.notAllowed {
+				require.ErrorContains(t, err, "PermissionDenied")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestAllowedWorkflowMigrationAPIs(t *testing.T) {
+	cases := []struct {
+		methodName string
+		expAllowed bool
+	}{
+		{
+			methodName: "StartWorkflowExecution",
+			expAllowed: true,
+		},
+		{
+			methodName: "ListNamespaces",
+			expAllowed: false,
+		},
+	}
+
+	logger := log.NewTestLogger()
+	i := NewAccessControlInterceptor(logger, nil)
+
+	unaryHandler := func(ctx context.Context, req any) (any, error) {
+		return nil, nil
+	}
+
+	for _, c := range cases {
+		t.Run(c.methodName, func(t *testing.T) {
+			unaryInfo := &grpc.UnaryServerInfo{
+				FullMethod: api.WorkflowServicePrefix + "/" + c.methodName,
+			}
+
+			_, err := i.Intercept(context.Background(), nil, unaryInfo, unaryHandler)
+			if !c.expAllowed {
 				require.ErrorContains(t, err, "PermissionDenied")
 			} else {
 				require.NoError(t, err)

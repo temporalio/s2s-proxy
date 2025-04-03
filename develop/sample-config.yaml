@@ -29,6 +29,11 @@ inbound:
     allowedNamespaces:
       - namespace1
       - namespace2
+  api_overrides:
+    adminService:
+      DescribeCluster:
+        response:
+          failover_version_increment : 100
 
 outbound:
   name: "outbound-proxy"
