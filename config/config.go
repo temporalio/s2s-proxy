@@ -75,12 +75,12 @@ type (
 		Response DescribeClusterResponseOverrides `yaml:"response"`
 	}
 
-	AdminSerivceOverrides struct {
+	AdminServiceOverrides struct {
 		DescribeCluster *DescribeClusterOverride `yaml:"DescribeCluster"`
 	}
 
 	APIOverridesConfig struct {
-		AdminSerivce AdminSerivceOverrides `yaml:"adminService"`
+		AdminSerivce AdminServiceOverrides `yaml:"adminService"`
 	}
 
 	ProxyConfig struct {

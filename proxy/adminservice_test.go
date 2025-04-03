@@ -151,7 +151,7 @@ func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
 	createOverride := func() *config.ProxyConfig {
 		return &config.ProxyConfig{
 			APIOverrides: &config.APIOverridesConfig{
-				AdminSerivce: config.AdminSerivceOverrides{
+				AdminSerivce: config.AdminServiceOverrides{
 					DescribeCluster: &config.DescribeClusterOverride{
 						Response: config.DescribeClusterResponseOverrides{
 							FailoverVersionIncrement: &overrideValue,
