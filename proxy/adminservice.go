@@ -79,20 +79,22 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
 	resp, err := s.adminClient.DescribeCluster(ctx, in0)
-
-	apply := func(overrides *config.APIOverridesConfig) {
-		if overrides != nil && overrides.DescribeCluster != nil {
-			responseOverride := overrides.DescribeCluster.Response
-			if responseOverride.FailoverVersionIncrement != nil {
-				resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
-			}
+	var overrides *config.APIOverridesConfig
+	if s.IsInbound {
+		if s.Config.Inbound != nil {
+			overrides = s.Config.Inbound.APIOverrides
+		}
+	} else {
+		if s.Config.Outbound != nil {
+			overrides = s.Config.Outbound.APIOverrides
 		}
 	}
 
-	if inbound := s.Config.Inbound; s.IsInbound && inbound != nil {
-		apply(inbound.APIOverrides)
-	} else if outbound := s.Config.Outbound; !s.IsInbound && outbound != nil {
-		apply(outbound.APIOverrides)
+	if overrides != nil && overrides.AdminSerivce.DescribeCluster != nil {
+		responseOverride := overrides.AdminSerivce.DescribeCluster.Response
+		if responseOverride.FailoverVersionIncrement != nil {
+			resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
+		}
 	}
 
 	return resp, err

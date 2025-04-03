@@ -67,14 +67,20 @@ type (
 		MuxTransportName string `yaml:"mux"`
 	}
 
+	DescribeClusterResponseOverrides struct {
+		FailoverVersionIncrement *int64 `yaml:"failover_version_increment,omitempty"`
+	}
+
 	DescribeClusterOverride struct {
-		Response struct {
-			FailoverVersionIncrement *int64 `yaml:"failover_version_increment,omitempty"`
-		} `yaml:"response"`
+		Response DescribeClusterResponseOverrides `yaml:"response"`
+	}
+
+	AdminSerivceOverrides struct {
+		DescribeCluster *DescribeClusterOverride `yaml:"DescribeCluster"`
 	}
 
 	APIOverridesConfig struct {
-		DescribeCluster *DescribeClusterOverride `yaml:"DescribeCluster"`
+		AdminSerivce AdminSerivceOverrides `yaml:"adminService"`
 	}
 
 	ProxyConfig struct {
