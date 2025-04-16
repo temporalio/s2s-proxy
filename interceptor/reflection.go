@@ -24,12 +24,21 @@ var (
 		"EventsBatches":  true, // HistoryTaskAttributes
 		"HistoryBatches": true, // GetWorkflowExecutionRawHistoryV2
 	}
+
+	clusterNameFields = map[string]bool{
+		"ClusterName":       true, // DescribeCluster, ListClusters, ReplicationTaska, GetNamespace (Clusters)
+		"SourceCluster":     true, // HistoryDLQKey
+		"TargetCluster":     true, // HistoryDLQKey
+		"ActiveClusterName": true, // GetNamespace
+	}
 )
 
 // matcher returns 2 values:
 //  1. new name. If there is no change, new name equals to input name
 //  2. whether or not the input name matches the defined rule(s).
 type matcher func(name string) (string, bool)
+
+type visitorFn func(obj any, match matcher) (bool, error)
 
 // visitNamespace uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
@@ -62,7 +71,7 @@ func visitNamespace(obj any, match matcher) (bool, error) {
 		} else if dataBlobFieldNames[fieldType.Name] {
 			switch evt := vwp.Interface().(type) {
 			case []*common.DataBlob:
-				newEvts, changed, err := translateDataBlobs(match, evt...)
+				newEvts, changed, err := translateDataBlobs(match, visitNamespace, evt...)
 				if err != nil {
 					return visit.Stop, err
 				}
@@ -73,7 +82,7 @@ func visitNamespace(obj any, match matcher) (bool, error) {
 				}
 				matched = matched || changed
 			case *common.DataBlob:
-				newEvt, changed, err := translateOneDataBlob(match, evt)
+				newEvt, changed, err := translateOneDataBlob(match, visitNamespace, evt)
 				if err != nil {
 					return visit.Stop, err
 				}
@@ -108,11 +117,78 @@ func visitNamespace(obj any, match matcher) (bool, error) {
 	return matched, err
 }
 
-func translateOneDataBlob(match matcher, blob *common.DataBlob) (*common.DataBlob, bool, error) {
+// visitClusterName uses reflection to recursively visit all fields
+// in the given object. When it finds namespace string fields, it invokes
+// the provided match function.
+func visitClusterName(obj any, match matcher) (bool, error) {
+	var matched bool
+
+	// The visitor function can return Skip, Stop, or Continue to control recursion.
+	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
+		// Grab name of this struct field from the parent.
+		if vwp.Parent == nil || vwp.Parent.Kind() != reflect.Struct {
+			return visit.Continue, nil
+		}
+		fieldType := vwp.Parent.Type().Field(int(vwp.Index.Int()))
+		if !fieldType.IsExported() {
+			// Ignore unexported fields, particularly private gRPC message fields.
+			return visit.Skip, nil
+		}
+
+		if dataBlobFieldNames[fieldType.Name] {
+			switch evt := vwp.Interface().(type) {
+			case []*common.DataBlob:
+				newEvts, changed, err := translateDataBlobs(match, visitClusterName, evt...)
+				if err != nil {
+					return visit.Stop, err
+				}
+				if changed {
+					if err := visit.Assign(vwp, reflect.ValueOf(newEvts)); err != nil {
+						return visit.Stop, err
+					}
+				}
+				matched = matched || changed
+			case *common.DataBlob:
+				newEvt, changed, err := translateOneDataBlob(match, visitClusterName, evt)
+				if err != nil {
+					return visit.Stop, err
+				}
+				if changed {
+					if err := visit.Assign(vwp, reflect.ValueOf(newEvt)); err != nil {
+						return visit.Stop, err
+					}
+				}
+				matched = matched || changed
+			default:
+				return visit.Continue, nil
+			}
+		} else if clusterNameFields[fieldType.Name] {
+			name, ok := vwp.Interface().(string)
+			if !ok {
+				return visit.Continue, nil
+			}
+			newName, ok := match(name)
+			if !ok {
+				return visit.Continue, nil
+			}
+			if name != newName {
+				if err := visit.Assign(vwp, reflect.ValueOf(newName)); err != nil {
+					return visit.Stop, err
+				}
+			}
+			matched = matched || ok
+		}
+
+		return visit.Continue, nil
+	})
+	return matched, err
+}
+
+func translateOneDataBlob(match matcher, visitor visitorFn, blob *common.DataBlob) (*common.DataBlob, bool, error) {
 	if blob == nil || len(blob.Data) == 0 {
 		return blob, false, nil
 	}
-	blobs, changed, err := translateDataBlobs(match, blob)
+	blobs, changed, err := translateDataBlobs(match, visitor, blob)
 	if err != nil {
 		return nil, false, err
 	}
@@ -122,7 +198,7 @@ func translateOneDataBlob(match matcher, blob *common.DataBlob) (*common.DataBlo
 	return blobs[0], changed, err
 }
 
-func translateDataBlobs(match matcher, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
+func translateDataBlobs(match matcher, visitor visitorFn, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
 	if len(blobs) == 0 {
 		return blobs, false, nil
 	}
@@ -136,7 +212,7 @@ func translateDataBlobs(match matcher, blobs ...*common.DataBlob) ([]*common.Dat
 			return blobs, anyChanged, err
 		}
 
-		changed, err := visitNamespace(evt, match)
+		changed, err := visitor(evt, match)
 		if err != nil {
 			return blobs, anyChanged, err
 		}

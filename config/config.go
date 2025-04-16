@@ -104,15 +104,16 @@ type (
 	}
 
 	S2SProxyConfig struct {
-		Inbound                  *ProxyConfig                   `yaml:"inbound"`
-		Outbound                 *ProxyConfig                   `yaml:"outbound"`
-		MuxTransports            []MuxTransportConfig           `yaml:"mux"`
-		HealthCheck              *HealthCheckConfig             `yaml:"healthCheck"`
-		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
-		Metrics                  *MetricsConfig                 `yaml:"metrics"`
+		Inbound                  *ProxyConfig          `yaml:"inbound"`
+		Outbound                 *ProxyConfig          `yaml:"outbound"`
+		MuxTransports            []MuxTransportConfig  `yaml:"mux"`
+		HealthCheck              *HealthCheckConfig    `yaml:"healthCheck"`
+		NamespaceNameTranslation NameTranslationConfig `yaml:"namespaceNameTranslation"`
+		ClusterNameTranslation   NameTranslationConfig `yaml:"clusterNameTranslation"`
+		Metrics                  *MetricsConfig        `yaml:"metrics"`
 	}
 
-	NamespaceNameTranslationConfig struct {
+	NameTranslationConfig struct {
 		Mappings []NameMappingConfig `yaml:"mappings"`
 	}
 

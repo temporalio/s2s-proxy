@@ -13,19 +13,19 @@ import (
 )
 
 type (
-	NamespaceNameTranslator struct {
+	ClusterNameTranslator struct {
 		logger              log.Logger
 		requestNameMapping  map[string]string
 		responseNameMapping map[string]string
 	}
 )
 
-func NewNamespaceNameTranslator(
+func NewClusterNameTranslator(
 	logger log.Logger,
 	cfg config.ProxyConfig,
 	isInbound bool,
 	nameTranslations config.NameTranslationConfig,
-) *NamespaceNameTranslator {
+) *ClusterNameTranslator {
 	requestNameMapping := map[string]string{}
 	responseNameMapping := map[string]string{}
 	for _, tr := range nameTranslations.Mappings {
@@ -44,24 +44,17 @@ func NewNamespaceNameTranslator(
 		}
 	}
 
-	return &NamespaceNameTranslator{
+	return &ClusterNameTranslator{
 		logger:              logger,
 		requestNameMapping:  requestNameMapping,
 		responseNameMapping: responseNameMapping,
 	}
 }
 
-var _ grpc.UnaryServerInterceptor = (*NamespaceNameTranslator)(nil).Intercept
-var _ grpc.StreamServerInterceptor = (*NamespaceNameTranslator)(nil).InterceptStream
+var _ grpc.UnaryServerInterceptor = (*ClusterNameTranslator)(nil).Intercept
+var _ grpc.StreamServerInterceptor = (*ClusterNameTranslator)(nil).InterceptStream
 
-func createNameTranslator(mapping map[string]string) matcher {
-	return func(name string) (string, bool) {
-		newName, ok := mapping[name]
-		return newName, ok
-	}
-}
-
-func (i *NamespaceNameTranslator) Intercept(
+func (i *ClusterNameTranslator) Intercept(
 	ctx context.Context,
 	req any,
 	info *grpc.UnaryServerInfo,
@@ -78,13 +71,13 @@ func (i *NamespaceNameTranslator) Intercept(
 		i.logger.Debug("intercepted request", tag.NewStringTag("method", methodName))
 
 		// Translate namespace name in request.
-		changed, trErr := visitNamespace(req, createNameTranslator(i.requestNameMapping))
+		changed, trErr := visitClusterName(req, createNameTranslator(i.requestNameMapping))
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Request", req)
 
 		resp, err := handler(ctx, req)
 
 		// Translate namespace name in response.
-		changed, trErr = visitNamespace(resp, createNameTranslator(i.responseNameMapping))
+		changed, trErr = visitClusterName(resp, createNameTranslator(i.responseNameMapping))
 		logTranslateNamespaceResult(i.logger, changed, trErr, methodName+"Response", resp)
 		return resp, err
 	} else {
@@ -92,7 +85,7 @@ func (i *NamespaceNameTranslator) Intercept(
 	}
 }
 
-func (i *NamespaceNameTranslator) InterceptStream(
+func (i *ClusterNameTranslator) InterceptStream(
 	srv any,
 	ss grpc.ServerStream,
 	info *grpc.StreamServerInfo,
@@ -103,7 +96,7 @@ func (i *NamespaceNameTranslator) InterceptStream(
 		tag.NewAnyTag("requestMap", i.requestNameMapping),
 		tag.NewAnyTag("responseMap", i.responseNameMapping),
 	)
-	err := handler(srv, newStreamTranslator(
+	err := handler(srv, newClusterStreamTranslator(
 		ss,
 		i.logger,
 		i.requestNameMapping,
@@ -115,34 +108,34 @@ func (i *NamespaceNameTranslator) InterceptStream(
 	return err
 }
 
-type streamTranslator struct {
+type clusterStreamTranslator struct {
 	grpc.ServerStream
 	logger             log.Logger
 	requestTranslator  matcher
 	responseTranslator matcher
 }
 
-func (w *streamTranslator) RecvMsg(m any) error {
+func (w *clusterStreamTranslator) RecvMsg(m any) error {
 	w.logger.Debug("Intercept RecvMsg", tag.NewAnyTag("message", m))
-	changed, trErr := visitNamespace(m, w.requestTranslator)
-	logTranslateNamespaceResult(w.logger, changed, trErr, "RecvMsg", m)
+	changed, trErr := visitClusterName(m, w.requestTranslator)
+	logTranslateClusterResult(w.logger, changed, trErr, "RecvMsg", m)
 	return w.ServerStream.RecvMsg(m)
 }
 
-func (w *streamTranslator) SendMsg(m any) error {
+func (w *clusterStreamTranslator) SendMsg(m any) error {
 	w.logger.Debug("Intercept SendMsg", tag.NewStringTag("type", fmt.Sprintf("%T", m)), tag.NewAnyTag("message", m))
-	changed, trErr := visitNamespace(m, w.responseTranslator)
-	logTranslateNamespaceResult(w.logger, changed, trErr, "SendMsg", m)
+	changed, trErr := visitClusterName(m, w.responseTranslator)
+	logTranslateClusterResult(w.logger, changed, trErr, "SendMsg", m)
 	return w.ServerStream.SendMsg(m)
 }
 
-func newStreamTranslator(
+func newClusterStreamTranslator(
 	s grpc.ServerStream,
 	logger log.Logger,
 	requestMapping map[string]string,
 	responseMapping map[string]string,
 ) grpc.ServerStream {
-	return &streamTranslator{
+	return &clusterStreamTranslator{
 		ServerStream:       s,
 		logger:             logger,
 		requestTranslator:  createNameTranslator(requestMapping),
@@ -150,17 +143,17 @@ func newStreamTranslator(
 	}
 }
 
-func logTranslateNamespaceResult(logger log.Logger, changed bool, err error, methodName string, obj any) {
+func logTranslateClusterResult(logger log.Logger, changed bool, err error, methodName string, obj any) {
 	logger = log.With(
 		logger,
 		tag.NewStringTag("method", methodName),
 		tag.NewAnyTag("obj", obj),
 	)
 	if err != nil {
-		logger.Error("namespace translation error", tag.Error(err))
+		logger.Error("cluster name translation error", tag.Error(err))
 	} else if changed {
-		logger.Debug("namespace translation applied")
+		logger.Debug("cluster name translation applied")
 	} else {
-		logger.Debug("namespace translation not applied")
+		logger.Debug("cluster name translation not applied")
 	}
 }
