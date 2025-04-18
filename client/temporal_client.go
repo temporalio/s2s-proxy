@@ -7,6 +7,7 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/transport"
 
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
@@ -15,7 +16,8 @@ import (
 type (
 	// ClientFactory can be used to create RPC clients for temporal services
 	ClientFactory interface {
-		NewRemoteAdminClient(clientConfig config.ProxyClientConfig) (adminservice.AdminServiceClient, error)
+		NewRemoteAdminClient() (adminservice.AdminServiceClient, error)
+		NewRemoteOperatorClient() (operatorservice.OperatorServiceClient, error)
 		NewRemoteWorkflowServiceClient(clientConfig config.ProxyClientConfig) (workflowservice.WorkflowServiceClient, error)
 	}
 
@@ -26,6 +28,7 @@ type (
 
 	ClientProvider interface {
 		GetAdminClient() (adminservice.AdminServiceClient, error)
+		GetOperatorClient() (operatorservice.OperatorServiceClient, error)
 		GetWorkflowServiceClient() (workflowservice.WorkflowServiceClient, error)
 	}
 
@@ -36,6 +39,9 @@ type (
 
 		adminClientsLock sync.Mutex
 		adminClient      adminservice.AdminServiceClient
+
+		operatorClientLock sync.Mutex
+		operatorClient     operatorservice.OperatorServiceClient
 
 		workflowserviceClientsLock sync.Mutex
 		workflowserviceClient      workflowservice.WorkflowServiceClient
@@ -61,7 +67,7 @@ func (c *clientProvider) GetAdminClient() (adminservice.AdminServiceClient, erro
 		defer c.adminClientsLock.Unlock()
 
 		c.logger.Info(fmt.Sprintf("Create adminclient with config: %v", c.clientConfig))
-		adminClient, err := c.clientFactory.NewRemoteAdminClient(c.clientConfig)
+		adminClient, err := c.clientFactory.NewRemoteAdminClient()
 		if err != nil {
 			return nil, err
 		}
@@ -70,6 +76,24 @@ func (c *clientProvider) GetAdminClient() (adminservice.AdminServiceClient, erro
 	}
 
 	return c.adminClient, nil
+}
+
+func (c *clientProvider) GetOperatorClient() (operatorservice.OperatorServiceClient, error) {
+	if c.operatorClient == nil {
+		// Create operator client
+		c.operatorClientLock.Lock()
+		defer c.operatorClientLock.Unlock()
+
+		c.logger.Info(fmt.Sprintf("Create operatorclient with config: %v", c.clientConfig))
+		operatorClient, err := c.clientFactory.NewRemoteOperatorClient()
+		if err != nil {
+			return nil, err
+		}
+
+		c.operatorClient = operatorClient
+	}
+
+	return c.operatorClient, nil
 }
 
 func (c *clientProvider) GetWorkflowServiceClient() (workflowservice.WorkflowServiceClient, error) {
@@ -101,15 +125,22 @@ func NewClientFactory(
 	}
 }
 
-func (cf *clientFactory) NewRemoteAdminClient(
-	clientConfig config.ProxyClientConfig, // TODO: not used. remove it.
-) (adminservice.AdminServiceClient, error) {
+func (cf *clientFactory) NewRemoteAdminClient() (adminservice.AdminServiceClient, error) {
 	connection, err := cf.clientTransport.Connect()
 	if err != nil {
 		return nil, err
 	}
 
 	return adminservice.NewAdminServiceClient(connection), nil
+}
+
+func (cf *clientFactory) NewRemoteOperatorClient() (operatorservice.OperatorServiceClient, error) {
+	connection, err := cf.clientTransport.Connect()
+	if err != nil {
+		return nil, err
+	}
+
+	return operatorservice.NewOperatorServiceClient(connection), nil
 }
 
 func (cf *clientFactory) NewRemoteWorkflowServiceClient(

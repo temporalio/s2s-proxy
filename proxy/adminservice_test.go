@@ -40,7 +40,7 @@ func (s *adminserviceSuite) newAdminServiceProxyServer(opts proxyOptions) admins
 			TLS:           encryption.ClientTLSConfig{},
 		},
 	}
-	s.clientFactoryMock.EXPECT().NewRemoteAdminClient(cfg).Return(s.adminClientMock, nil).Times(1)
+	s.clientFactoryMock.EXPECT().NewRemoteAdminClient().Return(s.adminClientMock, nil).Times(1)
 	return NewAdminServiceProxyServer("test-service-name", cfg, s.clientFactoryMock, opts, log.NewTestLogger())
 }
 
