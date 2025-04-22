@@ -95,7 +95,7 @@ func (i *AccessControlInterceptor) Intercept(
 				logger.Error("namespace access control error", tag.Error(err))
 			}
 
-			return nil, status.Errorf(codes.PermissionDenied, "Calling method %s is not allowed because namespace access control.", methodName)
+			return nil, status.Errorf(codes.PermissionDenied, "Calling method %s is not allowed by namespace access control.", methodName)
 		}
 	}
 
