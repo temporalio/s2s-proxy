@@ -92,7 +92,7 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 
 	if overrides != nil && overrides.AdminSerivce.DescribeCluster != nil {
 		responseOverride := overrides.AdminSerivce.DescribeCluster.Response
-		if responseOverride.FailoverVersionIncrement != nil {
+		if resp != nil && responseOverride.FailoverVersionIncrement != nil {
 			resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
 		}
 	}
