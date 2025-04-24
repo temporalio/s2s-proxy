@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
@@ -67,6 +68,10 @@ func (i *NamespaceNameTranslator) Intercept(
 	info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler,
 ) (any, error) {
+	if common.IsRequestTranslationDisabled(ctx) {
+		return handler(ctx, req)
+	}
+
 	if len(i.requestNameMapping) == 0 {
 		return handler(ctx, req)
 	}
@@ -123,6 +128,9 @@ type streamTranslator struct {
 }
 
 func (w *streamTranslator) RecvMsg(m any) error {
+	if common.IsRequestTranslationDisabled(w.Context()) {
+		return w.ServerStream.RecvMsg(m)
+	}
 	w.logger.Debug("Intercept RecvMsg", tag.NewAnyTag("message", m))
 	changed, trErr := visitNamespace(m, w.requestTranslator)
 	logTranslateNamespaceResult(w.logger, changed, trErr, "RecvMsg", m)
@@ -130,6 +138,9 @@ func (w *streamTranslator) RecvMsg(m any) error {
 }
 
 func (w *streamTranslator) SendMsg(m any) error {
+	if common.IsRequestTranslationDisabled(w.Context()) {
+		return w.ServerStream.SendMsg(m)
+	}
 	w.logger.Debug("Intercept SendMsg", tag.NewStringTag("type", fmt.Sprintf("%T", m)), tag.NewAnyTag("message", m))
 	changed, trErr := visitNamespace(m, w.responseTranslator)
 	logTranslateNamespaceResult(w.logger, changed, trErr, "SendMsg", m)
