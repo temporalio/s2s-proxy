@@ -11,7 +11,6 @@ import (
 	gomock "go.uber.org/mock/gomock"
 	"google.golang.org/grpc/metadata"
 
-	//"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
