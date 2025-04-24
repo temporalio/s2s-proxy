@@ -47,13 +47,14 @@ func NewAdminServiceProxyServer(
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
-	if outbound := s.Config.Outbound; s.IsInbound && outbound != nil && len(outbound.Server.ExternalAddress) > 0 {
-		// Override this address so that cross-cluster connections flow through the proxy.
-		// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
-		// from the local temporal server, or the proxy may be deployed behind a load balancer.
-		in0.FrontendAddress = outbound.Server.ExternalAddress
+	if !common.IsRequestTranslationDisabled(ctx) {
+		if outbound := s.Config.Outbound; s.IsInbound && outbound != nil && len(outbound.Server.ExternalAddress) > 0 {
+			// Override this address so that cross-cluster connections flow through the proxy.
+			// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
+			// from the local temporal server, or the proxy may be deployed behind a load balancer.
+			in0.FrontendAddress = outbound.Server.ExternalAddress
+		}
 	}
-
 	return s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
 }
 
@@ -79,6 +80,10 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
 	resp, err := s.adminClient.DescribeCluster(ctx, in0)
+	if common.IsRequestTranslationDisabled(ctx) {
+		return resp, err
+	}
+
 	var overrides *config.APIOverridesConfig
 	if s.IsInbound {
 		if s.Config.Inbound != nil {
