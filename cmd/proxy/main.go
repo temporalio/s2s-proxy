@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -61,8 +63,19 @@ func buildCLIOptions() *cli.App {
 	return app
 }
 
+func startProfile() {
+	go func() {
+		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
+			panic(err)
+		}
+	}()
+
+}
+
 func startProxy(c *cli.Context) error {
 	var proxyParams ProxyParams
+
+	startProfile()
 
 	var logCfg log.Config
 	if logLevel := c.String(config.LogLevelFlag); len(logLevel) != 0 {
