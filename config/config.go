@@ -110,6 +110,7 @@ type (
 		HealthCheck              *HealthCheckConfig             `yaml:"healthCheck"`
 		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
 		Metrics                  *MetricsConfig                 `yaml:"metrics"`
+		FilterNsData             bool                           `yaml:"filterNsData"`
 	}
 
 	NamespaceNameTranslationConfig struct {
