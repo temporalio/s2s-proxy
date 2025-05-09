@@ -37,6 +37,7 @@ import (
 	"strings"
 	"text/template"
 
+	"go.temporal.io/api/operatorservice/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"golang.org/x/text/cases"
@@ -72,12 +73,17 @@ var (
 		{
 			name:            "frontend",
 			clientType:      reflect.TypeOf((*workflowservice.WorkflowServiceClient)(nil)),
-			clientGenerator: generateFrontendOrAdminClient,
+			clientGenerator: generateFrontendOrAdminOrOperatorClient,
 		},
 		{
 			name:            "admin",
 			clientType:      reflect.TypeOf((*adminservice.AdminServiceClient)(nil)),
-			clientGenerator: generateFrontendOrAdminClient,
+			clientGenerator: generateFrontendOrAdminOrOperatorClient,
+		},
+		{
+			name:            "operator",
+			clientType:      reflect.TypeOf((*operatorservice.OperatorServiceClient)(nil)),
+			clientGenerator: generateFrontendOrAdminOrOperatorClient,
 		},
 		{
 			name:            "history",
@@ -464,7 +470,7 @@ func writeTemplatedMethods(w io.Writer, service service, impl string, text strin
 	}
 }
 
-func generateFrontendOrAdminClient(w io.Writer, service service) {
+func generateFrontendOrAdminOrOperatorClient(w io.Writer, service service) {
 	writeTemplatedCode(w, service, `
 package {{.ServiceName}}
 
@@ -669,10 +675,7 @@ func main() {
 	callWithFile(generateRetryableClient, svc, "retryable_client", licenseText)
 
 	// s2s-proxy customizations
-	if svc.name == "admin" || svc.name == "frontend" {
+	if svc.name == "admin" || svc.name == "operator" || svc.name == "frontend" {
 		callWithFile(generateLazyClient, svc, "lazy_client", "")
-	}
-	if svc.name == "admin" {
-		callWithFile(generateACLServer, svc, "acl_server", "")
 	}
 }
