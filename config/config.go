@@ -153,12 +153,30 @@ func (c ProxyClientConfig) IsTCP() bool {
 	return c.Type == TCPTransport
 }
 
+func (c *ProxyClientConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Set default
+	c.Type = TCPTransport
+
+	// Alias to avoid infinite recursion
+	type plain ProxyClientConfig
+	return unmarshal((*plain)(c))
+}
+
 func (c ProxyServerConfig) IsMux() bool {
 	return c.Type == MuxTransport
 }
 
 func (c ProxyServerConfig) IsTCP() bool {
 	return c.Type == TCPTransport
+}
+
+func (c *ProxyServerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Set default
+	c.Type = TCPTransport
+
+	// Alias to avoid infinite recursion
+	type plain ProxyServerConfig
+	return unmarshal((*plain)(c))
 }
 
 func newConfigProvider(ctx *cli.Context) (ConfigProvider, error) {
