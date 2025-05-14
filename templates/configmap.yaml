@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "s2s-proxy.fullname" . }}-config
+  labels:
+    {{- include "s2s-proxy.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    source:
+      hostPort: {{ .Values.config.source.hostPort }}
+    target:
+      hostPort: {{ .Values.config.target.hostPort }}
+    multiplexMode: {{ .Values.config.multiplexMode }}
+    logLevel: {{ .Values.config.logLevel }}
+    {{- if .Values.config.accessControl.enabled }}
+    accessControl:
+      {{- if .Values.config.accessControl.apiAllowList }}
+      apiAllowList:
+      {{- range .Values.config.accessControl.apiAllowList }}
+        - {{ . }}
+      {{- end }}
+      {{- end }}
+      {{- if .Values.config.accessControl.namespaceAllowList }}
+      namespaceAllowList:
+      {{- range .Values.config.accessControl.namespaceAllowList }}
+        - {{ . }}
+      {{- end }}
+      {{- end }}
+    {{- end }}
