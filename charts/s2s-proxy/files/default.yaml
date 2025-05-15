@@ -58,4 +58,4 @@ healthCheck:
 metrics:
   prometheus:
     framework: "tally"
-    listenAddress: "0.0.0.0:8002"
+    listenAddress: "0.0.0.0:9090"
