@@ -57,7 +57,7 @@ Merge default config with overrides
 {{- define "s2s-proxy.mergedConfig" -}}
 {{- $defaults := .Files.Get "files/default.yaml" | fromYaml }}
 {{- $overrides := .Values.configOverride }}
-{{- $merged := deepCopy $defaults | merge $overrides }}
+{{- $merged := deepCopy $defaults | merge $overrides -}}
 
 {{/* Merge the mux list in a better way */}}
 {{- $mergedMux := list }}
@@ -66,7 +66,7 @@ Merge default config with overrides
     {{- $mergedItem := deepCopy $item | merge $overrideItem }}
     {{- $mergedMux = append $mergedMux $mergedItem }}
 {{- end }}
-{{- $_ := set $merged "mux" $mergedMux }}
+{{- $_ := set $merged "mux" $mergedMux -}}
 
 {{- $merged | toYaml }}
 {{- end }}

@@ -7,9 +7,10 @@ metadata:
 spec:
   type: {{ .Values.service.type }}
   ports:
-    - port: {{ .Values.service.port }}
-      targetPort: http
+  {{- $ports := (include "s2s-proxy.parsedPorts" . | fromYaml) }}
+    - port: {{ $ports.egress }}
+      targetPort: {{ $ports.egress }}
       protocol: TCP
-      name: http
+      name: rpc-egress
   selector:
     {{- include "s2s-proxy.selectorLabels" . | nindent 4 }}
