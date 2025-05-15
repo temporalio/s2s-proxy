@@ -2,7 +2,7 @@
 # Source: s2s-proxy/templates/configmap.yaml
 apiVersion: v1
 data:
-  config.yml: |-
+  config.yaml: |-
     healthCheck:
       listenAddress: 0.0.0.0:8234
       protocol: http
@@ -22,9 +22,9 @@ data:
           - GetNamespace
       client:
         tcp:
-          serverAddress: frontend-wumbo.temporal.svc.cluster.local:7233
+          serverAddress: frontend-ingress.temporal.svc.cluster.local:7233
           tls:
-            certificatePath: test-cert
+            certificatePath: ""
             keyPath: ""
             serverCAPath: ""
             serverName: ""
@@ -35,20 +35,21 @@ data:
     metrics:
       prometheus:
         framework: tally
-        listenAddress: 0.0.0.0:8002
+        listenAddress: 0.0.0.0:9090
     mux:
     - client:
-        serverAddress: 0.0.0.0:7777
+        serverAddress: s2s-proxy-sample.example.tmprl.cloud:8233
         tls:
-          certificatePath: abc
-          keyPath: ""
+          certificatePath: /s2c-server-tls/tls.crt
+          keyPath: /s2c-server-tls/tls.key
           serverCAPath: ""
           serverName: ""
       mode: client
       name: muxed
     namespaceNameTranslation:
-    - localName: local
-      remoteName: cloud
+      mappings:
+      - localName: my-local
+        remoteName: my-cloud.acct
     outbound:
       client:
         mux: muxed
@@ -56,7 +57,7 @@ data:
       name: outbound-server
       server:
         tcp:
-          listenAddress: 0.0.0.0:8888
+          listenAddress: 0.0.0.0:9233
           tls:
             certificatePath: ""
             clientCAPath: ""
@@ -80,8 +81,8 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - port: 8888
-      targetPort: 8888
+    - port: 9233
+      targetPort: 9233
       protocol: TCP
       name: rpc-egress
   selector:
@@ -119,13 +120,13 @@ spec:
           image: "temporaliotest/s2s-proxy:v0.1.0"
           imagePullPolicy: IfNotPresent
           ports:
-          - containerPort: 8888
+          - containerPort: 9233
             name: rpc-egress
             protocol: TCP
           - containerPort: 8234
             name: rpc-healthcheck
             protocol: TCP
-          - containerPort: 8002
+          - containerPort: 9090
             name: rpc-metrics
             protocol: TCP
           env:
@@ -133,9 +134,24 @@ spec:
               value: "/config/config.yaml"
           livenessProbe:
             httpGet:
-              path: /
-              port: http
+              path: /health
+              port: 8234
           readinessProbe:
             httpGet:
-              path: /
-              port: http
+              path: /health
+              port: 8234
+          volumeMounts:
+            - mountPath: /config
+              name: config-volume
+            - mountPath: /s2c-server-tls
+              name: s2c-server-tls
+              readOnly: true
+      volumes:
+        - configMap:
+            defaultMode: 420
+            name: example-s2s-proxy
+          name: config-volume
+        - name: s2c-server-tls
+          secret:
+            optional: false
+            secretName: s2c-server-tls
