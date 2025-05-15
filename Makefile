@@ -93,7 +93,7 @@ build: clean-builds amd64-build
 # Docker
 AWS_ECR_REGION ?=
 AWS_ECR_PROFILE ?=
-DOCKER_REPO ?= 
+DOCKER_REPO ?=
 DOCKER_TAG ?= $(shell whoami | tr -d " ")-local-$(shell git rev-parse --short HEAD)
 DOCKER_IMAGE ?= temporal-s2s-proxy
 
@@ -106,3 +106,17 @@ docker-login:
 docker-build-push:
 	@docker buildx build --platform=linux/amd64,linux/arm64 -t "${DOCKER_REPO}/${DOCKER_IMAGE}:${DOCKER_TAG}" --push .
 
+
+.PHONY: helm-install
+helm-install:
+	brew install helm
+	helm plugin install https://github.com/helm-unittest/helm-unittest.git
+
+.PHONY: helm-test
+helm-test:
+	cd charts; helm unittest s2s-proxy/
+
+.PHONY: helm-example
+helm-example:
+	cd charts; helm template example ./s2s-proxy -f ./s2s-proxy/values.example.yaml > s2s-proxy/example.yaml
+	@echo "Example written to charts/s2s-proxy/example.yaml"

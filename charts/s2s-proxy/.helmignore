@@ -22,3 +22,5 @@
 *.tmproj
 .vscode/
 tests/
+example.yaml
+values.example.yaml
