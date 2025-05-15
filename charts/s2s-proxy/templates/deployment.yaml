@@ -69,12 +69,12 @@ spec:
               name: config-volume
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- with .Values.volumes }}
       volumes:
         - configMap:
             defaultMode: 420
             name: {{ include "s2s-proxy.fullname" . }}
           name: config-volume
+      {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.nodeSelector }}
