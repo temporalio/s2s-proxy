@@ -12,6 +12,11 @@ import (
 	"go.temporal.io/server/common/log/tag"
 )
 
+const (
+	PROXY_START_COUNT  = "proxy_start_count"
+	HEALTH_CHECK_COUNT = "health_check_count"
+)
+
 // tally sanitizer options that satisfy both Prometheus and M3 restrictions.
 // This will rename metrics at the tally emission level, so metrics name we
 // use maybe different from what gets emitted. In the current implementation
