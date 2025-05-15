@@ -1,0 +1,61 @@
+inbound:
+  name: "inbound-server"
+  server:
+    type: "mux"
+    mux: "muxed"
+  client:
+    tcp:
+      serverAddress: "frontend-ingress.temporal.svc.cluster.local:7233"
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        serverCAPath: ""
+        serverName: ""
+
+  aclPolicy:
+    allowedMethods:
+      adminService:
+        - AddOrUpdateRemoteCluster
+        - RemoveRemoteCluster
+        - DescribeCluster
+        - DescribeMutableState
+        - GetNamespaceReplicationMessages
+        - GetWorkflowExecutionRawHistoryV2
+        - ListClusters
+        - StreamWorkflowReplicationMessages
+        - ReapplyEvents
+        - GetNamespace
+
+outbound:
+  name: "outbound-server"
+  server:
+    tcp:
+      listenAddress: "0.0.0.0:9233"
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        clientCAPath: ""
+        requireClientAuth: false
+  client:
+    type: "mux"
+    mux: "muxed"
+
+mux:
+  - name: "muxed"
+    mode: "client"
+    client:
+      serverAddress: "" # Temporal cloud migration server endpoint
+      tls:
+        certificatePath: ""
+        keyPath: ""
+        serverCAPath: ""
+        serverName: ""
+
+healthCheck:
+  protocol: "http"
+  listenAddress: "0.0.0.0:8234"
+
+metrics:
+  prometheus:
+    framework: "tally"
+    listenAddress: "0.0.0.0:8002"
