@@ -22,18 +22,18 @@ tests:
           pattern: RELEASE-NAME-s2s-proxy
       # Brittle regex matching. Not sure how better to check yaml inside of a string though.
       - matchRegex:
-          path: data["config.yml"]
+          path: data["config.yaml"]
           pattern: |-
             healthCheck:
               \s*listenAddress: 0.0.0.0:1111
       - matchRegex:
-          path: data["config.yml"]
+          path: data["config.yaml"]
           pattern: |-
               client:
                 \s*tcp:
                   \s*serverAddress: frontend-other:2222
       - matchRegex:
-          path: data["config.yml"]
+          path: data["config.yaml"]
           pattern: |-
             mux:
             - client:

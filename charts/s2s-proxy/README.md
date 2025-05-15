@@ -30,11 +30,8 @@ Testing
 
 ## Unit tests
 
-Install [helm-unittest](https://github.com/helm-unittest/helm-unittest).
+Install [helm-unittest](https://github.com/helm-unittest/helm-unittest)
 
 ```
-
-
-
-
-
+helm unittest .
+```
