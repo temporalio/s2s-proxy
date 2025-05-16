@@ -9,7 +9,6 @@ on:
   push:
     branches:
       - main
-      - haifengh/docker
   release:
     types: [published, prereleased]      
 
@@ -45,11 +44,19 @@ jobs:
           go-version-file: 'go.mod'
           check-latest: true
 
+      - name: Set image names
+        id: image-names
+        run: |
+          echo "images=temporaliotest/s2s-proxy" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "images=temporaliotest/s2s-proxy,temporalio/s2s-proxy" >> "$GITHUB_OUTPUT"
+          fi          
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: temporaliotest/s2s-proxy,temporalio/s2s-proxy
+          images: ${{ steps.image-names.outputs.images }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
