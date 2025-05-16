@@ -117,7 +117,7 @@ spec:
     spec:
       containers:
         - name: s2s-proxy
-          image: "temporaliotest/s2s-proxy:v0.1.0"
+          image: "temporalio/s2s-proxy:v0.1.0"
           imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 9233
