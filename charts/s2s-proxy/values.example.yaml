@@ -23,5 +23,5 @@ configOverride:
 
   namespaceNameTranslation:
     mappings:
-    - localName: my-loca
+    - localName: my-local
       remoteName: my-cloud.acct
