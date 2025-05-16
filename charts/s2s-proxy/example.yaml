@@ -48,7 +48,7 @@ data:
       name: muxed
     namespaceNameTranslation:
       mappings:
-      - localName: my-local
+      - localName: my-loca
         remoteName: my-cloud.acct
     outbound:
       client:
