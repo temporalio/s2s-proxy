@@ -47,11 +47,11 @@ jobs:
       - name: Set image names
         id: image-names
         run: |
-          echo "images=temporaliotest/s2s-proxy" >> "$GITHUB_OUTPUT"
           if [[ "${{ github.event_name }}" == "release" ]]; then
             echo "images=temporaliotest/s2s-proxy,temporalio/s2s-proxy" >> "$GITHUB_OUTPUT"
-          fi          
-
+          else
+            echo "images=temporaliotest/s2s-proxy" >> "$GITHUB_OUTPUT"
+          fi
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
