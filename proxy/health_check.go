@@ -21,7 +21,7 @@ type healthChecker struct {
 
 func (h *healthChecker) createHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		h.scope.Counter(metrics.HEALTH_CHECK_COUNT).Inc(1)
+		h.scope.Counter(metrics.HEALTH_CHECK_SUCCESS_COUNT).Inc(1)
 		healthCheckHandler(w, r)
 	}
 }

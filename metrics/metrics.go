@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	PROXY_START_COUNT  = "proxy_start_count"
-	HEALTH_CHECK_COUNT = "health_check_count"
+	PROXY_START_COUNT          = "proxy_start_count"
+	HEALTH_CHECK_SUCCESS_COUNT = "health_check_success_count"
 )
 
 // tally sanitizer options that satisfy both Prometheus and M3 restrictions.
