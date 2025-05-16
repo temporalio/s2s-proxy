@@ -8,6 +8,7 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
+	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport"
 	"github.com/uber-go/tally/v4"
 	"go.temporal.io/server/common/log"
@@ -33,6 +34,7 @@ type (
 		inboundServer     *ProxyServer
 		healthCheckServer *http.Server
 		logger            log.Logger
+		scope             tally.Scope
 	}
 
 	proxyOptions struct {
@@ -202,9 +204,10 @@ func NewProxy(
 		config:       s2sConfig,
 		transManager: transManager,
 		logger:       logger,
+		scope:        scope,
 	}
 
-	scope.Counter("proxy_start").Inc(1)
+	scope.Counter(metrics.PROXY_START_COUNT).Inc(1)
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
 	//    local server -> proxy(outbound) -> remote server
@@ -239,12 +242,6 @@ func NewProxy(
 	return proxy
 }
 
-func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("OK"))
-}
-
 func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 	if cfg.Protocol != config.HTTP {
 		return fmt.Errorf("Not supported health check protocol %s", cfg.Protocol)
@@ -256,8 +253,10 @@ func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 		Handler: nil, // Default HTTP handler (using http.HandleFunc registrations)
 	}
 
+	checker := newHealthCheck(s.logger, s.scope)
+
 	// Register the health check endpoint
-	http.HandleFunc("/health", healthCheckHandler)
+	http.HandleFunc("/health", checker.createHandler())
 
 	go func() {
 		s.logger.Info("Starting health check server", tag.Address(cfg.ListenAddress))

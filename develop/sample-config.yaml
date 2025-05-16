@@ -63,4 +63,4 @@ namespaceNameTranslation:
 metrics:
   prometheus:
       framework: "tally"
-      listenAddress: "127.0.0.1:8002"
+      listenAddress: "0.0.0.0:9090"
