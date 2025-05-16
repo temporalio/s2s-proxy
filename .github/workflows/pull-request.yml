@@ -54,7 +54,13 @@ jobs:
         working-directory: charts/s2s-proxy
         run: helm unittest .
 
-      - name: Check Helm example
+      - name: Check Helm example.yaml is up to date
+        env:
+          EXAMPLE_FILE: "charts/s2s-proxy/example.yaml"
         run: |
           make helm-example
-          .github/workflows/scripts/check-diff.sh charts/s2s-proxy/example.yaml
+          if git diff --color --exit-code -- "$EXAMPLE_FILE"; then
+            echo "Success: $EXAMPLE_FILE is up to date"
+          else
+            echo "ERROR: $EXAMPLE_FILE is not up to date."
+            echo "Please run 'make helm-example' and commit the changes."
