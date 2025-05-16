@@ -27,16 +27,42 @@ jobs:
       # ensuring that PRs can use the cache from main.
       #
       # See https://github.com/actions/setup-go/issues/316 for more info.
-      - uses: actions/setup-go@v4
+      - name: Install go
+        uses: actions/setup-go@v4
         with:
           go-version-file: 'go.mod'
-          cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.          
+          cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
 
-      - name: Run build
+      - name: Run go build
         run: go build ./...
-  
+
       # - name: Run lint
       #   run: make lint
 
-      - name: Run the unit test
+      - name: Run go unittest
         run: make test
+
+      - name: Install helm
+        uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+
+      - name: Install helm-unittest
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git
+
+      - name: Run helm-unittest
+        working-directory: charts/s2s-proxy
+        run: helm unittest .
+
+      - name: Check Helm example.yaml is up to date
+        env:
+          EXAMPLE_FILE: "charts/s2s-proxy/example.yaml"
+        run: |
+          make helm-example
+          if git diff --color --exit-code -- "$EXAMPLE_FILE"; then
+            echo "Success: $EXAMPLE_FILE is up to date"
+          else
+            echo "ERROR: $EXAMPLE_FILE is not up to date."
+            echo "Please run 'make helm-example' and commit the changes."
+            exit 1
+          fi
