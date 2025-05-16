@@ -53,3 +53,11 @@ jobs:
       - name: Run helm-unittest
         working-directory: charts/s2s-proxy
         run: helm unittest .
+
+      - name: Check Helm example
+        run: |
+          make helm-example
+          .github/workflows/scripts/check-diff.sh charts/s2s-proxy/example.yaml
+          if [ $? ]; then
+            echo "Please re-run 'make helm-example' and commit changes"
+          fi
