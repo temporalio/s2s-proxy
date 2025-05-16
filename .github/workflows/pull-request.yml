@@ -64,3 +64,4 @@ jobs:
           else
             echo "ERROR: $EXAMPLE_FILE is not up to date."
             echo "Please run 'make helm-example' and commit the changes."
+          fi
