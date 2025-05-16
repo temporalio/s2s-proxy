@@ -1,0 +1,41 @@
+suite: test configmap
+templates:
+  - configmap.yaml
+tests:
+  - it: should override s2s-proxy config
+    set:
+      configOverride:
+        healthCheck:
+          listenAddress: 0.0.0.0:1111
+        inbound:
+          client:
+            tcp:
+              serverAddress: "frontend-other:2222"
+        mux:
+        - client:
+            serverAddress: "addr:3333"
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - matchRegex:
+          path: metadata.name
+          pattern: RELEASE-NAME-s2s-proxy
+      # Brittle regex matching. Not sure how better to check yaml inside of a string though.
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: |-
+            healthCheck:
+              \s*listenAddress: 0.0.0.0:1111
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: |-
+              client:
+                \s*tcp:
+                  \s*serverAddress: frontend-other:2222
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: |-
+            mux:
+            - client:
+                serverAddress: addr:3333
+

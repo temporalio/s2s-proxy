@@ -1,0 +1,46 @@
+suite: test deployment
+templates:
+  - deployment.yaml
+tests:
+  - it: should configure the image repo and tag
+    set:
+      image.repository: "testrepo/test"
+      image.tag: "1.2.3"
+    asserts:
+      - isKind:
+          of: Deployment
+      - matchRegex:
+          path: metadata.name
+          pattern: RELEASE-NAME-s2s-proxy
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: testrepo/test:1.2.3
+
+  - it: should set container ports based on configOverride
+    set:
+      configOverride:
+        healthCheck:
+          listenAddress: 0.0.0.0:1111
+        outbound:
+          server:
+            tcp:
+              listenAddress: "127.0.0.1:2222"
+        metrics:
+          prometheus:
+            listenAddress: ":3333"
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.template.spec.containers[0].ports
+          value:
+            - containerPort: 2222
+              name: rpc-egress
+              protocol: TCP
+            - containerPort: 1111
+              name: rpc-healthcheck
+              protocol: TCP
+            - containerPort: 3333
+              name: rpc-metrics
+              protocol: TCP
+

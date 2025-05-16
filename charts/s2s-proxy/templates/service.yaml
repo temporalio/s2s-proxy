@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "s2s-proxy.fullname" . }}
+  labels:
+    {{- include "s2s-proxy.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+  {{- $ports := (include "s2s-proxy.parsedPorts" . | fromYaml) }}
+    - port: {{ $ports.egress }}
+      targetPort: {{ $ports.egress }}
+      protocol: TCP
+      name: rpc-egress
+  selector:
+    {{- include "s2s-proxy.selectorLabels" . | nindent 4 }}

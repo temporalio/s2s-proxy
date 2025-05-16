@@ -1,0 +1,24 @@
+suite: test service
+templates:
+  - service.yaml
+tests:
+  - it: should configure egress port based on configOverride
+    set:
+      configOverride:
+        outbound:
+          server:
+            tcp:
+              listenAddress: "127.0.0.1:2222"
+    asserts:
+      - isKind:
+          of: Service
+      - matchRegex:
+          path: metadata.name
+          pattern: RELEASE-NAME-s2s-proxy
+      - equal:
+          path: spec.ports[0]
+          value:
+            port: 2222
+            targetPort: 2222
+            protocol: TCP
+            name: rpc-egress

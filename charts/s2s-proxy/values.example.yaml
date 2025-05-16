@@ -1,0 +1,27 @@
+# Mount TLS certificate
+volumes:
+  - name: s2c-server-tls
+    secret:
+      secretName: s2c-server-tls
+      optional: false
+
+volumeMounts:
+  - name: s2c-server-tls
+    mountPath: "/s2c-server-tls"
+    readOnly: true
+
+# Provide s2s-proxy config file overrides.
+# - Configure the server address
+# - Configure namespace name translations
+configOverride:
+  mux:
+    - client:
+        serverAddress: "s2s-proxy-sample.example.tmprl.cloud:8233"
+        tls:
+          certificatePath: "/s2c-server-tls/tls.crt"
+          keyPath: "/s2c-server-tls/tls.key"
+
+  namespaceNameTranslation:
+    mappings:
+    - localName: my-local
+      remoteName: my-cloud.acct
