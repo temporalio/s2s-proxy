@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - main
+      - haifengh/docker
   release:
     types: [published, prereleased]      
 
@@ -48,7 +49,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: temporaliotest/s2s-proxy
+          images: images=temporaliotest/s2s-proxy,temporalio/s2s-proxy
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
