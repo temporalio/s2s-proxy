@@ -5,7 +5,6 @@ import "slices"
 var (
 	workflowServiceDisallowedAPIs = []string{
 		"DeprecateNamespace",
-		"ListNamespaces",
 		"RegisterNamespace",
 	}
 )
