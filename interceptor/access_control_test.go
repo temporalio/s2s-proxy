@@ -92,7 +92,11 @@ func TestAllowedWorkflowMigrationAPIs(t *testing.T) {
 			expAllowed: true,
 		},
 		{
-			methodName: "ListNamespaces",
+			methodName: "DeprecateNamespace",
+			expAllowed: false,
+		},
+		{
+			methodName: "RegisterNamespace",
 			expAllowed: false,
 		},
 	}
