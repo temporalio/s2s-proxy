@@ -22,7 +22,7 @@ data:
           - GetNamespace
       client:
         tcp:
-          serverAddress: frontend-address-of-your-temporal-server:7233
+          serverAddress: frontend-address:7233
           tls:
             certificatePath: ""
             keyPath: ""
