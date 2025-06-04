@@ -274,3 +274,27 @@ func NewMockConfigProvider(config S2SProxyConfig) *MockConfigProvider {
 func (mc *MockConfigProvider) GetS2SProxyConfig() S2SProxyConfig {
 	return mc.config
 }
+
+// ToMaps returns request and response mappings.
+func (n NamespaceNameTranslationConfig) ToMaps(inBound bool) (map[string]string, map[string]string) {
+	reqMap := make(map[string]string)
+	respMap := make(map[string]string)
+	if inBound {
+		// For inbound listener,
+		//   - incoming requests from remote server are modifed to match local server
+		//   - outgoing responses to local server are modified to match remote server
+		for _, tr := range n.Mappings {
+			reqMap[tr.RemoteName] = tr.LocalName
+			respMap[tr.LocalName] = tr.RemoteName
+		}
+	} else {
+		// For outbound listener,
+		//   - incoming requests from local server are modifed to match remote server
+		//   - outgoing responses to remote server are modified to match local server
+		for _, tr := range n.Mappings {
+			reqMap[tr.LocalName] = tr.RemoteName
+			respMap[tr.RemoteName] = tr.LocalName
+		}
+	}
+	return reqMap, respMap
+}

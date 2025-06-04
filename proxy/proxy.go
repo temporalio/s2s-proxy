@@ -47,12 +47,19 @@ func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool
 	unaryInterceptors := []grpc.UnaryServerInterceptor{}
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
+	var translators []interceptor.Translator
 	if len(nameTranslations.Mappings) > 0 {
 		// NamespaceNameTranslator needs to be called before namespace access control so that
 		// local name can be used in namespace allowed list.
-		translator := interceptor.NewNamespaceNameTranslator(logger, cfg, isInbound, nameTranslations)
-		unaryInterceptors = append(unaryInterceptors, translator.Intercept)
-		streamInterceptors = append(streamInterceptors, translator.InterceptStream)
+		translators = append(translators,
+			interceptor.NewNamespaceNameTranslator(nameTranslations.ToMaps(isInbound)),
+		)
+	}
+
+	if len(translators) > 0 {
+		tr := interceptor.NewTranslationInterceptor(logger, translators)
+		unaryInterceptors = append(unaryInterceptors, tr.Intercept)
+		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
 	}
 
 	if isInbound && cfg.ACLPolicy != nil {
