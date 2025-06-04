@@ -43,20 +43,32 @@ type (
 	}
 )
 
-func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool, nameTranslations config.NamespaceNameTranslationConfig) ([]grpc.ServerOption, error) {
+func makeServerOptions(
+	logger log.Logger,
+	cfg config.ProxyConfig,
+	isInbound bool,
+	namespaceTranslation config.NameTranslationConfig,
+	clusterTranslation config.NameTranslationConfig,
+) ([]grpc.ServerOption, error) {
 	unaryInterceptors := []grpc.UnaryServerInterceptor{}
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
 	var translators []interceptor.Translator
-	if len(nameTranslations.Mappings) > 0 {
-		// NamespaceNameTranslator needs to be called before namespace access control so that
-		// local name can be used in namespace allowed list.
+	if len(namespaceTranslation.Mappings) > 0 {
 		translators = append(translators,
-			interceptor.NewNamespaceNameTranslator(nameTranslations.ToMaps(isInbound)),
+			interceptor.NewNamespaceNameTranslator(namespaceTranslation.ToMaps(isInbound)),
+		)
+	}
+
+	if len(clusterTranslation.Mappings) > 0 {
+		translators = append(translators,
+			interceptor.NewClusterNameTranslator(clusterTranslation.ToMaps(isInbound)),
 		)
 	}
 
 	if len(translators) > 0 {
+		// Translation needs to be called before namespace access control so that
+		// local name can be used in namespace allowed list.
 		tr := interceptor.NewTranslationInterceptor(logger, translators)
 		unaryInterceptors = append(unaryInterceptors, tr.Intercept)
 		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
@@ -92,7 +104,7 @@ func (ps *ProxyServer) startServer(
 	opts := ps.opts
 	logger := ps.logger
 
-	serverOpts, err := makeServerOptions(logger, cfg, opts.IsInbound, opts.Config.NamespaceNameTranslation)
+	serverOpts, err := makeServerOptions(logger, cfg, opts.IsInbound, opts.Config.NamespaceNameTranslation, opts.Config.ClusterNameTranslation)
 	if err != nil {
 		return err
 	}
