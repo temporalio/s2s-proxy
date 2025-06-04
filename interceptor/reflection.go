@@ -31,6 +31,10 @@ var (
 //  2. whether or not the input name matches the defined rule(s).
 type matcher func(name string) (string, bool)
 
+// visitor visits each field in obj matching the matcher.
+// It returns whether anything was matched and any error it encountered.
+type visitor func(obj any, match matcher) (bool, error)
+
 // visitNamespace uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
 // the provided match function.
