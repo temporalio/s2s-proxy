@@ -22,7 +22,7 @@ data:
           - GetNamespace
       client:
         tcp:
-          serverAddress: frontend-ingress.temporal.svc.cluster.local:7233
+          serverAddress: frontend-address:7233
           tls:
             certificatePath: ""
             keyPath: ""
@@ -57,6 +57,7 @@ data:
       name: outbound-server
       server:
         tcp:
+          externalAddress: address-of-your-s2s-proxy-deployment:9233
           listenAddress: 0.0.0.0:9233
           tls:
             certificatePath: ""
