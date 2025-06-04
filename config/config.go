@@ -104,15 +104,16 @@ type (
 	}
 
 	S2SProxyConfig struct {
-		Inbound                  *ProxyConfig                   `yaml:"inbound"`
-		Outbound                 *ProxyConfig                   `yaml:"outbound"`
-		MuxTransports            []MuxTransportConfig           `yaml:"mux"`
-		HealthCheck              *HealthCheckConfig             `yaml:"healthCheck"`
-		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
-		Metrics                  *MetricsConfig                 `yaml:"metrics"`
+		Inbound                  *ProxyConfig          `yaml:"inbound"`
+		Outbound                 *ProxyConfig          `yaml:"outbound"`
+		MuxTransports            []MuxTransportConfig  `yaml:"mux"`
+		HealthCheck              *HealthCheckConfig    `yaml:"healthCheck"`
+		NamespaceNameTranslation NameTranslationConfig `yaml:"namespaceNameTranslation"`
+		ClusterNameTranslation   NameTranslationConfig `yaml:"clusterNameTranslation"`
+		Metrics                  *MetricsConfig        `yaml:"metrics"`
 	}
 
-	NamespaceNameTranslationConfig struct {
+	NameTranslationConfig struct {
 		Mappings []NameMappingConfig `yaml:"mappings"`
 	}
 
@@ -276,7 +277,7 @@ func (mc *MockConfigProvider) GetS2SProxyConfig() S2SProxyConfig {
 }
 
 // ToMaps returns request and response mappings.
-func (n NamespaceNameTranslationConfig) ToMaps(inBound bool) (map[string]string, map[string]string) {
+func (n NameTranslationConfig) ToMaps(inBound bool) (map[string]string, map[string]string) {
 	reqMap := make(map[string]string)
 	respMap := make(map[string]string)
 	if inBound {

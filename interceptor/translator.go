@@ -21,6 +21,14 @@ func NewNamespaceNameTranslator(reqMap, respMap map[string]string) Translator {
 	}
 }
 
+func NewClusterNameTranslator(reqMap, respMap map[string]string) Translator {
+	return &translatorImpl{
+		matchReq:  createNameTranslator(reqMap),
+		matchResp: createNameTranslator(respMap),
+		visitor:   visitClusterName,
+	}
+}
+
 func (n *translatorImpl) TranslateRequest(req any) (bool, error) {
 	return n.visitor(req, n.matchReq)
 }
