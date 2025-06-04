@@ -45,18 +45,25 @@ func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool
 	unaryInterceptors := []grpc.UnaryServerInterceptor{}
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
+	// Translators need to be called before namespace access control so that
+	// local name can be used in namespace allowed list.
+	var translators []interceptor.Translator
 	if len(namespaceTranslations.Mappings) > 0 {
-		// NamespaceNameTranslator needs to be called before namespace access control so that
-		// local name can be used in namespace allowed list.
-		translator := interceptor.NewNamespaceNameTranslator(logger, cfg, isInbound, namespaceTranslations)
-		unaryInterceptors = append(unaryInterceptors, translator.Intercept)
-		streamInterceptors = append(streamInterceptors, translator.InterceptStream)
+		translators = append(translators, interceptor.NewNamespaceNameTranslator(
+			namespaceTranslations.ToMaps(isInbound),
+		))
 	}
 
 	if len(clusterTranslations.Mappings) > 0 {
-		translator := interceptor.NewClusterNameTranslator(logger, cfg, isInbound, clusterTranslations)
-		unaryInterceptors = append(unaryInterceptors, translator.Intercept)
-		streamInterceptors = append(streamInterceptors, translator.InterceptStream)
+		translators = append(translators, interceptor.NewClusterNameTranslator(
+			clusterTranslations.ToMaps(isInbound),
+		))
+	}
+
+	if len(translators) > 0 {
+		trInterceptor := interceptor.NewTranslatorInterceptor(logger, translators)
+		unaryInterceptors = append(unaryInterceptors, trInterceptor.Intercept)
+		streamInterceptors = append(streamInterceptors, trInterceptor.InterceptStream)
 	}
 
 	if isInbound && cfg.ACLPolicy != nil {
