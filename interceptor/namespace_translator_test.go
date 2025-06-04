@@ -50,7 +50,7 @@ type (
 	}
 )
 
-func generateNamespaceObjCases(t *testing.T) []objCase {
+func generateNamespaceObjCases() []objCase {
 	return []objCase{
 		{
 			objName:           "Namespace field",
@@ -174,8 +174,8 @@ func generateNamespaceObjCases(t *testing.T) []objCase {
 				return &adminservice.GetWorkflowExecutionRawHistoryV2Response{
 					NextPageToken: []byte("some-token"),
 					HistoryBatches: []*common.DataBlob{
-						makeHistoryEventsBlob(t, ns),
-						makeHistoryEventsBlob(t, ns),
+						makeHistoryEventsBlob(ns),
+						makeHistoryEventsBlob(ns),
 					},
 					HistoryNodeIds: []int64{123},
 				}
@@ -245,8 +245,8 @@ func generateNamespaceObjCases(t *testing.T) []objCase {
 											NamespaceId:  "some-ns-id",
 											WorkflowId:   "some-wf-id",
 											RunId:        "some-run-id",
-											Events:       makeHistoryEventsBlob(t, ns),
-											NewRunEvents: makeHistoryEventsBlob(t, ns),
+											Events:       makeHistoryEventsBlob(ns),
+											NewRunEvents: makeHistoryEventsBlob(ns),
 										},
 									},
 								},
@@ -256,8 +256,8 @@ func generateNamespaceObjCases(t *testing.T) []objCase {
 											NamespaceId:  "some-ns-id",
 											WorkflowId:   "some-wf-id-2",
 											RunId:        "some-run-id-2",
-											Events:       makeHistoryEventsBlob(t, ns),
-											NewRunEvents: makeHistoryEventsBlob(t, ns),
+											Events:       makeHistoryEventsBlob(ns),
+											NewRunEvents: makeHistoryEventsBlob(ns),
 										},
 									},
 								},
@@ -296,12 +296,12 @@ func generateNamespaceObjCases(t *testing.T) []objCase {
 											WorkflowId:  "some-wf-id",
 											RunId:       "some-run-id",
 											EventBatches: []*common.DataBlob{
-												makeHistoryEventsBlob(t, ns),
-												makeHistoryEventsBlob(t, ns),
+												makeHistoryEventsBlob(ns),
+												makeHistoryEventsBlob(ns),
 											},
 											NewRunInfo: &replicationspb.NewRunInfo{
 												RunId:      "some-new-run-id",
-												EventBatch: makeHistoryEventsBlob(t, ns),
+												EventBatch: makeHistoryEventsBlob(ns),
 											},
 										},
 									},
@@ -312,12 +312,12 @@ func generateNamespaceObjCases(t *testing.T) []objCase {
 											VersionedTransitionArtifact: &replicationspb.VersionedTransitionArtifact{
 												StateAttributes: nil,
 												EventBatches: []*common.DataBlob{
-													makeHistoryEventsBlob(t, ns),
-													makeHistoryEventsBlob(t, ns),
+													makeHistoryEventsBlob(ns),
+													makeHistoryEventsBlob(ns),
 												},
 												NewRunInfo: &replicationspb.NewRunInfo{
 													RunId:      "some-run-id",
-													EventBatch: makeHistoryEventsBlob(t, ns),
+													EventBatch: makeHistoryEventsBlob(ns),
 												},
 											},
 											NamespaceId: "some-ns-id",
@@ -540,7 +540,7 @@ func testTranslateNamespace(t *testing.T, objCases []objCase) {
 	}
 }
 
-func makeHistoryEventsBlob(t *testing.T, ns string) *common.DataBlob {
+func makeHistoryEventsBlob(ns string) *common.DataBlob {
 	evts := []*history.HistoryEvent{
 		{
 			EventId:   1,
@@ -568,12 +568,14 @@ func makeHistoryEventsBlob(t *testing.T, ns string) *common.DataBlob {
 
 	s := serialization.NewSerializer()
 	blob, err := s.SerializeEvents(evts, enums.ENCODING_TYPE_PROTO3)
-	require.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 	return blob
 }
 
 func TestTranslateNamespaceName(t *testing.T) {
-	testTranslateNamespace(t, generateNamespaceObjCases(t))
+	testTranslateNamespace(t, generateNamespaceObjCases())
 }
 
 func TestTranslateNamespaceReplicationMessages(t *testing.T) {

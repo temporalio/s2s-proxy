@@ -9,6 +9,7 @@ GOLANGCI_LINT ?= $(shell which golangci-lint)
 # Disable cgo by default.
 CGO_ENABLED ?= 0
 TEST_ARG ?= -race -timeout=5m
+BENCH_ARG ?= -benchtime=5000x
 
 ALL_SRC         := $(shell find . -name "*.go")
 ALL_SRC         += go.mod
@@ -30,6 +31,9 @@ s2s-proxy: $(ALL_SRC)
 lint:
 	@printf $(COLOR) "Running golangci-lint...\n"
 	@$(GOLANGCI_LINT) run
+
+bench:
+	@go test -run '^$$' -benchmem -bench=. ./... $(BENCH_ARG)
 
 # Mocks
 clean-mocks:
