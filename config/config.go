@@ -14,6 +14,7 @@ import (
 const (
 	ConfigPathFlag = "config"
 	LogLevelFlag   = "level"
+	PProfPortFlag  = "pprof-port"
 )
 
 type TransportType string
