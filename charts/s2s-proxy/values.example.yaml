@@ -14,6 +14,14 @@ volumeMounts:
 # - Configure the server address
 # - Configure namespace name translations
 configOverride:
+  inbound:
+    - client:
+      tcp:
+        serverAddress: "frontend-address-of-your-temporal-server:7233"
+  outbound:
+    - server:
+      tcp:
+        externalAddress: "address-of-your-s2s-proxy-deployment:9233"
   mux:
     - client:
         serverAddress: "s2s-proxy-sample.example.tmprl.cloud:8233"
