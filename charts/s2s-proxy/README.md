@@ -25,6 +25,13 @@ configOverride:
        serverAddress: "s2s-proxy-endpoint.example.tmprl.cloud:8233"
 ```
 
+Generate example helm chart
+---------------------------
+
+```
+make helm-example
+```
+
 Testing
 -------
 
@@ -33,5 +40,5 @@ Testing
 Install [helm-unittest](https://github.com/helm-unittest/helm-unittest)
 
 ```
-helm unittest .
+make helm-test
 ```

@@ -1,0 +1,158 @@
+---
+# Source: s2s-proxy/templates/configmap.yaml
+apiVersion: v1
+data:
+  config.yaml: |-
+    healthCheck:
+      listenAddress: 0.0.0.0:8234
+      protocol: http
+    inbound:
+      aclPolicy:
+        allowedMethods:
+          adminService:
+          - AddOrUpdateRemoteCluster
+          - RemoveRemoteCluster
+          - DescribeCluster
+          - DescribeMutableState
+          - GetNamespaceReplicationMessages
+          - GetWorkflowExecutionRawHistoryV2
+          - ListClusters
+          - StreamWorkflowReplicationMessages
+          - ReapplyEvents
+          - GetNamespace
+      client:
+        tcp:
+          serverAddress: frontend-address-of-your-temporal-server:7233
+          tls:
+            certificatePath: ""
+            keyPath: ""
+            serverCAPath: ""
+            serverName: ""
+      name: inbound-server
+      server:
+        mux: muxed
+        type: mux
+    metrics:
+      prometheus:
+        framework: tally
+        listenAddress: 0.0.0.0:9090
+    mux:
+    - client:
+        serverAddress: s2s-proxy-sample.example.tmprl.cloud:8233
+        tls:
+          certificatePath: /s2c-server-tls/tls.crt
+          keyPath: /s2c-server-tls/tls.key
+          serverCAPath: ""
+          serverName: ""
+      mode: client
+      name: muxed
+    namespaceNameTranslation:
+      mappings:
+      - localName: my-local
+        remoteName: my-cloud.acct
+    outbound:
+      client:
+        mux: muxed
+        type: mux
+      name: outbound-server
+      server:
+        tcp:
+          externalAddress: address-of-your-s2s-proxy-deployment:9233
+          listenAddress: 0.0.0.0:9233
+          tls:
+            certificatePath: ""
+            clientCAPath: ""
+            keyPath: ""
+            requireClientAuth: false
+kind: ConfigMap
+metadata:
+  name: example-s2s-proxy
+---
+# Source: s2s-proxy/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-s2s-proxy
+  labels:
+    helm.sh/chart: s2s-proxy-0.1.0
+    app.kubernetes.io/name: s2s-proxy
+    app.kubernetes.io/instance: example
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9233
+      targetPort: 9233
+      protocol: TCP
+      name: rpc-egress
+  selector:
+    app.kubernetes.io/name: s2s-proxy
+    app.kubernetes.io/instance: example
+---
+# Source: s2s-proxy/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-s2s-proxy
+  labels:
+    helm.sh/chart: s2s-proxy-0.1.0
+    app.kubernetes.io/name: s2s-proxy
+    app.kubernetes.io/instance: example
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: s2s-proxy
+      app.kubernetes.io/instance: example
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: s2s-proxy-0.1.0
+        app.kubernetes.io/name: s2s-proxy
+        app.kubernetes.io/instance: example
+        app.kubernetes.io/version: "0.1.0"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      containers:
+        - name: s2s-proxy
+          image: "temporalio/s2s-proxy:v0.1.0"
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9233
+            name: rpc-egress
+            protocol: TCP
+          - containerPort: 8234
+            name: rpc-healthcheck
+            protocol: TCP
+          - containerPort: 9090
+            name: rpc-metrics
+            protocol: TCP
+          env:
+            - name: CONFIG_YML
+              value: "/config/config.yaml"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8234
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8234
+          volumeMounts:
+            - mountPath: /config
+              name: config-volume
+            - mountPath: /s2c-server-tls
+              name: s2c-server-tls
+              readOnly: true
+      volumes:
+        - configMap:
+            defaultMode: 420
+            name: example-s2s-proxy
+          name: config-volume
+        - name: s2c-server-tls
+          secret:
+            optional: false
+            secretName: s2c-server-tls
