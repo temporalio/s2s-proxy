@@ -66,12 +66,12 @@ func buildCLIOptions() *cli.App {
 }
 
 func startPProfHTTPServer(logger log.Logger, c config.ProfilingConfig) {
-	if len(c.PProfHTTPAddress) == 0 {
+	addr := c.PProfHTTPAddress
+	if len(addr) == 0 {
 		return
 	}
 
 	go func() {
-		addr := c.PProfHTTPAddress
 		logger.Info("Start pprof http server", tag.NewStringTag("address", addr))
 		if err := http.ListenAndServe(addr, nil); err != nil {
 			panic(err)
