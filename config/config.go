@@ -14,7 +14,8 @@ import (
 const (
 	ConfigPathFlag = "config"
 	LogLevelFlag   = "level"
-	PProfPortFlag  = "pprof-port"
+
+	DefaultPProfAddress = "localhost:6060"
 )
 
 type TransportType string
@@ -111,6 +112,11 @@ type (
 		HealthCheck              *HealthCheckConfig             `yaml:"healthCheck"`
 		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
 		Metrics                  *MetricsConfig                 `yaml:"metrics"`
+		ProfilingConfig          ProfilingConfig               `yaml:"profiling"`
+	}
+
+	ProfilingConfig struct {
+		PProfHTTPAddress string `yaml:"pprofAddress"`
 	}
 
 	NamespaceNameTranslationConfig struct {
@@ -275,3 +281,20 @@ func NewMockConfigProvider(config S2SProxyConfig) *MockConfigProvider {
 func (mc *MockConfigProvider) GetS2SProxyConfig() S2SProxyConfig {
 	return mc.config
 }
+
+func (c *ProfilingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	if len(c.PProfHTTPAddress) == 0 {
+		c.PProfHTTPAddress = DefaultPProfAddress
+	}
+
+	// Alias to avoid infinite recursion
+	type plain ProfilingConfig
+	return unmarshal((*plain)(c))
+}
+
+//func (c ProfilingConfig) GetPProfAddress() string {
+//	if len(c.PProfHTTPAddress) == 0 {
+//		return DefaultPProfAddress
+//	}
+//	return c.PProfHTTPAddress
+//}
