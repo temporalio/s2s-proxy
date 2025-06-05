@@ -112,7 +112,7 @@ type (
 		HealthCheck              *HealthCheckConfig             `yaml:"healthCheck"`
 		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
 		Metrics                  *MetricsConfig                 `yaml:"metrics"`
-		ProfilingConfig          ProfilingConfig               `yaml:"profiling"`
+		ProfilingConfig          ProfilingConfig                `yaml:"profiling"`
 	}
 
 	ProfilingConfig struct {
@@ -291,10 +291,3 @@ func (c *ProfilingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error
 	type plain ProfilingConfig
 	return unmarshal((*plain)(c))
 }
-
-//func (c ProfilingConfig) GetPProfAddress() string {
-//	if len(c.PProfHTTPAddress) == 0 {
-//		return DefaultPProfAddress
-//	}
-//	return c.PProfHTTPAddress
-//}
