@@ -134,27 +134,27 @@ func visitClusterName(obj any, match matcher) (bool, error) {
 func visitDataBlobs(vwp visit.ValueWithParent, match matcher, visitor visitor) (bool, error) {
 	switch evt := vwp.Interface().(type) {
 	case []*common.DataBlob:
-		newEvts, changed, err := translateDataBlobs(match, visitor, evt...)
+		newEvts, matched, err := translateDataBlobs(match, visitor, evt...)
 		if err != nil {
-			return changed, err
+			return matched, err
 		}
-		if changed {
+		if matched {
 			if err := visit.Assign(vwp, reflect.ValueOf(newEvts)); err != nil {
-				return changed, err
+				return matched, err
 			}
 		}
-		return changed, nil
+		return matched, nil
 	case *common.DataBlob:
-		newEvt, changed, err := translateOneDataBlob(match, visitor, evt)
+		newEvt, matched, err := translateOneDataBlob(match, visitor, evt)
 		if err != nil {
-			return changed, err
+			return matched, err
 		}
-		if changed {
+		if matched {
 			if err := visit.Assign(vwp, reflect.ValueOf(newEvt)); err != nil {
-				return changed, err
+				return matched, err
 			}
 		}
-		return changed, nil
+		return matched, nil
 	default:
 		return false, nil
 	}
@@ -165,28 +165,28 @@ func visitStringField(vwp visit.ValueWithParent, match matcher) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	newName, ok := match(name)
-	if !ok || name == newName {
-		return false, nil
+	newName, matched := match(name)
+	if !matched || name == newName {
+		return matched, nil
 	}
 	if err := visit.Assign(vwp, reflect.ValueOf(newName)); err != nil {
-		return false, err
+		return matched, err
 	}
-	return true, nil
+	return matched, nil
 }
 
 func translateOneDataBlob(match matcher, visit visitor, blob *common.DataBlob) (*common.DataBlob, bool, error) {
 	if blob == nil || len(blob.Data) == 0 {
 		return blob, false, nil
 	}
-	blobs, changed, err := translateDataBlobs(match, visit, blob)
+	blobs, matched, err := translateDataBlobs(match, visit, blob)
 	if err != nil {
-		return nil, false, err
+		return nil, matched, err
 	}
 	if len(blobs) != 1 {
-		return nil, false, fmt.Errorf("failed to translate single data blob")
+		return nil, matched, fmt.Errorf("failed to translate single data blob")
 	}
-	return blobs[0], changed, err
+	return blobs[0], matched, err
 }
 
 func translateDataBlobs(match matcher, visit visitor, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
@@ -196,25 +196,25 @@ func translateDataBlobs(match matcher, visit visitor, blobs ...*common.DataBlob)
 
 	s := serialization.NewSerializer()
 
-	var anyChanged bool
+	var anyMatched bool
 	for i, blob := range blobs {
 		evt, err := s.DeserializeEvents(blob)
 		if err != nil {
-			return blobs, anyChanged, err
+			return blobs, anyMatched, err
 		}
 
-		changed, err := visit(evt, match)
+		matched, err := visit(evt, match)
 		if err != nil {
-			return blobs, anyChanged, err
+			return blobs, anyMatched, err
 		}
-		anyChanged = anyChanged || changed
+		anyMatched = anyMatched || matched
 
 		newBlob, err := s.SerializeEvents(evt, blob.EncodingType)
 		if err != nil {
-			return blobs, anyChanged, err
+			return blobs, anyMatched, err
 		}
 		blobs[i] = newBlob
 	}
 
-	return blobs, anyChanged, nil
+	return blobs, anyMatched, nil
 }
