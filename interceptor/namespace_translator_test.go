@@ -43,32 +43,32 @@ type (
 	}
 
 	objCase struct {
-		objName           string
-		containsNamespace bool
-		makeType          func(ns string) any
-		expError          string
+		objName         string
+		containsObjName bool
+		makeType        func(name string) any
+		expError        string
 	}
 )
 
 func generateNamespaceObjCases() []objCase {
 	return []objCase{
 		{
-			objName:           "Namespace field",
-			containsNamespace: true,
+			objName:         "Namespace field",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return &StructWithNamespaceField{Namespace: ns}
 			},
 		},
 		{
-			objName:           "WorkflowNamespace field",
-			containsNamespace: true,
+			objName:         "WorkflowNamespace field",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return &StructWithWorkflowNamespaceField{WorkflowNamespace: ns}
 			},
 		},
 		{
-			objName:           "Nested Namespace field",
-			containsNamespace: true,
+			objName:         "Nested Namespace field",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return &StructWithNestedNamespaceField{
 					Other: "do not change",
@@ -79,8 +79,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "list of structs",
-			containsNamespace: true,
+			objName:         "list of structs",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return &StructWithListOfNestedNamespaceField{
 					Other: "do not change",
@@ -93,8 +93,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "list of ptrs",
-			containsNamespace: true,
+			objName:         "list of ptrs",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return &StructWithListOfNestedPtrs{
 					Other: "do not change",
@@ -107,8 +107,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "RespondWorkflowTaskCompletedRequest",
-			containsNamespace: true,
+			objName:         "RespondWorkflowTaskCompletedRequest",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return &workflowservice.RespondWorkflowTaskCompletedRequest{
 					TaskToken: []byte{},
@@ -138,8 +138,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "PollWorkflowTaskQueueResponse",
-			containsNamespace: true,
+			objName:         "PollWorkflowTaskQueueResponse",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return &workflowservice.PollWorkflowTaskQueueResponse{
 					TaskToken:              []byte{},
@@ -168,8 +168,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "GetWorkflowExecutionRawHistoryV2Response",
-			containsNamespace: true,
+			objName:         "GetWorkflowExecutionRawHistoryV2Response",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return &adminservice.GetWorkflowExecutionRawHistoryV2Response{
 					NextPageToken: []byte("some-token"),
@@ -182,8 +182,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "DescribeNamespaceResponse",
-			containsNamespace: true,
+			objName:         "DescribeNamespaceResponse",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return workflowservice.DescribeNamespaceResponse{
 					NamespaceInfo: &namespace.NamespaceInfo{
@@ -194,8 +194,8 @@ func generateNamespaceObjCases() []objCase {
 			expError: "",
 		},
 		{
-			objName:           "UpdateNamespaceResponse",
-			containsNamespace: true,
+			objName:         "UpdateNamespaceResponse",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return workflowservice.UpdateNamespaceResponse{
 					NamespaceInfo: &namespace.NamespaceInfo{
@@ -217,8 +217,8 @@ func generateNamespaceObjCases() []objCase {
 			expError: "",
 		},
 		{
-			objName:           "ListNamespacesResponse",
-			containsNamespace: true,
+			objName:         "ListNamespacesResponse",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return &workflowservice.ListNamespacesResponse{
 					Namespaces: []*workflowservice.DescribeNamespaceResponse{
@@ -232,8 +232,8 @@ func generateNamespaceObjCases() []objCase {
 			expError: "",
 		},
 		{
-			objName:           "StreamWorkflowReplicationMessagesResponse",
-			containsNamespace: true,
+			objName:         "StreamWorkflowReplicationMessagesResponse",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				return &adminservice.StreamWorkflowReplicationMessagesResponse{
 					Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
@@ -331,8 +331,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "circular pointer",
-			containsNamespace: true,
+			objName:         "circular pointer",
+			containsObjName: true,
 			makeType: func(ns string) any {
 				a := &StructWithCircularPointer{
 					Namespace: ns,
@@ -473,14 +473,14 @@ func generateNamespaceReplicationMessages() []objCase {
 			},
 		},
 		{
-			objName:           "full type",
-			makeType:          makeFullType,
-			containsNamespace: true,
+			objName:         "full type",
+			makeType:        makeFullType,
+			containsObjName: true,
 		},
 	}
 }
 
-func testTranslateNamespace(t *testing.T, objCases []objCase) {
+func testTranslateObjects(t *testing.T, objCases []objCase) {
 	testcases := []struct {
 		testName     string
 		inputNSName  string
@@ -525,7 +525,7 @@ func testTranslateNamespace(t *testing.T, objCases []objCase) {
 						require.ErrorContains(t, err, c.expError)
 					} else {
 						require.NoError(t, err)
-						if c.containsNamespace {
+						if c.containsObjName {
 							require.Equal(t, expOutput, input)
 							require.Equal(t, expChanged, changed)
 						} else {
@@ -575,9 +575,9 @@ func makeHistoryEventsBlob(ns string) *common.DataBlob {
 }
 
 func TestTranslateNamespaceName(t *testing.T) {
-	testTranslateNamespace(t, generateNamespaceObjCases())
+	testTranslateObjects(t, generateNamespaceObjCases())
 }
 
 func TestTranslateNamespaceReplicationMessages(t *testing.T) {
-	testTranslateNamespace(t, generateNamespaceReplicationMessages())
+	testTranslateObjects(t, generateNamespaceReplicationMessages())
 }
