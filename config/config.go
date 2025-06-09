@@ -14,6 +14,8 @@ import (
 const (
 	ConfigPathFlag = "config"
 	LogLevelFlag   = "level"
+
+	DefaultPProfAddress = "localhost:6060"
 )
 
 type TransportType string
@@ -111,6 +113,11 @@ type (
 		NamespaceNameTranslation NameTranslationConfig `yaml:"namespaceNameTranslation"`
 		ClusterNameTranslation   NameTranslationConfig `yaml:"clusterNameTranslation"`
 		Metrics                  *MetricsConfig        `yaml:"metrics"`
+		ProfilingConfig          ProfilingConfig       `yaml:"profiling"`
+	}
+
+	ProfilingConfig struct {
+		PProfHTTPAddress string `yaml:"pprofAddress"`
 	}
 
 	NameTranslationConfig struct {
@@ -298,4 +305,14 @@ func (n NameTranslationConfig) ToMaps(inBound bool) (map[string]string, map[stri
 		}
 	}
 	return reqMap, respMap
+}
+
+func (c *ProfilingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	if len(c.PProfHTTPAddress) == 0 {
+		c.PProfHTTPAddress = DefaultPProfAddress
+	}
+
+	// Alias to avoid infinite recursion
+	type plain ProfilingConfig
+	return unmarshal((*plain)(c))
 }
