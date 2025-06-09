@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -56,12 +55,6 @@ func buildCLIOptions() *cli.App {
 					Usage:    "Set log level(debug, info, warn, error). Default level is info",
 					Required: false,
 				},
-				&cli.IntFlag{
-					Name:        config.PProfPortFlag,
-					Usage:       "Port for the pprof HTTP server. Set to -1 to disable the pprof server.",
-					Required:    false,
-					DefaultText: "6060",
-				},
 			},
 			Action: startProxy,
 		},
@@ -70,30 +63,19 @@ func buildCLIOptions() *cli.App {
 	return app
 }
 
-func startProfile(c *cli.Context) {
-	port := 6060
-	if c.IsSet(config.PProfPortFlag) { // Allow for port=0 to select a random port.
-		port = c.Int(config.PProfPortFlag)
-	}
-	if port < 0 {
-		return // pprof server disabled
-	}
-	if port > 65535 {
-		panic(fmt.Sprintf("invalid pprof port number %d", port))
-	}
-
-	address := fmt.Sprintf("localhost:%d", port)
+func startProfile() {
 	go func() {
-		if err := http.ListenAndServe(address, nil); err != nil {
+		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
 			panic(err)
 		}
 	}()
+
 }
 
 func startProxy(c *cli.Context) error {
 	var proxyParams ProxyParams
 
-	startProfile(c)
+	startProfile()
 
 	var logCfg log.Config
 	if logLevel := c.String(config.LogLevelFlag); len(logLevel) != 0 {
