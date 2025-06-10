@@ -67,7 +67,7 @@ func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool
 	}
 
 	if cfg.Server.TLS.IsEnabled() {
-		tlsConfig, err := encryption.GetServerTLSConfig(cfg.Server.TLS)
+		tlsConfig, err := encryption.GetServerTLSConfig(cfg.Server.TLS, logger)
 		if err != nil {
 			return opts, err
 		}

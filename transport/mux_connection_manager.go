@@ -109,7 +109,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 	var tlsConfig *tls.Config
 	var err error
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
-		tlsConfig, err = encryption.GetServerTLSConfig(tlsCfg)
+		tlsConfig, err = encryption.GetServerTLSConfig(tlsCfg, m.logger)
 		if err != nil {
 			return err
 		}
