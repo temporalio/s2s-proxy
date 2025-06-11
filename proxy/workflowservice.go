@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 
-	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
 	feclient "github.com/temporalio/s2s-proxy/client/frontend"
 	"github.com/temporalio/s2s-proxy/common"
@@ -17,7 +16,6 @@ type (
 	workflowServiceProxyServer struct {
 		workflowservice.UnimplementedWorkflowServiceServer
 		workflowServiceClient workflowservice.WorkflowServiceClient
-		namespaceAccess       *auth.AccessControl
 		logger                log.Logger
 	}
 )
@@ -29,37 +27,15 @@ func NewWorkflowServiceProxyServer(
 	serviceName string,
 	clientConfig config.ProxyClientConfig,
 	clientFactory client.ClientFactory,
-	namespaceAccess *auth.AccessControl,
 	logger log.Logger,
 ) workflowservice.WorkflowServiceServer {
 	logger = log.With(logger, common.ServiceTag(serviceName))
 	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
 	return &workflowServiceProxyServer{
 		workflowServiceClient: feclient.NewLazyClient(clientProvider),
-		namespaceAccess:       namespaceAccess,
 		logger:                logger,
 	}
 }
-
-// ListNamespaces wraps the same method on the underlying workflowservice.WorkflowServiceClient.
-// In particular, this version checks the returned namespaces against the configured ACL and makes sure we're not
-// returning disallowed namespaces to the customer.
-func (s *workflowServiceProxyServer) ListNamespaces(ctx context.Context, req *workflowservice.ListNamespacesRequest) (*workflowservice.ListNamespacesResponse, error) {
-	response, err := s.workflowServiceClient.ListNamespaces(ctx, req)
-	if response != nil && response.Namespaces != nil && s.namespaceAccess != nil {
-		// Even in the case of error, if there is a Namespaces list to iterate we want to remove any partial success data
-		newNamespaceList := make([]*workflowservice.DescribeNamespaceResponse, 0, len(response.Namespaces))
-		for _, ns := range response.Namespaces {
-			if s.namespaceAccess.IsAllowed(ns.NamespaceInfo.Name) {
-				newNamespaceList = append(newNamespaceList, ns)
-			}
-		}
-		response.Namespaces = newNamespaceList
-	}
-	return response, err
-}
-
-// Passthrough APIs below this point
 
 func (s *workflowServiceProxyServer) CountWorkflowExecutions(ctx context.Context, in0 *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error) {
 	return s.workflowServiceClient.CountWorkflowExecutions(ctx, in0)
@@ -147,6 +123,10 @@ func (s *workflowServiceProxyServer) ListBatchOperations(ctx context.Context, in
 
 func (s *workflowServiceProxyServer) ListClosedWorkflowExecutions(ctx context.Context, in0 *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
 	return s.workflowServiceClient.ListClosedWorkflowExecutions(ctx, in0)
+}
+
+func (s *workflowServiceProxyServer) ListNamespaces(ctx context.Context, in0 *workflowservice.ListNamespacesRequest) (*workflowservice.ListNamespacesResponse, error) {
+	return s.workflowServiceClient.ListNamespaces(ctx, in0)
 }
 
 func (s *workflowServiceProxyServer) ListOpenWorkflowExecutions(ctx context.Context, in0 *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
