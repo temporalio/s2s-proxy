@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"go.temporal.io/server/common/auth"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 )
 
 type (
@@ -46,7 +49,7 @@ func (s ServerTLSConfig) IsEnabled() bool {
 	return false
 }
 
-func GetServerTLSConfig(serverConfig ServerTLSConfig) (*tls.Config, error) {
+func GetServerTLSConfig(serverConfig ServerTLSConfig, logger log.Logger) (*tls.Config, error) {
 	certPath := serverConfig.CertificatePath
 	keyPath := serverConfig.KeyPath
 	clientCAPath := serverConfig.ClientCAPath
@@ -80,6 +83,21 @@ func GetServerTLSConfig(serverConfig ServerTLSConfig) (*tls.Config, error) {
 	c.ClientAuth = clientAuthType
 	c.Certificates = []tls.Certificate{*serverCert}
 	c.ClientCAs = clientCAPool
+	c.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		logger.Info("Received TLS handshake", tag.Address(hello.Conn.RemoteAddr().String()))
+		return nil, nil
+	}
+
+	c.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+		if len(rawCerts) == 0 {
+			logger.Info("No client certificate provided")
+		} else {
+			cert, _ := x509.ParseCertificate(rawCerts[0])
+			logger.Info(fmt.Sprintf("Client certificate subject: %s", cert.Subject))
+		}
+		return nil
+	}
+
 	return c, nil
 }
 
