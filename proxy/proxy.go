@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
@@ -84,6 +85,13 @@ func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool
 	return opts, nil
 }
 
+func (ps *ProxyServer) makeNamespaceACL() *auth.AccessControl {
+	if ps.opts.IsInbound && ps.config.ACLPolicy != nil {
+		return auth.NewAccesControl(ps.config.ACLPolicy.AllowedNamespaces)
+	}
+	return nil
+}
+
 func (ps *ProxyServer) startServer(
 	serverTransport transport.ServerTransport,
 	clientTransport transport.ClientTransport,
@@ -102,7 +110,7 @@ func (ps *ProxyServer) startServer(
 		cfg.Name,
 		cfg.Server,
 		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, opts, logger),
-		NewWorkflowServiceProxyServer(cfg.Name, cfg.Client, clientFactory, logger),
+		NewWorkflowServiceProxyServer(cfg.Name, cfg.Client, clientFactory, ps.makeNamespaceACL(), logger),
 		serverOpts,
 		serverTransport,
 		logger,

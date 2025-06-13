@@ -15,6 +15,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	"go.uber.org/fx"
 )
 
@@ -27,6 +28,7 @@ type ProxyParams struct {
 
 	ConfigProvider config.ConfigProvider
 	Proxy          *proxy.Proxy
+	Logger         log.Logger
 }
 
 func run(args []string) error {
@@ -63,19 +65,22 @@ func buildCLIOptions() *cli.App {
 	return app
 }
 
-func startProfile() {
+func startPProfHTTPServer(logger log.Logger, c config.ProfilingConfig) {
+	addr := c.PProfHTTPAddress
+	if len(addr) == 0 {
+		return
+	}
+
 	go func() {
-		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
+		logger.Info("Start pprof http server", tag.NewStringTag("address", addr))
+		if err := http.ListenAndServe(addr, nil); err != nil {
 			panic(err)
 		}
 	}()
-
 }
 
 func startProxy(c *cli.Context) error {
 	var proxyParams ProxyParams
-
-	startProfile()
 
 	var logCfg log.Config
 	if logLevel := c.String(config.LogLevelFlag); len(logLevel) != 0 {
@@ -98,6 +103,9 @@ func startProxy(c *cli.Context) error {
 	if err := app.Err(); err != nil {
 		return err
 	}
+
+	cfg := proxyParams.ConfigProvider.GetS2SProxyConfig()
+	startPProfHTTPServer(proxyParams.Logger, cfg.ProfilingConfig)
 
 	if err := proxyParams.Proxy.Start(); err != nil {
 		return err

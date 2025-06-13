@@ -31,6 +31,7 @@ outbound:
   server:
     tcp:
       listenAddress: "0.0.0.0:9233"
+      externalAddress: "127.0.0.1:9233" 
       tls:
         certificatePath: ""
         keyPath: ""
