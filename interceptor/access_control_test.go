@@ -160,7 +160,7 @@ func testNamespaceAccessControl(t *testing.T, objCases []objCase) {
 						require.ErrorContains(t, err, c.expError)
 					} else {
 						require.NoError(t, err)
-						if c.containsNamespace {
+						if c.containsObj {
 							require.Equal(t, ts.expAllowed, allowed)
 						} else {
 							require.True(t, allowed)
