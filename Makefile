@@ -92,7 +92,7 @@ clean-builds:
 	@printf $(COLOR) "Delete old builds...\n"
 	@rm -rf ./build/*
 
-build: clean-builds amd64-build
+build: clean-builds amd64-build arm64-build
 
 # Docker
 AWS_ECR_REGION ?=
