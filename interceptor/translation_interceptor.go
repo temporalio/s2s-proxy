@@ -45,15 +45,19 @@ func (i *TranslationInterceptor) Intercept(
 		i.logger.Debug("intercepted request", tag.NewStringTag("method", methodName))
 
 		for _, tr := range i.translators {
-			changed, trErr := tr.TranslateRequest(req)
-			logTranslateResult(i.logger, changed, trErr, methodName+"Request", req)
+			if tr.MatchMethod(info.FullMethod) {
+				changed, trErr := tr.TranslateRequest(req)
+				logTranslateResult(i.logger, changed, trErr, methodName+"Request", req)
+			}
 		}
 
 		resp, err := handler(ctx, req)
 
 		for _, tr := range i.translators {
-			changed, trErr := tr.TranslateResponse(resp)
-			logTranslateResult(i.logger, changed, trErr, methodName+"Response", resp)
+			if tr.MatchMethod(info.FullMethod) {
+				changed, trErr := tr.TranslateResponse(resp)
+				logTranslateResult(i.logger, changed, trErr, methodName+"Response", resp)
+			}
 		}
 
 		return resp, err
