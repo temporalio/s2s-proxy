@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"time"
 
 	"go.temporal.io/api/workflowservice/v1"
@@ -21,7 +22,6 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 	"github.com/temporalio/s2s-proxy/transport"
-	"github.com/uber-go/tally/v4"
 )
 
 type (
@@ -113,7 +113,7 @@ func newEchoServer(
 			configProvider,
 			transport.NewTransportManager(configProvider, logger),
 			logger,
-			tally.NoopScope,
+			prometheus.NewRegistry(),
 		)
 
 		if err != nil {

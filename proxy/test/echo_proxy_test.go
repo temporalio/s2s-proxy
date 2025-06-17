@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +23,7 @@ const (
 	echoServerAddress          = "localhost:7266"
 	serverProxyInboundAddress  = "localhost:7366"
 	serverProxyOutboundAddress = "localhost:7466"
+	prometheusEndpoint         = "localhost:7467"
 	echoClientAddress          = "localhost:8266"
 	clientProxyInboundAddress  = "localhost:8366"
 	clientProxyOutboundAddress = "localhost:8466"
@@ -173,6 +177,12 @@ func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 				TCPClientSetting: config.TCPClientSetting{
 					ServerAddress: "to-be-added",
 				},
+			},
+		},
+		Metrics: &config.MetricsConfig{
+			Prometheus: config.PrometheusConfig{
+				ListenAddress: prometheusEndpoint,
+				Framework:     "prometheus",
 			},
 		},
 	}, opts)
@@ -416,6 +426,17 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				s.NoError(err)
 				s.Require().NotNil(resp)
 				s.Equal("example-ns", resp.WorkflowNamespace)
+				// Confirm that Prometheus initialized and is reporting. We should see proxy_start_count
+				if proxyCfg := ts.echoServerInfo.s2sProxyConfig; proxyCfg != nil && proxyCfg.Metrics != nil {
+					logger.Info("Trying to check http://" + proxyCfg.Metrics.Prometheus.ListenAddress + "/metrics")
+					metricsResp, err := http.Get("http://" + proxyCfg.Metrics.Prometheus.ListenAddress + "/metrics")
+					s.NoError(err)
+					metricsBytes, err := io.ReadAll(metricsResp.Body)
+					s.NoError(err)
+					metricsString := string(metricsBytes)
+					s.Require().True(strings.Contains(metricsString, "proxy_start_count"),
+						"metrics should contain proxy_start_count, but was \"%s\"", metricsString)
+				}
 			},
 		)
 	}

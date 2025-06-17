@@ -9,7 +9,6 @@ import (
 
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/proxy"
 	"github.com/temporalio/s2s-proxy/transport"
 
@@ -96,7 +95,6 @@ func startProxy(c *cli.Context) error {
 		transport.Module,
 		client.Module,
 		proxy.Module,
-		metrics.Module,
 		fx.Populate(&proxyParams),
 	)
 

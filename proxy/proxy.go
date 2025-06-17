@@ -1,21 +1,22 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
-	"net/http"
-
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
-	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport"
-	"github.com/uber-go/tally/v4"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"net/http"
 )
 
 type (
@@ -34,14 +35,24 @@ type (
 		outboundServer    *ProxyServer
 		inboundServer     *ProxyServer
 		healthCheckServer *http.Server
+		metricsServer     *http.Server
 		logger            log.Logger
-		scope             tally.Scope
+		registry          *prometheus.Registry
 	}
 
 	proxyOptions struct {
 		IsInbound bool
 		Config    config.S2SProxyConfig
 	}
+)
+
+var (
+	startupGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "s2s_proxy",
+		Subsystem: "init",
+		Name:      "proxy_start_count",
+		Help:      "Emitted once per startup",
+	})
 )
 
 func makeServerOptions(
@@ -224,17 +235,15 @@ func NewProxy(
 	configProvider config.ConfigProvider,
 	transManager *transport.TransportManager,
 	logger log.Logger,
-	scope tally.Scope,
+	registry *prometheus.Registry,
 ) *Proxy {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	proxy := &Proxy{
 		config:       s2sConfig,
 		transManager: transManager,
 		logger:       logger,
-		scope:        scope,
+		registry:     registry,
 	}
-
-	scope.Counter(metrics.PROXY_START_COUNT).Inc(1)
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
 	//    local server -> proxy(outbound) -> remote server
@@ -266,6 +275,17 @@ func NewProxy(
 		)
 	}
 
+	proxy.registry.MustRegister(collectors.NewGoCollector())
+	err := proxy.registry.Register(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{
+		Namespace:    "s2s_proxy",
+		ReportErrors: false, // Setting this to true will break your metrics on purpose if /proc is missing.
+	}))
+	if err != nil {
+		logger.Warn("Failed to register process collector", tag.Error(err))
+	}
+	proxy.registry.MustRegister(startupGauge)
+	startupGauge.Set(1)
+
 	return proxy
 }
 
@@ -280,18 +300,48 @@ func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 		Handler: nil, // Default HTTP handler (using http.HandleFunc registrations)
 	}
 
-	checker := newHealthCheck(s.logger, s.scope)
+	checker := newHealthCheck(s.logger)
 
 	// Register the health check endpoint
 	http.HandleFunc("/health", checker.createHandler())
 
 	go func() {
 		s.logger.Info("Starting health check server", tag.Address(cfg.ListenAddress))
-		if err := s.healthCheckServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := s.healthCheckServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.logger.Error("Error starting server: %v\n", tag.Error(err))
 		}
 	}()
 
+	return nil
+}
+
+type wrapLoggerForPrometheus struct {
+	log.Logger
+}
+
+func (wls *wrapLoggerForPrometheus) Println(v ...interface{}) {
+	wls.Error(fmt.Sprintln(v...))
+}
+
+func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
+	// Why not default? So that it can be used in unit tests
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{
+		ErrorLog:          &wrapLoggerForPrometheus{Logger: s.logger},
+		Registry:          s.registry,
+		EnableOpenMetrics: true,
+	}))
+	s.metricsServer = &http.Server{
+		Addr:    cfg.Prometheus.ListenAddress,
+		Handler: mux,
+	}
+
+	go func() {
+		s.logger.Info("Starting metrics server", tag.Address(cfg.Prometheus.ListenAddress))
+		if err := s.metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			s.logger.Error("Error starting server: %v\n", tag.Error(err))
+		}
+	}()
 	return nil
 }
 
@@ -300,6 +350,15 @@ func (s *Proxy) Start() error {
 		if err := s.startHealthCheckHandler(*s.config.HealthCheck); err != nil {
 			return err
 		}
+	}
+
+	if s.config.Metrics != nil {
+		if err := s.startMetricsHandler(*s.config.Metrics); err != nil {
+			return err
+		}
+	} else {
+		s.logger.Warn(`Started up without metrics! Double-check the YAML config,` +
+			` it needs at least the following path: metrics.prometheus.listenAddress`)
 	}
 
 	if err := s.transManager.Start(); err != nil {
@@ -324,7 +383,11 @@ func (s *Proxy) Start() error {
 func (s *Proxy) Stop() {
 	if s.healthCheckServer != nil {
 		// Close without waiting for in-flight requests to complete.
-		s.healthCheckServer.Close()
+		_ = s.healthCheckServer.Close()
+	}
+
+	if s.metricsServer != nil {
+		_ = s.metricsServer.Close()
 	}
 
 	if s.inboundServer != nil {

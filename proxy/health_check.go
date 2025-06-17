@@ -1,34 +1,43 @@
 package proxy
 
 import (
-	"net/http"
-
-	"github.com/temporalio/s2s-proxy/metrics"
-	"github.com/uber-go/tally/v4"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/server/common/log"
+	"net/http"
 )
 
-func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("OK"))
-}
+var (
+	healthyGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "temporal",
+		Subsystem: "s2s-proxy",
+		Name:      "health_check_success",
+		Help:      "s2s-proxy service is healthy",
+	})
+	healthyCount = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "temporal",
+		Subsystem: "s2s-proxy",
+		Name:      "health_check_success_count",
+		Help:      "Number of healthy checks from s2s-proxy since service start",
+	})
+)
 
 type healthChecker struct {
 	logger log.Logger
-	scope  tally.Scope
 }
 
 func (h *healthChecker) createHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		h.scope.Counter(metrics.HEALTH_CHECK_SUCCESS_COUNT).Inc(1)
-		healthCheckHandler(w, r)
+		// TODO: Check something here, and maybe log it
+		healthyGauge.Set(1)
+		healthyCount.Inc()
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
 	}
 }
 
-func newHealthCheck(logger log.Logger, scope tally.Scope) *healthChecker {
+func newHealthCheck(logger log.Logger) *healthChecker {
 	return &healthChecker{
 		logger: logger,
-		scope:  scope,
 	}
 }
