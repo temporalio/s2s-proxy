@@ -7,24 +7,24 @@ type (
 	}
 
 	translatorImpl struct {
-		matchReq  matcher
-		matchResp matcher
+		matchReq  stringMatcher
+		matchResp stringMatcher
 		visitor   visitor
 	}
 )
 
 func NewNamespaceNameTranslator(reqMap, respMap map[string]string) Translator {
 	return &translatorImpl{
-		matchReq:  createNameMatcher(reqMap),
-		matchResp: createNameMatcher(respMap),
+		matchReq:  createStringMatcher(reqMap),
+		matchResp: createStringMatcher(respMap),
 		visitor:   visitNamespace,
 	}
 }
 
 func NewSearchAttributeTranslator(reqMap, respMap map[string]string) Translator {
 	return &translatorImpl{
-		matchReq:  createNameMatcher(reqMap),
-		matchResp: createNameMatcher(respMap),
+		matchReq:  createStringMatcher(reqMap),
+		matchResp: createStringMatcher(respMap),
 		visitor:   visitSearchAttributes,
 	}
 }
@@ -37,7 +37,7 @@ func (n *translatorImpl) TranslateResponse(resp any) (bool, error) {
 	return n.visitor(resp, n.matchResp)
 }
 
-func createNameMatcher(mapping map[string]string) matcher {
+func createStringMatcher(mapping map[string]string) stringMatcher {
 	return func(name string) (string, bool) {
 		newName, ok := mapping[name]
 		return newName, ok

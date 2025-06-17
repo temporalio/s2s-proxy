@@ -540,7 +540,7 @@ func testTranslateObj(
 					expOutput := c.makeType(ts.outputName)
 					expChanged := ts.inputName != ts.outputName
 
-					changed, err := visitor(input, createNameMatcher(ts.mapping))
+					changed, err := visitor(input, createStringMatcher(ts.mapping))
 					if len(c.expError) != 0 {
 						require.ErrorContains(t, err, c.expError)
 					} else {

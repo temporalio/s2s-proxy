@@ -33,19 +33,19 @@ var (
 	}
 )
 
-// matcher returns 2 values:
+// stringMatcher returns 2 values:
 //  1. new name. If there is no change, new name equals to input name
 //  2. whether or not the input name matches the defined rule(s).
-type matcher func(name string) (string, bool)
+type stringMatcher func(name string) (string, bool)
 
 // visitor visits each field in obj matching the matcher.
 // It returns whether anything was matched and any error it encountered.
-type visitor func(obj any, match matcher) (bool, error)
+type visitor func(obj any, match stringMatcher) (bool, error)
 
 // visitNamespace uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
 // the provided match function.
-func visitNamespace(obj any, match matcher) (bool, error) {
+func visitNamespace(obj any, match stringMatcher) (bool, error) {
 	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
@@ -97,7 +97,7 @@ func visitNamespace(obj any, match matcher) (bool, error) {
 // visitSearchAttributes uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
 // the provided match function.
-func visitSearchAttributes(obj any, match matcher) (bool, error) {
+func visitSearchAttributes(obj any, match stringMatcher) (bool, error) {
 	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
@@ -141,7 +141,7 @@ func visitSearchAttributes(obj any, match matcher) (bool, error) {
 	return matched, err
 }
 
-func translateIndexedFields(fields map[string]*common.Payload, match matcher) (map[string]*common.Payload, bool) {
+func translateIndexedFields(fields map[string]*common.Payload, match stringMatcher) (map[string]*common.Payload, bool) {
 	if fields == nil {
 		return fields, false
 	}
@@ -171,7 +171,7 @@ func getParentFieldType(vwp visit.ValueWithParent) (result reflect.StructField, 
 	return fieldType, action
 }
 
-func visitDataBlobs(vwp visit.ValueWithParent, match matcher, visitor visitor) (bool, error) {
+func visitDataBlobs(vwp visit.ValueWithParent, match stringMatcher, visitor visitor) (bool, error) {
 	switch evt := vwp.Interface().(type) {
 	case []*common.DataBlob:
 		newEvts, matched, err := translateDataBlobs(match, visitor, evt...)
@@ -200,7 +200,7 @@ func visitDataBlobs(vwp visit.ValueWithParent, match matcher, visitor visitor) (
 	}
 }
 
-func translateDataBlobs(match matcher, visitor visitor, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
+func translateDataBlobs(match stringMatcher, visitor visitor, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
 	var anyChanged bool
 	for i, blob := range blobs {
 		newBlob, changed, err := translateOneDataBlob(match, visitor, blob)
@@ -213,7 +213,7 @@ func translateDataBlobs(match matcher, visitor visitor, blobs ...*common.DataBlo
 	return blobs, anyChanged, nil
 }
 
-func translateOneDataBlob(match matcher, visitor visitor, blob *common.DataBlob) (*common.DataBlob, bool, error) {
+func translateOneDataBlob(match stringMatcher, visitor visitor, blob *common.DataBlob) (*common.DataBlob, bool, error) {
 	if blob == nil || len(blob.Data) == 0 {
 		return blob, false, nil
 

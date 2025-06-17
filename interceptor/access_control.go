@@ -40,7 +40,7 @@ func NewAccessControlInterceptor(
 	}
 }
 
-func createNamespaceAccessControl(access *auth.AccessControl) matcher {
+func createNamespaceAccessControl(access *auth.AccessControl) stringMatcher {
 	return func(name string) (string, bool) {
 		var notAllowed bool
 		if access != nil {
