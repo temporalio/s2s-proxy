@@ -40,13 +40,18 @@ type stringMatcher func(name string) (string, bool)
 
 // visitor visits each field in obj matching the matcher.
 // It returns whether anything was matched and any error it encountered.
-type visitor func(obj any, match stringMatcher) (bool, error)
+type visitor func(obj any, match any) (bool, error)
 
 // visitNamespace uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
 // the provided match function.
-func visitNamespace(obj any, match stringMatcher) (bool, error) {
+func visitNamespace(obj any, anyMatch any) (bool, error) {
 	var matched bool
+
+	match, ok := anyMatch.(stringMatcher)
+	if !ok {
+		panic("invalid func type")
+	}
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
 	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
@@ -67,7 +72,7 @@ func visitNamespace(obj any, match stringMatcher) (bool, error) {
 			}
 			matched = matched || ok
 		} else if dataBlobFieldNames[fieldType.Name] {
-			changed, err := visitDataBlobs(vwp, match, visitNamespace)
+			changed, err := visitDataBlobs(vwp, visitNamespace, match)
 			matched = matched || changed
 			if err != nil {
 				return visit.Stop, err
@@ -94,10 +99,14 @@ func visitNamespace(obj any, match stringMatcher) (bool, error) {
 	return matched, err
 }
 
-// visitSearchAttributes uses reflection to recursively visit all fields
-// in the given object. When it finds namespace string fields, it invokes
-// the provided match function.
-func visitSearchAttributes(obj any, match stringMatcher) (bool, error) {
+type saMatcher func(string) stringMatcher
+
+type saVisitor struct {
+	getMatcher         saMatcher
+	currentNamespaceId string
+}
+
+func (v *saVisitor) visit(obj any, _ any) (bool, error) {
 	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
@@ -108,13 +117,37 @@ func visitSearchAttributes(obj any, match stringMatcher) (bool, error) {
 			return action, nil
 		}
 
+		nsId := discoverNamespaceId(vwp)
+		if nsId != "" {
+			v.currentNamespaceId = nsId
+			fmt.Printf("v.currentNamespaceId = %v\n", v.currentNamespaceId)
+			defer func() {
+				v.currentNamespaceId = ""
+				fmt.Printf("v.currentNamespaceId = %q\n", v.currentNamespaceId)
+			}()
+		}
+
 		if dataBlobFieldNames[fieldType.Name] {
-			changed, err := visitDataBlobs(vwp, match, visitSearchAttributes)
+			changed, err := visitDataBlobs(vwp, v.visit, nil)
 			matched = matched || changed
 			if err != nil {
 				return visit.Stop, err
 			}
 		} else if searchAttributeFieldNames[fieldType.Name] {
+			nsId := v.currentNamespaceId
+			if nsId == "" {
+				discoverNamespaceId(vwp)
+			}
+			fmt.Printf("discoverNamespaceId(%T) = %q\n", vwp.Interface(), nsId)
+			fmt.Printf("parent = %T\n", vwp.Parent.Interface())
+			fmt.Printf("parent = %+v\n", vwp.Parent.Interface())
+
+			match := v.getMatcher(nsId)
+			fmt.Printf("getMatcher(%s) = %v\n", nsId, match)
+			if match == nil {
+				return visit.Continue, nil
+			}
+
 			// This could be *common.SearchAttributes, or it could be map[string]*common.Payload (indexed fields)
 			var changed bool
 			switch attrs := vwp.Interface().(type) {
@@ -139,6 +172,42 @@ func visitSearchAttributes(obj any, match stringMatcher) (bool, error) {
 		return visit.Continue, nil
 	})
 	return matched, err
+
+}
+
+// visitSearchAttributes uses reflection to recursively visit all fields
+// in the given object. When it finds namespace string fields, it invokes
+// the provided match function.
+func visitSearchAttributes(obj any, anyMatch any) (bool, error) {
+	getMatcher, ok := anyMatch.(saMatcher)
+	if !ok {
+		panic("invalid func type (2)")
+	}
+
+	v := &saVisitor{
+		getMatcher: getMatcher,
+	}
+
+	return v.visit(obj, nil)
+}
+
+func discoverNamespaceId(vwp visit.ValueWithParent) string {
+	// Check current type for ns id field
+	if vwp.Kind() == reflect.Struct {
+		typ, ok := vwp.Type().FieldByName("NamespaceId")
+		if ok && typ.Type.Kind() == reflect.String {
+			return vwp.FieldByName("NamespaceId").String()
+		}
+	}
+
+	parent := vwp.Parent
+	if parent.Kind() == reflect.Struct {
+		typ, ok := parent.Type().FieldByName("NamespaceId")
+		if ok && typ.Type.Kind() == reflect.String {
+			return parent.FieldByName("NamespaceId").String()
+		}
+	}
+	return ""
 }
 
 func translateIndexedFields(fields map[string]*common.Payload, match stringMatcher) (map[string]*common.Payload, bool) {
@@ -171,10 +240,10 @@ func getParentFieldType(vwp visit.ValueWithParent) (result reflect.StructField, 
 	return fieldType, action
 }
 
-func visitDataBlobs(vwp visit.ValueWithParent, match stringMatcher, visitor visitor) (bool, error) {
+func visitDataBlobs(vwp visit.ValueWithParent, visitor visitor, visitorArg any) (bool, error) {
 	switch evt := vwp.Interface().(type) {
 	case []*common.DataBlob:
-		newEvts, matched, err := translateDataBlobs(match, visitor, evt...)
+		newEvts, matched, err := translateDataBlobs(visitor, visitorArg, evt...)
 		if err != nil {
 			return matched, err
 		}
@@ -185,7 +254,7 @@ func visitDataBlobs(vwp visit.ValueWithParent, match stringMatcher, visitor visi
 		}
 		return matched, nil
 	case *common.DataBlob:
-		newEvt, matched, err := translateOneDataBlob(match, visitor, evt)
+		newEvt, matched, err := translateOneDataBlob(visitor, visitorArg, evt)
 		if err != nil {
 			return matched, err
 		}
@@ -200,10 +269,10 @@ func visitDataBlobs(vwp visit.ValueWithParent, match stringMatcher, visitor visi
 	}
 }
 
-func translateDataBlobs(match stringMatcher, visitor visitor, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
+func translateDataBlobs(visitor visitor, visitorArg any, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
 	var anyChanged bool
 	for i, blob := range blobs {
-		newBlob, changed, err := translateOneDataBlob(match, visitor, blob)
+		newBlob, changed, err := translateOneDataBlob(visitor, visitorArg, blob)
 		anyChanged = anyChanged || changed
 		if err != nil {
 			return blobs, anyChanged, err
@@ -213,7 +282,7 @@ func translateDataBlobs(match stringMatcher, visitor visitor, blobs ...*common.D
 	return blobs, anyChanged, nil
 }
 
-func translateOneDataBlob(match stringMatcher, visitor visitor, blob *common.DataBlob) (*common.DataBlob, bool, error) {
+func translateOneDataBlob(visitor visitor, visitorArg any, blob *common.DataBlob) (*common.DataBlob, bool, error) {
 	if blob == nil || len(blob.Data) == 0 {
 		return blob, false, nil
 
@@ -223,7 +292,7 @@ func translateOneDataBlob(match stringMatcher, visitor visitor, blob *common.Dat
 		return blob, false, err
 	}
 
-	changed, err := visitor(evt, match)
+	changed, err := visitor(evt, visitorArg)
 	if err != nil || !changed {
 		return blob, changed, err
 	}

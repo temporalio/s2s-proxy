@@ -16,10 +16,20 @@ import (
 )
 
 func TestTranslateSearchAttribute(t *testing.T) {
-	testTranslateObj(t, visitSearchAttributes, generateSearchAttributeObjs(), require.EqualExportedValues)
+	namespaceId := "ns-1234"
+	testTranslateObj(t, visitSearchAttributes, generateSearchAttributeObjs(namespaceId), require.EqualExportedValues,
+		func(mapping map[string]string) saMatcher {
+			return func(nsId string) stringMatcher {
+				if nsId != namespaceId {
+					return nil
+				}
+				return createStringMatcher(mapping)
+			}
+		},
+	)
 }
 
-func generateSearchAttributeObjs() []objCase {
+func generateSearchAttributeObjs(nsId string) []objCase {
 	return []objCase{
 		{
 			objName:     "HistoryTaskAttributes",
@@ -32,7 +42,7 @@ func generateSearchAttributeObjs() []objCase {
 								{
 									Attributes: &replicationspb.ReplicationTask_HistoryTaskAttributes{
 										HistoryTaskAttributes: &replicationspb.HistoryTaskAttributes{
-											NamespaceId:  "some-ns-id",
+											NamespaceId:  nsId,
 											WorkflowId:   "some-wf-id",
 											RunId:        "some-run-id",
 											Events:       makeHistoryEventsBlobWithSearchAttribute(name),
@@ -62,7 +72,7 @@ func generateSearchAttributeObjs() []objCase {
 													SyncWorkflowStateMutationAttributes: &replicationspb.SyncWorkflowStateMutationAttributes{
 														StateMutation: &persistence.WorkflowMutableStateMutation{
 															ExecutionInfo: &persistence.WorkflowExecutionInfo{
-																NamespaceId:      "some-ns",
+																NamespaceId:      nsId,
 																WorkflowId:       "some-wf",
 																SearchAttributes: makeTestIndexedFieldMap(name),
 																Memo: map[string]*common.Payload{
@@ -92,7 +102,7 @@ func makeHistoryEventsBlobWithSearchAttribute(name string) *common.DataBlob {
 	evts := []*history.HistoryEvent{
 		{
 			EventId:   1,
-			EventType: enums.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED,
+			EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 			Version:   1,
 			TaskId:    100,
 			Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{

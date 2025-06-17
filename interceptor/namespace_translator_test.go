@@ -51,11 +51,19 @@ type (
 )
 
 func TestTranslateNamespaceName(t *testing.T) {
-	testTranslateObj(t, visitNamespace, generateNamespaceObjCases(), require.Equal)
+	testTranslateObj(t, visitNamespace, generateNamespaceObjCases(), require.Equal,
+		func(mapping map[string]string) stringMatcher {
+			return createStringMatcher(mapping)
+		},
+	)
 }
 
 func TestTranslateNamespaceReplicationMessages(t *testing.T) {
-	testTranslateObj(t, visitNamespace, generateNamespaceReplicationMessages(), require.EqualExportedValues)
+	testTranslateObj(t, visitNamespace, generateNamespaceReplicationMessages(), require.EqualExportedValues,
+		func(mapping map[string]string) stringMatcher {
+			return createStringMatcher(mapping)
+		},
+	)
 }
 
 func generateNamespaceObjCases() []objCase {
@@ -495,11 +503,12 @@ func generateNamespaceReplicationMessages() []objCase {
 // due to internal/unexported fields.
 // * `require.EqualExportedValues` works for generated protobuf types, but does not
 // handle pointer cycles.
-func testTranslateObj(
+func testTranslateObj[T any](
 	t *testing.T,
 	visitor visitor,
 	objCases []objCase,
 	equalityAssertion func(t require.TestingT, exp, actual any, extra ...any),
+	createMatcher func(map[string]string) T,
 ) {
 	testcases := []struct {
 		testName   string
@@ -540,7 +549,7 @@ func testTranslateObj(
 					expOutput := c.makeType(ts.outputName)
 					expChanged := ts.inputName != ts.outputName
 
-					changed, err := visitor(input, createStringMatcher(ts.mapping))
+					changed, err := visitor(input, createMatcher(ts.mapping))
 					if len(c.expError) != 0 {
 						require.ErrorContains(t, err, c.expError)
 					} else {
