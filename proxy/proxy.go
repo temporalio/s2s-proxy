@@ -275,15 +275,6 @@ func NewProxy(
 		)
 	}
 
-	//proxy.registry.MustRegister(collectors.NewGoCollector())
-	//err := proxy.registry.Register(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{
-	//	Namespace:    "s2s_proxy",
-	//	ReportErrors: false, // Setting this to true will break your metrics on purpose if /proc is missing.
-	//}))
-	//if err != nil {
-	//	logger.Warn("Failed to register process collector", tag.Error(err))
-	//}
-	//proxy.registry.MustRegister(startupGauge)
 	startupGauge.Set(1)
 
 	return proxy

@@ -442,6 +442,8 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 					metricsString := string(metricsBytes)
 					s.Require().True(strings.Contains(metricsString, "proxy_start_count"),
 						"metrics should contain proxy_start_count, but was \"%s\"", metricsString)
+					s.Require().True(strings.Contains(metricsString, "proxy_health_check_success"),
+						"metrics should contain proxy_health_check_success, but was \"%s\"", metricsString)
 				}
 			},
 		)
