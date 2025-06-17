@@ -50,6 +50,14 @@ type (
 	}
 )
 
+func TestTranslateNamespaceName(t *testing.T) {
+	testTranslateObj(t, visitNamespace, generateNamespaceObjCases(), require.Equal)
+}
+
+func TestTranslateNamespaceReplicationMessages(t *testing.T) {
+	testTranslateObj(t, visitNamespace, generateNamespaceReplicationMessages(), require.EqualExportedValues)
+}
+
 func generateNamespaceObjCases() []objCase {
 	return []objCase{
 		{
@@ -480,7 +488,19 @@ func generateNamespaceReplicationMessages() []objCase {
 	}
 }
 
-func testTranslateObj(t *testing.T, visitor visitor, objCases []objCase) {
+// testTranslateObj runs translation test variants using the given visitor and objCases
+//
+// HACK: The equalityAssertion function should be a compatible assertion function.
+// * `require.Equal` has inconsistent behavior with generated protobuf types,
+// due to internal/unexported fields.
+// * `require.EqualExportedValues` works for generated protobuf types, but does not
+// handle pointer cycles.
+func testTranslateObj(
+	t *testing.T,
+	visitor visitor,
+	objCases []objCase,
+	equalityAssertion func(t require.TestingT, exp, actual any, extra ...any),
+) {
 	testcases := []struct {
 		testName   string
 		inputName  string
@@ -526,12 +546,11 @@ func testTranslateObj(t *testing.T, visitor visitor, objCases []objCase) {
 					} else {
 						require.NoError(t, err)
 						if c.containsObj {
-							//require.Empty(t, cmp.Diff(expOutput, input))
-							require.Equal(t, expOutput, input)
+							equalityAssertion(t, expOutput, input)
 							require.Equal(t, expChanged, changed)
 						} else {
 							// input doesn't contain namespace, no change is expected.
-							require.Equal(t, c.makeType(ts.inputName), input)
+							equalityAssertion(t, c.makeType(ts.inputName), input)
 							require.False(t, changed)
 						}
 					}
@@ -573,12 +592,4 @@ func makeHistoryEventsBlobWithNamespaceField(ns string) *common.DataBlob {
 		panic(err)
 	}
 	return blob
-}
-
-func TestTranslateNamespaceName(t *testing.T) {
-	testTranslateObj(t, visitNamespace, generateNamespaceObjCases())
-}
-
-func TestTranslateNamespaceReplicationMessages(t *testing.T) {
-	testTranslateObj(t, visitNamespace, generateNamespaceReplicationMessages())
 }

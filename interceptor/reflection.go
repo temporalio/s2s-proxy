@@ -11,6 +11,8 @@ import (
 )
 
 var (
+	serializer = serialization.NewSerializer()
+
 	namespaceFieldNames = map[string]bool{
 		"Namespace":               true,
 		"WorkflowNamespace":       true, // PollActivityTaskQueueResponse
@@ -113,23 +115,21 @@ func visitSearchAttributes(obj any, match matcher) (bool, error) {
 				return visit.Stop, err
 			}
 		} else if searchAttributeFieldNames[fieldType.Name] {
-			fmt.Printf("match SA field %v\n", fieldType.Name)
 			// This could be *common.SearchAttributes, or it could be map[string]*common.Payload (indexed fields)
 			var changed bool
-			fmt.Printf("before %+v\n", vwp.Interface())
 			switch attrs := vwp.Interface().(type) {
 			case *common.SearchAttributes:
-				fmt.Println("match common.SearchAttributes")
 				attrs.IndexedFields, changed = translateIndexedFields(attrs.IndexedFields, match)
 			case map[string]*common.Payload:
-				fmt.Println("match map[string]common.Payload")
 				attrs, changed = translateIndexedFields(attrs, match)
 				if changed {
 					visit.Assign(vwp, reflect.ValueOf(attrs))
 				}
+			default:
+				// TODO(pglass): Panic to make missing cases very obvious while we test.
+				// Replace this with a log statement after testing.
+				panic(fmt.Sprintf("unhandled search attribute type %T", attrs))
 			}
-			fmt.Printf("changed=%v\n", changed)
-			fmt.Printf("after %+v\n", vwp.Interface())
 			matched = matched || changed
 
 			// No need to descend into this type further.
@@ -200,46 +200,34 @@ func visitDataBlobs(vwp visit.ValueWithParent, match matcher, visitor visitor) (
 	}
 }
 
-func translateOneDataBlob(match matcher, visitor visitor, blob *common.DataBlob) (*common.DataBlob, bool, error) {
-	if blob == nil || len(blob.Data) == 0 {
-		return blob, false, nil
-	}
-	blobs, changed, err := translateDataBlobs(match, visitor, blob)
-	if err != nil {
-		return nil, changed, err
-	}
-	if len(blobs) != 1 {
-		return nil, changed, fmt.Errorf("failed to translate single data blob")
-	}
-	return blobs[0], changed, err
-}
-
 func translateDataBlobs(match matcher, visitor visitor, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
-	if len(blobs) == 0 {
-		return blobs, false, nil
-	}
-
-	s := serialization.NewSerializer()
-
 	var anyChanged bool
 	for i, blob := range blobs {
-		evt, err := s.DeserializeEvents(blob)
-		if err != nil {
-			return blobs, anyChanged, err
-		}
-
-		changed, err := visitor(evt, match)
-		if err != nil {
-			return blobs, anyChanged, err
-		}
+		newBlob, changed, err := translateOneDataBlob(match, visitor, blob)
 		anyChanged = anyChanged || changed
-
-		newBlob, err := s.SerializeEvents(evt, blob.EncodingType)
 		if err != nil {
 			return blobs, anyChanged, err
 		}
 		blobs[i] = newBlob
 	}
-
 	return blobs, anyChanged, nil
+}
+
+func translateOneDataBlob(match matcher, visitor visitor, blob *common.DataBlob) (*common.DataBlob, bool, error) {
+	if blob == nil || len(blob.Data) == 0 {
+		return blob, false, nil
+
+	}
+	evt, err := serializer.DeserializeEvents(blob)
+	if err != nil {
+		return blob, false, err
+	}
+
+	changed, err := visitor(evt, match)
+	if err != nil || !changed {
+		return blob, changed, err
+	}
+
+	newBlob, err := serializer.SerializeEvents(evt, blob.EncodingType)
+	return newBlob, changed, err
 }

@@ -3,6 +3,7 @@ package interceptor
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/history/v1"
@@ -15,7 +16,11 @@ import (
 )
 
 func TestTranslateSearchAttribute(t *testing.T) {
-	testTranslateObj(t, visitSearchAttributes, []objCase{
+	testTranslateObj(t, visitSearchAttributes, generateSearchAttributeObjs(), require.EqualExportedValues)
+}
+
+func generateSearchAttributeObjs() []objCase {
+	return []objCase{
 		{
 			objName:     "HistoryTaskAttributes",
 			containsObj: true,
@@ -79,7 +84,7 @@ func TestTranslateSearchAttribute(t *testing.T) {
 				}
 			},
 		},
-	})
+	}
 
 }
 
@@ -87,7 +92,7 @@ func makeHistoryEventsBlobWithSearchAttribute(name string) *common.DataBlob {
 	evts := []*history.HistoryEvent{
 		{
 			EventId:   1,
-			EventType: enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
+			EventType: enums.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED,
 			Version:   1,
 			TaskId:    100,
 			Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
@@ -121,9 +126,5 @@ func makeTestIndexedFieldMap(name string) map[string]*common.Payload {
 			Metadata: map[string][]byte{"preserve": []byte("this")},
 			Data:     []byte("and this"),
 		},
-		//"unchanged-name": {
-		//	Metadata: map[string][]byte{"preserve": []byte("this 2")},
-		//	Data:     []byte("and this 2"),
-		//},
 	}
 }
