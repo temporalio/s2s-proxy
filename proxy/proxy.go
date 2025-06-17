@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
@@ -37,7 +36,6 @@ type (
 		healthCheckServer *http.Server
 		metricsServer     *http.Server
 		logger            log.Logger
-		registry          *prometheus.Registry
 	}
 
 	proxyOptions struct {
@@ -54,6 +52,10 @@ var (
 		Help:      "Emitted once per startup",
 	})
 )
+
+func init() {
+	prometheus.MustRegister(startupGauge)
+}
 
 func makeServerOptions(
 	logger log.Logger,
@@ -235,14 +237,12 @@ func NewProxy(
 	configProvider config.ConfigProvider,
 	transManager *transport.TransportManager,
 	logger log.Logger,
-	registry *prometheus.Registry,
 ) *Proxy {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	proxy := &Proxy{
 		config:       s2sConfig,
 		transManager: transManager,
 		logger:       logger,
-		registry:     registry,
 	}
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
@@ -275,15 +275,15 @@ func NewProxy(
 		)
 	}
 
-	proxy.registry.MustRegister(collectors.NewGoCollector())
-	err := proxy.registry.Register(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{
-		Namespace:    "s2s_proxy",
-		ReportErrors: false, // Setting this to true will break your metrics on purpose if /proc is missing.
-	}))
-	if err != nil {
-		logger.Warn("Failed to register process collector", tag.Error(err))
-	}
-	proxy.registry.MustRegister(startupGauge)
+	//proxy.registry.MustRegister(collectors.NewGoCollector())
+	//err := proxy.registry.Register(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{
+	//	Namespace:    "s2s_proxy",
+	//	ReportErrors: false, // Setting this to true will break your metrics on purpose if /proc is missing.
+	//}))
+	//if err != nil {
+	//	logger.Warn("Failed to register process collector", tag.Error(err))
+	//}
+	//proxy.registry.MustRegister(startupGauge)
 	startupGauge.Set(1)
 
 	return proxy
@@ -294,16 +294,16 @@ func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 		return fmt.Errorf("Not supported health check protocol %s", cfg.Protocol)
 	}
 
+	// Set up the handler. Avoid the global ServeMux so that we can create N of these in unit test suites
+	mux := http.NewServeMux()
+	// Register the health check endpoint
+	checker := newHealthCheck(s.logger)
+	mux.HandleFunc("/health", checker.createHandler())
 	// Define the server and its settings
 	s.healthCheckServer = &http.Server{
 		Addr:    cfg.ListenAddress,
-		Handler: nil, // Default HTTP handler (using http.HandleFunc registrations)
+		Handler: mux,
 	}
-
-	checker := newHealthCheck(s.logger)
-
-	// Register the health check endpoint
-	http.HandleFunc("/health", checker.createHandler())
 
 	go func() {
 		s.logger.Info("Starting health check server", tag.Address(cfg.ListenAddress))
@@ -326,9 +326,9 @@ func (wls *wrapLoggerForPrometheus) Println(v ...interface{}) {
 func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
 	// Why not default? So that it can be used in unit tests
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{
+	mux.Handle("/metrics", promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
 		ErrorLog:          &wrapLoggerForPrometheus{Logger: s.logger},
-		Registry:          s.registry,
+		Registry:          nil, // use default
 		EnableOpenMetrics: true,
 	}))
 	s.metricsServer = &http.Server{

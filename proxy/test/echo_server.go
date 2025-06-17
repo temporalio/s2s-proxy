@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"time"
 
 	"go.temporal.io/api/workflowservice/v1"
@@ -113,7 +112,6 @@ func newEchoServer(
 			configProvider,
 			transport.NewTransportManager(configProvider, logger),
 			logger,
-			prometheus.NewRegistry(),
 		)
 
 		if err != nil {

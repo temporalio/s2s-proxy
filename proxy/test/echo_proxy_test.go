@@ -23,7 +23,8 @@ const (
 	echoServerAddress          = "localhost:7266"
 	serverProxyInboundAddress  = "localhost:7366"
 	serverProxyOutboundAddress = "localhost:7466"
-	prometheusEndpoint         = "localhost:7467"
+	prometheusAddress          = "localhost:7467"
+	healthCheckAddress         = "localhost:7478"
 	echoClientAddress          = "localhost:8266"
 	clientProxyInboundAddress  = "localhost:8366"
 	clientProxyOutboundAddress = "localhost:8466"
@@ -181,9 +182,13 @@ func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 		},
 		Metrics: &config.MetricsConfig{
 			Prometheus: config.PrometheusConfig{
-				ListenAddress: prometheusEndpoint,
+				ListenAddress: prometheusAddress,
 				Framework:     "prometheus",
 			},
+		},
+		HealthCheck: &config.HealthCheckConfig{
+			Protocol:      "http",
+			ListenAddress: healthCheckAddress,
 		},
 	}, opts)
 }
@@ -428,6 +433,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				s.Equal("example-ns", resp.WorkflowNamespace)
 				// Confirm that Prometheus initialized and is reporting. We should see proxy_start_count
 				if proxyCfg := ts.echoServerInfo.s2sProxyConfig; proxyCfg != nil && proxyCfg.Metrics != nil {
+					_, _ = http.Get("http://" + ts.echoServerInfo.s2sProxyConfig.HealthCheck.ListenAddress + "/health")
 					logger.Info("Trying to check http://" + proxyCfg.Metrics.Prometheus.ListenAddress + "/metrics")
 					metricsResp, err := http.Get("http://" + proxyCfg.Metrics.Prometheus.ListenAddress + "/metrics")
 					s.NoError(err)

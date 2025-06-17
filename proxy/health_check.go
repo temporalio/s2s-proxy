@@ -9,17 +9,22 @@ import (
 var (
 	healthyGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "temporal",
-		Subsystem: "s2s-proxy",
+		Subsystem: "s2s_proxy",
 		Name:      "health_check_success",
 		Help:      "s2s-proxy service is healthy",
 	})
 	healthyCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "temporal",
-		Subsystem: "s2s-proxy",
+		Subsystem: "s2s_proxy",
 		Name:      "health_check_success_count",
 		Help:      "Number of healthy checks from s2s-proxy since service start",
 	})
 )
+
+func init() {
+	prometheus.MustRegister(healthyGauge)
+	prometheus.MustRegister(healthyCount)
+}
 
 type healthChecker struct {
 	logger log.Logger
