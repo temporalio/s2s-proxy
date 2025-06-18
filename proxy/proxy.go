@@ -3,7 +3,6 @@ package proxy
 import (
 	"errors"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
@@ -44,16 +43,6 @@ type (
 	}
 )
 
-var (
-	startupGauge      = metrics.DefaultCounter("proxy_start_count", "Emitted once per startup")
-	grpcServerMetrics = metrics.GetStandardGRPCInterceptor()
-)
-
-func init() {
-	prometheus.MustRegister(startupGauge)
-	prometheus.MustRegister(grpcServerMetrics)
-}
-
 func makeServerOptions(
 	logger log.Logger,
 	cfg config.ProxyConfig,
@@ -63,8 +52,8 @@ func makeServerOptions(
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
 	// Ordering matters! These metrics happen BEFORE the translations/acl
-	unaryInterceptors = append(unaryInterceptors, grpcServerMetrics.UnaryServerInterceptor())
-	streamInterceptors = append(streamInterceptors, grpcServerMetrics.StreamServerInterceptor())
+	unaryInterceptors = append(unaryInterceptors, metrics.GRPCServerMetrics.UnaryServerInterceptor())
+	streamInterceptors = append(streamInterceptors, metrics.GRPCServerMetrics.StreamServerInterceptor())
 
 	var translators []interceptor.Translator
 	if tln := proxyOpts.Config.NamespaceNameTranslation; tln.IsEnabled() {
@@ -276,7 +265,7 @@ func NewProxy(
 		)
 	}
 
-	startupGauge.Inc()
+	metrics.ProxyStartCount.Inc()
 
 	return proxy
 }
