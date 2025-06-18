@@ -330,6 +330,9 @@ func (s *Proxy) Start() error {
 		if err := s.startHealthCheckHandler(*s.config.HealthCheck); err != nil {
 			return err
 		}
+	} else {
+		s.logger.Warn("Started up without health check! Double-check the YAML config," +
+			" it needs at least the following path: healthCheck.listenAddress")
 	}
 
 	if s.config.Metrics != nil {
