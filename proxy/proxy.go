@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
+	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -45,16 +45,13 @@ type (
 )
 
 var (
-	startupGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "s2s_proxy",
-		Subsystem: "init",
-		Name:      "proxy_start_count",
-		Help:      "Emitted once per startup",
-	})
+	startupGauge      = metrics.DefaultCounter("proxy_start_count", "Emitted once per startup")
+	grpcServerMetrics = metrics.GetStandardGRPCInterceptor()
 )
 
 func init() {
 	prometheus.MustRegister(startupGauge)
+	prometheus.MustRegister(grpcServerMetrics)
 }
 
 func makeServerOptions(
@@ -64,6 +61,10 @@ func makeServerOptions(
 ) ([]grpc.ServerOption, error) {
 	unaryInterceptors := []grpc.UnaryServerInterceptor{}
 	streamInterceptors := []grpc.StreamServerInterceptor{}
+
+	// Ordering matters! These metrics happen BEFORE the translations/acl
+	unaryInterceptors = append(unaryInterceptors, grpcServerMetrics.UnaryServerInterceptor())
+	streamInterceptors = append(streamInterceptors, grpcServerMetrics.StreamServerInterceptor())
 
 	var translators []interceptor.Translator
 	if tln := proxyOpts.Config.NamespaceNameTranslation; tln.IsEnabled() {
@@ -275,7 +276,7 @@ func NewProxy(
 		)
 	}
 
-	startupGauge.Set(1)
+	startupGauge.Inc()
 
 	return proxy
 }
@@ -306,22 +307,10 @@ func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 	return nil
 }
 
-type wrapLoggerForPrometheus struct {
-	log.Logger
-}
-
-func (wls *wrapLoggerForPrometheus) Println(v ...interface{}) {
-	wls.Error(fmt.Sprintln(v...))
-}
-
 func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
 	// Why not default? So that it can be used in unit tests
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
-		ErrorLog:          &wrapLoggerForPrometheus{Logger: s.logger},
-		Registry:          nil, // use default
-		EnableOpenMetrics: true,
-	}))
+	mux.Handle("/metrics", metrics.GetMetricsHandler(s.logger))
 	s.metricsServer = &http.Server{
 		Addr:    cfg.Prometheus.ListenAddress,
 		Handler: mux,

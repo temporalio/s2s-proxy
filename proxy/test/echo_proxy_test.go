@@ -1,11 +1,11 @@
 package proxy
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -411,6 +411,11 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 					echoClient.stop()
 					echoServer.stop()
 				}()
+				// Test s2s-proxy health check
+				if ts.echoServerInfo.s2sProxyConfig != nil {
+					_, err := http.Get(fmt.Sprintf("http://%s/health", ts.echoServerInfo.s2sProxyConfig.HealthCheck.ListenAddress))
+					s.NoError(err)
+				}
 
 				// Test adminservice unary method
 				r, err := retry(func() (*adminservice.DescribeClusterResponse, error) {
@@ -431,19 +436,22 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				s.NoError(err)
 				s.Require().NotNil(resp)
 				s.Equal("example-ns", resp.WorkflowNamespace)
-				// Confirm that Prometheus initialized and is reporting. We should see proxy_start_count
+				// Confirm that Prometheus initialized and is reporting. We should see proxy_start_count and some grpc metrics
 				if proxyCfg := ts.echoServerInfo.s2sProxyConfig; proxyCfg != nil && proxyCfg.Metrics != nil {
-					_, _ = http.Get("http://" + ts.echoServerInfo.s2sProxyConfig.HealthCheck.ListenAddress + "/health")
-					logger.Info("Trying to check http://" + proxyCfg.Metrics.Prometheus.ListenAddress + "/metrics")
-					metricsResp, err := http.Get("http://" + proxyCfg.Metrics.Prometheus.ListenAddress + "/metrics")
+					logger.Info(fmt.Sprintf("Trying to check http://%s/metrics", proxyCfg.Metrics.Prometheus.ListenAddress))
+					metricsResp, err := http.Get(fmt.Sprintf("http://%s/metrics", proxyCfg.Metrics.Prometheus.ListenAddress))
 					s.NoError(err)
 					metricsBytes, err := io.ReadAll(metricsResp.Body)
 					s.NoError(err)
 					metricsString := string(metricsBytes)
-					s.Require().True(strings.Contains(metricsString, "proxy_start_count"),
+					s.Require().Contains(metricsString, "proxy_start_count",
 						"metrics should contain proxy_start_count, but was \"%s\"", metricsString)
-					s.Require().True(strings.Contains(metricsString, "proxy_health_check_success"),
+					s.Require().Contains(metricsString, "proxy_health_check_success",
 						"metrics should contain proxy_health_check_success, but was \"%s\"", metricsString)
+					s.Require().Contains(metricsString, "temporal_s2s_proxy_grpc_server_handled_total",
+						"grpc counter metrics are missing or not prefixed properly")
+					s.Require().Contains(metricsString, "temporal_s2s_proxy_grpc_server_handling_seconds_bucket",
+						"grpc histogram metrics are missing or not prefixed properly")
 				}
 			},
 		)

@@ -2,23 +2,14 @@ package proxy
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/temporalio/s2s-proxy/metrics"
 	"go.temporal.io/server/common/log"
 	"net/http"
 )
 
 var (
-	healthyGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "temporal",
-		Subsystem: "s2s_proxy",
-		Name:      "health_check_success",
-		Help:      "s2s-proxy service is healthy",
-	})
-	healthyCount = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "temporal",
-		Subsystem: "s2s_proxy",
-		Name:      "health_check_success_count",
-		Help:      "Number of healthy checks from s2s-proxy since service start",
-	})
+	healthyGauge = metrics.DefaultGauge("health_check_success", "s2s-proxy service is healthy")
+	healthyCount = metrics.DefaultCounter("health_check_success_count", "Number of healthy checks from s2s-proxy since service start")
 )
 
 func init() {
