@@ -29,7 +29,14 @@ var (
 	}
 
 	searchAttributeFieldNames = map[string]bool{
-		"SearchAttributes": true, // UpsertWorkflowSearchAttributesEventAttributes, WorkflowExecutionStartedEventAttributes
+		// common.SearchAttributes
+		// - WorkflowExecutionStartedEventAttributes
+		// - WorkflowExecutionContinuedAsNewEventAttributes
+		// - UpsertWorkflowSearchAttributesEventAttributes
+		// - StartChildWorkflowExecutionInitiatedEventAttributes
+		// map[string]*Payload:
+		// - WorkflowExecutionInfo
+		"SearchAttributes": true,
 	}
 )
 
@@ -126,9 +133,7 @@ func visitSearchAttributes(obj any, match stringMatcher) (bool, error) {
 					visit.Assign(vwp, reflect.ValueOf(attrs))
 				}
 			default:
-				// TODO(pglass): Panic to make missing cases very obvious while we test.
-				// Replace this with a log statement after testing.
-				panic(fmt.Sprintf("unhandled search attribute type %T", attrs))
+				return visit.Stop, fmt.Errorf("unhandled search attribute type: %T", attrs)
 			}
 			matched = matched || changed
 

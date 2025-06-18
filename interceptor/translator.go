@@ -33,6 +33,8 @@ func NewNamespaceNameTranslator(reqMap, respMap map[string]string) Translator {
 func NewSearchAttributeTranslator(reqMap, respMap map[string]string) Translator {
 	return &translatorImpl{
 		matchMethod: func(method string) bool {
+			// In workflowservice APIs, responses only contain the search attribute alias.
+			// We should never translate these responses to the search attribute's indexed field.
 			return !strings.HasPrefix(method, api.WorkflowServicePrefix)
 		},
 		matchReq:  createStringMatcher(reqMap),

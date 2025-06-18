@@ -53,14 +53,14 @@ func makeServerOptions(
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
 	var translators []interceptor.Translator
-	if tln := proxyOpts.Config.NamespaceNameTranslation; len(tln.Mappings) > 0 {
+	if tln := proxyOpts.Config.NamespaceNameTranslation; tln.IsEnabled() {
 		// NamespaceNameTranslator needs to be called before namespace access control so that
 		// local name can be used in namespace allowed list.
 		translators = append(translators,
 			interceptor.NewNamespaceNameTranslator(tln.ToMaps(proxyOpts.IsInbound)))
 	}
 
-	if tln := proxyOpts.Config.SearchAttributeTranslation; len(tln.Mappings) > 0 {
+	if tln := proxyOpts.Config.SearchAttributeTranslation; tln.IsEnabled() {
 		logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", tln.Mappings))
 		translators = append(translators,
 			interceptor.NewSearchAttributeTranslator(tln.ToMaps(proxyOpts.IsInbound)))

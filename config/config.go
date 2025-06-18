@@ -283,6 +283,10 @@ func (mc *MockConfigProvider) GetS2SProxyConfig() S2SProxyConfig {
 	return mc.config
 }
 
+func (n NameTranslationConfig) IsEnabled() bool {
+	return len(n.Mappings) > 0
+}
+
 // ToMaps returns request and response mappings.
 func (n NameTranslationConfig) ToMaps(inBound bool) (map[string]string, map[string]string) {
 	reqMap := make(map[string]string)
