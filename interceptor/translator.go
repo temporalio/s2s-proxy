@@ -82,7 +82,7 @@ func (s *saTranslator) getNamespaceReqMatcher(namespaceId string) stringMatcher 
 
 func (s *saTranslator) getNamespaceRespMatcher(namespaceId string) stringMatcher {
 	// Placeholder: Just return the first one (only support one namespace mappping)
-	for _, m := range s.respMap{
+	for _, m := range s.respMap {
 		return createStringMatcher(m)
 	}
 	return createStringMatcher(nil)
