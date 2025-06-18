@@ -17,14 +17,17 @@ import (
 
 func TestTranslateSearchAttribute(t *testing.T) {
 	namespaceId := "ns-1234"
-	testTranslateObj(t, visitSearchAttributes, generateSearchAttributeObjs(namespaceId), require.EqualExportedValues,
-		func(mapping map[string]string) saMatcher {
-			return func(nsId string) stringMatcher {
-				if nsId != namespaceId {
-					return nil
-				}
-				return createStringMatcher(mapping)
-			}
+	testTranslateObj(t, generateSearchAttributeObjs(namespaceId), require.EqualExportedValues,
+		func(mapping map[string]string) Visitor {
+			v := MakeSearchAttributeVisitor(
+				func(nsId string) stringMatcher {
+					if nsId != namespaceId {
+						return nil
+					}
+					return createStringMatcher(mapping)
+				},
+			)
+			return &v
 		},
 	)
 }
