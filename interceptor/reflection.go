@@ -42,16 +42,12 @@ type stringMatcher func(name string) (string, bool)
 // It returns whether anything was matched and any error it encountered.
 type visitor func(obj any, match any) (bool, error)
 
-// visitNamespace uses reflection to recursively visit all fields
-// in the given object. When it finds namespace string fields, it invokes
-// the provided match function.
-func visitNamespace(obj any, anyMatch any) (bool, error) {
-	var matched bool
+type nsVisitor struct {
+	match stringMatcher
+}
 
-	match, ok := anyMatch.(stringMatcher)
-	if !ok {
-		panic("invalid func type")
-	}
+func (v *nsVisitor) visit(obj any, _ any) (bool, error) {
+	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
 	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
@@ -63,7 +59,7 @@ func visitNamespace(obj any, anyMatch any) (bool, error) {
 
 		if info, ok := vwp.Interface().(*namespace.NamespaceInfo); ok && info != nil {
 			// Handle NamespaceInfo.Name in any message.
-			newName, ok := match(info.Name)
+			newName, ok := v.match(info.Name)
 			if !ok {
 				return visit.Continue, nil
 			}
@@ -72,7 +68,7 @@ func visitNamespace(obj any, anyMatch any) (bool, error) {
 			}
 			matched = matched || ok
 		} else if dataBlobFieldNames[fieldType.Name] {
-			changed, err := visitDataBlobs(vwp, visitNamespace, match)
+			changed, err := visitDataBlobs(vwp, v.visit, nil)
 			matched = matched || changed
 			if err != nil {
 				return visit.Stop, err
@@ -82,7 +78,7 @@ func visitNamespace(obj any, anyMatch any) (bool, error) {
 			if !ok {
 				return visit.Continue, nil
 			}
-			newName, ok := match(name)
+			newName, ok := v.match(name)
 			if !ok {
 				return visit.Continue, nil
 			}
@@ -97,6 +93,13 @@ func visitNamespace(obj any, anyMatch any) (bool, error) {
 		return visit.Continue, nil
 	})
 	return matched, err
+}
+
+// visitNamespace uses reflection to recursively visit all fields
+// in the given object. When it finds namespace string fields, it invokes
+// the provided match function.
+func visitNamespace(obj any, match stringMatcher) (bool, error) {
+	return (&nsVisitor{match: match}).visit(obj, nil)
 }
 
 type saMatcher func(string) stringMatcher
@@ -120,10 +123,8 @@ func (v *saVisitor) visit(obj any, _ any) (bool, error) {
 		nsId := discoverNamespaceId(vwp)
 		if nsId != "" {
 			v.currentNamespaceId = nsId
-			fmt.Printf("v.currentNamespaceId = %v\n", v.currentNamespaceId)
 			defer func() {
 				v.currentNamespaceId = ""
-				fmt.Printf("v.currentNamespaceId = %q\n", v.currentNamespaceId)
 			}()
 		}
 
@@ -138,12 +139,8 @@ func (v *saVisitor) visit(obj any, _ any) (bool, error) {
 			if nsId == "" {
 				discoverNamespaceId(vwp)
 			}
-			fmt.Printf("discoverNamespaceId(%T) = %q\n", vwp.Interface(), nsId)
-			fmt.Printf("parent = %T\n", vwp.Parent.Interface())
-			fmt.Printf("parent = %+v\n", vwp.Parent.Interface())
 
 			match := v.getMatcher(nsId)
-			fmt.Printf("getMatcher(%s) = %v\n", nsId, match)
 			if match == nil {
 				return visit.Continue, nil
 			}
@@ -178,28 +175,14 @@ func (v *saVisitor) visit(obj any, _ any) (bool, error) {
 // visitSearchAttributes uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
 // the provided match function.
-func visitSearchAttributes(obj any, anyMatch any) (bool, error) {
-	getMatcher, ok := anyMatch.(saMatcher)
-	if !ok {
-		panic("invalid func type (2)")
-	}
-
+func visitSearchAttributes(obj any, getMatcher saMatcher) (bool, error) {
 	v := &saVisitor{
 		getMatcher: getMatcher,
 	}
-
 	return v.visit(obj, nil)
 }
 
 func discoverNamespaceId(vwp visit.ValueWithParent) string {
-	// Check current type for ns id field
-	if vwp.Kind() == reflect.Struct {
-		typ, ok := vwp.Type().FieldByName("NamespaceId")
-		if ok && typ.Type.Kind() == reflect.String {
-			return vwp.FieldByName("NamespaceId").String()
-		}
-	}
-
 	parent := vwp.Parent
 	if parent.Kind() == reflect.Struct {
 		typ, ok := parent.Type().FieldByName("NamespaceId")

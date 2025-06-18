@@ -505,7 +505,7 @@ func generateNamespaceReplicationMessages() []objCase {
 // handle pointer cycles.
 func testTranslateObj[T any](
 	t *testing.T,
-	visitor visitor,
+	visitor func(any, T) (bool, error),
 	objCases []objCase,
 	equalityAssertion func(t require.TestingT, exp, actual any, extra ...any),
 	createMatcher func(map[string]string) T,

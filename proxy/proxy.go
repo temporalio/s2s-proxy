@@ -60,8 +60,8 @@ func makeServerOptions(
 			interceptor.NewNamespaceNameTranslator(tln.ToMaps(proxyOpts.IsInbound)))
 	}
 
-	if tln := proxyOpts.Config.SearchAttributeTranslation; len(tln.Mappings) > 0 {
-		logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", tln.Mappings))
+	if tln := proxyOpts.Config.SearchAttributeTranslation; len(tln.NamespaceMappings) > 0 {
+		logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", tln.NamespaceMappings))
 		translators = append(translators,
 			interceptor.NewSearchAttributeTranslator(tln.ToMaps(proxyOpts.IsInbound)))
 	}

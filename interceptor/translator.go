@@ -17,21 +17,20 @@ type (
 		matchMethod func(string) bool
 		matchReq    stringMatcher
 		matchResp   stringMatcher
-		visitor     visitor
 	}
 
 	saTranslator struct {
 		matchMethod func(string) bool
 		reqMap      map[string]map[string]string
 		respMap     map[string]map[string]string
-		visitor     visitor
 	}
 )
 
 func NewNamespaceNameTranslator(reqMap, respMap map[string]string) Translator {
 	return &translatorImpl{
 		matchMethod: func(string) bool { return true },
-		visitor:     visitNamespace,
+		matchReq:    createStringMatcher(reqMap),
+		matchResp:   createStringMatcher(respMap),
 	}
 }
 
@@ -40,11 +39,11 @@ func (n *translatorImpl) MatchMethod(m string) bool {
 }
 
 func (n *translatorImpl) TranslateRequest(req any) (bool, error) {
-	return n.visitor(req, n.matchReq)
+	return visitNamespace(req, n.matchReq)
 }
 
 func (n *translatorImpl) TranslateResponse(resp any) (bool, error) {
-	return n.visitor(resp, n.matchResp)
+	return visitNamespace(resp, n.matchResp)
 }
 
 func NewSearchAttributeTranslator(reqMap, respMap map[string]map[string]string) Translator {
@@ -54,20 +53,19 @@ func NewSearchAttributeTranslator(reqMap, respMap map[string]map[string]string) 
 		},
 		reqMap:  reqMap,
 		respMap: respMap,
-		visitor: visitSearchAttributes,
 	}
 }
 
-func (n *saTranslator) MatchMethod(m string) bool {
-	return n.matchMethod(m)
+func (s *saTranslator) MatchMethod(m string) bool {
+	return s.matchMethod(m)
 }
 
 func (s *saTranslator) TranslateRequest(req any) (bool, error) {
-	return s.visitor(req, s.getNamespaceReqMatcher)
+	return visitSearchAttributes(req, s.getNamespaceReqMatcher)
 }
 
 func (s *saTranslator) TranslateResponse(resp any) (bool, error) {
-	return s.visitor(resp, s.getNamespaceRespMatcher)
+	return visitSearchAttributes(resp, s.getNamespaceRespMatcher)
 }
 
 func (s *saTranslator) getNamespaceReqMatcher(namespaceId string) stringMatcher {
