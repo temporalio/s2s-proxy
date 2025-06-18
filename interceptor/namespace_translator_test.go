@@ -43,32 +43,40 @@ type (
 	}
 
 	objCase struct {
-		objName           string
-		containsNamespace bool
-		makeType          func(ns string) any
-		expError          string
+		objName     string
+		containsObj bool
+		makeType    func(ns string) any
+		expError    string
 	}
 )
+
+func TestTranslateNamespaceName(t *testing.T) {
+	testTranslateObj(t, visitNamespace, generateNamespaceObjCases(), require.Equal)
+}
+
+func TestTranslateNamespaceReplicationMessages(t *testing.T) {
+	testTranslateObj(t, visitNamespace, generateNamespaceReplicationMessages(), require.EqualExportedValues)
+}
 
 func generateNamespaceObjCases() []objCase {
 	return []objCase{
 		{
-			objName:           "Namespace field",
-			containsNamespace: true,
+			objName:     "Namespace field",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return &StructWithNamespaceField{Namespace: ns}
 			},
 		},
 		{
-			objName:           "WorkflowNamespace field",
-			containsNamespace: true,
+			objName:     "WorkflowNamespace field",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return &StructWithWorkflowNamespaceField{WorkflowNamespace: ns}
 			},
 		},
 		{
-			objName:           "Nested Namespace field",
-			containsNamespace: true,
+			objName:     "Nested Namespace field",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return &StructWithNestedNamespaceField{
 					Other: "do not change",
@@ -79,8 +87,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "list of structs",
-			containsNamespace: true,
+			objName:     "list of structs",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return &StructWithListOfNestedNamespaceField{
 					Other: "do not change",
@@ -93,8 +101,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "list of ptrs",
-			containsNamespace: true,
+			objName:     "list of ptrs",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return &StructWithListOfNestedPtrs{
 					Other: "do not change",
@@ -107,8 +115,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "RespondWorkflowTaskCompletedRequest",
-			containsNamespace: true,
+			objName:     "RespondWorkflowTaskCompletedRequest",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return &workflowservice.RespondWorkflowTaskCompletedRequest{
 					TaskToken: []byte{},
@@ -138,8 +146,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "PollWorkflowTaskQueueResponse",
-			containsNamespace: true,
+			objName:     "PollWorkflowTaskQueueResponse",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return &workflowservice.PollWorkflowTaskQueueResponse{
 					TaskToken:              []byte{},
@@ -168,22 +176,22 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "GetWorkflowExecutionRawHistoryV2Response",
-			containsNamespace: true,
+			objName:     "GetWorkflowExecutionRawHistoryV2Response",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return &adminservice.GetWorkflowExecutionRawHistoryV2Response{
 					NextPageToken: []byte("some-token"),
 					HistoryBatches: []*common.DataBlob{
-						makeHistoryEventsBlob(ns),
-						makeHistoryEventsBlob(ns),
+						makeHistoryEventsBlobWithNamespaceField(ns),
+						makeHistoryEventsBlobWithNamespaceField(ns),
 					},
 					HistoryNodeIds: []int64{123},
 				}
 			},
 		},
 		{
-			objName:           "DescribeNamespaceResponse",
-			containsNamespace: true,
+			objName:     "DescribeNamespaceResponse",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return workflowservice.DescribeNamespaceResponse{
 					NamespaceInfo: &namespace.NamespaceInfo{
@@ -194,8 +202,8 @@ func generateNamespaceObjCases() []objCase {
 			expError: "",
 		},
 		{
-			objName:           "UpdateNamespaceResponse",
-			containsNamespace: true,
+			objName:     "UpdateNamespaceResponse",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return workflowservice.UpdateNamespaceResponse{
 					NamespaceInfo: &namespace.NamespaceInfo{
@@ -217,8 +225,8 @@ func generateNamespaceObjCases() []objCase {
 			expError: "",
 		},
 		{
-			objName:           "ListNamespacesResponse",
-			containsNamespace: true,
+			objName:     "ListNamespacesResponse",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return &workflowservice.ListNamespacesResponse{
 					Namespaces: []*workflowservice.DescribeNamespaceResponse{
@@ -232,8 +240,8 @@ func generateNamespaceObjCases() []objCase {
 			expError: "",
 		},
 		{
-			objName:           "StreamWorkflowReplicationMessagesResponse",
-			containsNamespace: true,
+			objName:     "StreamWorkflowReplicationMessagesResponse",
+			containsObj: true,
 			makeType: func(ns string) any {
 				return &adminservice.StreamWorkflowReplicationMessagesResponse{
 					Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
@@ -245,8 +253,8 @@ func generateNamespaceObjCases() []objCase {
 											NamespaceId:  "some-ns-id",
 											WorkflowId:   "some-wf-id",
 											RunId:        "some-run-id",
-											Events:       makeHistoryEventsBlob(ns),
-											NewRunEvents: makeHistoryEventsBlob(ns),
+											Events:       makeHistoryEventsBlobWithNamespaceField(ns),
+											NewRunEvents: makeHistoryEventsBlobWithNamespaceField(ns),
 										},
 									},
 								},
@@ -256,8 +264,8 @@ func generateNamespaceObjCases() []objCase {
 											NamespaceId:  "some-ns-id",
 											WorkflowId:   "some-wf-id-2",
 											RunId:        "some-run-id-2",
-											Events:       makeHistoryEventsBlob(ns),
-											NewRunEvents: makeHistoryEventsBlob(ns),
+											Events:       makeHistoryEventsBlobWithNamespaceField(ns),
+											NewRunEvents: makeHistoryEventsBlobWithNamespaceField(ns),
 										},
 									},
 								},
@@ -296,12 +304,12 @@ func generateNamespaceObjCases() []objCase {
 											WorkflowId:  "some-wf-id",
 											RunId:       "some-run-id",
 											EventBatches: []*common.DataBlob{
-												makeHistoryEventsBlob(ns),
-												makeHistoryEventsBlob(ns),
+												makeHistoryEventsBlobWithNamespaceField(ns),
+												makeHistoryEventsBlobWithNamespaceField(ns),
 											},
 											NewRunInfo: &replicationspb.NewRunInfo{
 												RunId:      "some-new-run-id",
-												EventBatch: makeHistoryEventsBlob(ns),
+												EventBatch: makeHistoryEventsBlobWithNamespaceField(ns),
 											},
 										},
 									},
@@ -312,12 +320,12 @@ func generateNamespaceObjCases() []objCase {
 											VersionedTransitionArtifact: &replicationspb.VersionedTransitionArtifact{
 												StateAttributes: nil,
 												EventBatches: []*common.DataBlob{
-													makeHistoryEventsBlob(ns),
-													makeHistoryEventsBlob(ns),
+													makeHistoryEventsBlobWithNamespaceField(ns),
+													makeHistoryEventsBlobWithNamespaceField(ns),
 												},
 												NewRunInfo: &replicationspb.NewRunInfo{
 													RunId:      "some-run-id",
-													EventBatch: makeHistoryEventsBlob(ns),
+													EventBatch: makeHistoryEventsBlobWithNamespaceField(ns),
 												},
 											},
 											NamespaceId: "some-ns-id",
@@ -331,8 +339,8 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
-			objName:           "circular pointer",
-			containsNamespace: true,
+			objName:     "circular pointer",
+			containsObj: true,
 			makeType: func(ns string) any {
 				a := &StructWithCircularPointer{
 					Namespace: ns,
@@ -473,64 +481,76 @@ func generateNamespaceReplicationMessages() []objCase {
 			},
 		},
 		{
-			objName:           "full type",
-			makeType:          makeFullType,
-			containsNamespace: true,
+			objName:     "full type",
+			makeType:    makeFullType,
+			containsObj: true,
 		},
 	}
 }
 
-func testTranslateNamespace(t *testing.T, objCases []objCase) {
+// testTranslateObj runs translation test variants using the given visitor and objCases
+//
+// HACK: The equalityAssertion function should be a compatible assertion function.
+// * `require.Equal` has inconsistent behavior with generated protobuf types,
+// due to internal/unexported fields.
+// * `require.EqualExportedValues` works for generated protobuf types, but does not
+// handle pointer cycles.
+func testTranslateObj(
+	t *testing.T,
+	visitor visitor,
+	objCases []objCase,
+	equalityAssertion func(t require.TestingT, exp, actual any, extra ...any),
+) {
 	testcases := []struct {
-		testName     string
-		inputNSName  string
-		outputNSName string
-		mapping      map[string]string
+		testName   string
+		inputName  string
+		outputName string
+		mapping    map[string]string
 	}{
 		{
-			testName:     "name changed",
-			inputNSName:  "orig",
-			outputNSName: "orig.cloud",
-			mapping:      map[string]string{"orig": "orig.cloud"},
+			testName:   "name changed",
+			inputName:  "orig",
+			outputName: "orig.cloud",
+			mapping:    map[string]string{"orig": "orig.cloud"},
 		},
 		{
-			testName:     "name unchanged",
-			inputNSName:  "orig",
-			outputNSName: "orig",
-			mapping:      map[string]string{"other": "other.cloud"},
+			testName:   "name unchanged",
+			inputName:  "orig",
+			outputName: "orig",
+			mapping:    map[string]string{"other": "other.cloud"},
 		},
 		{
-			testName:     "empty mapping",
-			inputNSName:  "orig",
-			outputNSName: "orig",
-			mapping:      map[string]string{},
+			testName:   "empty mapping",
+			inputName:  "orig",
+			outputName: "orig",
+			mapping:    map[string]string{},
 		},
 		{
-			testName:     "nil mapping",
-			inputNSName:  "orig",
-			outputNSName: "orig",
-			mapping:      nil,
+			testName:   "nil mapping",
+			inputName:  "orig",
+			outputName: "orig",
+			mapping:    nil,
 		},
 	}
 	for _, c := range objCases {
 		t.Run(c.objName, func(t *testing.T) {
 			for _, ts := range testcases {
 				t.Run(ts.testName, func(t *testing.T) {
-					input := c.makeType(ts.inputNSName)
-					expOutput := c.makeType(ts.outputNSName)
-					expChanged := ts.inputNSName != ts.outputNSName
+					input := c.makeType(ts.inputName)
+					expOutput := c.makeType(ts.outputName)
+					expChanged := ts.inputName != ts.outputName
 
-					changed, err := visitNamespace(input, createNameTranslator(ts.mapping))
+					changed, err := visitor(input, createStringMatcher(ts.mapping))
 					if len(c.expError) != 0 {
 						require.ErrorContains(t, err, c.expError)
 					} else {
 						require.NoError(t, err)
-						if c.containsNamespace {
-							require.Equal(t, expOutput, input)
+						if c.containsObj {
+							equalityAssertion(t, expOutput, input)
 							require.Equal(t, expChanged, changed)
 						} else {
 							// input doesn't contain namespace, no change is expected.
-							require.Equal(t, c.makeType(ts.inputNSName), input)
+							equalityAssertion(t, c.makeType(ts.inputName), input)
 							require.False(t, changed)
 						}
 					}
@@ -540,7 +560,7 @@ func testTranslateNamespace(t *testing.T, objCases []objCase) {
 	}
 }
 
-func makeHistoryEventsBlob(ns string) *common.DataBlob {
+func makeHistoryEventsBlobWithNamespaceField(ns string) *common.DataBlob {
 	evts := []*history.HistoryEvent{
 		{
 			EventId:   1,
@@ -572,12 +592,4 @@ func makeHistoryEventsBlob(ns string) *common.DataBlob {
 		panic(err)
 	}
 	return blob
-}
-
-func TestTranslateNamespaceName(t *testing.T) {
-	testTranslateNamespace(t, generateNamespaceObjCases())
-}
-
-func TestTranslateNamespaceReplicationMessages(t *testing.T) {
-	testTranslateNamespace(t, generateNamespaceReplicationMessages())
 }

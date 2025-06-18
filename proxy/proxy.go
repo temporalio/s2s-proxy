@@ -44,17 +44,26 @@ type (
 	}
 )
 
-func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool, nameTranslations config.NamespaceNameTranslationConfig) ([]grpc.ServerOption, error) {
+func makeServerOptions(
+	logger log.Logger,
+	cfg config.ProxyConfig,
+	proxyOpts proxyOptions,
+) ([]grpc.ServerOption, error) {
 	unaryInterceptors := []grpc.UnaryServerInterceptor{}
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
 	var translators []interceptor.Translator
-	if len(nameTranslations.Mappings) > 0 {
+	if tln := proxyOpts.Config.NamespaceNameTranslation; tln.IsEnabled() {
 		// NamespaceNameTranslator needs to be called before namespace access control so that
 		// local name can be used in namespace allowed list.
 		translators = append(translators,
-			interceptor.NewNamespaceNameTranslator(nameTranslations.ToMaps(isInbound)),
-		)
+			interceptor.NewNamespaceNameTranslator(tln.ToMaps(proxyOpts.IsInbound)))
+	}
+
+	if tln := proxyOpts.Config.SearchAttributeTranslation; tln.IsEnabled() {
+		logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", tln.Mappings))
+		translators = append(translators,
+			interceptor.NewSearchAttributeTranslator(tln.ToMaps(proxyOpts.IsInbound)))
 	}
 
 	if len(translators) > 0 {
@@ -63,7 +72,7 @@ func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool
 		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
 	}
 
-	if isInbound && cfg.ACLPolicy != nil {
+	if proxyOpts.IsInbound && cfg.ACLPolicy != nil {
 		aclInterceptor := interceptor.NewAccessControlInterceptor(logger, cfg.ACLPolicy)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
 		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
@@ -100,7 +109,7 @@ func (ps *ProxyServer) startServer(
 	opts := ps.opts
 	logger := ps.logger
 
-	serverOpts, err := makeServerOptions(logger, cfg, opts.IsInbound, opts.Config.NamespaceNameTranslation)
+	serverOpts, err := makeServerOptions(logger, cfg, opts)
 	if err != nil {
 		return err
 	}

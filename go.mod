@@ -6,6 +6,7 @@ toolchain go1.23.4
 
 require (
 	github.com/gogo/status v1.1.1
+	github.com/golang/mock v1.7.0-rc.1
 	github.com/hashicorp/yamux v0.1.2
 	github.com/keilerkonzept/visit v1.1.1
 	github.com/stretchr/testify v1.10.0
@@ -34,7 +35,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/googleapis v0.0.0-20180223154316-0cd9801be74a // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/mock v1.7.0-rc.1 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect

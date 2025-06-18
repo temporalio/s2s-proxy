@@ -1,24 +1,50 @@
 package interceptor
 
+import (
+	"strings"
+
+	"go.temporal.io/server/common/api"
+)
+
 type (
 	Translator interface {
+		MatchMethod(string) bool
 		TranslateRequest(any) (bool, error)
 		TranslateResponse(any) (bool, error)
 	}
 
 	translatorImpl struct {
-		matchReq  matcher
-		matchResp matcher
-		visitor   visitor
+		matchMethod func(string) bool
+		matchReq    stringMatcher
+		matchResp   stringMatcher
+		visitor     visitor
 	}
 )
 
 func NewNamespaceNameTranslator(reqMap, respMap map[string]string) Translator {
 	return &translatorImpl{
-		matchReq:  createNameTranslator(reqMap),
-		matchResp: createNameTranslator(respMap),
-		visitor:   visitNamespace,
+		matchMethod: func(string) bool { return true },
+		matchReq:    createStringMatcher(reqMap),
+		matchResp:   createStringMatcher(respMap),
+		visitor:     visitNamespace,
 	}
+}
+
+func NewSearchAttributeTranslator(reqMap, respMap map[string]string) Translator {
+	return &translatorImpl{
+		matchMethod: func(method string) bool {
+			// In workflowservice APIs, responses only contain the search attribute alias.
+			// We should never translate these responses to the search attribute's indexed field.
+			return !strings.HasPrefix(method, api.WorkflowServicePrefix)
+		},
+		matchReq:  createStringMatcher(reqMap),
+		matchResp: createStringMatcher(respMap),
+		visitor:   visitSearchAttributes,
+	}
+}
+
+func (n *translatorImpl) MatchMethod(m string) bool {
+	return n.matchMethod(m)
 }
 
 func (n *translatorImpl) TranslateRequest(req any) (bool, error) {
@@ -29,7 +55,7 @@ func (n *translatorImpl) TranslateResponse(resp any) (bool, error) {
 	return n.visitor(resp, n.matchResp)
 }
 
-func createNameTranslator(mapping map[string]string) matcher {
+func createStringMatcher(mapping map[string]string) stringMatcher {
 	return func(name string) (string, bool) {
 		newName, ok := mapping[name]
 		return newName, ok
