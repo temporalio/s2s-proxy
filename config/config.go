@@ -111,9 +111,24 @@ type (
 		MuxTransports              []MuxTransportConfig  `yaml:"mux"`
 		HealthCheck                *HealthCheckConfig    `yaml:"healthCheck"`
 		NamespaceNameTranslation   NameTranslationConfig `yaml:"namespaceNameTranslation"`
-		SearchAttributeTranslation NameTranslationConfig `yaml:"searchAttributeTranslation"`
+		SearchAttributeTranslation SATranslationConfig   `yaml:"searchAttributeTranslation"`
 		Metrics                    *MetricsConfig        `yaml:"metrics"`
 		ProfilingConfig            ProfilingConfig       `yaml:"profiling"`
+	}
+
+	SATranslationConfig struct {
+		NamespaceMappings []SANamespaceMapping `yaml:"namespaceMappings"`
+	}
+
+	SANamespaceMapping struct {
+		Name        string      `yaml:"name"`
+		NamespaceId string      `yaml:"namespaceId"`
+		Mappings    []SAMapping `yaml:"mappings"`
+	}
+
+	SAMapping struct {
+		LocalName  string `yaml:"localFieldName"`
+		RemoteName string `yaml:"remoteFieldName"`
 	}
 
 	ProfilingConfig struct {
@@ -319,4 +334,37 @@ func (c *ProfilingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error
 	// Alias to avoid infinite recursion
 	type plain ProfilingConfig
 	return unmarshal((*plain)(c))
+}
+
+func (s SATranslationConfig) IsEnabled() bool {
+	return len(s.NamespaceMappings) > 0
+}
+
+// ToMaps returns request and response mappings.
+func (s SATranslationConfig) ToMaps(inBound bool) (map[string]map[string]string, map[string]map[string]string) {
+	reqMap := make(map[string]map[string]string)
+	respMap := make(map[string]map[string]string)
+	for _, ns := range s.NamespaceMappings {
+		reqMap[ns.NamespaceId] = make(map[string]string, len(ns.Mappings))
+		respMap[ns.NamespaceId] = make(map[string]string, len(ns.Mappings))
+
+		if inBound {
+			// For inbound listener,
+			//   - incoming requests from remote server are modifed to match local server
+			//   - outgoing responses to local server are modified to match remote server
+			for _, tr := range ns.Mappings {
+				reqMap[ns.NamespaceId][tr.RemoteName] = tr.LocalName
+				respMap[ns.NamespaceId][tr.LocalName] = tr.RemoteName
+			}
+		} else {
+			// For outbound listener,
+			//   - incoming requests from local server are modifed to match remote server
+			//   - outgoing responses to remote server are modified to match local server
+			for _, tr := range ns.Mappings {
+				reqMap[ns.NamespaceId][tr.LocalName] = tr.RemoteName
+				respMap[ns.NamespaceId][tr.RemoteName] = tr.LocalName
+			}
+		}
+	}
+	return reqMap, respMap
 }

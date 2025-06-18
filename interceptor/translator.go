@@ -1,11 +1,5 @@
 package interceptor
 
-import (
-	"strings"
-
-	"go.temporal.io/server/common/api"
-)
-
 type (
 	Translator interface {
 		MatchMethod(string) bool
@@ -27,19 +21,6 @@ func NewNamespaceNameTranslator(reqMap, respMap map[string]string) Translator {
 		matchReq:    createStringMatcher(reqMap),
 		matchResp:   createStringMatcher(respMap),
 		visitor:     visitNamespace,
-	}
-}
-
-func NewSearchAttributeTranslator(reqMap, respMap map[string]string) Translator {
-	return &translatorImpl{
-		matchMethod: func(method string) bool {
-			// In workflowservice APIs, responses only contain the search attribute alias.
-			// We should never translate these responses to the search attribute's indexed field.
-			return !strings.HasPrefix(method, api.WorkflowServicePrefix)
-		},
-		matchReq:  createStringMatcher(reqMap),
-		matchResp: createStringMatcher(respMap),
-		visitor:   visitSearchAttributes,
 	}
 }
 
