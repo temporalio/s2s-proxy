@@ -3,6 +3,7 @@ package transport
 import (
 	"crypto/tls"
 	"fmt"
+	"github.com/temporalio/s2s-proxy/metrics"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -154,6 +155,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 				m.logger.Info("Accept new connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
 
 				session, err := yamux.Server(conn, nil)
+				go observeYamuxSession(session, m.config)
 				if err != nil {
 					m.logger.Fatal("yamux.Server failed", tag.Error(err))
 				}
@@ -215,6 +217,7 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 				}
 
 				session, err := yamux.Client(conn, nil)
+				go observeYamuxSession(session, m.config)
 				if err != nil {
 					m.logger.Fatal("yamux.Client failed", tag.Error(err))
 				}
@@ -226,6 +229,39 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 	}()
 
 	return nil
+}
+
+// observeYamuxSession creates a goroutine that pings the provided yamux session repeatedly and gathers its two
+// metrics: Whether the server is alive and how many streams it has open.
+func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfig) {
+	defer func() {
+		// This is an async monitor. Don't let it crash the rest of the program if there's a problem
+		recover()
+	}()
+	for {
+		if session == nil {
+			return
+		}
+		labels := []string{session.LocalAddr().String(),
+			session.RemoteAddr().String(),
+			string(config.Mode),
+			config.Name,
+		}
+		var serverActive float64 = 1
+		if session.IsClosed() {
+			serverActive = 0
+		}
+		metrics.MuxSessionOpen.WithLabelValues(labels...).Set(serverActive)
+		metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(session.NumStreams()))
+
+		// Left out of the for{} because we want to emit metrics at least once
+		if session.IsClosed() {
+			return
+		}
+		// Prometheus gauges are cheap, but Session.NumStreams() takes a mutex in the session! Only check once per minute
+		// to minimize overhead
+		time.Sleep(time.Minute)
+	}
 }
 
 func (m *muxConnectMananger) start() error {

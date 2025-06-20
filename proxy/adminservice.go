@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"github.com/temporalio/s2s-proxy/metrics"
 	"io"
 	"sync"
 
@@ -249,7 +250,10 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
 		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
 
+	// Record streams active
 	logger.Info("AdminStreamReplicationMessages started.")
+	metrics.AdminServiceStreamsActive.Inc()
+	defer metrics.AdminServiceStreamsActive.Dec()
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
 	// simply forwarding target metadata
