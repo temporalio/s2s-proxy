@@ -299,7 +299,7 @@ func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
 	// Why not default? So that it can be used in unit tests
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", metrics.GetMetricsHandler(s.logger))
+	mux.Handle("/metrics", metrics.NewMetricsHandler(s.logger))
 	s.metricsServer = &http.Server{
 		Addr:    cfg.Prometheus.ListenAddress,
 		Handler: mux,
