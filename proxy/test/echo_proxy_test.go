@@ -396,7 +396,6 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 					echoClient.stop()
 					echoServer.stop()
 				}()
-
 				// Test adminservice unary method
 				r, err := retry(func() (*adminservice.DescribeClusterResponse, error) {
 					return echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
