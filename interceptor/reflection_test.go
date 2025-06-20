@@ -26,14 +26,14 @@ func BenchmarkVisitNamespace(b *testing.B) {
 	for _, c := range cases {
 		b.Run(c.objName, func(b *testing.B) {
 			for _, variant := range variants {
-				translator := createStringMatcher(variant.mapping)
+				visitor := NewNamespaceVisitor(createStringMatcher(variant.mapping))
 				b.Run(variant.testName, func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
 						b.StopTimer()
 						input := c.makeType(variant.inputNSName)
 
 						b.StartTimer()
-						visitNamespace(input, translator)
+						visitor.Visit(input)
 					}
 				})
 			}

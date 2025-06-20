@@ -4,23 +4,21 @@ type (
 	Translator interface {
 		MatchMethod(string) bool
 		TranslateRequest(any) (bool, error)
-		TranslateResponse(any) (bool, error)
+		TranslateResponse(any, any) (bool, error)
 	}
 
 	translatorImpl struct {
 		matchMethod func(string) bool
-		matchReq    stringMatcher
-		matchResp   stringMatcher
-		visitor     visitor
+		reqVisitor  Visitor
+		respVisitor Visitor
 	}
 )
 
 func NewNamespaceNameTranslator(reqMap, respMap map[string]string) Translator {
 	return &translatorImpl{
 		matchMethod: func(string) bool { return true },
-		matchReq:    createStringMatcher(reqMap),
-		matchResp:   createStringMatcher(respMap),
-		visitor:     visitNamespace,
+		reqVisitor:  &nsVisitor{match: createStringMatcher(reqMap)},
+		respVisitor: &nsVisitor{match: createStringMatcher(respMap)},
 	}
 }
 
@@ -29,11 +27,11 @@ func (n *translatorImpl) MatchMethod(m string) bool {
 }
 
 func (n *translatorImpl) TranslateRequest(req any) (bool, error) {
-	return n.visitor(req, n.matchReq)
+	return n.reqVisitor.Visit(req)
 }
 
-func (n *translatorImpl) TranslateResponse(resp any) (bool, error) {
-	return n.visitor(resp, n.matchResp)
+func (n *translatorImpl) TranslateResponse(_, resp any) (bool, error) {
+	return n.respVisitor.Visit(resp)
 }
 
 func createStringMatcher(mapping map[string]string) stringMatcher {

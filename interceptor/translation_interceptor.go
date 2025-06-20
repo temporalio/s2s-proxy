@@ -55,7 +55,7 @@ func (i *TranslationInterceptor) Intercept(
 
 		for _, tr := range i.translators {
 			if tr.MatchMethod(info.FullMethod) {
-				changed, trErr := tr.TranslateResponse(resp)
+				changed, trErr := tr.TranslateResponse(req, resp)
 				logTranslateResult(i.logger, changed, trErr, methodName+"Response", resp)
 			}
 		}
@@ -98,7 +98,7 @@ func (w *streamTranslator) RecvMsg(m any) error {
 func (w *streamTranslator) SendMsg(m any) error {
 	w.logger.Debug("Intercept SendMsg", tag.NewStringTag("type", fmt.Sprintf("%T", m)), tag.NewAnyTag("message", m))
 	for _, tr := range w.translators {
-		changed, trErr := tr.TranslateResponse(m)
+		changed, trErr := tr.TranslateResponse(nil, m)
 		logTranslateResult(w.logger, changed, trErr, "SendMsg", m)
 	}
 	return w.ServerStream.SendMsg(m)
