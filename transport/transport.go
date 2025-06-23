@@ -3,9 +3,10 @@ package transport
 import (
 	"fmt"
 
-	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 type (

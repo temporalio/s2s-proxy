@@ -4,9 +4,10 @@ import (
 	"crypto/tls"
 	"net"
 
+	"google.golang.org/grpc"
+
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
-	"google.golang.org/grpc"
 )
 
 type (

@@ -3,6 +3,13 @@ package proxy
 import (
 	"errors"
 	"fmt"
+	"net/http"
+
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
@@ -10,11 +17,6 @@ import (
 	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport"
-	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"net/http"
 )
 
 type (

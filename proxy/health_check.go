@@ -1,9 +1,11 @@
 package proxy
 
 import (
-	"github.com/temporalio/s2s-proxy/metrics"
-	"go.temporal.io/server/common/log"
 	"net/http"
+
+	"go.temporal.io/server/common/log"
+
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type healthChecker struct {

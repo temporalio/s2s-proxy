@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
+
+	"github.com/temporalio/s2s-proxy/encryption"
 )
 
 const (
