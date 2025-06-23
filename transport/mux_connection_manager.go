@@ -156,7 +156,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 				m.logger.Info("Accept new connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
 
 				session, err := yamux.Server(conn, nil)
-				go observeYamuxSession(session, m.config)
+				go observeYamuxSession(session, m.config, m.logger)
 				if err != nil {
 					m.logger.Fatal("yamux.Server failed", tag.Error(err))
 				}
@@ -218,7 +218,7 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 				}
 
 				session, err := yamux.Client(conn, nil)
-				go observeYamuxSession(session, m.config)
+				go observeYamuxSession(session, m.config, m.logger)
 				if err != nil {
 					m.logger.Fatal("yamux.Client failed", tag.Error(err))
 				}
@@ -234,14 +234,15 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 
 // observeYamuxSession creates a goroutine that pings the provided yamux session repeatedly and gathers its two
 // metrics: Whether the server is alive and how many streams it has open.
-func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfig) {
+func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfig, logger log.Logger) {
 	if session == nil {
 		// If we got a null session, we can't even generate tags to report
 		return
 	}
 	defer func() {
 		// This is an async monitor. Don't let it crash the rest of the program if there's a problem
-		recover()
+		err := recover()
+		logger.Warn("Yamux observer died!", tag.NewStringTag("muxConfigName", config.Name), tag.NewAnyTag("err", err))
 	}()
 	labels := []string{session.LocalAddr().String(),
 		session.RemoteAddr().String(),
@@ -261,6 +262,7 @@ func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfi
 		}
 		metrics.MuxSessionOpen.WithLabelValues(labels...).Set(float64(sessionActive))
 		metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(session.NumStreams()))
+		metrics.MuxObserverReportCount.WithLabelValues(labels...).Inc()
 	}
 }
 

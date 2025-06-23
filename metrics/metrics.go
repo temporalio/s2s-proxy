@@ -62,7 +62,7 @@ func DefaultGauge(name string, help string) prometheus.Gauge {
 }
 
 // DefaultGaugeVec provides a prometheus GaugeVec for the requested name. The name will be sanitized, and the recommended
-// namespace and subsystem will be set. Vector metrics allow the use of labels, so if you need a label, then use this.
+// namespace and subsystem will be set. Vector metrics allow the use of labels, so if you need labels on your metrics, then use this.
 func DefaultGaugeVec(name string, help string, labels ...string) *prometheus.GaugeVec {
 	return prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "temporal",
@@ -81,6 +81,17 @@ func DefaultCounter(name string, help string) prometheus.Counter {
 		Name:      SanitizeForPrometheus(name),
 		Help:      help,
 	})
+}
+
+// DefaultCounterVec provides a prometheus CounterVec for the requested name. The name will be sanitized, and the recommended
+// namespace and subsystem will be set. Vector metrics allow the use of labels, so if you need labels on your metrics, then use this.
+func DefaultCounterVec(name string, help string, labels ...string) *prometheus.CounterVec {
+	return prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "temporal",
+		Subsystem: "s2s_proxy",
+		Name:      SanitizeForPrometheus(name),
+		Help:      help,
+	}, labels)
 }
 
 // wrapLoggerForPrometheus is necessary to adapt our temporal Logger to Prometheus's Println interface
