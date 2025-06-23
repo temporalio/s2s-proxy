@@ -234,33 +234,38 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 // observeYamuxSession creates a goroutine that pings the provided yamux session repeatedly and gathers its two
 // metrics: Whether the server is alive and how many streams it has open.
 func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfig) {
+	if session == nil {
+		// If we got a null session, we can't even generate tags to report
+		return
+	}
 	defer func() {
 		// This is an async monitor. Don't let it crash the rest of the program if there's a problem
 		recover()
 	}()
-	for {
-		if session == nil {
-			return
-		}
-		labels := []string{session.LocalAddr().String(),
-			session.RemoteAddr().String(),
-			string(config.Mode),
-			config.Name,
-		}
-		var serverActive float64 = 1
-		if session.IsClosed() {
+	labels := []string{session.LocalAddr().String(),
+		session.RemoteAddr().String(),
+		string(config.Mode),
+		config.Name,
+	}
+	var serverActive float64 = 1
+	// It's possible the server was never opened, make sure we emit a 0 in that case
+	if session.IsClosed() {
+		metrics.MuxSessionOpen.WithLabelValues(labels...).Set(0)
+		metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(0))
+		return
+	}
+	for !session.IsClosed() {
+		// Prometheus gauges are cheap, but Session.NumStreams() takes a mutex in the session! Only check once per minute
+		// to minimize overhead
+		ticker := time.NewTicker(time.Minute)
+		select {
+		case <-session.CloseChan():
 			serverActive = 0
+		case <-ticker.C:
+			// wake up so we can report NumStreams
 		}
 		metrics.MuxSessionOpen.WithLabelValues(labels...).Set(serverActive)
 		metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(session.NumStreams()))
-
-		// Left out of the for{} because we want to emit metrics at least once
-		if session.IsClosed() {
-			return
-		}
-		// Prometheus gauges are cheap, but Session.NumStreams() takes a mutex in the session! Only check once per minute
-		// to minimize overhead
-		time.Sleep(time.Minute)
 	}
 }
 
