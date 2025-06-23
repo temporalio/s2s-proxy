@@ -49,6 +49,8 @@ func GetStandardGRPCInterceptor() *grpcprom.ServerMetrics {
 	)
 }
 
+// DefaultGauge provides a prometheus Gauge for the requested name. The name will be sanitized, and the recommended
+// namespace and subsystem will be set.
 func DefaultGauge(name string, help string) prometheus.Gauge {
 	return prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "temporal",
@@ -57,6 +59,20 @@ func DefaultGauge(name string, help string) prometheus.Gauge {
 		Help:      help,
 	})
 }
+
+// DefaultGaugeVec provides a prometheus GaugeVec for the requested name. The name will be sanitized, and the recommended
+// namespace and subsystem will be set. Vector metrics allow the use of labels, so if you need a label, then use this.
+func DefaultGaugeVec(name string, help string, labels ...string) *prometheus.GaugeVec {
+	return prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "temporal",
+		Subsystem: "s2s_proxy",
+		Name:      SanitizeForPrometheus(name),
+		Help:      help,
+	}, labels)
+}
+
+// DefaultCounter provides a prometheus Counter for the requested name. The name will be sanitized, and the recommended
+// namespace and subsystem will be set.
 func DefaultCounter(name string, help string) prometheus.Counter {
 	return prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "temporal",
@@ -66,6 +82,7 @@ func DefaultCounter(name string, help string) prometheus.Counter {
 	})
 }
 
+// wrapLoggerForPrometheus is necessary to adapt our temporal Logger to Prometheus's Println interface
 type wrapLoggerForPrometheus struct {
 	log.Logger
 }
@@ -74,7 +91,8 @@ func (wls *wrapLoggerForPrometheus) Println(v ...interface{}) {
 	wls.Error(fmt.Sprintln(v...))
 }
 
-func GetMetricsHandler(logger log.Logger) http.Handler {
+// NewMetricsHandler returns an http handler that will talk to Prometheus. This uses the global-default registry right now
+func NewMetricsHandler(logger log.Logger) http.Handler {
 	return promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
 		ErrorLog:          &wrapLoggerForPrometheus{Logger: logger},
 		Registry:          nil, // use default
