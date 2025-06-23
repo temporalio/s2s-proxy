@@ -255,7 +255,7 @@ func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfi
 		return
 	}
 	ticker := time.NewTicker(time.Minute)
-	for sessionActive == 0 {
+	for sessionActive == 1 {
 		// Prometheus gauges are cheap, but Session.NumStreams() takes a mutex in the session! Only check once per minute
 		// to minimize overhead
 		select {
