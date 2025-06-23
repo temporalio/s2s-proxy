@@ -1,10 +1,13 @@
-.PHONY: clean bins
 
 ##### Arguments ######
 GOOS          ?= $(shell go env GOOS)
 GOARCH        ?= $(if $(TARGETARCH),$(TARGETARCH),$(shell go env GOARCH))
 GOPATH        ?= $(shell go env GOPATH)
 GOLANGCI_LINT ?= $(shell which golangci-lint)
+
+TOOLS_MOD_FILE = develop/tools.mod
+GO_TOOL        = go tool -modfile=$(TOOLS_MOD_FILE)
+GO_GET_TOOL    = go get -tool -modfile=$(TOOLS_MOD_FILE)
 
 # Disable cgo by default.
 CGO_ENABLED ?= 0
@@ -27,10 +30,18 @@ s2s-proxy: $(ALL_SRC)
 	@printf $(COLOR) "Build s2s-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)...\n"
 	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -o ./bins/s2s-proxy ./cmd/proxy
 
+fmt:
+	$(GO_TOOL) goimports -local github.com/temporalio/s2s-proxy -w .
+
+update-tools:
+	$(GO_GET_TOOL) golang.org/x/tools/cmd/goimports@latest
+	$(GO_GET_TOOL) github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+	go mod tidy --modfile=$(TOOLS_MOD_FILE)
+
 # Lint target
 lint:
 	@printf $(COLOR) "Running golangci-lint...\n"
-	@$(GOLANGCI_LINT) run
+	$(GO_TOOL) golangci-lint run
 
 bench:
 	@go test -run '^$$' -benchmem -bench=. ./... $(BENCH_ARG)
