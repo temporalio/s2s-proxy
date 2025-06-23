@@ -55,7 +55,7 @@ func NewTransportManager(
 func (tm *TransportManager) openMuxTransport(transportName string) (MuxTransport, error) {
 	mux := tm.muxConnManagers[transportName]
 	if mux == nil {
-		return nil, fmt.Errorf("Multiplexed transport %s is not found", transportName)
+		return nil, fmt.Errorf("multiplexed transport %s is not found", transportName)
 	}
 
 	return mux.open()

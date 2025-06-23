@@ -33,7 +33,7 @@ func BenchmarkVisitNamespace(b *testing.B) {
 						input := c.makeType(variant.inputNSName)
 
 						b.StartTimer()
-						visitNamespace(input, translator)
+						_, _ = visitNamespace(input, translator)
 					}
 				})
 			}

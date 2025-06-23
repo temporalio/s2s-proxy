@@ -311,9 +311,12 @@ func (s *echoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
 
 	s.logger.Info("==== SendAndRecv starting ====")
 	echoed, err = sendRecv(stream, sequence)
+	if err != nil {
+		s.logger.Error("sendRecv", tag.NewErrorTag("error", err))
+	}
 	_ = stream.CloseSend()
 	s.logger.Info("==== SendAndRecv completed ====")
-	return echoed, nil
+	return echoed, err
 }
 
 // Test workflowservice by making some request.

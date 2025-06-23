@@ -62,7 +62,7 @@ func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *mux
 
 func (m *muxConnectMananger) open() (MuxTransport, error) {
 	if !m.isStarted() {
-		return nil, fmt.Errorf("Connection manager is not running.")
+		return nil, fmt.Errorf("connection manager is not running")
 	}
 
 	// Wait for transport to be connected
@@ -85,7 +85,7 @@ func (m *muxConnectMananger) open() (MuxTransport, error) {
 	select {
 	case <-m.shutdownCh:
 		m.mu.Unlock()
-		return nil, fmt.Errorf("Connection manager is not running.")
+		return nil, fmt.Errorf("connection manager is not running")
 
 	case <-m.connectedCh:
 		muxTransport = m.muxTransport
@@ -93,7 +93,7 @@ func (m *muxConnectMananger) open() (MuxTransport, error) {
 	m.mu.Unlock()
 
 	if muxTransport.session.IsClosed() {
-		return nil, fmt.Errorf("Session is closed")
+		return nil, fmt.Errorf("session is closed")
 	}
 	return muxTransport, nil
 }
@@ -125,7 +125,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 	m.wg.Add(1)
 	go func() {
 		defer func() {
-			listener.Close()
+			_ = listener.Close()
 			m.wg.Done()
 		}()
 
@@ -170,7 +170,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 	go func() {
 		// wait for shutdown
 		<-m.shutdownCh
-		listener.Close() // this will cause listener.Accept to fail.
+		_ = listener.Close() // this will cause listener.Accept to fail.
 	}()
 
 	return nil
@@ -269,7 +269,7 @@ func (m *muxConnectMananger) start() error {
 		int32(statusInitialized),
 		int32(statusStarted),
 	) {
-		return fmt.Errorf("Connection manager can't be started. status: %d", m.getStatus())
+		return fmt.Errorf("connection manager can't be started. status: %d", m.getStatus())
 	}
 
 	m.shutdownCh = make(chan struct{})
@@ -288,7 +288,7 @@ func (m *muxConnectMananger) start() error {
 		}
 
 	default:
-		return fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s.", m.config.Name, m.config.Mode)
+		return fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s", m.config.Name, m.config.Mode)
 	}
 
 	return nil

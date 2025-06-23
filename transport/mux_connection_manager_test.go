@@ -86,7 +86,7 @@ func testClient(t *testing.T, clientTs ClientTransport) {
 	require.NoError(t, err)
 	require.Equal(t, clusterName, res.ClusterName)
 
-	conn.Close()
+	require.NoError(t, conn.Close())
 }
 
 func testMuxConnection(t *testing.T, muxClientCfg config.MuxTransportConfig, muxServerCfg config.MuxTransportConfig, repeat int) {
