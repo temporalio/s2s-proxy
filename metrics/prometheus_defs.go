@@ -38,5 +38,7 @@ func init() {
 	prometheus.MustRegister(HealthCheckIsHealthy)
 	prometheus.MustRegister(HealthCheckHealthyCount)
 	prometheus.MustRegister(AdminServiceStreamsActive)
+	prometheus.MustRegister(MuxSessionOpen)
+	prometheus.MustRegister(MuxStreamsActive)
 	prometheus.MustRegister(MuxObserverReportCount)
 }
