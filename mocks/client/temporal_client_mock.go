@@ -12,10 +12,11 @@ package client
 import (
 	reflect "reflect"
 
-	config "github.com/temporalio/s2s-proxy/config"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	adminservice "go.temporal.io/server/api/adminservice/v1"
 	gomock "go.uber.org/mock/gomock"
+
+	config "github.com/temporalio/s2s-proxy/config"
 )
 
 // MockClientFactory is a mock of ClientFactory interface.

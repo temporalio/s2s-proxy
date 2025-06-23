@@ -2,12 +2,11 @@ package proxy
 
 import (
 	"context"
+	"slices"
+	"testing"
+
 	gomockold "github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	"github.com/temporalio/s2s-proxy/auth"
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
-	clientmock "github.com/temporalio/s2s-proxy/mocks/client"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -15,8 +14,11 @@ import (
 	"go.temporal.io/server/common/log"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/metadata"
-	"slices"
-	"testing"
+
+	"github.com/temporalio/s2s-proxy/auth"
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
+	clientmock "github.com/temporalio/s2s-proxy/mocks/client"
 )
 
 var (

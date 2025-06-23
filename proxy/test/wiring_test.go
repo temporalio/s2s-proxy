@@ -2,14 +2,16 @@ package proxy
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/temporalio/s2s-proxy/config"
-	"go.temporal.io/api/workflowservice/v1"
-	"go.temporal.io/server/api/adminservice/v1"
-	"go.temporal.io/server/common/log"
 	"io"
 	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/server/api/adminservice/v1"
+	"go.temporal.io/server/common/log"
+
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 type (

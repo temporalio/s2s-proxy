@@ -2,12 +2,13 @@ package metrics
 
 import (
 	"fmt"
+	"net/http"
+	"regexp"
+
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.temporal.io/server/common/log"
-	"net/http"
-	"regexp"
 )
 
 const (

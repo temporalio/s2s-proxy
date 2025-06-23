@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
+
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
 )
 
 const (
