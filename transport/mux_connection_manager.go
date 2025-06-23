@@ -247,12 +247,11 @@ func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfi
 		string(config.Mode),
 		config.Name,
 	}
-	var sessionActive float64 = 1
+	var sessionActive int8 = 1
 	// It's possible the server was never opened, make sure we emit a 0 in that case
 	if session.IsClosed() {
 		metrics.MuxSessionOpen.WithLabelValues(labels...).Set(0)
 		metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(0))
-		return
 	}
 	ticker := time.NewTicker(time.Minute)
 	for sessionActive == 1 {
@@ -264,7 +263,7 @@ func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfi
 		case <-ticker.C:
 			// wake up so we can report NumStreams
 		}
-		metrics.MuxSessionOpen.WithLabelValues(labels...).Set(sessionActive)
+		metrics.MuxSessionOpen.WithLabelValues(labels...).Set(float64(sessionActive))
 		metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(session.NumStreams()))
 	}
 }
