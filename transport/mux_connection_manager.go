@@ -254,10 +254,10 @@ func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfi
 		metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(0))
 		return
 	}
+	ticker := time.NewTicker(time.Minute)
 	for !session.IsClosed() {
 		// Prometheus gauges are cheap, but Session.NumStreams() takes a mutex in the session! Only check once per minute
 		// to minimize overhead
-		ticker := time.NewTicker(time.Minute)
 		select {
 		case <-session.CloseChan():
 			serverActive = 0
