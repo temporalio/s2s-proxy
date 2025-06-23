@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"go.temporal.io/api/workflowservice/v1"
@@ -61,8 +62,14 @@ func TestWiringWithEchoService(t *testing.T) {
 		echoServer.stop()
 	}()
 	// Test s2s-proxy health check
-	_, err := http.Get(fmt.Sprintf("http://%s/health", echoServerInfo.s2sProxyConfig.HealthCheck.ListenAddress))
-	assert.NoError(t, err)
+
+	// The server may take a few 10s of ms to start
+	var healthErr = fmt.Errorf("Not started")
+	for attempts := 0; healthErr != nil && attempts < 5; attempts++ {
+		_, healthErr = http.Get(fmt.Sprintf("http://%s/health", echoServerInfo.s2sProxyConfig.HealthCheck.ListenAddress))
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.NoError(t, healthErr)
 
 	// Confirm that Prometheus initialized and is reporting. We should see proxy_start_count
 	serverMetrics := scrapePrometheus(t, echoServerInfo.s2sProxyConfig.Metrics.Prometheus.ListenAddress)
