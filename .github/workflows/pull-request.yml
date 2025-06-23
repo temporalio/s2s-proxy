@@ -33,11 +33,14 @@ jobs:
           go-version-file: 'go.mod'
           cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
 
+      - name: Install tools
+        run: make update-tools
+
       - name: Run go build
         run: go build ./...
 
-      # - name: Run lint
-      #   run: make lint
+      - name: Run lint
+        run: make lint
 
       - name: Run go unittest
         run: make test
