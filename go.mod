@@ -1,16 +1,15 @@
 module github.com/temporalio/s2s-proxy
 
-go 1.23.2
-
-toolchain go1.23.4
+go 1.23.4
 
 require (
 	github.com/gogo/status v1.1.1
 	github.com/golang/mock v1.7.0-rc.1
+	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0
 	github.com/hashicorp/yamux v0.1.2
 	github.com/keilerkonzept/visit v1.1.1
+	github.com/prometheus/client_golang v1.20.4
 	github.com/stretchr/testify v1.10.0
-	github.com/uber-go/tally/v4 v4.1.17-0.20240412215630-22fe011f5ff0
 	github.com/urfave/cli/v2 v2.27.2
 	go.temporal.io/api v1.43.0
 	go.temporal.io/server v1.26.2
@@ -18,7 +17,7 @@ require (
 	go.uber.org/mock v0.4.0
 	golang.org/x/text v0.23.0
 	google.golang.org/grpc v1.67.1
-	google.golang.org/protobuf v1.35.1
+	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -38,6 +37,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
+	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
@@ -46,7 +46,6 @@ require (
 	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_golang v1.20.4 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.60.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
@@ -55,6 +54,7 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/twmb/murmur3 v1.1.8 // indirect
+	github.com/uber-go/tally/v4 v4.1.17-0.20240412215630-22fe011f5ff0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240312152122-5f08fbb34913 // indirect
 	go.opentelemetry.io/otel v1.31.0 // indirect
 	go.opentelemetry.io/otel/exporters/prometheus v0.53.0 // indirect

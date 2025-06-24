@@ -64,6 +64,7 @@ func dial(hostName string, tlsConfig *tls.Config, dialer func(ctx context.Contex
 			grpc.WithContextDialer(dialer))
 	}
 
+	// nolint:staticcheck // SA1019 grpc.Dial is deprecated. Need to figure out how to use grpc.NewClient.
 	return grpc.Dial(
 		hostName,
 		dialOptions...,

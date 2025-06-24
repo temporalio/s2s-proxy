@@ -7,16 +7,15 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/temporalio/s2s-proxy/client"
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/metrics"
-	"github.com/temporalio/s2s-proxy/proxy"
-	"github.com/temporalio/s2s-proxy/transport"
-
 	"github.com/urfave/cli/v2"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"go.uber.org/fx"
+
+	"github.com/temporalio/s2s-proxy/client"
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/proxy"
+	"github.com/temporalio/s2s-proxy/transport"
 )
 
 const (
@@ -96,7 +95,6 @@ func startProxy(c *cli.Context) error {
 		transport.Module,
 		client.Module,
 		proxy.Module,
-		metrics.Module,
 		fx.Populate(&proxyParams),
 	)
 

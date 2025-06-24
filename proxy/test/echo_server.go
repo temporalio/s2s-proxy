@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gogo/status"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
@@ -15,13 +16,11 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/gogo/status"
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 	"github.com/temporalio/s2s-proxy/transport"
-	"github.com/uber-go/tally/v4"
 )
 
 type (
@@ -113,7 +112,6 @@ func newEchoServer(
 			configProvider,
 			transport.NewTransportManager(configProvider, logger),
 			logger,
-			tally.NoopScope,
 		)
 
 		if err != nil {
@@ -312,9 +310,12 @@ func (s *echoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
 
 	s.logger.Info("==== SendAndRecv starting ====")
 	echoed, err = sendRecv(stream, sequence)
+	if err != nil {
+		s.logger.Error("sendRecv", tag.NewErrorTag("error", err))
+	}
 	_ = stream.CloseSend()
 	s.logger.Info("==== SendAndRecv completed ====")
-	return echoed, nil
+	return echoed, err
 }
 
 // Test workflowservice by making some request.

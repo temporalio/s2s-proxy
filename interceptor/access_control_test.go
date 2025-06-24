@@ -5,11 +5,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/temporalio/s2s-proxy/auth"
-	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/auth"
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 func TestMethodAccessControlInterceptor(t *testing.T) {

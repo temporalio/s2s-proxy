@@ -25,6 +25,7 @@ go.work
 go.work.sum
 
 # misc file
+!.golangci.yml
 /*.yaml
 /*.yml
 *.pem

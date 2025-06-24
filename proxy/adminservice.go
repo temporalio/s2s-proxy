@@ -6,11 +6,6 @@ import (
 	"io"
 	"sync"
 
-	"github.com/temporalio/s2s-proxy/client"
-	adminclient "github.com/temporalio/s2s-proxy/client/admin"
-	"github.com/temporalio/s2s-proxy/common"
-	"github.com/temporalio/s2s-proxy/config"
-
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
@@ -19,6 +14,12 @@ import (
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/temporalio/s2s-proxy/client"
+	adminclient "github.com/temporalio/s2s-proxy/client/admin"
+	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type (
@@ -249,7 +250,10 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
 		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
 
+	// Record streams active
 	logger.Info("AdminStreamReplicationMessages started.")
+	metrics.AdminServiceStreamsActive.Inc()
+	defer metrics.AdminServiceStreamsActive.Dec()
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
 	// simply forwarding target metadata

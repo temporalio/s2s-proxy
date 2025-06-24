@@ -13,9 +13,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
-    name: sanity checks - pull request
+    name: lint - pull request
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,11 +33,28 @@ jobs:
           go-version-file: 'go.mod'
           cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
 
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1
+
+  build:
+    runs-on: ubuntu-latest
+    name: build and unittest - pull request
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
+          cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
+
       - name: Run go build
         run: go build ./...
-
-      # - name: Run lint
-      #   run: make lint
 
       - name: Run go unittest
         run: make test

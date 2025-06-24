@@ -12,8 +12,9 @@ package config
 import (
 	reflect "reflect"
 
-	config "github.com/temporalio/s2s-proxy/config"
 	gomock "go.uber.org/mock/gomock"
+
+	config "github.com/temporalio/s2s-proxy/config"
 )
 
 // MockConfigProvider is a mock of ConfigProvider interface.

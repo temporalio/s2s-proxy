@@ -174,7 +174,9 @@ func (v *saVisitor) Visit(obj any) (bool, error) {
 			case map[string]*common.Payload:
 				attrs, changed = translateIndexedFields(attrs, match)
 				if changed {
-					visit.Assign(vwp, reflect.ValueOf(attrs))
+					if err := visit.Assign(vwp, reflect.ValueOf(attrs)); err != nil {
+						return visit.Stop, err
+					}
 				}
 			default:
 				return visit.Stop, fmt.Errorf("unhandled search attribute type: %T", attrs)

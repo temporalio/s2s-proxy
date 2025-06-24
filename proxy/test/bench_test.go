@@ -3,11 +3,12 @@ package proxy
 import (
 	"testing"
 
-	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 func benchmarkStreamSendRecvWithoutProxy(b *testing.B, payloadSize int) {

@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
+
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
 )
 
 const (
@@ -396,7 +397,6 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 					echoClient.stop()
 					echoServer.stop()
 				}()
-
 				// Test adminservice unary method
 				r, err := retry(func() (*adminservice.DescribeClusterResponse, error) {
 					return echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
@@ -641,6 +641,6 @@ func (s *proxyTestSuite) Test_ForceStopSourceServer() {
 	// This should fail because StreamWorkflowReplicationMessages handler stopped.
 	s.ErrorContains(err, "EOF")
 
-	stream.CloseSend()
+	_ = stream.CloseSend()
 	echoClient.stop()
 }

@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/transport"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/transport"
 )
 
 type (
