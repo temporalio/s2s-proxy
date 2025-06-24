@@ -51,11 +51,19 @@ type (
 )
 
 func TestTranslateNamespaceName(t *testing.T) {
-	testTranslateObj(t, visitNamespace, generateNamespaceObjCases(), require.Equal)
+	testTranslateObj(t, generateNamespaceObjCases(), require.Equal,
+		func(m map[string]string) Visitor {
+			return NewNamespaceVisitor(createStringMatcher(m))
+		},
+	)
 }
 
 func TestTranslateNamespaceReplicationMessages(t *testing.T) {
-	testTranslateObj(t, visitNamespace, generateNamespaceReplicationMessages(), require.EqualExportedValues)
+	testTranslateObj(t, generateNamespaceReplicationMessages(), require.EqualExportedValues,
+		func(m map[string]string) Visitor {
+			return NewNamespaceVisitor(createStringMatcher(m))
+		},
+	)
 }
 
 func generateNamespaceObjCases() []objCase {
@@ -497,9 +505,9 @@ func generateNamespaceReplicationMessages() []objCase {
 // handle pointer cycles.
 func testTranslateObj(
 	t *testing.T,
-	visitor visitor,
 	objCases []objCase,
 	equalityAssertion func(t require.TestingT, exp, actual any, extra ...any),
+	createVisitor func(map[string]string) Visitor,
 ) {
 	testcases := []struct {
 		testName   string
@@ -540,7 +548,8 @@ func testTranslateObj(
 					expOutput := c.makeType(ts.outputName)
 					expChanged := ts.inputName != ts.outputName
 
-					changed, err := visitor(input, createStringMatcher(ts.mapping))
+					visitor := createVisitor(ts.mapping)
+					changed, err := visitor.Visit(input)
 					if len(c.expError) != 0 {
 						require.ErrorContains(t, err, c.expError)
 					} else {

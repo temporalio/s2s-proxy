@@ -3,6 +3,7 @@ package interceptor
 import (
 	"strings"
 
+	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/api"
 )
 
@@ -31,27 +32,27 @@ func (s *saTranslator) MatchMethod(m string) bool {
 }
 
 func (s *saTranslator) TranslateRequest(req any) (bool, error) {
-	return visitSearchAttributes(req, s.getNamespaceReqMatcher(""))
+	v := MakeSearchAttributeVisitor(s.getNamespaceReqMatcher)
+	return v.Visit(req)
 }
 
-func (s *saTranslator) TranslateResponse(resp any) (bool, error) {
-	return visitSearchAttributes(resp, s.getNamespaceRespMatcher(""))
+func (s *saTranslator) TranslateResponse(req, resp any) (bool, error) {
+	// Detect namespace id in GetWorkflowExecutionRawHistoryV2Request.
+	// Use that namespace id to translate search attributes in the response type.
+	v := MakeSearchAttributeVisitor(s.getNamespaceRespMatcher)
+	switch val := req.(type) {
+	case *adminservice.GetWorkflowExecutionRawHistoryV2Request:
+		v.currentNamespaceId = val.NamespaceId
+	}
+	return v.Visit(resp)
 }
 
 func (s *saTranslator) getNamespaceReqMatcher(namespaceId string) stringMatcher {
-	// Placeholder: Just return the first one (only support one namespace mapping)
-	for _, matcher := range s.reqMap {
-		return matcher
-	}
-	return createStringMatcher(nil)
+	return s.reqMap[namespaceId]
 }
 
 func (s *saTranslator) getNamespaceRespMatcher(namespaceId string) stringMatcher {
-	// Placeholder: Just return the first one (only support one namespace mappping)
-	for _, matcher := range s.respMap {
-		return matcher
-	}
-	return createStringMatcher(nil)
+	return s.respMap[namespaceId]
 }
 
 func createStringMatchers(nsMappings map[string]map[string]string) map[string]stringMatcher {

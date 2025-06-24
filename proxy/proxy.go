@@ -67,9 +67,6 @@ func makeServerOptions(
 
 	if tln := proxyOpts.Config.SearchAttributeTranslation; tln.IsEnabled() {
 		logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", tln.NamespaceMappings))
-		if len(tln.NamespaceMappings) > 1 {
-			panic("multiple namespace search attribute mappings are not supported")
-		}
 		translators = append(translators,
 			interceptor.NewSearchAttributeTranslator(tln.ToMaps(proxyOpts.IsInbound)))
 	}
