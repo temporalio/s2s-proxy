@@ -201,7 +201,9 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 				}
 
 				if err := backoff.ThrottleRetry(op, retryPolicy, func(err error) bool {
-					return !m.isShuttingDown()
+					retryable := !m.isShuttingDown()
+					m.logger.Info("mux client failed: ", tag.Bool(retryable), tag.Error(err))
+					return retryable
 				}); err != nil {
 					m.logger.Error("mux client failed to dial", tag.Error(err))
 					return
