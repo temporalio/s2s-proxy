@@ -7,12 +7,10 @@ import (
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/history/v1"
-	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/api/persistence/v1"
 	replicationspb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/common/persistence/serialization"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestTranslateSearchAttribute(t *testing.T) {
@@ -21,6 +19,33 @@ func TestTranslateSearchAttribute(t *testing.T) {
 
 func generateSearchAttributeObjs() []objCase {
 	return []objCase{
+		{
+			objName:     "nil",
+			containsObj: false,
+			makeType: func(name string) any {
+				return nil
+			},
+		},
+		{
+			objName:     "nil SearchAttributes",
+			containsObj: false,
+			makeType: func(name string) any {
+				return &persistence.WorkflowExecutionInfo{
+					SearchAttributes: nil,
+				}
+			},
+		},
+		{
+			objName:     "nil value in SearchAttributes",
+			containsObj: true,
+			makeType: func(name string) any {
+				return &persistence.WorkflowExecutionInfo{
+					SearchAttributes: map[string]*common.Payload{
+						name: nil,
+					},
+				}
+			},
+		},
 		{
 			objName:     "HistoryTaskAttributes",
 			containsObj: true,
@@ -97,18 +122,42 @@ func makeHistoryEventsBlobWithSearchAttribute(name string) *common.DataBlob {
 			TaskId:    100,
 			Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
 				WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
-					WorkflowType: &common.WorkflowType{
-						Name: "some-wf-type",
-					},
+					WorkflowType: &common.WorkflowType{Name: "some-wf-type-1"},
 					SearchAttributes: &common.SearchAttributes{
 						IndexedFields: makeTestIndexedFieldMap(name),
 					},
 				},
 			},
-			EventTime:       &timestamppb.Timestamp{},
-			WorkerMayIgnore: false,
-			UserMetadata:    &sdk.UserMetadata{},
-			Links:           []*common.Link{},
+		},
+		{
+			Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
+				WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
+					WorkflowType:     &common.WorkflowType{Name: "some-wf-type-2"},
+					SearchAttributes: nil,
+				},
+			},
+		},
+		{
+			Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
+				WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
+					WorkflowType: &common.WorkflowType{Name: "some-wf-type-2"},
+					SearchAttributes: &common.SearchAttributes{
+						IndexedFields: nil,
+					},
+				},
+			},
+		},
+		{
+			Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
+				WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
+					WorkflowType: &common.WorkflowType{Name: "some-wf-type-3"},
+					SearchAttributes: &common.SearchAttributes{
+						IndexedFields: map[string]*common.Payload{
+							name: nil,
+						},
+					},
+				},
+			},
 		},
 	}
 
