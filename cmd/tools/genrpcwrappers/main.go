@@ -39,15 +39,14 @@ import (
 
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/server/api/adminservice/v1"
+	"go.temporal.io/server/api/historyservice/v1"
+	"go.temporal.io/server/api/matchingservice/v1"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
-
-	"go.temporal.io/server/api/adminservice/v1"
-	"go.temporal.io/server/api/historyservice/v1"
-	"go.temporal.io/server/api/matchingservice/v1"
 )
 
 type (
@@ -443,13 +442,14 @@ func writeTemplatedMethod(w io.Writer, service service, impl string, m reflect.M
 		fields["WithLargeTimeout"] = "WithLargeTimeout"
 	}
 	if impl == "client" {
-		if service.name == "history" {
+		switch service.name {
+		case "history":
 			routingOptions := historyRoutingOptions(reqType)
 			if routingOptions.Custom {
 				return
 			}
 			fields["GetClient"] = makeGetHistoryClient(reqType, routingOptions)
-		} else if service.name == "matching" {
+		case "matching":
 			fields["GetClient"] = makeGetMatchingClient(reqType)
 		}
 	}

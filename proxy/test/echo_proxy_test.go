@@ -641,6 +641,6 @@ func (s *proxyTestSuite) Test_ForceStopSourceServer() {
 	// This should fail because StreamWorkflowReplicationMessages handler stopped.
 	s.ErrorContains(err, "EOF")
 
-	stream.CloseSend()
+	_ = stream.CloseSend()
 	echoClient.stop()
 }

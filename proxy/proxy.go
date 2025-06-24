@@ -274,7 +274,7 @@ func NewProxy(
 
 func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 	if cfg.Protocol != config.HTTP {
-		return fmt.Errorf("Not supported health check protocol %s", cfg.Protocol)
+		return fmt.Errorf("unsupported health check protocol %s", cfg.Protocol)
 	}
 
 	// Set up the handler. Avoid the global ServeMux so that we can create N of these in unit test suites

@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/transport"
-
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
+
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/transport"
 )
 
 type (

@@ -3,14 +3,8 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"github.com/temporalio/s2s-proxy/metrics"
 	"io"
 	"sync"
-
-	"github.com/temporalio/s2s-proxy/client"
-	adminclient "github.com/temporalio/s2s-proxy/client/admin"
-	"github.com/temporalio/s2s-proxy/common"
-	"github.com/temporalio/s2s-proxy/config"
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -20,6 +14,12 @@ import (
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/temporalio/s2s-proxy/client"
+	adminclient "github.com/temporalio/s2s-proxy/client/admin"
+	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type (

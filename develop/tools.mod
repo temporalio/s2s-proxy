@@ -2,10 +2,7 @@ module tools
 
 go 1.24.4
 
-tool (
-	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-	golang.org/x/tools/cmd/goimports
-)
+tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 
 require (
 	github.com/gogo/status v1.1.1
