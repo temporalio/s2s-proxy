@@ -28,6 +28,8 @@ var (
 		muxSessionLabels...)
 	MuxStreamsActive = DefaultGaugeVec("mux_streams_active", "Immediate count of the current streams open",
 		muxSessionLabels...)
+	MuxObserverReportCount = DefaultCounterVec("mux_observer_report_count", "Number of observer executions",
+		muxSessionLabels...)
 )
 
 func init() {
@@ -36,4 +38,7 @@ func init() {
 	prometheus.MustRegister(HealthCheckIsHealthy)
 	prometheus.MustRegister(HealthCheckHealthyCount)
 	prometheus.MustRegister(AdminServiceStreamsActive)
+	prometheus.MustRegister(MuxSessionOpen)
+	prometheus.MustRegister(MuxStreamsActive)
+	prometheus.MustRegister(MuxObserverReportCount)
 }
