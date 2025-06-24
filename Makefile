@@ -30,16 +30,16 @@ s2s-proxy: $(ALL_SRC)
 	@printf $(COLOR) "Build s2s-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)...\n"
 	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -o ./bins/s2s-proxy ./cmd/proxy
 
-fmt:
-	$(GO_TOOL) goimports -local github.com/temporalio/s2s-proxy -w .
-
 update-tools:
-	$(GO_GET_TOOL) golang.org/x/tools/cmd/goimports@latest
 # When changing the golangci-lint version, update the version in .github/workflows/pull-request.yml
 	$(GO_GET_TOOL) github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1
 	go mod tidy --modfile=$(TOOLS_MOD_FILE)
 
-# Lint target
+# Refer to .golangci.yml for configuration options
+fmt:
+	$(GO_TOOL) golangci-lint fmt
+
+# Refer to .golangci.yml for configuration options
 lint:
 	@printf $(COLOR) "Running golangci-lint...\n"
 	$(GO_TOOL) golangci-lint run
