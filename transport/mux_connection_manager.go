@@ -8,8 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/temporalio/s2s-proxy/metrics"
-
 	"github.com/hashicorp/yamux"
 	"go.temporal.io/server/common/backoff"
 	"go.temporal.io/server/common/log"
@@ -17,6 +15,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type status int32
