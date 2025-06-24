@@ -3,11 +3,12 @@ package transport
 import (
 	"crypto/tls"
 	"fmt"
-	"github.com/temporalio/s2s-proxy/metrics"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/temporalio/s2s-proxy/metrics"
 
 	"github.com/hashicorp/yamux"
 	"go.temporal.io/server/common/backoff"
@@ -241,7 +242,7 @@ func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfi
 	}
 	defer func() {
 		// This is an async monitor. Don't let it crash the rest of the program if there's a problem
-		recover()
+		_ = recover()
 	}()
 	labels := []string{session.LocalAddr().String(),
 		session.RemoteAddr().String(),

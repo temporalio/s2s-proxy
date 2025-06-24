@@ -35,6 +35,7 @@ fmt:
 
 update-tools:
 	$(GO_GET_TOOL) golang.org/x/tools/cmd/goimports@latest
+# When changing the golangci-lint version, update the version in .github/workflows/pull-request.yml
 	$(GO_GET_TOOL) github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1
 	go mod tidy --modfile=$(TOOLS_MOD_FILE)
 
