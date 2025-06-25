@@ -13,6 +13,18 @@ import (
 	"go.temporal.io/server/common/persistence/serialization"
 )
 
+type (
+	Other struct{}
+	SA1   struct {
+		Other            *Other
+		SearchAttributes *common.SearchAttributes
+	}
+
+	SA2 struct {
+		SearchAttributes *common.SearchAttributes
+	}
+)
+
 func TestTranslateSearchAttribute(t *testing.T) {
 	testTranslateObj(t, visitSearchAttributes, generateSearchAttributeObjs(), require.EqualExportedValues)
 }
@@ -31,8 +43,23 @@ func generateSearchAttributeObjs() []objCase {
 			containsObj: false,
 			makeType: func(name string) any {
 				return &persistence.WorkflowExecutionInfo{
-					SearchAttributes: nil,
+					NamespaceId:      name,
+					SearchAttributes: map[string]*common.Payload(nil),
 				}
+			},
+		},
+		{
+			objName:     "nil contrived SA1",
+			containsObj: false,
+			makeType: func(name string) any {
+				return &SA1{}
+			},
+		},
+		{
+			objName:     "nil contrived SA2",
+			containsObj: false,
+			makeType: func(name string) any {
+				return &SA2{}
 			},
 		},
 		{
