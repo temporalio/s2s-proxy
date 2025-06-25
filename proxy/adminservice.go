@@ -284,6 +284,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		for !shutdownChan.IsShutdown() {
 			req, err := targetStreamServer.Recv()
 			if err == io.EOF {
+				logger.Info("targetStreamServer.Recv encountered EOF", tag.Error(err))
 				return
 			}
 
@@ -296,7 +297,11 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
 				logger.Debug(fmt.Sprintf("forwarding SyncReplicationState: inclusive %v", attr.SyncReplicationState.InclusiveLowWatermark))
 				if err = sourceStreamClient.Send(req); err != nil {
-					logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
+					if err != io.EOF {
+						logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
+					} else {
+						logger.Info("sourceStreamClient.Send encountered EOF", tag.Error(err))
+					}
 					return
 				}
 			default:
@@ -327,6 +332,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		for !shutdownChan.IsShutdown() {
 			resp, err := sourceStreamClient.Recv()
 			if err == io.EOF {
+				logger.Info("sourceStreamClient.Recv encountered EOF", tag.Error(err))
 				return
 			}
 
@@ -340,7 +346,8 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 				if err = targetStreamServer.Send(resp); err != nil {
 					if err != io.EOF {
 						logger.Error("targetStreamServer.Send encountered error", tag.Error(err))
-
+					} else {
+						logger.Info("targetStreamServer.Send encountered EOF", tag.Error(err))
 					}
 					return
 				}
