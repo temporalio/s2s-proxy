@@ -14,14 +14,33 @@ import (
 )
 
 type (
-	Other struct{}
-	SA1   struct {
+	Other           struct{}
+	SAWithTwoFields struct {
 		Other            *Other
 		SearchAttributes *common.SearchAttributes
 	}
 
-	SA2 struct {
+	SAWithTwoFieldsSwapped struct {
 		SearchAttributes *common.SearchAttributes
+		Other            *Other
+	}
+
+	SAWithOneField struct {
+		SearchAttributes *common.SearchAttributes
+	}
+
+	SAWithOneMap struct {
+		SearchAttributes map[string]*common.Payload
+	}
+
+	SAWithOneMapAndOneField struct {
+		Other            *Other
+		SearchAttributes map[string]*common.Payload
+	}
+
+	SAWithOneMapAndOneFieldSwapped struct {
+		SearchAttributes map[string]*common.Payload
+		Other            *Other
 	}
 )
 
@@ -49,18 +68,28 @@ func generateSearchAttributeObjs() []objCase {
 			},
 		},
 		{
-			objName:     "nil contrived SA1",
-			containsObj: false,
-			makeType: func(name string) any {
-				return &SA1{}
-			},
+			objName:  "nil two fields",
+			makeType: func(name string) any { return &SAWithTwoFields{} },
 		},
 		{
-			objName:     "nil contrived SA2",
-			containsObj: false,
-			makeType: func(name string) any {
-				return &SA2{}
-			},
+			objName:  "nil two fields different order",
+			makeType: func(name string) any { return &SAWithTwoFieldsSwapped{} },
+		},
+		{
+			objName:  "nil one field",
+			makeType: func(name string) any { return &SAWithOneField{} },
+		},
+		{
+			objName:  "nil map",
+			makeType: func(name string) any { return &SAWithOneMap{} },
+		},
+		{
+			objName:  "nil map and field",
+			makeType: func(name string) any { return &SAWithOneMapAndOneField{} },
+		},
+		{
+			objName:  "nil map and field different order",
+			makeType: func(name string) any { return &SAWithOneMapAndOneFieldSwapped{} },
 		},
 		{
 			objName:     "nil value in SearchAttributes",
