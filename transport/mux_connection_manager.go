@@ -186,6 +186,7 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
+	connect:
 		for {
 			select {
 			case <-m.shutdownCh:
@@ -201,10 +202,11 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 				}
 
 				if err := backoff.ThrottleRetry(op, retryPolicy, func(err error) bool {
+					m.logger.Error("mux client failed to dial", tag.Error(err))
 					return !m.isShuttingDown()
 				}); err != nil {
-					m.logger.Error("mux client failed to dial", tag.Error(err))
-					return
+					m.logger.Error("mux client failed to dial with retry", tag.Error(err))
+					continue connect
 				}
 
 				var conn net.Conn
