@@ -11,11 +11,10 @@ import (
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/persistence/serialization"
 )
 
 var (
-	serializer = serialization.NewSerializer()
+	serializer = NewSerializer()
 
 	namespaceFieldNames = map[string]bool{
 		"Namespace":               true,
