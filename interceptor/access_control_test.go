@@ -126,6 +126,8 @@ func TestAllowedWorkflowMigrationAPIs(t *testing.T) {
 }
 
 func testNamespaceAccessControl(t *testing.T, objCases []objCase) {
+	logger := log.NewTestLogger()
+
 	testcases := []struct {
 		testName    string
 		inputNSName string
@@ -156,7 +158,7 @@ func testNamespaceAccessControl(t *testing.T, objCases []objCase) {
 			for _, ts := range testcases {
 				t.Run(ts.testName, func(t *testing.T) {
 					input := c.makeType(ts.inputNSName)
-					allowed, err := isNamespaceAccessAllowed(input, ts.access)
+					allowed, err := isNamespaceAccessAllowed(logger, input, ts.access)
 					if len(c.expError) != 0 {
 						require.ErrorContains(t, err, c.expError)
 					} else {

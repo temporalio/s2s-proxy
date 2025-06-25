@@ -4,18 +4,21 @@ import (
 	"strings"
 
 	"go.temporal.io/server/common/api"
+	"go.temporal.io/server/common/log"
 )
 
 type (
 	saTranslator struct {
+		logger      log.Logger
 		matchMethod func(string) bool
 		reqMap      map[string]stringMatcher
 		respMap     map[string]stringMatcher
 	}
 )
 
-func NewSearchAttributeTranslator(reqMap, respMap map[string]map[string]string) Translator {
+func NewSearchAttributeTranslator(logger log.Logger, reqMap, respMap map[string]map[string]string) Translator {
 	return &saTranslator{
+		logger: logger,
 		matchMethod: func(method string) bool {
 			// In workflowservice APIs, responses only contain the search attribute alias.
 			// We should never translate these responses to the search attribute's indexed field.
@@ -31,11 +34,11 @@ func (s *saTranslator) MatchMethod(m string) bool {
 }
 
 func (s *saTranslator) TranslateRequest(req any) (bool, error) {
-	return visitSearchAttributes(req, s.getNamespaceReqMatcher(""))
+	return visitSearchAttributes(s.logger, req, s.getNamespaceReqMatcher(""))
 }
 
 func (s *saTranslator) TranslateResponse(resp any) (bool, error) {
-	return visitSearchAttributes(resp, s.getNamespaceRespMatcher(""))
+	return visitSearchAttributes(s.logger, resp, s.getNamespaceRespMatcher(""))
 }
 
 func (s *saTranslator) getNamespaceReqMatcher(namespaceId string) stringMatcher {
