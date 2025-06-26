@@ -19,8 +19,8 @@ import (
 )
 
 var (
-	serializer    = NewSerializer()
-	oldSerializer = server122.NewSerializer()
+	serializer     = NewSerializer()
+	gogoSerializer = server122.NewSerializer()
 
 	namespaceFieldNames = map[string]bool{
 		"Namespace":               true,
@@ -268,7 +268,7 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 func tryRepairInvalidUTF8InBlob(logger log.Logger, blob *common.DataBlob) ([]*history.HistoryEvent, bool, error) {
 	// If we encountered a utf-8 error, try to repair it.
 	encodingType122 := enums122.EncodingType(blob.EncodingType.Number())
-	events122, err := oldSerializer.DeserializeEvents(&common122.DataBlob{
+	events122, err := gogoSerializer.DeserializeEvents(&common122.DataBlob{
 		EncodingType: encodingType122,
 		Data:         blob.Data,
 	})
@@ -282,7 +282,7 @@ func tryRepairInvalidUTF8InBlob(logger log.Logger, blob *common.DataBlob) ([]*hi
 	}
 
 	// To avoid a bunch of type conversions, reserialize and deserialize with the new version.
-	repairedEvents, err := oldSerializer.SerializeEvents(events122, encodingType122)
+	repairedEvents, err := gogoSerializer.SerializeEvents(events122, encodingType122)
 	if err != nil {
 		return nil, changed, err
 	}

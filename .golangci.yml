@@ -7,7 +7,7 @@ linters:
   settings: {}
   exclusions:
     paths:
-      - common/proto122
+      - common/proto/1_22
 
 formatters:
   enable:
