@@ -8,7 +8,8 @@ var (
 
 	// /proxy/adminservice.go
 
-	AdminServiceStreamsActive = DefaultGauge("admin_service_streams_active", "Number of admin service streams open")
+	AdminServiceStreamsActive = DefaultGaugeVec("admin_service_streams_active", "Number of admin service streams open",
+		[]string{"stream_direction", "outbound", "inbound"}...)
 
 	// /proxy/health_check.go
 

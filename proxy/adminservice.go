@@ -252,8 +252,9 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	// Record streams active
 	logger.Info("AdminStreamReplicationMessages started.")
-	metrics.AdminServiceStreamsActive.Inc()
-	defer metrics.AdminServiceStreamsActive.Dec()
+	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(s.prometheusLabelValues()...)
+	streamsActiveGauge.Inc()
+	defer streamsActiveGauge.Dec()
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
 	// simply forwarding target metadata
@@ -362,4 +363,23 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	wg.Wait()
 	return nil
+}
+
+// prometheusLabelValues returns a list of prometheus label values derived from the proxy server's config
+// This list tries to get a reasonable blend between cardinality (avoids 1k+ shard IDs) and
+// useful metric separation (separate up from down, different inbound/outbound)
+func (s *adminServiceProxyServer) prometheusLabelValues() []string {
+	directionLabel := "inbound"
+	if !s.IsInbound {
+		directionLabel = "outbound"
+	}
+	outboundLabel := "unset"
+	if s.Config.Outbound != nil {
+		outboundLabel = s.Config.Outbound.Name
+	}
+	inboundLabel := "unset"
+	if s.Config.Inbound != nil {
+		inboundLabel = s.Config.Inbound.Name
+	}
+	return []string{"stream_direction", directionLabel, "outbound", outboundLabel, "inbound", inboundLabel}
 }
