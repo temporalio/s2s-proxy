@@ -66,6 +66,10 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
 	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
+		if vwp.Kind() == reflect.Ptr && vwp.IsNil() {
+			return visit.Skip, nil
+		}
+
 		// Grab name of this struct field from the parent.
 		fieldType, action := getParentFieldType(vwp)
 		if action != "" {
@@ -118,12 +122,15 @@ func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (boo
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
 	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
+		if vwp.Kind() == reflect.Ptr && vwp.IsNil() {
+			return visit.Skip, nil
+		}
+
 		// Grab name of this struct field from the parent.
 		fieldType, action := getParentFieldType(vwp)
 		if action != "" {
 			return action, nil
 		}
-
 		if dataBlobFieldNames[fieldType.Name] {
 			changed, err := visitDataBlobs(logger, vwp, match, visitSearchAttributes)
 			matched = matched || changed
