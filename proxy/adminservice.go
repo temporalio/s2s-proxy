@@ -251,9 +251,14 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
 
 	// Record streams active
+	directionLabel := "inbound"
+	if !s.IsInbound {
+		directionLabel = "outbound"
+	}
 	logger.Info("AdminStreamReplicationMessages started.")
-	metrics.AdminServiceStreamsActive.Inc()
-	defer metrics.AdminServiceStreamsActive.Dec()
+	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
+	streamsActiveGauge.Inc()
+	defer streamsActiveGauge.Dec()
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
 	// simply forwarding target metadata
