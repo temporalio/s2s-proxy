@@ -4,7 +4,7 @@ set -euo pipefail
 
 set -x
 
-TARGET_PKG="common/proto122"
+TARGET_PKG="common/proto/1_22"
 rm -rf "./$TARGET_PKG"
 mkdir -p "$TARGET_PKG/api" "$TARGET_PKG/server"
 

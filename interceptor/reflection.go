@@ -11,10 +11,10 @@ import (
 	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/server/common/log"
 
-	common122 "github.com/temporalio/s2s-proxy/common/proto122/api/common/v1"
-	enums122 "github.com/temporalio/s2s-proxy/common/proto122/api/enums/v1"
-	history122 "github.com/temporalio/s2s-proxy/common/proto122/api/history/v1"
-	server122 "github.com/temporalio/s2s-proxy/common/proto122/server/common/persistence/serialization"
+	common122 "github.com/temporalio/s2s-proxy/common/proto/1_22/api/common/v1"
+	enums122 "github.com/temporalio/s2s-proxy/common/proto/1_22/api/enums/v1"
+	history122 "github.com/temporalio/s2s-proxy/common/proto/1_22/api/history/v1"
+	server122 "github.com/temporalio/s2s-proxy/common/proto/1_22/server/common/persistence/serialization"
 )
 
 var (
