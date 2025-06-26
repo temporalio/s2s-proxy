@@ -267,9 +267,9 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 // indicating if invalid UTF8 was repaired and whether there was any error.
 func tryRepairInvalidUTF8InBlob(logger log.Logger, blob *common.DataBlob) ([]*history.HistoryEvent, bool, error) {
 	// If we encountered a utf-8 error, try to repair it.
-	encodingType := enums122.EncodingType(blob.EncodingType.Number())
+	encodingType122 := enums122.EncodingType(blob.EncodingType.Number())
 	events122, err := oldSerializer.DeserializeEvents(&common122.DataBlob{
-		EncodingType: encodingType,
+		EncodingType: encodingType122,
 		Data:         blob.Data,
 	})
 	if err != nil {
@@ -282,7 +282,7 @@ func tryRepairInvalidUTF8InBlob(logger log.Logger, blob *common.DataBlob) ([]*hi
 	}
 
 	// To avoid a bunch of type conversions, reserialize and deserialize with the new version.
-	repairedEvents, err := oldSerializer.SerializeEvents(events122, encodingType)
+	repairedEvents, err := oldSerializer.SerializeEvents(events122, encodingType122)
 	if err != nil {
 		return nil, changed, err
 	}
