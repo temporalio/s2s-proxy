@@ -8,13 +8,18 @@ import (
 
 	"github.com/keilerkonzept/visit"
 	"go.temporal.io/api/common/v1"
-	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/server/common/log"
+
+	common122 "github.com/temporalio/s2s-proxy/common/proto122/api/common/v1"
+	enums122 "github.com/temporalio/s2s-proxy/common/proto122/api/enums/v1"
+	history122 "github.com/temporalio/s2s-proxy/common/proto122/api/history/v1"
+	server122 "github.com/temporalio/s2s-proxy/common/proto122/server/common/persistence/serialization"
 )
 
 var (
-	serializer = NewSerializer()
+	serializer    = NewSerializer()
+	oldSerializer = server122.NewSerializer()
 
 	namespaceFieldNames = map[string]bool{
 		"Namespace":               true,
@@ -224,30 +229,52 @@ func translateDataBlobs(logger log.Logger, match stringMatcher, visitor visitor,
 }
 
 func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visitor, blob *common.DataBlob) (*common.DataBlob, bool, error) {
-	if blob == nil || len(blob.Data) == 0 {
-		return blob, false, nil
+	var anyChanged bool
 
+	if blob == nil || len(blob.Data) == 0 {
+		return blob, anyChanged, nil
 	}
+
 	events, err := serializer.DeserializeEvents(blob)
 	if err != nil {
-		return blob, false, err
+		// https://github.com/protocolbuffers/protobuf-go/blob/8e8926ef675d99b1c9612f5d008f4dc803839f7a/internal/impl/codec_field.go#L17
+		if !strings.Contains(err.Error(), "invalid UTF-8") {
+			return blob, anyChanged, err
+		}
+
+		// If we encountered a utf-8 error, try to repair it.
+		encodingType := enums122.EncodingType(blob.EncodingType.Number())
+		events122, err := oldSerializer.DeserializeEvents(&common122.DataBlob{
+			EncodingType: encodingType,
+			Data:         blob.Data,
+		})
+		if err != nil {
+			return blob, anyChanged, err
+		}
+
+		changed, err := validateAndRepairHistoryEvents(logger, events122)
+		anyChanged = anyChanged || changed
+		if err != nil || !anyChanged {
+			return blob, anyChanged, err
+		}
+
+		// To avoid a bunch of type conversions, reserialize and deserialize with the new version.
+		repairedEvents, err := oldSerializer.SerializeEvents(events122, encodingType)
+		if err != nil {
+			return blob, anyChanged, err
+		}
+		events, err = serializer.DeserializeEvents(&common.DataBlob{
+			EncodingType: blob.EncodingType,
+			Data:         repairedEvents.Data,
+		})
+		if err != nil {
+			return blob, anyChanged, err
+		}
 	}
 
-	var anyChanged bool
-	changed, err := validateAndRepairHistoryEvents(logger, events)
+	changed, err := visitor(logger, events, match)
 	anyChanged = anyChanged || changed
-	if err != nil {
-		return blob, anyChanged, err
-	}
-
-	changed, err = visitor(logger, events, match)
-	anyChanged = anyChanged || changed
-	if err != nil {
-		return blob, anyChanged, err
-	}
-
-	if !anyChanged {
-		// skip reserializing if there are no changes
+	if err != nil || !anyChanged {
 		return blob, anyChanged, err
 	}
 
@@ -257,7 +284,7 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 
 // In old versions of Temporal, it was possible that certain history events could
 // be written with invalid UTF-8.
-func validateAndRepairHistoryEvents(logger log.Logger, events []*history.HistoryEvent) (bool, error) {
+func validateAndRepairHistoryEvents(logger log.Logger, events []*history122.HistoryEvent) (bool, error) {
 	var changed bool
 	for _, event := range events {
 		// only this field has been observed to have bad data
