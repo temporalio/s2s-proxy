@@ -381,5 +381,5 @@ func (s *adminServiceProxyServer) prometheusLabelValues() []string {
 	if s.Config.Inbound != nil {
 		inboundLabel = s.Config.Inbound.Name
 	}
-	return []string{"stream_direction", directionLabel, "outbound", outboundLabel, "inbound", inboundLabel}
+	return []string{directionLabel, outboundLabel, inboundLabel}
 }
