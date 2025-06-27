@@ -6,12 +6,13 @@ import (
 	"net"
 	"time"
 
-	"github.com/temporalio/s2s-proxy/proxy/debug"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding"
+
+	"github.com/temporalio/s2s-proxy/proxy/debug"
 )
 
 const (

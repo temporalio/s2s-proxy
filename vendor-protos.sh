@@ -57,11 +57,13 @@ for pkg in \
 done
 
 for pkg in \
-    api/persistence \
+    api/adminservice \
+    api/cluster \
     api/clock \
     api/enums \
     api/history \
     api/namespace \
+    api/persistence \
     api/replication \
     api/taskqueue \
     api/update \
