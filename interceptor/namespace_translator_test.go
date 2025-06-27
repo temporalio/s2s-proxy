@@ -1,6 +1,7 @@
 package interceptor
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -15,7 +16,7 @@ import (
 	enumsspb "go.temporal.io/server/api/enums/v1"
 	"go.temporal.io/server/api/persistence/v1"
 	replicationspb "go.temporal.io/server/api/replication/v1"
-	"go.temporal.io/server/common/persistence/serialization"
+	"go.temporal.io/server/common/log"
 )
 
 type (
@@ -238,6 +239,28 @@ func generateNamespaceObjCases() []objCase {
 				}
 			},
 			expError: "",
+		},
+		{
+			objName:     "history with invalid utf8",
+			containsObj: false,
+			makeType: func(ns string) any {
+				return &adminservice.StreamWorkflowReplicationMessagesResponse{
+					Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
+						Messages: &replicationspb.WorkflowReplicationMessages{
+							ReplicationTasks: []*replicationspb.ReplicationTask{
+								{
+									Attributes: &replicationspb.ReplicationTask_HistoryTaskAttributes{
+										HistoryTaskAttributes: &replicationspb.HistoryTaskAttributes{
+											NamespaceId: "some-ns-id",
+											Events:      makeHistoryEventsBlobWithInvalidUTF8(),
+										},
+									},
+								},
+							},
+						},
+					},
+				}
+			},
 		},
 		{
 			objName:     "StreamWorkflowReplicationMessagesResponse",
@@ -501,6 +524,7 @@ func testTranslateObj(
 	objCases []objCase,
 	equalityAssertion func(t require.TestingT, exp, actual any, extra ...any),
 ) {
+	logger := log.NewTestLogger()
 	testcases := []struct {
 		testName   string
 		inputName  string
@@ -540,7 +564,7 @@ func testTranslateObj(
 					expOutput := c.makeType(ts.outputName)
 					expChanged := ts.inputName != ts.outputName
 
-					changed, err := visitor(input, createStringMatcher(ts.mapping))
+					changed, err := visitor(logger, input, createStringMatcher(ts.mapping))
 					if len(c.expError) != 0 {
 						require.ErrorContains(t, err, c.expError)
 					} else {
@@ -559,7 +583,6 @@ func testTranslateObj(
 		})
 	}
 }
-
 func makeHistoryEventsBlobWithNamespaceField(ns string) *common.DataBlob {
 	evts := []*history.HistoryEvent{
 		{
@@ -586,10 +609,49 @@ func makeHistoryEventsBlobWithNamespaceField(ns string) *common.DataBlob {
 		},
 	}
 
-	s := serialization.NewSerializer()
+	s := NewSerializer()
 	blob, err := s.SerializeEvents(evts, enums.ENCODING_TYPE_PROTO3)
 	if err != nil {
 		panic(err)
 	}
 	return blob
 }
+
+func makeHistoryEventsBlobWithInvalidUTF8() *common.DataBlob {
+	data, err := base64.StdEncoding.DecodeString("Ch4IexgRogEXChVubyBpbnZhbGlkIHV0Zi04IGhlcmUKEgh7GAuCAQsqCSIHCgVhc2T//w==")
+	if err != nil {
+		panic(err)
+	}
+	return &common.DataBlob{
+		EncodingType: enums.ENCODING_TYPE_PROTO3,
+		Data:         data,
+	}
+}
+
+//func makeValidUTF8Event() *history.HistoryEvent {
+//	return &history.HistoryEvent{
+//		EventId:   123,
+//		EventType: enums.EVENT_TYPE_TIMER_STARTED,
+//		Attributes: &history.HistoryEvent_TimerStartedEventAttributes{
+//			TimerStartedEventAttributes: &history.TimerStartedEventAttributes{
+//				TimerId: "no invalid utf-8 here",
+//			},
+//		},
+//	}
+//}
+//
+//func makeInvalidUTF8Event() *history.HistoryEvent {
+//	return &history.HistoryEvent{
+//		EventId:   123,
+//		EventType: enums.EVENT_TYPE_ACTIVITY_TASK_STARTED,
+//		Attributes: &history.HistoryEvent_ActivityTaskStartedEventAttributes{
+//			ActivityTaskStartedEventAttributes: &history.ActivityTaskStartedEventAttributes{
+//				LastFailure: &failure.Failure{
+//					Cause: &failure.Failure{
+//						Message: "asd\xff\xff",
+//					},
+//				},
+//			},
+//		},
+//	}
+//}

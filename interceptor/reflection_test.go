@@ -2,9 +2,12 @@ package interceptor
 
 import (
 	"testing"
+
+	"go.temporal.io/server/common/log"
 )
 
 func BenchmarkVisitNamespace(b *testing.B) {
+	logger := log.NewNoopLogger()
 	variants := []struct {
 		testName    string
 		inputNSName string
@@ -33,7 +36,7 @@ func BenchmarkVisitNamespace(b *testing.B) {
 						input := c.makeType(variant.inputNSName)
 
 						b.StartTimer()
-						_, _ = visitNamespace(input, translator)
+						_, _ = visitNamespace(logger, input, translator)
 					}
 				})
 			}
