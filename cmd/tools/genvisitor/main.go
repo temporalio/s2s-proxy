@@ -20,6 +20,14 @@ func main() {
 			)
 		},
 	)
+	emitter.AddHandler(
+		"HistoryEvent",
+		func(varName string) string {
+			return fmt.Sprintf(
+				`// handleHistoryEvent(%s)`, varName,
+			)
+		},
+	)
 	protoregistry.GlobalTypes.RangeMessages(emitter.Visit)
 	emitter.Generate(os.Stdout)
 }

@@ -13,20 +13,34 @@ type (
 	Emitter struct {
 		handlers []*Handler
 		imports  map[string]struct{}
+		root     *Tree
+	}
+
+	Tree struct {
+		Children   map[string]*Tree
+		VisitTypes map[string]VisitType
+		Items      []*Handler
 	}
 
 	Handler struct {
 		SearchFor  string
 		Invocation func(string) string
-
-		matchedPaths []VisitPath
 	}
 )
 
 func NewEmitter() *Emitter {
 	return &Emitter{
 		imports: make(map[string]struct{}),
+		root:    NewTree(),
 	}
+}
+
+func NewTree() *Tree {
+	return &Tree{
+		Children:   map[string]*Tree{},
+		VisitTypes: map[string]VisitType{},
+	}
+
 }
 
 func (e *Emitter) AddHandler(match string, invocation func(string) string) {
@@ -50,11 +64,23 @@ func (e *Emitter) visit(obj VisitType, path VisitPath) {
 		if handler.SearchFor == obj.GoName() {
 			pathCopy := make(VisitPath, len(path))
 			copy(pathCopy, path) // todo: path is reused during the visitor / changes as it goes.
-			handler.matchedPaths = append(handler.matchedPaths, pathCopy)
-			//fmt.Printf("// emit - %s path=%s\n", obj.Name(), pathCopy)
+			e.insert(pathCopy, handler)
 			e.discoverImports(pathCopy)
 		}
 	}
+}
+
+func (e *Emitter) insert(path VisitPath, handler *Handler) {
+	current := e.root
+	for _, p := range path {
+		current.VisitTypes[p.GoName()] = p
+
+		if _, ok := current.Children[p.GoName()]; !ok {
+			current.Children[p.GoName()] = NewTree()
+		}
+		current = current.Children[p.GoName()]
+	}
+	current.Items = append(current.Items, handler)
 }
 
 func (e *Emitter) discoverImports(path VisitPath) {
@@ -68,11 +94,10 @@ func (e *Emitter) Generate(out io.Writer) {
 
 	fmt.Fprintln(out, "func VisitMessage(vAny any) {")
 	fmt.Fprintln(out, "switch root := vAny.(type) {")
-
-	for _, handler := range e.handlers {
-		for _, path := range handler.matchedPaths {
-			fmt.Fprintf(out, "case *%s:\n", path[0].GoQualifiedName())
-			e.emit(out, "root", path[1:], handler)
+	for _, typ := range e.root.VisitTypes {
+		fmt.Printf("case *%s:", typ.GoQualifiedName())
+		if child := e.root.Children[typ.GoName()]; child != nil {
+			e.emit(out, "root", child)
 		}
 	}
 	fmt.Fprintln(out, "}")
@@ -81,7 +106,6 @@ func (e *Emitter) Generate(out io.Writer) {
 }
 
 func (e *Emitter) genPreamble(out io.Writer) {
-	// TODO: Some way to discover the necessary packages as we visit types.
 	fmt.Fprintln(out, `package main_test
 
 	import (`)
@@ -99,37 +123,54 @@ func (e *Emitter) genPreamble(out io.Writer) {
 	fmt.Fprintln(out, `)`)
 }
 
-func (e *Emitter) emit(out io.Writer, parentVar string, path VisitPath, handler *Handler) {
-	if len(path) == 0 {
-		fmt.Println(handler.Invocation(parentVar))
+func (e *Emitter) emit(out io.Writer, parentVar string, node *Tree) {
+	if node == nil {
 		return
 	}
-	part := path[0]
 
-	switch desc := part.Descriptor.(type) {
-	case protoreflect.FieldDescriptor:
-		if desc.IsMap() {
-			fmt.Printf("for _, val := range %s.%s {\n", parentVar, part.GoGetter())
-			e.emit(out, "val", path[1:], handler)
-			fmt.Println("}")
-		} else if desc.IsList() {
-			fmt.Printf("for _, item := range %s.%s {\n", parentVar, part.GoGetter())
-			e.emit(out, "item", path[1:], handler)
-			fmt.Println("}")
-		} else if oneof := desc.ContainingOneof(); oneof != nil {
-			fmt.Printf("switch oneof := %s.%s.(type) {\n", parentVar, part.GoGetter())
-			fmt.Printf("case *%s.%s:\n", part.GoPackageName(), getOneofWrapperType(part))
-			fmt.Printf("x := oneof.%s\n", snakeToPascalCase(part.Name()))
-			e.emit(out, "x", path[1:], handler)
-			fmt.Println("}")
-		} else {
-			n := rand.Int()
-			varName := fmt.Sprintf("y%d", n)
-			fmt.Printf("%s := %s.%s\n", varName, parentVar, part.GoGetter())
-			e.emit(out, varName, path[1:], handler)
+	for _, vt := range node.VisitTypes {
+		switch desc := vt.Descriptor.(type) {
+		case protoreflect.FieldDescriptor:
+			if desc.IsMap() {
+				fmt.Printf("for _, val := range %s.%s {\n", parentVar, vt.GoGetter())
+				if child := node.Children[vt.GoName()]; child != nil {
+					e.emit(out, "val", child)
+				}
+				fmt.Println("}")
+			} else if desc.IsList() {
+				fmt.Printf("for _, item := range %s.%s {\n", parentVar, vt.GoGetter())
+				if child := node.Children[vt.GoName()]; child != nil {
+					e.emit(out, "item", child)
+				}
+				fmt.Println("}")
+			} else if oneof := desc.ContainingOneof(); oneof != nil {
+				fmt.Printf("switch oneof := %s.%s.(type) {\n", parentVar, vt.GoGetter())
+				fmt.Printf("case *%s.%s:\n", vt.GoPackageName(), getOneofWrapperType(vt))
+				fmt.Printf("x := oneof.%s\n", snakeToPascalCase(vt.Name()))
+
+				if child := node.Children[vt.GoName()]; child != nil {
+					e.emit(out, "x", child)
+				}
+
+				fmt.Println("}")
+			} else {
+				n := rand.Int()
+				varName := fmt.Sprintf("y%d", n)
+				fmt.Printf("%s := %s.%s\n", varName, parentVar, vt.GoGetter())
+
+				if child := node.Children[vt.GoName()]; child != nil {
+					e.emit(out, varName, child)
+				}
+			}
+		default:
+			if child := node.Children[vt.GoName()]; child != nil {
+				e.emit(out, parentVar, child)
+			}
 		}
-	default:
-		e.emit(out, parentVar, path[1:], handler)
+	}
+
+	for _, handler := range node.Items {
+		fmt.Fprintln(out, handler.Invocation(parentVar))
 	}
 }
 
