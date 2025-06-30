@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -34,14 +35,6 @@ func NewEmitter() *Emitter {
 		root:        NewTree(),
 		inScopeVars: map[string]struct{}{},
 	}
-}
-
-func NewTree() *Tree {
-	return &Tree{
-		Children:   map[string]*Tree{},
-		VisitTypes: map[string]VisitType{},
-	}
-
 }
 
 func (e *Emitter) AddHandler(match string, invocation func(string) string) {
@@ -95,7 +88,7 @@ func (e *Emitter) Generate(out io.Writer) {
 
 	fmt.Fprintln(out, "func VisitMessage(vAny any) {")
 	fmt.Fprintln(out, "switch root := vAny.(type) {")
-	for _, typ := range e.root.VisitTypes {
+	for _, typ := range e.root.SortedTypes() {
 		fmt.Printf("case *%s:", typ.GoQualifiedName())
 		if child := e.root.Children[typ.GoName()]; child != nil {
 			e.emit(out, "root", child)
@@ -129,7 +122,7 @@ func (e *Emitter) emit(out io.Writer, parentVar string, node *Tree) {
 		return
 	}
 
-	for _, vt := range node.VisitTypes {
+	for _, vt := range node.SortedTypes() {
 		switch desc := vt.Descriptor.(type) {
 		case protoreflect.FieldDescriptor:
 			if desc.IsMap() {
@@ -221,4 +214,22 @@ func getOneofWrapperType(oneof VisitType) string {
 
 	//return string(oneof.Parent().Name()) + "_" + typ.GoName()
 	return string(oneof.Parent().Name()) + "_" + snakeToPascalCase(oneof.Name())
+}
+
+func NewTree() *Tree {
+	return &Tree{
+		Children:   map[string]*Tree{},
+		VisitTypes: map[string]VisitType{},
+	}
+}
+
+func (t *Tree) SortedTypes() []VisitType {
+	result := make([]VisitType, 0, len(t.VisitTypes))
+	for _, typ := range t.VisitTypes {
+		result = append(result, typ)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].FullName() < result[j].FullName()
+	})
+	return result
 }
