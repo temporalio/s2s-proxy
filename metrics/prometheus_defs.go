@@ -1,6 +1,9 @@
 package metrics
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+)
 
 var (
 	// This file is structured by package first, then by file.
@@ -34,6 +37,11 @@ var (
 )
 
 func init() {
+	// Deregister the existing NewGoCollector https://pkg.go.dev/github.com/prometheus/client_golang@v1.22.0/prometheus/collectors#NewGoCollector
+	prometheus.Unregister(collectors.NewGoCollector())
+	// Re-register the go collector with all non-debug metrics. See: https://pkg.go.dev/runtime/metrics
+	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
+		collectors.WithoutGoCollectorRuntimeMetrics(collectors.MetricsDebug.Matcher)))
 	prometheus.MustRegister(ProxyStartCount)
 	prometheus.MustRegister(GRPCServerMetrics)
 	prometheus.MustRegister(HealthCheckIsHealthy)
