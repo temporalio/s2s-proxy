@@ -1,30 +1,3 @@
-// emit - ActivityTaskStartedEventAttributes path=HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=StartWorkflowExecutionResponse/EagerWorkflowTask/PollWorkflowTaskQueueResponse/History/History/Events/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=GetWorkflowExecutionHistoryReverseResponse/History/History/Events/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=TransientWorkflowTaskInfo/HistorySuffix/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=PollWorkflowTaskQueueResponse/History/History/Events/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=GetWorkflowExecutionHistoryResponse/History/History/Events/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=Response/Response/StartWorkflowExecutionResponse/EagerWorkflowTask/PollWorkflowTaskQueueResponse/History/History/Events/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=ExecuteMultiOperationResponse/Responses/Response/Response/StartWorkflowExecutionResponse/EagerWorkflowTask/PollWorkflowTaskQueueResponse/History/History/Events/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=HSMCompletionCallbackArg/LastEvent/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=StreamWorkflowReplicationMessagesResponse/Attributes/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=RespondWorkflowTaskCompletedResponse/WorkflowTask/PollWorkflowTaskQueueResponse/History/History/Events/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=History/Events/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=SyncWorkflowStateResponse/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
-// emit - ActivityTaskStartedEventAttributes path=DescribeMutableStateResponse/CacheMutableState/WorkflowMutableState/BufferedEvents/HistoryEvent/Attributes/ActivityTaskStartedEventAttributes
 package main_test
 
 import (
@@ -38,230 +11,61 @@ import (
 
 func VisitMessage(vAny any) {
 	switch root := vAny.(type) {
-	// name=HistoryEvent goname=HistoryEvent
-	case *history.HistoryEvent:
-		switch oneof := root.GetAttributes().(type) {
-		// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-		// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-		case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-			x := oneof.ActivityTaskStartedEventAttributes
-			// repairUTF8(x)
+	case *workflowservice.ExecuteMultiOperationResponse:
+		for _, item := range root.GetResponses() {
+			switch oneof := item.GetResponse().(type) {
+			case *workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow:
+				x := oneof.StartWorkflow
+				y4381514623640899241 := x.GetEagerWorkflowTask()
+				y2319230560788023725 := y4381514623640899241.GetHistory()
+				for _, item := range y2319230560788023725.GetEvents() {
+					switch oneof := item.GetAttributes().(type) {
+					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+						x := oneof.ActivityTaskStartedEventAttributes
+						// repairUTF8(x)
+					}
+				}
+			}
 		}
-	// name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes
-	case *history.ActivityTaskStartedEventAttributes:
-	// repairUTF8(root)
-	// name=StartWorkflowExecutionResponse goname=StartWorkflowExecutionResponse
-	case *workflowservice.StartWorkflowExecutionResponse:
-		y22775235766691954 := root.GetEagerWorkflowTask()
-		y5749311273663987699 := y22775235766691954.GetHistory()
-		for _, item := range y5749311273663987699.GetEvents() {
+	case *serverreplication.SyncWorkflowStateTaskAttributes:
+		y6775302133075550390 := root.GetWorkflowState()
+		for _, item := range y6775302133075550390.GetBufferedEvents() {
 			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-			// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x := oneof.ActivityTaskStartedEventAttributes
 				// repairUTF8(x)
 			}
 		}
-	// name=GetWorkflowExecutionHistoryReverseResponse goname=GetWorkflowExecutionHistoryReverseResponse
-	case *workflowservice.GetWorkflowExecutionHistoryReverseResponse:
-		y8883653892984045906 := root.GetHistory()
-		for _, item := range y8883653892984045906.GetEvents() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-			// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-				x := oneof.ActivityTaskStartedEventAttributes
-				// repairUTF8(x)
-			}
-		}
-	// name=TransientWorkflowTaskInfo goname=TransientWorkflowTaskInfo
-	case *serverhistory.TransientWorkflowTaskInfo:
-		for _, item := range root.GetHistorySuffix() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-			// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-				x := oneof.ActivityTaskStartedEventAttributes
-				// repairUTF8(x)
-			}
-		}
-	// name=WorkflowMutableState goname=WorkflowMutableState
 	case *serverpersistence.WorkflowMutableState:
 		for _, item := range root.GetBufferedEvents() {
 			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-			// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x := oneof.ActivityTaskStartedEventAttributes
 				// repairUTF8(x)
 			}
 		}
-	// name=PollWorkflowTaskQueueResponse goname=PollWorkflowTaskQueueResponse
-	case *workflowservice.PollWorkflowTaskQueueResponse:
-		y7577878507601886991 := root.GetHistory()
-		for _, item := range y7577878507601886991.GetEvents() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-			// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-				x := oneof.ActivityTaskStartedEventAttributes
-				// repairUTF8(x)
-			}
-		}
-	// name=ReplicationTask goname=ReplicationTask
 	case *serverreplication.ReplicationTask:
 		switch oneof := root.GetAttributes().(type) {
-		// oneof: name=sync_workflow_state_task_attributes goname=Attributes parent.Name=ReplicationTask
-		// typ  : name=SyncWorkflowStateTaskAttributes goname=SyncWorkflowStateTaskAttributes parent.Name=v1
 		case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 			x := oneof.SyncWorkflowStateTaskAttributes
-			y1713298226227438567 := x.GetWorkflowState()
-			for _, item := range y1713298226227438567.GetBufferedEvents() {
+			y7180373816048752967 := x.GetWorkflowState()
+			for _, item := range y7180373816048752967.GetBufferedEvents() {
 				switch oneof := item.GetAttributes().(type) {
-				// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-				// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
 				case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 					x := oneof.ActivityTaskStartedEventAttributes
 					// repairUTF8(x)
 				}
 			}
 		}
-	// name=VersionedTransitionArtifact goname=VersionedTransitionArtifact
-	case *serverreplication.VersionedTransitionArtifact:
-		switch oneof := root.GetStateAttributes().(type) {
-		// oneof: name=sync_workflow_state_snapshot_attributes goname=StateAttributes parent.Name=VersionedTransitionArtifact
-		// typ  : name=SyncWorkflowStateSnapshotAttributes goname=SyncWorkflowStateSnapshotAttributes parent.Name=v1
-		case *serverreplication.VersionedTransitionArtifact_SyncWorkflowStateSnapshotAttributes:
-			x := oneof.SyncWorkflowStateSnapshotAttributes
-			y1008579546938865827 := x.GetState()
-			for _, item := range y1008579546938865827.GetBufferedEvents() {
-				switch oneof := item.GetAttributes().(type) {
-				// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-				// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-				case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-					x := oneof.ActivityTaskStartedEventAttributes
-					// repairUTF8(x)
-				}
-			}
-		}
-	// name=GetDLQReplicationMessagesResponse goname=GetDLQReplicationMessagesResponse
-	case *serveradminservice.GetDLQReplicationMessagesResponse:
-		for _, item := range root.GetReplicationTasks() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=sync_workflow_state_task_attributes goname=Attributes parent.Name=ReplicationTask
-			// typ  : name=SyncWorkflowStateTaskAttributes goname=SyncWorkflowStateTaskAttributes parent.Name=v1
-			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
-				x := oneof.SyncWorkflowStateTaskAttributes
-				y5410410984817639213 := x.GetWorkflowState()
-				for _, item := range y5410410984817639213.GetBufferedEvents() {
-					switch oneof := item.GetAttributes().(type) {
-					// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-					// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-						x := oneof.ActivityTaskStartedEventAttributes
-						// repairUTF8(x)
-					}
-				}
-			}
-		}
-	// name=GetWorkflowExecutionHistoryResponse goname=GetWorkflowExecutionHistoryResponse
-	case *workflowservice.GetWorkflowExecutionHistoryResponse:
-		y2585168165553088382 := root.GetHistory()
-		for _, item := range y2585168165553088382.GetEvents() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-			// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-				x := oneof.ActivityTaskStartedEventAttributes
-				// repairUTF8(x)
-			}
-		}
-	// name=Response goname=Response
-	case *workflowservice.Response:
-		switch oneof := root.GetResponse().(type) {
-		// oneof: name=start_workflow goname=Response parent.Name=Response
-		// typ  : name=StartWorkflowExecutionResponse goname=StartWorkflowExecutionResponse parent.Name=v1
-		case *workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow:
-			x := oneof.StartWorkflowExecutionResponse
-			y1628877597230433618 := x.GetEagerWorkflowTask()
-			y8569249856291528770 := y1628877597230433618.GetHistory()
-			for _, item := range y8569249856291528770.GetEvents() {
-				switch oneof := item.GetAttributes().(type) {
-				// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-				// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-				case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-					x := oneof.ActivityTaskStartedEventAttributes
-					// repairUTF8(x)
-				}
-			}
-		}
-	// name=ReplicationMessages goname=ReplicationMessages
-	case *serverreplication.ReplicationMessages:
-		for _, item := range root.GetReplicationTasks() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=sync_workflow_state_task_attributes goname=Attributes parent.Name=ReplicationTask
-			// typ  : name=SyncWorkflowStateTaskAttributes goname=SyncWorkflowStateTaskAttributes parent.Name=v1
-			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
-				x := oneof.SyncWorkflowStateTaskAttributes
-				y604961218257538571 := x.GetWorkflowState()
-				for _, item := range y604961218257538571.GetBufferedEvents() {
-					switch oneof := item.GetAttributes().(type) {
-					// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-					// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-						x := oneof.ActivityTaskStartedEventAttributes
-						// repairUTF8(x)
-					}
-				}
-			}
-		}
-	// name=WorkflowReplicationMessages goname=WorkflowReplicationMessages
-	case *serverreplication.WorkflowReplicationMessages:
-		for _, item := range root.GetReplicationTasks() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=sync_workflow_state_task_attributes goname=Attributes parent.Name=ReplicationTask
-			// typ  : name=SyncWorkflowStateTaskAttributes goname=SyncWorkflowStateTaskAttributes parent.Name=v1
-			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
-				x := oneof.SyncWorkflowStateTaskAttributes
-				y8431761642454619079 := x.GetWorkflowState()
-				for _, item := range y8431761642454619079.GetBufferedEvents() {
-					switch oneof := item.GetAttributes().(type) {
-					// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-					// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-						x := oneof.ActivityTaskStartedEventAttributes
-						// repairUTF8(x)
-					}
-				}
-			}
-		}
-	// name=SyncWorkflowStateTaskAttributes goname=SyncWorkflowStateTaskAttributes
-	case *serverreplication.SyncWorkflowStateTaskAttributes:
-		y3782735321282930610 := root.GetWorkflowState()
-		for _, item := range y3782735321282930610.GetBufferedEvents() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-			// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-				x := oneof.ActivityTaskStartedEventAttributes
-				// repairUTF8(x)
-			}
-		}
-	// name=GetReplicationMessagesResponse goname=GetReplicationMessagesResponse
 	case *serveradminservice.GetReplicationMessagesResponse:
 		for _, val := range root.GetShardMessages() {
 			for _, item := range val.GetReplicationTasks() {
 				switch oneof := item.GetAttributes().(type) {
-				// oneof: name=sync_workflow_state_task_attributes goname=Attributes parent.Name=ReplicationTask
-				// typ  : name=SyncWorkflowStateTaskAttributes goname=SyncWorkflowStateTaskAttributes parent.Name=v1
 				case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 					x := oneof.SyncWorkflowStateTaskAttributes
-					y4944803433367137477 := x.GetWorkflowState()
-					for _, item := range y4944803433367137477.GetBufferedEvents() {
+					y4220020427333400757 := x.GetWorkflowState()
+					for _, item := range y4220020427333400757.GetBufferedEvents() {
 						switch oneof := item.GetAttributes().(type) {
-						// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-						// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
 						case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 							x := oneof.ActivityTaskStartedEventAttributes
 							// repairUTF8(x)
@@ -270,20 +74,14 @@ func VisitMessage(vAny any) {
 				}
 			}
 		}
-	// name=ExecuteMultiOperationResponse goname=ExecuteMultiOperationResponse
-	case *workflowservice.ExecuteMultiOperationResponse:
-		for _, item := range root.GetResponses() {
-			switch oneof := item.GetResponse().(type) {
-			// oneof: name=start_workflow goname=Response parent.Name=Response
-			// typ  : name=StartWorkflowExecutionResponse goname=StartWorkflowExecutionResponse parent.Name=v1
-			case *workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow:
-				x := oneof.StartWorkflowExecutionResponse
-				y5573731278446339347 := x.GetEagerWorkflowTask()
-				y6656184001724219969 := y5573731278446339347.GetHistory()
-				for _, item := range y6656184001724219969.GetEvents() {
+	case *serveradminservice.GetDLQMessagesResponse:
+		for _, item := range root.GetReplicationTasks() {
+			switch oneof := item.GetAttributes().(type) {
+			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+				x := oneof.SyncWorkflowStateTaskAttributes
+				y1783286350834986975 := x.GetWorkflowState()
+				for _, item := range y1783286350834986975.GetBufferedEvents() {
 					switch oneof := item.GetAttributes().(type) {
-					// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-					// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
 					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 						x := oneof.ActivityTaskStartedEventAttributes
 						// repairUTF8(x)
@@ -291,73 +89,23 @@ func VisitMessage(vAny any) {
 				}
 			}
 		}
-	// name=HSMCompletionCallbackArg goname=HSMCompletionCallbackArg
-	case *serverpersistence.HSMCompletionCallbackArg:
-		y2438555495146797689 := root.GetLastEvent()
-		switch oneof := y2438555495146797689.GetAttributes().(type) {
-		// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-		// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
+	case *history.HistoryEvent:
+		switch oneof := root.GetAttributes().(type) {
 		case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 			x := oneof.ActivityTaskStartedEventAttributes
 			// repairUTF8(x)
 		}
-	// name=SyncVersionedTransitionTaskAttributes goname=SyncVersionedTransitionTaskAttributes
-	case *serverreplication.SyncVersionedTransitionTaskAttributes:
-		y7418693646060097692 := root.GetVersionedTransitionArtifact()
-		switch oneof := y7418693646060097692.GetStateAttributes().(type) {
-		// oneof: name=sync_workflow_state_snapshot_attributes goname=StateAttributes parent.Name=VersionedTransitionArtifact
-		// typ  : name=SyncWorkflowStateSnapshotAttributes goname=SyncWorkflowStateSnapshotAttributes parent.Name=v1
-		case *serverreplication.VersionedTransitionArtifact_SyncWorkflowStateSnapshotAttributes:
-			x := oneof.SyncWorkflowStateSnapshotAttributes
-			y7226682955459726779 := x.GetState()
-			for _, item := range y7226682955459726779.GetBufferedEvents() {
-				switch oneof := item.GetAttributes().(type) {
-				// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-				// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-				case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-					x := oneof.ActivityTaskStartedEventAttributes
-					// repairUTF8(x)
-				}
-			}
-		}
-	// name=GetDLQMessagesResponse goname=GetDLQMessagesResponse
-	case *serveradminservice.GetDLQMessagesResponse:
-		for _, item := range root.GetReplicationTasks() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=sync_workflow_state_task_attributes goname=Attributes parent.Name=ReplicationTask
-			// typ  : name=SyncWorkflowStateTaskAttributes goname=SyncWorkflowStateTaskAttributes parent.Name=v1
-			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
-				x := oneof.SyncWorkflowStateTaskAttributes
-				y8153247295338291959 := x.GetWorkflowState()
-				for _, item := range y8153247295338291959.GetBufferedEvents() {
-					switch oneof := item.GetAttributes().(type) {
-					// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-					// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-						x := oneof.ActivityTaskStartedEventAttributes
-						// repairUTF8(x)
-					}
-				}
-			}
-		}
-	// name=StreamWorkflowReplicationMessagesResponse goname=StreamWorkflowReplicationMessagesResponse
 	case *serveradminservice.StreamWorkflowReplicationMessagesResponse:
 		switch oneof := root.GetAttributes().(type) {
-		// oneof: name=messages goname=Attributes parent.Name=StreamWorkflowReplicationMessagesResponse
-		// typ  : name=WorkflowReplicationMessages goname=WorkflowReplicationMessages parent.Name=v1
 		case *serveradminservice.StreamWorkflowReplicationMessagesResponse_Messages:
-			x := oneof.WorkflowReplicationMessages
+			x := oneof.Messages
 			for _, item := range x.GetReplicationTasks() {
 				switch oneof := item.GetAttributes().(type) {
-				// oneof: name=sync_workflow_state_task_attributes goname=Attributes parent.Name=ReplicationTask
-				// typ  : name=SyncWorkflowStateTaskAttributes goname=SyncWorkflowStateTaskAttributes parent.Name=v1
 				case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 					x := oneof.SyncWorkflowStateTaskAttributes
-					y2935944630906514776 := x.GetWorkflowState()
-					for _, item := range y2935944630906514776.GetBufferedEvents() {
+					y1477921973060229634 := x.GetWorkflowState()
+					for _, item := range y1477921973060229634.GetBufferedEvents() {
 						switch oneof := item.GetAttributes().(type) {
-						// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-						// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
 						case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 							x := oneof.ActivityTaskStartedEventAttributes
 							// repairUTF8(x)
@@ -366,56 +114,14 @@ func VisitMessage(vAny any) {
 				}
 			}
 		}
-	// name=RespondWorkflowTaskCompletedResponse goname=RespondWorkflowTaskCompletedResponse
-	case *workflowservice.RespondWorkflowTaskCompletedResponse:
-		y962741622106513331 := root.GetWorkflowTask()
-		y3664382378305204310 := y962741622106513331.GetHistory()
-		for _, item := range y3664382378305204310.GetEvents() {
+	case *serverreplication.WorkflowReplicationMessages:
+		for _, item := range root.GetReplicationTasks() {
 			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-			// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-				x := oneof.ActivityTaskStartedEventAttributes
-				// repairUTF8(x)
-			}
-		}
-	// name=History goname=History
-	case *history.History:
-		for _, item := range root.GetEvents() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-			// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-				x := oneof.ActivityTaskStartedEventAttributes
-				// repairUTF8(x)
-			}
-		}
-	// name=SyncWorkflowStateSnapshotAttributes goname=SyncWorkflowStateSnapshotAttributes
-	case *serverreplication.SyncWorkflowStateSnapshotAttributes:
-		y1754430560650612685 := root.GetState()
-		for _, item := range y1754430560650612685.GetBufferedEvents() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-			// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
-			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
-				x := oneof.ActivityTaskStartedEventAttributes
-				// repairUTF8(x)
-			}
-		}
-	// name=GetNamespaceReplicationMessagesResponse goname=GetNamespaceReplicationMessagesResponse
-	case *serveradminservice.GetNamespaceReplicationMessagesResponse:
-		y9056885728854800072 := root.GetMessages()
-		for _, item := range y9056885728854800072.GetReplicationTasks() {
-			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=sync_workflow_state_task_attributes goname=Attributes parent.Name=ReplicationTask
-			// typ  : name=SyncWorkflowStateTaskAttributes goname=SyncWorkflowStateTaskAttributes parent.Name=v1
 			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 				x := oneof.SyncWorkflowStateTaskAttributes
-				y3073419771097398575 := x.GetWorkflowState()
-				for _, item := range y3073419771097398575.GetBufferedEvents() {
+				y2952610615689450218 := x.GetWorkflowState()
+				for _, item := range y2952610615689450218.GetBufferedEvents() {
 					switch oneof := item.GetAttributes().(type) {
-					// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-					// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
 					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 						x := oneof.ActivityTaskStartedEventAttributes
 						// repairUTF8(x)
@@ -423,36 +129,375 @@ func VisitMessage(vAny any) {
 				}
 			}
 		}
-	// name=SyncWorkflowStateResponse goname=SyncWorkflowStateResponse
+	case *serverhistory.TransientWorkflowTaskInfo:
+		for _, item := range root.GetHistorySuffix() {
+			switch oneof := item.GetAttributes().(type) {
+			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+				x := oneof.ActivityTaskStartedEventAttributes
+				// repairUTF8(x)
+			}
+		}
+	case *workflowservice.PollWorkflowTaskQueueResponse:
+		y6308973025250895959 := root.GetHistory()
+		for _, item := range y6308973025250895959.GetEvents() {
+			switch oneof := item.GetAttributes().(type) {
+			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+				x := oneof.ActivityTaskStartedEventAttributes
+				// repairUTF8(x)
+			}
+		}
 	case *serveradminservice.SyncWorkflowStateResponse:
-		y6049692165119747149 := root.GetVersionedTransitionArtifact()
-		switch oneof := y6049692165119747149.GetStateAttributes().(type) {
-		// oneof: name=sync_workflow_state_snapshot_attributes goname=StateAttributes parent.Name=VersionedTransitionArtifact
-		// typ  : name=SyncWorkflowStateSnapshotAttributes goname=SyncWorkflowStateSnapshotAttributes parent.Name=v1
+		y3364318173093309353 := root.GetVersionedTransitionArtifact()
+		switch oneof := y3364318173093309353.GetStateAttributes().(type) {
 		case *serverreplication.VersionedTransitionArtifact_SyncWorkflowStateSnapshotAttributes:
 			x := oneof.SyncWorkflowStateSnapshotAttributes
-			y3679005459185820567 := x.GetState()
-			for _, item := range y3679005459185820567.GetBufferedEvents() {
+			y9063173129785554383 := x.GetState()
+			for _, item := range y9063173129785554383.GetBufferedEvents() {
 				switch oneof := item.GetAttributes().(type) {
-				// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-				// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
 				case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 					x := oneof.ActivityTaskStartedEventAttributes
 					// repairUTF8(x)
 				}
 			}
 		}
-	// name=DescribeMutableStateResponse goname=DescribeMutableStateResponse
-	case *serveradminservice.DescribeMutableStateResponse:
-		y8562557119113800320 := root.GetCacheMutableState()
-		for _, item := range y8562557119113800320.GetBufferedEvents() {
+	case *history.History:
+		for _, item := range root.GetEvents() {
 			switch oneof := item.GetAttributes().(type) {
-			// oneof: name=activity_task_started_event_attributes goname=Attributes parent.Name=HistoryEvent
-			// typ  : name=ActivityTaskStartedEventAttributes goname=ActivityTaskStartedEventAttributes parent.Name=v1
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x := oneof.ActivityTaskStartedEventAttributes
 				// repairUTF8(x)
 			}
+		}
+	case *workflowservice.GetWorkflowExecutionHistoryResponse:
+		y4950832020984870033 := root.GetHistory()
+		for _, item := range y4950832020984870033.GetEvents() {
+			switch oneof := item.GetAttributes().(type) {
+			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+				x := oneof.ActivityTaskStartedEventAttributes
+				// repairUTF8(x)
+			}
+		}
+	case *workflowservice.GetWorkflowExecutionHistoryReverseResponse:
+		y1633489425124976746 := root.GetHistory()
+		for _, item := range y1633489425124976746.GetEvents() {
+			switch oneof := item.GetAttributes().(type) {
+			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+				x := oneof.ActivityTaskStartedEventAttributes
+				// repairUTF8(x)
+			}
+		}
+	case *serveradminservice.DescribeMutableStateResponse:
+		y2180805667895753997 := root.GetCacheMutableState()
+		for _, item := range y2180805667895753997.GetBufferedEvents() {
+			switch oneof := item.GetAttributes().(type) {
+			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+				x := oneof.ActivityTaskStartedEventAttributes
+				// repairUTF8(x)
+			}
+		}
+	case *serveradminservice.GetDLQReplicationMessagesResponse:
+		for _, item := range root.GetReplicationTasks() {
+			switch oneof := item.GetAttributes().(type) {
+			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+				x := oneof.SyncWorkflowStateTaskAttributes
+				y6067583730657021891 := x.GetWorkflowState()
+				for _, item := range y6067583730657021891.GetBufferedEvents() {
+					switch oneof := item.GetAttributes().(type) {
+					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+						x := oneof.ActivityTaskStartedEventAttributes
+						// repairUTF8(x)
+					}
+				}
+			}
+		}
+	case *serveradminservice.GetNamespaceReplicationMessagesResponse:
+		y1979122614125749616 := root.GetMessages()
+		for _, item := range y1979122614125749616.GetReplicationTasks() {
+			switch oneof := item.GetAttributes().(type) {
+			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+				x := oneof.SyncWorkflowStateTaskAttributes
+				y5970580929145528289 := x.GetWorkflowState()
+				for _, item := range y5970580929145528289.GetBufferedEvents() {
+					switch oneof := item.GetAttributes().(type) {
+					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+						x := oneof.ActivityTaskStartedEventAttributes
+						// repairUTF8(x)
+					}
+				}
+			}
+		}
+	case *serverreplication.SyncVersionedTransitionTaskAttributes:
+		y6872053633400665478 := root.GetVersionedTransitionArtifact()
+		switch oneof := y6872053633400665478.GetStateAttributes().(type) {
+		case *serverreplication.VersionedTransitionArtifact_SyncWorkflowStateSnapshotAttributes:
+			x := oneof.SyncWorkflowStateSnapshotAttributes
+			y6666465556629187866 := x.GetState()
+			for _, item := range y6666465556629187866.GetBufferedEvents() {
+				switch oneof := item.GetAttributes().(type) {
+				case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+					x := oneof.ActivityTaskStartedEventAttributes
+					// repairUTF8(x)
+				}
+			}
+		}
+	case *serverpersistence.HSMCompletionCallbackArg:
+		y4836772665333145111 := root.GetLastEvent()
+		switch oneof := y4836772665333145111.GetAttributes().(type) {
+		case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+			x := oneof.ActivityTaskStartedEventAttributes
+			// repairUTF8(x)
+		}
+	case *workflowservice.StartWorkflowExecutionResponse:
+		y4092995766037843156 := root.GetEagerWorkflowTask()
+		y4125453789926393483 := y4092995766037843156.GetHistory()
+		for _, item := range y4125453789926393483.GetEvents() {
+			switch oneof := item.GetAttributes().(type) {
+			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+				x := oneof.ActivityTaskStartedEventAttributes
+				// repairUTF8(x)
+			}
+		}
+	case *serverreplication.ReplicationMessages:
+		for _, item := range root.GetReplicationTasks() {
+			switch oneof := item.GetAttributes().(type) {
+			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+				x := oneof.SyncWorkflowStateTaskAttributes
+				y1049941063911155444 := x.GetWorkflowState()
+				for _, item := range y1049941063911155444.GetBufferedEvents() {
+					switch oneof := item.GetAttributes().(type) {
+					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+						x := oneof.ActivityTaskStartedEventAttributes
+						// repairUTF8(x)
+					}
+				}
+			}
+		}
+	case *serverreplication.VersionedTransitionArtifact:
+		switch oneof := root.GetStateAttributes().(type) {
+		case *serverreplication.VersionedTransitionArtifact_SyncWorkflowStateSnapshotAttributes:
+			x := oneof.SyncWorkflowStateSnapshotAttributes
+			y6240117546166944997 := x.GetState()
+			for _, item := range y6240117546166944997.GetBufferedEvents() {
+				switch oneof := item.GetAttributes().(type) {
+				case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+					x := oneof.ActivityTaskStartedEventAttributes
+					// repairUTF8(x)
+				}
+			}
+		}
+	case *serverreplication.SyncWorkflowStateSnapshotAttributes:
+		y3560986481423646872 := root.GetState()
+		for _, item := range y3560986481423646872.GetBufferedEvents() {
+			switch oneof := item.GetAttributes().(type) {
+			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+				x := oneof.ActivityTaskStartedEventAttributes
+				// repairUTF8(x)
+			}
+		}
+	case *history.ActivityTaskStartedEventAttributes:
+	// repairUTF8(root)
+	case *workflowservice.RespondWorkflowTaskCompletedResponse:
+		y41730975532056772 := root.GetWorkflowTask()
+		y4957081243830410993 := y41730975532056772.GetHistory()
+		for _, item := range y4957081243830410993.GetEvents() {
+			switch oneof := item.GetAttributes().(type) {
+			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
+				x := oneof.ActivityTaskStartedEventAttributes
+				// repairUTF8(x)
+			}
+		}
+	case *workflowservice.ExecuteMultiOperationResponse:
+		for _, item := range root.GetResponses() {
+			switch oneof := item.GetResponse().(type) {
+			case *workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow:
+				x := oneof.StartWorkflow
+				y8184714335124505542 := x.GetEagerWorkflowTask()
+				y3836449114558701397 := y8184714335124505542.GetHistory()
+				for _, item := range y3836449114558701397.GetEvents() {
+					// handleHistoryEvent(item)
+				}
+			}
+		}
+	case *serverreplication.SyncWorkflowStateTaskAttributes:
+		y1958528468701423746 := root.GetWorkflowState()
+		for _, item := range y1958528468701423746.GetBufferedEvents() {
+			// handleHistoryEvent(item)
+		}
+	case *serverpersistence.WorkflowMutableState:
+		for _, item := range root.GetBufferedEvents() {
+			// handleHistoryEvent(item)
+		}
+	case *serverreplication.ReplicationTask:
+		switch oneof := root.GetAttributes().(type) {
+		case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+			x := oneof.SyncWorkflowStateTaskAttributes
+			y891084090995634910 := x.GetWorkflowState()
+			for _, item := range y891084090995634910.GetBufferedEvents() {
+				// handleHistoryEvent(item)
+			}
+		}
+	case *serveradminservice.GetReplicationMessagesResponse:
+		for _, val := range root.GetShardMessages() {
+			for _, item := range val.GetReplicationTasks() {
+				switch oneof := item.GetAttributes().(type) {
+				case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+					x := oneof.SyncWorkflowStateTaskAttributes
+					y904227325565469642 := x.GetWorkflowState()
+					for _, item := range y904227325565469642.GetBufferedEvents() {
+						// handleHistoryEvent(item)
+					}
+				}
+			}
+		}
+	case *serveradminservice.GetDLQMessagesResponse:
+		for _, item := range root.GetReplicationTasks() {
+			switch oneof := item.GetAttributes().(type) {
+			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+				x := oneof.SyncWorkflowStateTaskAttributes
+				y5083106542629629957 := x.GetWorkflowState()
+				for _, item := range y5083106542629629957.GetBufferedEvents() {
+					// handleHistoryEvent(item)
+				}
+			}
+		}
+	case *history.HistoryEvent:
+	// handleHistoryEvent(root)
+	case *serveradminservice.StreamWorkflowReplicationMessagesResponse:
+		switch oneof := root.GetAttributes().(type) {
+		case *serveradminservice.StreamWorkflowReplicationMessagesResponse_Messages:
+			x := oneof.Messages
+			for _, item := range x.GetReplicationTasks() {
+				switch oneof := item.GetAttributes().(type) {
+				case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+					x := oneof.SyncWorkflowStateTaskAttributes
+					y7528285353556085509 := x.GetWorkflowState()
+					for _, item := range y7528285353556085509.GetBufferedEvents() {
+						// handleHistoryEvent(item)
+					}
+				}
+			}
+		}
+	case *serverreplication.WorkflowReplicationMessages:
+		for _, item := range root.GetReplicationTasks() {
+			switch oneof := item.GetAttributes().(type) {
+			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+				x := oneof.SyncWorkflowStateTaskAttributes
+				y355514100674157027 := x.GetWorkflowState()
+				for _, item := range y355514100674157027.GetBufferedEvents() {
+					// handleHistoryEvent(item)
+				}
+			}
+		}
+	case *serverhistory.TransientWorkflowTaskInfo:
+		for _, item := range root.GetHistorySuffix() {
+			// handleHistoryEvent(item)
+		}
+	case *workflowservice.PollWorkflowTaskQueueResponse:
+		y1090680207884688198 := root.GetHistory()
+		for _, item := range y1090680207884688198.GetEvents() {
+			// handleHistoryEvent(item)
+		}
+	case *serveradminservice.SyncWorkflowStateResponse:
+		y7315107019350377568 := root.GetVersionedTransitionArtifact()
+		switch oneof := y7315107019350377568.GetStateAttributes().(type) {
+		case *serverreplication.VersionedTransitionArtifact_SyncWorkflowStateSnapshotAttributes:
+			x := oneof.SyncWorkflowStateSnapshotAttributes
+			y3487934466159434956 := x.GetState()
+			for _, item := range y3487934466159434956.GetBufferedEvents() {
+				// handleHistoryEvent(item)
+			}
+		}
+	case *history.History:
+		for _, item := range root.GetEvents() {
+			// handleHistoryEvent(item)
+		}
+	case *workflowservice.GetWorkflowExecutionHistoryResponse:
+		y2492113607546540155 := root.GetHistory()
+		for _, item := range y2492113607546540155.GetEvents() {
+			// handleHistoryEvent(item)
+		}
+	case *workflowservice.GetWorkflowExecutionHistoryReverseResponse:
+		y3611618091497758203 := root.GetHistory()
+		for _, item := range y3611618091497758203.GetEvents() {
+			// handleHistoryEvent(item)
+		}
+	case *serveradminservice.DescribeMutableStateResponse:
+		y1518707431069528176 := root.GetCacheMutableState()
+		for _, item := range y1518707431069528176.GetBufferedEvents() {
+			// handleHistoryEvent(item)
+		}
+	case *serveradminservice.GetDLQReplicationMessagesResponse:
+		for _, item := range root.GetReplicationTasks() {
+			switch oneof := item.GetAttributes().(type) {
+			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+				x := oneof.SyncWorkflowStateTaskAttributes
+				y1538928329839819533 := x.GetWorkflowState()
+				for _, item := range y1538928329839819533.GetBufferedEvents() {
+					// handleHistoryEvent(item)
+				}
+			}
+		}
+	case *serveradminservice.GetNamespaceReplicationMessagesResponse:
+		y288294312528887763 := root.GetMessages()
+		for _, item := range y288294312528887763.GetReplicationTasks() {
+			switch oneof := item.GetAttributes().(type) {
+			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+				x := oneof.SyncWorkflowStateTaskAttributes
+				y2069091311727612027 := x.GetWorkflowState()
+				for _, item := range y2069091311727612027.GetBufferedEvents() {
+					// handleHistoryEvent(item)
+				}
+			}
+		}
+	case *serverreplication.SyncVersionedTransitionTaskAttributes:
+		y560784623964650358 := root.GetVersionedTransitionArtifact()
+		switch oneof := y560784623964650358.GetStateAttributes().(type) {
+		case *serverreplication.VersionedTransitionArtifact_SyncWorkflowStateSnapshotAttributes:
+			x := oneof.SyncWorkflowStateSnapshotAttributes
+			y684027704816226837 := x.GetState()
+			for _, item := range y684027704816226837.GetBufferedEvents() {
+				// handleHistoryEvent(item)
+			}
+		}
+	case *serverpersistence.HSMCompletionCallbackArg:
+		y8402927344975222761 := root.GetLastEvent()
+	// handleHistoryEvent(y8402927344975222761)
+	case *workflowservice.StartWorkflowExecutionResponse:
+		y379093338183194990 := root.GetEagerWorkflowTask()
+		y1629558875081263834 := y379093338183194990.GetHistory()
+		for _, item := range y1629558875081263834.GetEvents() {
+			// handleHistoryEvent(item)
+		}
+	case *serverreplication.ReplicationMessages:
+		for _, item := range root.GetReplicationTasks() {
+			switch oneof := item.GetAttributes().(type) {
+			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
+				x := oneof.SyncWorkflowStateTaskAttributes
+				y7138532579051892341 := x.GetWorkflowState()
+				for _, item := range y7138532579051892341.GetBufferedEvents() {
+					// handleHistoryEvent(item)
+				}
+			}
+		}
+	case *serverreplication.VersionedTransitionArtifact:
+		switch oneof := root.GetStateAttributes().(type) {
+		case *serverreplication.VersionedTransitionArtifact_SyncWorkflowStateSnapshotAttributes:
+			x := oneof.SyncWorkflowStateSnapshotAttributes
+			y1881623946190672642 := x.GetState()
+			for _, item := range y1881623946190672642.GetBufferedEvents() {
+				// handleHistoryEvent(item)
+			}
+		}
+	case *serverreplication.SyncWorkflowStateSnapshotAttributes:
+		y7724737033308497506 := root.GetState()
+		for _, item := range y7724737033308497506.GetBufferedEvents() {
+			// handleHistoryEvent(item)
+		}
+	case *workflowservice.RespondWorkflowTaskCompletedResponse:
+		y2162520260486712887 := root.GetWorkflowTask()
+		y6892748496432354523 := y2162520260486712887.GetHistory()
+		for _, item := range y6892748496432354523.GetEvents() {
+			// handleHistoryEvent(item)
 		}
 	}
 }

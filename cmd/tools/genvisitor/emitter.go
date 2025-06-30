@@ -11,7 +11,8 @@ import (
 
 type (
 	Emitter struct {
-		Handlers []*Handler
+		handlers []*Handler
+		imports  map[string]struct{}
 	}
 
 	Handler struct {
@@ -23,29 +24,42 @@ type (
 )
 
 func NewEmitter() *Emitter {
-	return &Emitter{}
+	return &Emitter{
+		imports: make(map[string]struct{}),
+	}
 }
 
 func (e *Emitter) AddHandler(match string, invocation func(string) string) {
-	e.Handlers = append(e.Handlers, &Handler{
+	e.handlers = append(e.handlers, &Handler{
 		SearchFor:  match,
 		Invocation: invocation,
 	})
 }
 
 func (e *Emitter) Visit(mt protoreflect.MessageType) bool {
+	if mt.Descriptor().FullName() == "temporal.api.workflowservice.v1.ExecuteMultiOperationResponse.Response" {
+		// Ignore this nested type. We handle the parent type.
+		return true
+	}
 	Visit(mt.Descriptor(), e.visit)
 	return true
 }
 
 func (e *Emitter) visit(obj VisitType, path VisitPath) {
-	for _, handler := range e.Handlers {
+	for _, handler := range e.handlers {
 		if handler.SearchFor == obj.GoName() {
 			pathCopy := make(VisitPath, len(path))
 			copy(pathCopy, path) // todo: path is reused during the visitor / changes as it goes.
 			handler.matchedPaths = append(handler.matchedPaths, pathCopy)
-			fmt.Printf("// emit - %s path=%s\n", obj.Name(), pathCopy)
+			//fmt.Printf("// emit - %s path=%s\n", obj.Name(), pathCopy)
+			e.discoverImports(pathCopy)
 		}
+	}
+}
+
+func (e *Emitter) discoverImports(path VisitPath) {
+	for _, obj := range path {
+		e.imports[obj.GoImportPath()] = struct{}{}
 	}
 }
 
@@ -55,9 +69,8 @@ func (e *Emitter) Generate(out io.Writer) {
 	fmt.Fprintln(out, "func VisitMessage(vAny any) {")
 	fmt.Fprintln(out, "switch root := vAny.(type) {")
 
-	for _, handler := range e.Handlers {
+	for _, handler := range e.handlers {
 		for _, path := range handler.matchedPaths {
-			fmt.Fprintf(out, "// name=%v goname=%v\n", path[0].Name(), path[0].GoName())
 			fmt.Fprintf(out, "case *%s:\n", path[0].GoQualifiedName())
 			e.emit(out, "root", path[1:], handler)
 		}
@@ -67,18 +80,23 @@ func (e *Emitter) Generate(out io.Writer) {
 
 }
 
-func (*Emitter) genPreamble(out io.Writer) {
+func (e *Emitter) genPreamble(out io.Writer) {
 	// TODO: Some way to discover the necessary packages as we visit types.
 	fmt.Fprintln(out, `package main_test
 
-	import (
-		"go.temporal.io/api/workflowservice/v1"
-		"go.temporal.io/api/history/v1"
-		serverhistory "go.temporal.io/server/api/history/v1"
-		serveradminservice "go.temporal.io/server/api/adminservice/v1"
-		serverpersistence "go.temporal.io/server/api/persistence/v1"
-		serverreplication "go.temporal.io/server/api/replication/v1"
-	)`)
+	import (`)
+
+	for imp := range e.imports {
+		alias := ""
+		if strings.HasPrefix(imp, "go.temporal.io/server") {
+			alias = strings.ReplaceAll(imp, "go.temporal.io/server/api", "")
+			alias = strings.ReplaceAll(alias, "v1", "")
+			alias = strings.ReplaceAll(alias, "/", "")
+			alias = "server" + alias
+		}
+		fmt.Fprintf(out, "%s \"%s\"\n", alias, imp)
+	}
+	fmt.Fprintln(out, `)`)
 }
 
 func (e *Emitter) emit(out io.Writer, parentVar string, path VisitPath, handler *Handler) {
@@ -100,8 +118,8 @@ func (e *Emitter) emit(out io.Writer, parentVar string, path VisitPath, handler 
 			fmt.Println("}")
 		} else if oneof := desc.ContainingOneof(); oneof != nil {
 			fmt.Printf("switch oneof := %s.%s.(type) {\n", parentVar, part.GoGetter())
-			fmt.Printf("case *%s.%s:\n", part.GoPackageName(), getOneofWrapperType(path[0], path[1]))
-			fmt.Printf("x := oneof.%s\n", path[1].GoName())
+			fmt.Printf("case *%s.%s:\n", part.GoPackageName(), getOneofWrapperType(part))
+			fmt.Printf("x := oneof.%s\n", snakeToPascalCase(part.Name()))
 			e.emit(out, "x", path[1:], handler)
 			fmt.Println("}")
 		} else {
@@ -129,7 +147,7 @@ func (p VisitPath) String() string {
 //
 //		type ReplicationTask struct {
 //			Attributes isReplicationTask_Attributes `protobuf_oneof:"attributes"`
-//	     ...
+//	        ...
 //		}
 //
 // The interface is implemented by "wrapper" types which seemingly do not appear
@@ -142,10 +160,7 @@ func (p VisitPath) String() string {
 //
 // This returns the implementing type, e.g. "ReplicationTask_SyncVersionedTransitionTaskAttributes",
 // given the interface field (e.g. `Attributes`) and the wrapped field (e.g. `SyncVersionedTransitionTaskAttributes`)
-func getOneofWrapperType(oneof, typ VisitType) string {
-	fmt.Printf("// oneof: name=%v goname=%v parent.Name=%v\n", oneof.Name(), oneof.GoName(), oneof.Parent().Name())
-	fmt.Printf("// typ  : name=%v goname=%v parent.Name=%v\n", typ.Name(), typ.GoName(), typ.Parent().Name())
-
+func getOneofWrapperType(oneof VisitType) string {
 	// special cases - these are not entirely consistent
 	if strings.Contains(string(oneof.FullName()), "ExecuteMultiOperationResponse") {
 		return fmt.Sprintf("ExecuteMultiOperationResponse_Response_%s", snakeToPascalCase(oneof.Name()))

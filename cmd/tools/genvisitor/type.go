@@ -44,3 +44,11 @@ func (v VisitType) GoPackageName() string {
 	}
 	return result
 }
+
+func (v VisitType) GoImportPath() string {
+	imp := string(v.ParentFile().Package())
+	imp = strings.ReplaceAll(imp, ".", "/")
+	imp = strings.Replace(imp, "temporal/", "go.temporal.io/", 1)
+	return imp
+
+}
