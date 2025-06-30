@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"strings"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -11,9 +10,10 @@ import (
 
 type (
 	Emitter struct {
-		handlers []*Handler
-		imports  map[string]struct{}
-		root     *Tree
+		handlers    []*Handler
+		imports     map[string]struct{}
+		root        *Tree
+		inScopeVars map[string]struct{}
 	}
 
 	Tree struct {
@@ -30,8 +30,9 @@ type (
 
 func NewEmitter() *Emitter {
 	return &Emitter{
-		imports: make(map[string]struct{}),
-		root:    NewTree(),
+		imports:     make(map[string]struct{}),
+		root:        NewTree(),
+		inScopeVars: map[string]struct{}{},
 	}
 }
 
@@ -132,40 +133,33 @@ func (e *Emitter) emit(out io.Writer, parentVar string, node *Tree) {
 		switch desc := vt.Descriptor.(type) {
 		case protoreflect.FieldDescriptor:
 			if desc.IsMap() {
-				fmt.Printf("for _, val := range %s.%s {\n", parentVar, vt.GoGetter())
-				if child := node.Children[vt.GoName()]; child != nil {
-					e.emit(out, "val", child)
-				}
+				varName, freeVar := e.makeVar("val")
+				fmt.Printf("for _, %s := range %s.%s {\n", varName, parentVar, vt.GoGetter())
+				e.emit(out, varName, node.Children[vt.GoName()])
 				fmt.Println("}")
+				freeVar()
 			} else if desc.IsList() {
-				fmt.Printf("for _, item := range %s.%s {\n", parentVar, vt.GoGetter())
-				if child := node.Children[vt.GoName()]; child != nil {
-					e.emit(out, "item", child)
-				}
+				varName, freeVar := e.makeVar("item")
+				fmt.Printf("for _, %s := range %s.%s {\n", varName, parentVar, vt.GoGetter())
+				e.emit(out, varName, node.Children[vt.GoName()])
 				fmt.Println("}")
+				freeVar()
 			} else if oneof := desc.ContainingOneof(); oneof != nil {
 				fmt.Printf("switch oneof := %s.%s.(type) {\n", parentVar, vt.GoGetter())
 				fmt.Printf("case *%s.%s:\n", vt.GoPackageName(), getOneofWrapperType(vt))
-				fmt.Printf("x := oneof.%s\n", snakeToPascalCase(vt.Name()))
-
-				if child := node.Children[vt.GoName()]; child != nil {
-					e.emit(out, "x", child)
-				}
-
+				varName, freeVar := e.makeVar("x")
+				fmt.Printf("%s := oneof.%s\n", varName, snakeToPascalCase(vt.Name()))
+				e.emit(out, varName, node.Children[vt.GoName()])
 				fmt.Println("}")
+				freeVar()
 			} else {
-				n := rand.Int()
-				varName := fmt.Sprintf("y%d", n)
+				varName, freeVar := e.makeVar("y")
 				fmt.Printf("%s := %s.%s\n", varName, parentVar, vt.GoGetter())
-
-				if child := node.Children[vt.GoName()]; child != nil {
-					e.emit(out, varName, child)
-				}
+				e.emit(out, varName, node.Children[vt.GoName()])
+				freeVar()
 			}
 		default:
-			if child := node.Children[vt.GoName()]; child != nil {
-				e.emit(out, parentVar, child)
-			}
+			e.emit(out, parentVar, node.Children[vt.GoName()])
 		}
 	}
 
@@ -180,6 +174,21 @@ func (p VisitPath) String() string {
 		parts = append(parts, v.GoName())
 	}
 	return strings.Join(parts, "/")
+}
+
+func (e *Emitter) makeVar(name string) (string, func()) {
+	for i := 1; i < 50; i++ {
+		name := fmt.Sprintf("%s%d", name, i)
+		if _, ok := e.inScopeVars[name]; !ok {
+			e.inScopeVars[name] = struct{}{}
+			return name, func() { e.freeVar(name) }
+		}
+	}
+	panic("failed to generate unique variable name")
+}
+
+func (e *Emitter) freeVar(name string) {
+	delete(e.inScopeVars, name)
 }
 
 // Return the "wrapper" Golang interface for `oneof` fields.
