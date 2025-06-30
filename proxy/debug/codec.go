@@ -6,7 +6,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"go.temporal.io/api/common/v1"
 	"go.temporal.io/server/api/adminservice/v1"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
+	"go.uber.org/fx"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
@@ -18,14 +22,33 @@ const (
 	CodecName string = "s2s-proxy-debug-v2"
 )
 
-type CodecV2 struct {
-	delegate encoding.CodecV2
-}
+type (
+	CodecV2 struct {
+		delegate encoding.CodecV2
+		*Params
+	}
+
+	Params struct {
+		fx.In
+
+		Logger log.Logger
+	}
+)
 
 func init() {
 	encoding.RegisterCodecV2(&CodecV2{
-		encoding.GetCodecV2(proto.Name),
+		delegate: encoding.GetCodecV2(proto.Name),
+		Params: &Params{
+			// Default to noop logger to avoid nil pointer.
+			// This is replaced at startup with a configured logger.
+			Logger: log.NewNoopLogger(),
+		},
 	})
+}
+
+// GetCodec returns our codec instance.
+func GetCodec() *CodecV2 {
+	return encoding.GetCodecV2(CodecName).(*CodecV2)
 }
 
 // Marshal implements encoding.CodecV2.
@@ -46,11 +69,20 @@ func (c *CodecV2) Name() string {
 
 // Unmarshal implements encoding.CodecV2.
 func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
+	c.Logger.Info("Unmarshal", tag.NewStringTag("type", fmt.Sprintf("%v", v)))
 	err := c.delegate.Unmarshal(data, v)
 	if err != nil && strings.Contains(err.Error(), "invalid UTF-8") {
-		fmt.Printf("Unmarshal UTF-8 error: v=%T %s\n%v", v, err,
-			base64.StdEncoding.EncodeToString(data.Materialize()))
+		// TODO:
+		// - Handle all relevant unary requests (workflowservice, adminservice).
+		// - See if this is recursive (makes it easier - could just handle the specific types - string / blob)
+		// - If not, probably codegen to be efficient
+		//
+		// - Try to handle history event / datablob here
+		//
+		// - Add metrics
 		switch resp := v.(type) {
+		case *common.DataBlob:
+			// handle it
 		case *adminservice.StreamWorkflowReplicationMessagesResponse:
 			var resp122 adminservice122.StreamWorkflowReplicationMessagesResponse
 			err := resp122.Unmarshal(data.Materialize())
@@ -60,22 +92,34 @@ func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
 
 			changed, err := validateAndRepairReplicationTask(&resp122)
 			if err != nil {
-				fmt.Printf("failed to repair invalid utf8: %v\n", err)
+				c.Logger.Error("failed to repair invalid UTF-8",
+					tag.NewErrorTag("error", err),
+					tag.NewStringTag("type", fmt.Sprintf("%T", resp)),
+				)
 			} else if changed {
 				repaired, err := resp122.Marshal()
 				if err != nil {
-					fmt.Printf("failed to re-marshal repair invalid utf8: %v\n", err)
-					// return the original error?
+					c.Logger.Error("failed to marshal repaired UTF-8",
+						tag.NewErrorTag("error", err),
+						tag.NewStringTag("type", fmt.Sprintf("%T", resp)),
+					)
 				} else {
 					err := resp.Unmarshal(repaired)
 					if err != nil {
-						fmt.Printf("failed to re-unmarshal repair invalid utf8: %v\n", err)
-						// return the original error?
+						c.Logger.Error("failed to unmarshal repaired UTF-8",
+							tag.NewErrorTag("error", err),
+							tag.NewStringTag("type", fmt.Sprintf("%T", resp)),
+						)
 					} else {
 						return nil
 					}
 				}
 			}
+		default:
+			c.Logger.Error("Unhandled type with invalid UTF-8 error",
+				tag.NewStringTag("type", fmt.Sprintf("%T", resp)),
+				tag.NewStringTag("data", base64.StdEncoding.EncodeToString(data.Materialize())),
+			)
 		}
 	}
 	return err
