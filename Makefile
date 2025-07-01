@@ -55,7 +55,7 @@ bench:
 genvisitor:
 	go run ./cmd/tools/genvisitor/ > proxy/debug/repair_utf8_gen.go
 	sed -i '' 's/package main_test/package debug/' proxy/debug/repair_utf8_gen.go
-	go fmt proxy/debug/repair_utf8_gen.go
+	make fmt
 
 
 # Mocks

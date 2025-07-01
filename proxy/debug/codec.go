@@ -69,7 +69,6 @@ func (c *CodecV2) Name() string {
 
 // Unmarshal implements encoding.CodecV2.
 func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
-	c.Logger.Info("Unmarshal", tag.NewStringTag("type", fmt.Sprintf("%v", v)))
 	err := c.delegate.Unmarshal(data, v)
 	if err != nil && strings.Contains(err.Error(), "invalid UTF-8") {
 		c.Logger.Warn("invalid UTF-8 error encountered during unmarshal; attempting to repair")
@@ -102,7 +101,7 @@ func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
 			return err
 		}
 
-		changed := repairInvalidUTF8(msg122)
+		changed := repairInvalidUTF8(c.Logger, msg122)
 		if !changed {
 			c.Logger.Error("during UTF-8 repair, nothing was repaired",
 				tag.NewStringTag("type", fmt.Sprintf("%T", v)),
@@ -134,11 +133,11 @@ func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
 
 // In old versions of Temporal, it was possible that certain history events could
 // be written with invalid UTF-8.
-func repairUTF8InLastFailure(lastFailure *failure122.Failure) bool {
+func repairUTF8InLastFailure(logger log.Logger, lastFailure *failure122.Failure) bool {
 	cause := lastFailure.GetCause()
 	if !utf8.ValidString(cause.GetMessage()) {
 		cause.Message = strings.ToValidUTF8(cause.Message, string(utf8.RuneError))
-		fmt.Println("repaired invalid utf-8 in last failure message")
+		logger.Info("repaired invalid utf-8 in LastFailure field")
 		return true
 	}
 	return false

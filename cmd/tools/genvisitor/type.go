@@ -31,11 +31,7 @@ func (v VisitType) GoQualifiedName() string {
 func (v VisitType) GoPackageName() string {
 	pkg := v.ParentFile().Package()
 	isServerPkg := strings.Contains(string(pkg), "temporal.server.api")
-
-	//fmt.Printf("// v = %v\n", v)
-	//fmt.Printf("// pkg = %v\n", pkg)
 	if pkg.Name() == "v1" {
-		//fmt.Printf("// pkg = %v\n", pkg)
 		pkg = pkg.Parent()
 	}
 	result := string(pkg.Name())

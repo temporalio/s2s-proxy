@@ -33,7 +33,6 @@ func visit(
 	// }
 	seenKey := string(obj.Parent().Name() + "." + obj.Name())
 	if _, ok := seen[seenKey]; ok {
-		// fmt.Printf("// skipping already seen key %s\n", seenKey)
 		return
 	}
 	seen[seenKey] = struct{}{}

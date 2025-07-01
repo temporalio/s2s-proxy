@@ -1,6 +1,8 @@
 package debug
 
 import (
+	"go.temporal.io/server/common/log"
+
 	"github.com/temporalio/s2s-proxy/common/proto/1_22/api/history/v1"
 	"github.com/temporalio/s2s-proxy/common/proto/1_22/api/workflow/v1"
 	"github.com/temporalio/s2s-proxy/common/proto/1_22/api/workflowservice/v1"
@@ -10,18 +12,18 @@ import (
 	serverreplication "github.com/temporalio/s2s-proxy/common/proto/1_22/server/api/replication/v1"
 )
 
-func repairInvalidUTF8(vAny any) (ret bool) {
+func repairInvalidUTF8(logger log.Logger, vAny any) (ret bool) {
 	switch root := vAny.(type) {
 	case *history.ActivityTaskStartedEventAttributes:
 		y1 := root.GetLastFailure()
-		ret = ret || repairUTF8InLastFailure(y1)
+		ret = ret || repairUTF8InLastFailure(logger, y1)
 	case *history.History:
 		for _, item1 := range root.GetEvents() {
 			switch oneof := item1.GetAttributes().(type) {
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x1 := oneof.ActivityTaskStartedEventAttributes
 				y1 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y1)
+				ret = ret || repairUTF8InLastFailure(logger, y1)
 			}
 		}
 	case *history.HistoryEvent:
@@ -29,15 +31,15 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 		case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 			x1 := oneof.ActivityTaskStartedEventAttributes
 			y1 := x1.GetLastFailure()
-			ret = ret || repairUTF8InLastFailure(y1)
+			ret = ret || repairUTF8InLastFailure(logger, y1)
 		}
 	case *workflow.PendingActivityInfo:
 		y1 := root.GetLastFailure()
-		ret = ret || repairUTF8InLastFailure(y1)
+		ret = ret || repairUTF8InLastFailure(logger, y1)
 	case *workflowservice.DescribeWorkflowExecutionResponse:
 		for _, item1 := range root.GetPendingActivities() {
 			y1 := item1.GetLastFailure()
-			ret = ret || repairUTF8InLastFailure(y1)
+			ret = ret || repairUTF8InLastFailure(logger, y1)
 		}
 	case *workflowservice.GetWorkflowExecutionHistoryResponse:
 		y1 := root.GetHistory()
@@ -46,7 +48,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x1 := oneof.ActivityTaskStartedEventAttributes
 				y2 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y2)
+				ret = ret || repairUTF8InLastFailure(logger, y2)
 			}
 		}
 	case *workflowservice.GetWorkflowExecutionHistoryReverseResponse:
@@ -56,7 +58,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x1 := oneof.ActivityTaskStartedEventAttributes
 				y2 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y2)
+				ret = ret || repairUTF8InLastFailure(logger, y2)
 			}
 		}
 	case *workflowservice.PollWorkflowTaskQueueResponse:
@@ -66,7 +68,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x1 := oneof.ActivityTaskStartedEventAttributes
 				y2 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y2)
+				ret = ret || repairUTF8InLastFailure(logger, y2)
 			}
 		}
 	case *workflowservice.RespondWorkflowTaskCompletedResponse:
@@ -77,7 +79,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x1 := oneof.ActivityTaskStartedEventAttributes
 				y3 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y3)
+				ret = ret || repairUTF8InLastFailure(logger, y3)
 			}
 		}
 	case *workflowservice.StartWorkflowExecutionResponse:
@@ -88,7 +90,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x1 := oneof.ActivityTaskStartedEventAttributes
 				y3 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y3)
+				ret = ret || repairUTF8InLastFailure(logger, y3)
 			}
 		}
 	case *serveradminservice.DescribeMutableStateResponse:
@@ -98,7 +100,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x1 := oneof.ActivityTaskStartedEventAttributes
 				y2 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y2)
+				ret = ret || repairUTF8InLastFailure(logger, y2)
 			}
 		}
 	case *serveradminservice.GetDLQMessagesResponse:
@@ -107,7 +109,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *serverreplication.ReplicationTask_SyncActivityTaskAttributes:
 				x1 := oneof.SyncActivityTaskAttributes
 				y1 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y1)
+				ret = ret || repairUTF8InLastFailure(logger, y1)
 			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 				x1 := oneof.SyncWorkflowStateTaskAttributes
 				y1 := x1.GetWorkflowState()
@@ -116,7 +118,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 						x2 := oneof.ActivityTaskStartedEventAttributes
 						y2 := x2.GetLastFailure()
-						ret = ret || repairUTF8InLastFailure(y2)
+						ret = ret || repairUTF8InLastFailure(logger, y2)
 					}
 				}
 			}
@@ -127,7 +129,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *serverreplication.ReplicationTask_SyncActivityTaskAttributes:
 				x1 := oneof.SyncActivityTaskAttributes
 				y1 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y1)
+				ret = ret || repairUTF8InLastFailure(logger, y1)
 			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 				x1 := oneof.SyncWorkflowStateTaskAttributes
 				y1 := x1.GetWorkflowState()
@@ -136,7 +138,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 						x2 := oneof.ActivityTaskStartedEventAttributes
 						y2 := x2.GetLastFailure()
-						ret = ret || repairUTF8InLastFailure(y2)
+						ret = ret || repairUTF8InLastFailure(logger, y2)
 					}
 				}
 			}
@@ -148,7 +150,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *serverreplication.ReplicationTask_SyncActivityTaskAttributes:
 				x1 := oneof.SyncActivityTaskAttributes
 				y2 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y2)
+				ret = ret || repairUTF8InLastFailure(logger, y2)
 			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 				x1 := oneof.SyncWorkflowStateTaskAttributes
 				y2 := x1.GetWorkflowState()
@@ -157,7 +159,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 						x2 := oneof.ActivityTaskStartedEventAttributes
 						y3 := x2.GetLastFailure()
-						ret = ret || repairUTF8InLastFailure(y3)
+						ret = ret || repairUTF8InLastFailure(logger, y3)
 					}
 				}
 			}
@@ -169,7 +171,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 				case *serverreplication.ReplicationTask_SyncActivityTaskAttributes:
 					x1 := oneof.SyncActivityTaskAttributes
 					y1 := x1.GetLastFailure()
-					ret = ret || repairUTF8InLastFailure(y1)
+					ret = ret || repairUTF8InLastFailure(logger, y1)
 				case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 					x1 := oneof.SyncWorkflowStateTaskAttributes
 					y1 := x1.GetWorkflowState()
@@ -178,7 +180,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 						case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 							x2 := oneof.ActivityTaskStartedEventAttributes
 							y2 := x2.GetLastFailure()
-							ret = ret || repairUTF8InLastFailure(y2)
+							ret = ret || repairUTF8InLastFailure(logger, y2)
 						}
 					}
 				}
@@ -193,7 +195,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 				case *serverreplication.ReplicationTask_SyncActivityTaskAttributes:
 					x2 := oneof.SyncActivityTaskAttributes
 					y1 := x2.GetLastFailure()
-					ret = ret || repairUTF8InLastFailure(y1)
+					ret = ret || repairUTF8InLastFailure(logger, y1)
 				case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 					x2 := oneof.SyncWorkflowStateTaskAttributes
 					y1 := x2.GetWorkflowState()
@@ -202,7 +204,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 						case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 							x3 := oneof.ActivityTaskStartedEventAttributes
 							y2 := x3.GetLastFailure()
-							ret = ret || repairUTF8InLastFailure(y2)
+							ret = ret || repairUTF8InLastFailure(logger, y2)
 						}
 					}
 				}
@@ -214,7 +216,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x1 := oneof.ActivityTaskStartedEventAttributes
 				y1 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y1)
+				ret = ret || repairUTF8InLastFailure(logger, y1)
 			}
 		}
 	case *serverpersistence.WorkflowMutableState:
@@ -223,7 +225,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x1 := oneof.ActivityTaskStartedEventAttributes
 				y1 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y1)
+				ret = ret || repairUTF8InLastFailure(logger, y1)
 			}
 		}
 	case *serverreplication.ReplicationMessages:
@@ -232,7 +234,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *serverreplication.ReplicationTask_SyncActivityTaskAttributes:
 				x1 := oneof.SyncActivityTaskAttributes
 				y1 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y1)
+				ret = ret || repairUTF8InLastFailure(logger, y1)
 			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 				x1 := oneof.SyncWorkflowStateTaskAttributes
 				y1 := x1.GetWorkflowState()
@@ -241,7 +243,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 						x2 := oneof.ActivityTaskStartedEventAttributes
 						y2 := x2.GetLastFailure()
-						ret = ret || repairUTF8InLastFailure(y2)
+						ret = ret || repairUTF8InLastFailure(logger, y2)
 					}
 				}
 			}
@@ -251,7 +253,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 		case *serverreplication.ReplicationTask_SyncActivityTaskAttributes:
 			x1 := oneof.SyncActivityTaskAttributes
 			y1 := x1.GetLastFailure()
-			ret = ret || repairUTF8InLastFailure(y1)
+			ret = ret || repairUTF8InLastFailure(logger, y1)
 		case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 			x1 := oneof.SyncWorkflowStateTaskAttributes
 			y1 := x1.GetWorkflowState()
@@ -260,13 +262,13 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 				case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 					x2 := oneof.ActivityTaskStartedEventAttributes
 					y2 := x2.GetLastFailure()
-					ret = ret || repairUTF8InLastFailure(y2)
+					ret = ret || repairUTF8InLastFailure(logger, y2)
 				}
 			}
 		}
 	case *serverreplication.SyncActivityTaskAttributes:
 		y1 := root.GetLastFailure()
-		ret = ret || repairUTF8InLastFailure(y1)
+		ret = ret || repairUTF8InLastFailure(logger, y1)
 	case *serverreplication.SyncWorkflowStateTaskAttributes:
 		y1 := root.GetWorkflowState()
 		for _, item1 := range y1.GetBufferedEvents() {
@@ -274,7 +276,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 				x1 := oneof.ActivityTaskStartedEventAttributes
 				y2 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y2)
+				ret = ret || repairUTF8InLastFailure(logger, y2)
 			}
 		}
 	case *serverreplication.WorkflowReplicationMessages:
@@ -283,7 +285,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 			case *serverreplication.ReplicationTask_SyncActivityTaskAttributes:
 				x1 := oneof.SyncActivityTaskAttributes
 				y1 := x1.GetLastFailure()
-				ret = ret || repairUTF8InLastFailure(y1)
+				ret = ret || repairUTF8InLastFailure(logger, y1)
 			case *serverreplication.ReplicationTask_SyncWorkflowStateTaskAttributes:
 				x1 := oneof.SyncWorkflowStateTaskAttributes
 				y1 := x1.GetWorkflowState()
@@ -292,7 +294,7 @@ func repairInvalidUTF8(vAny any) (ret bool) {
 					case *history.HistoryEvent_ActivityTaskStartedEventAttributes:
 						x2 := oneof.ActivityTaskStartedEventAttributes
 						y2 := x2.GetLastFailure()
-						ret = ret || repairUTF8InLastFailure(y2)
+						ret = ret || repairUTF8InLastFailure(logger, y2)
 					}
 				}
 			}

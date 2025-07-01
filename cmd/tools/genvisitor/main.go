@@ -13,8 +13,9 @@ import (
 
 func main() {
 	emitter := NewEmitter(Gogo122Version)
+	emitter.AddImport("go.temporal.io/server/common/log")
 	emitter.SetFunctionSignature(
-		`func repairInvalidUTF8(vAny any) (ret bool)`,
+		`func repairInvalidUTF8(logger log.Logger, vAny any) (ret bool)`,
 	)
 	emitter.SetTrailer("return")
 	emitter.AddHandler(
@@ -22,7 +23,7 @@ func main() {
 			return s == "LastFailure"
 		},
 		func(varName string) string {
-			return fmt.Sprintf(`ret = ret || repairUTF8InLastFailure(%s)`, varName)
+			return fmt.Sprintf(`ret = ret || repairUTF8InLastFailure(logger, %s)`, varName)
 		},
 	)
 	protoregistry.GlobalTypes.RangeMessages(func(mt protoreflect.MessageType) bool {

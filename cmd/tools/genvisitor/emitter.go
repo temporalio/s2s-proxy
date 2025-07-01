@@ -20,6 +20,7 @@ type (
 		funcSignature string
 		handlers      []*Handler
 		imports       map[string]struct{}
+		extraImports  map[string]struct{}
 		root          *Tree
 		inScopeVars   map[string]struct{}
 		trailer       string
@@ -41,10 +42,11 @@ type (
 
 func NewEmitter(mode Mode) *Emitter {
 	return &Emitter{
-		mode:        mode,
-		imports:     make(map[string]struct{}),
-		root:        NewTree(),
-		inScopeVars: map[string]struct{}{},
+		mode:         mode,
+		imports:      make(map[string]struct{}),
+		extraImports: make(map[string]struct{}),
+		root:         NewTree(),
+		inScopeVars:  map[string]struct{}{},
 	}
 }
 
@@ -61,6 +63,10 @@ func (e *Emitter) AddHandler(include func(string) bool, invocation func(string) 
 		Include:    include,
 		Invocation: invocation,
 	})
+}
+
+func (e *Emitter) AddImport(s string) {
+	e.extraImports[s] = struct{}{}
 }
 
 func (e *Emitter) Visit(mt protoreflect.MessageType) {
@@ -161,6 +167,12 @@ func (e *Emitter) genPreamble(out io.Writer) {
 		}
 		writef(out, "%s \"%s\"\n", alias, imp)
 	}
+
+	for imp := range e.extraImports {
+		writef(out, "\"%s\"\n", imp)
+
+	}
+
 	writeln(out, `)`)
 }
 
@@ -177,17 +189,17 @@ func (e *Emitter) emit(out io.Writer, parentVar string, node *Tree) {
 				defer freeVar()
 				writef(out, "for _, %s := range %s.%s {\n", varName, parentVar, vt.GoGetter())
 				e.emit(out, varName, node.Children[vt.GoName()])
-				fmt.Println("}")
+				writeln(out, "}")
 			} else if desc.IsList() {
 				varName, freeVar := e.makeVar("item")
 				defer freeVar()
 				writef(out, "for _, %s := range %s.%s {\n", varName, parentVar, vt.GoGetter())
 				e.emit(out, varName, node.Children[vt.GoName()])
-				fmt.Println("}")
+				writeln(out, "}")
 			} else if oneof := desc.ContainingOneof(); oneof != nil {
 				writef(out, "switch oneof := %s.%s.(type) {\n", parentVar, vt.GoGetter())
 				e.emitOneOfCases(out, "oneof", vt, node.Children[vt.GoName()])
-				fmt.Println("}")
+				writeln(out, "}")
 			} else {
 				varName, freeVar := e.makeVar("y")
 				defer freeVar()
