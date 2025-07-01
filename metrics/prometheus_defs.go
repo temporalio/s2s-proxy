@@ -34,9 +34,9 @@ var (
 		muxSessionLabels...)
 	MuxObserverReportCount = DefaultCounterVec("mux_observer_report_count", "Number of observer executions",
 		muxSessionLabels...)
-	MuxConnectionClosed = DefaultCounterVec("mux_connection_closed", "Number of connections closed by the server",
+	MuxConnectionClosed = DefaultCounterVec("mux_connection_closed_count", "Number of connections closed by the server",
 		muxSessionLabels...)
-	MuxConnectionErrors = DefaultCounterVec("mux_connection_errors", "Number of connection errors",
+	MuxConnectionErrors = DefaultCounterVec("mux_connection_error_count", "Number of connection errors",
 		"addr", "mode", "config_name")
 )
 
