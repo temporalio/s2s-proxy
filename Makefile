@@ -51,6 +51,13 @@ lint:
 bench:
 	@go test -run '^$$' -benchmem -bench=. ./... $(BENCH_ARG)
 
+.PHONY: genvisitor
+genvisitor:
+	go run ./cmd/tools/genvisitor/ > proxy/debug/repair_utf8_gen.go
+	sed -i '' 's/package main_test/package debug/' proxy/debug/repair_utf8_gen.go
+	go fmt proxy/debug/repair_utf8_gen.go
+
+
 # Mocks
 clean-mocks:
 	@find . -name '*_mock.go' -delete

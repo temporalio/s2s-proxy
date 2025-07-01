@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
 
+	failure122 "github.com/temporalio/s2s-proxy/common/proto/1_22/api/failure/v1"
 	adminservice122 "github.com/temporalio/s2s-proxy/common/proto/1_22/server/api/adminservice/v1"
 )
 
@@ -58,10 +59,7 @@ func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
 				return err
 			}
 
-			changed, err := validateAndRepairReplicationTask(&resp122)
-			if err != nil {
-				fmt.Printf("failed to repair invalid utf8: %v\n", err)
-			} else if changed {
+			if repairInvalidUTF8(&resp122) {
 				repaired, err := resp122.Marshal()
 				if err != nil {
 					fmt.Printf("failed to re-marshal repair invalid utf8: %v\n", err)
@@ -83,24 +81,14 @@ func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
 
 // In old versions of Temporal, it was possible that certain history events could
 // be written with invalid UTF-8.
-func validateAndRepairReplicationTask(resp *adminservice122.StreamWorkflowReplicationMessagesResponse) (bool, error) {
-	var changed bool
-	for _, task := range resp.GetMessages().GetReplicationTasks() {
-		if task == nil || task.Attributes == nil {
-			continue
-		}
-		cause := task.GetSyncActivityTaskAttributes().
-			GetLastFailure().
-			GetCause()
-		if !utf8.ValidString(cause.GetMessage()) {
-			changed = true
-			cause.Message = strings.ToValidUTF8(cause.Message, string(utf8.RuneError))
-
-			// TODO: Pass logger through to here
-			fmt.Println("repaired invalid utf-8 in history event in SyncActivityTaskAttributes")
-		}
+func repairUTF8InLastFailure(lastFailure *failure122.Failure) bool {
+	cause := lastFailure.GetCause()
+	if !utf8.ValidString(cause.GetMessage()) {
+		cause.Message = strings.ToValidUTF8(cause.Message, string(utf8.RuneError))
+		fmt.Println("repaired invalid utf-8 in history event in SyncActivityTaskAttributes")
+		return true
 	}
-	return changed, nil
+	return false
 }
 
 var _ encoding.CodecV2 = (*CodecV2)(nil)

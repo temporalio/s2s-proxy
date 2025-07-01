@@ -26,6 +26,7 @@ func visit(
 	// Key by `Type.Field` so that we visit every field once.
 	//
 	// Does this handle field names correctly? (Idk)
+	//
 	seenKey := string(obj.Parent().Name() + "." + obj.Name())
 	if _, ok := seen[seenKey]; ok {
 		// fmt.Printf("// skipping already seen key %s\n", seenKey)
@@ -62,9 +63,9 @@ func visit(
 		} else if field.Kind() == protoreflect.MessageKind {
 			msg := field.Message()
 			visit(seen, path, msg, fn)
-		} else {
 		}
 	}
+
 }
 
 func camelToPascalCase[T ~string](s T) string {

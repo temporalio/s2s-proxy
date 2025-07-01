@@ -31,20 +31,27 @@ fi
 )
 
 for pkg in \
+    batch \
+    command \
     common \
     enums \
     errordetails \
     failure \
+    filter \
     history \
     internal/temporaljsonpb \
     namespace \
+    protocol \
     replication \
+    query \
+    schedule \
     sdk \
     serviceerror \
     taskqueue \
     update \
     version \
     workflow \
+    workflowservice \
 ; do
     SRC="$API_DIR/${pkg}"
     DEST="${TARGET_DIR}/api/${pkg}"
@@ -54,6 +61,7 @@ for pkg in \
     # Fix import paths
     find "$DEST" -type f | \
         xargs -n 1 sed -i '' "s;go.temporal.io/api;github.com/temporalio/s2s-proxy/${TARGET_PKG}/api;g"
+
 done
 
 for pkg in \
@@ -98,16 +106,18 @@ for pkg in \
     find "$DEST" -type f | \
         xargs -n 1 sed -i '' "s;//.*TEMPORAL_DEBUG;;g"
 
-    # Unnecessary files
-    rm -f "${TARGET_DIR}/server/service/history/tasks/predicates.go"
-    rm -f "${TARGET_DIR}/server/common/quotas/delayed_request_rate_limiter.go"
-    rm -f "${TARGET_DIR}/server/common/quotas/delayed_request_rate_limiter_test.go"
-    rm -f "${TARGET_DIR}/server/common/tasks/fifo_scheduler.go"
-    rm -f "${TARGET_DIR}/server/common/tasks/interleaved_weighted_round_robin.go"
-    rm -f "${TARGET_DIR}/server/common/tasks/sequential_scheduler.go"
-
     find "$TARGET_DIR" -type f -name '*test.go' -delete
 done
+
+# Unnecessary files
+rm -f "${TARGET_DIR}/api/workflowservice/v1/service.pb.gw.go"
+
+rm -f "${TARGET_DIR}/server/service/history/tasks/predicates.go"
+rm -f "${TARGET_DIR}/server/common/quotas/delayed_request_rate_limiter.go"
+rm -f "${TARGET_DIR}/server/common/quotas/delayed_request_rate_limiter_test.go"
+rm -f "${TARGET_DIR}/server/common/tasks/fifo_scheduler.go"
+rm -f "${TARGET_DIR}/server/common/tasks/interleaved_weighted_round_robin.go"
+rm -f "${TARGET_DIR}/server/common/tasks/sequential_scheduler.go"
 
 go mod tidy
 make fmt

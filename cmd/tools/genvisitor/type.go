@@ -17,7 +17,7 @@ func (v VisitType) GoName() string {
 	if v.GoFieldName != "" {
 		return v.GoFieldName
 	}
-	return string(v.Descriptor.Name())
+	return string(v.Name())
 }
 
 func (v VisitType) GoGetter() string {

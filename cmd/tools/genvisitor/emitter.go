@@ -9,12 +9,21 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+const (
+	CurrentVersion Mode = iota
+	Gogo122Version
+)
+
 type (
 	Emitter struct {
-		handlers    []*Handler
-		imports     map[string]struct{}
-		root        *Tree
-		inScopeVars map[string]struct{}
+		mode          Mode
+		funcSignature string
+		handlers      []*Handler
+		imports       map[string]struct{}
+		root          *Tree
+		inScopeVars   map[string]struct{}
+		header        string
+		trailer       string
 	}
 
 	Tree struct {
@@ -24,38 +33,52 @@ type (
 	}
 
 	Handler struct {
-		SearchFor  string
+		Include    func(string) bool
 		Invocation func(string) string
 	}
+
+	Mode int
 )
 
-func NewEmitter() *Emitter {
+func NewEmitter(mode Mode) *Emitter {
 	return &Emitter{
+		mode:        mode,
 		imports:     make(map[string]struct{}),
 		root:        NewTree(),
 		inScopeVars: map[string]struct{}{},
 	}
 }
 
-func (e *Emitter) AddHandler(match string, invocation func(string) string) {
+func (e *Emitter) SetFunctionSignature(sig string) {
+	e.funcSignature = sig
+}
+
+func (e *Emitter) SetTrailer(trailer string) {
+	e.trailer = trailer
+}
+
+func (e *Emitter) AddHandler(include func(string) bool, invocation func(string) string) {
 	e.handlers = append(e.handlers, &Handler{
-		SearchFor:  match,
+		Include:    include,
 		Invocation: invocation,
 	})
 }
 
-func (e *Emitter) Visit(mt protoreflect.MessageType) bool {
+func (e *Emitter) Visit(mt protoreflect.MessageType) {
+	if e.mode == Gogo122Version &&
+		shouldIgnoreTypeIfDoesntExistIn122(string(mt.Descriptor().FullName())) {
+		return
+	}
 	if mt.Descriptor().FullName() == "temporal.api.workflowservice.v1.ExecuteMultiOperationResponse.Response" {
 		// Ignore this nested type. We handle the parent type.
-		return true
+		return
 	}
 	Visit(mt.Descriptor(), e.visit)
-	return true
 }
 
 func (e *Emitter) visit(obj VisitType, path VisitPath) {
 	for _, handler := range e.handlers {
-		if handler.SearchFor == obj.GoName() {
+		if handler.Include(obj.GoName()) {
 			pathCopy := make(VisitPath, len(path))
 			copy(pathCopy, path) // todo: path is reused during the visitor / changes as it goes.
 			e.insert(pathCopy, handler)
@@ -86,35 +109,60 @@ func (e *Emitter) discoverImports(path VisitPath) {
 func (e *Emitter) Generate(out io.Writer) {
 	e.genPreamble(out)
 
-	fmt.Fprintln(out, "func VisitMessage(vAny any) {")
-	fmt.Fprintln(out, "switch root := vAny.(type) {")
+	if e.funcSignature != "" {
+		writeln(out, e.funcSignature+" {")
+	} else {
+		writeln(out, "func VisitMessage(vAny any) {")
+	}
+	writeln(out, "switch root := vAny.(type) {")
 	for _, typ := range e.root.SortedTypes() {
-		fmt.Printf("case *%s:", typ.GoQualifiedName())
+		writef(out, "case *%s:\n", typ.GoQualifiedName())
 		if child := e.root.Children[typ.GoName()]; child != nil {
 			e.emit(out, "root", child)
 		}
 	}
-	fmt.Fprintln(out, "}")
-	fmt.Fprintln(out, "}")
+	writeln(out, "}")
+
+	writeln(out, e.trailer)
+	writeln(out, "}")
 
 }
 
+func writeln(out io.Writer, args ...any) {
+	_, err := fmt.Fprintln(out, args...)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func writef(out io.Writer, msg string, args ...any) {
+	_, err := fmt.Fprintf(out, msg, args...)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func (e *Emitter) genPreamble(out io.Writer) {
-	fmt.Fprintln(out, `package main_test
+	writeln(out, `package main_test
 
 	import (`)
 
 	for imp := range e.imports {
 		alias := ""
+		// Alias all server imports as "server<package>"
+		// to avoid conflicts with api packages.
 		if strings.HasPrefix(imp, "go.temporal.io/server") {
 			alias = strings.ReplaceAll(imp, "go.temporal.io/server/api", "")
 			alias = strings.ReplaceAll(alias, "v1", "")
 			alias = strings.ReplaceAll(alias, "/", "")
 			alias = "server" + alias
 		}
-		fmt.Fprintf(out, "%s \"%s\"\n", alias, imp)
+		if e.mode == Gogo122Version {
+			imp = replaceWith122Import(imp)
+		}
+		writef(out, "%s \"%s\"\n", alias, imp)
 	}
-	fmt.Fprintln(out, `)`)
+	writeln(out, `)`)
 }
 
 func (e *Emitter) emit(out io.Writer, parentVar string, node *Tree) {
@@ -127,29 +175,25 @@ func (e *Emitter) emit(out io.Writer, parentVar string, node *Tree) {
 		case protoreflect.FieldDescriptor:
 			if desc.IsMap() {
 				varName, freeVar := e.makeVar("val")
-				fmt.Printf("for _, %s := range %s.%s {\n", varName, parentVar, vt.GoGetter())
+				defer freeVar()
+				writef(out, "for _, %s := range %s.%s {\n", varName, parentVar, vt.GoGetter())
 				e.emit(out, varName, node.Children[vt.GoName()])
 				fmt.Println("}")
-				freeVar()
 			} else if desc.IsList() {
 				varName, freeVar := e.makeVar("item")
-				fmt.Printf("for _, %s := range %s.%s {\n", varName, parentVar, vt.GoGetter())
+				defer freeVar()
+				writef(out, "for _, %s := range %s.%s {\n", varName, parentVar, vt.GoGetter())
 				e.emit(out, varName, node.Children[vt.GoName()])
 				fmt.Println("}")
-				freeVar()
 			} else if oneof := desc.ContainingOneof(); oneof != nil {
-				fmt.Printf("switch oneof := %s.%s.(type) {\n", parentVar, vt.GoGetter())
-				fmt.Printf("case *%s.%s:\n", vt.GoPackageName(), getOneofWrapperType(vt))
-				varName, freeVar := e.makeVar("x")
-				fmt.Printf("%s := oneof.%s\n", varName, snakeToPascalCase(vt.Name()))
-				e.emit(out, varName, node.Children[vt.GoName()])
+				writef(out, "switch oneof := %s.%s.(type) {\n", parentVar, vt.GoGetter())
+				e.emitOneOfCases(out, "oneof", vt, node.Children[vt.GoName()])
 				fmt.Println("}")
-				freeVar()
 			} else {
 				varName, freeVar := e.makeVar("y")
-				fmt.Printf("%s := %s.%s\n", varName, parentVar, vt.GoGetter())
+				defer freeVar()
+				writef(out, "%s := %s.%s\n", varName, parentVar, vt.GoGetter())
 				e.emit(out, varName, node.Children[vt.GoName()])
-				freeVar()
 			}
 		default:
 			e.emit(out, parentVar, node.Children[vt.GoName()])
@@ -157,8 +201,28 @@ func (e *Emitter) emit(out io.Writer, parentVar string, node *Tree) {
 	}
 
 	for _, handler := range node.Items {
-		fmt.Fprintln(out, handler.Invocation(parentVar))
+		writeln(out, handler.Invocation(parentVar))
 	}
+}
+
+func (e *Emitter) emitOneOfCases(out io.Writer, parentVar string, oneof VisitType, node *Tree) {
+	if node == nil {
+		return
+	}
+
+	for _, vt := range node.SortedTypes() {
+		writef(out, "case *%s.%s:\n", oneof.GoPackageName(), getOneofWrapperType(oneof, vt))
+		varName, freeVar := e.makeVar("x")
+		name := vt.GoName()
+		if name == "WorkflowReplicationMessages" {
+			name = "Messages" // workaround
+		}
+
+		writef(out, "%s := oneof.%s\n", varName, name)
+		e.emit(out, varName, node.Children[vt.GoName()])
+		freeVar()
+	}
+
 }
 
 func (p VisitPath) String() string {
@@ -203,7 +267,7 @@ func (e *Emitter) freeVar(name string) {
 //
 // This returns the implementing type, e.g. "ReplicationTask_SyncVersionedTransitionTaskAttributes",
 // given the interface field (e.g. `Attributes`) and the wrapped field (e.g. `SyncVersionedTransitionTaskAttributes`)
-func getOneofWrapperType(oneof VisitType) string {
+func getOneofWrapperType(oneof, typ VisitType) string {
 	// special cases - these are not entirely consistent
 	if strings.Contains(string(oneof.FullName()), "ExecuteMultiOperationResponse") {
 		return fmt.Sprintf("ExecuteMultiOperationResponse_Response_%s", snakeToPascalCase(oneof.Name()))
@@ -213,7 +277,7 @@ func getOneofWrapperType(oneof VisitType) string {
 	}
 
 	//return string(oneof.Parent().Name()) + "_" + typ.GoName()
-	return string(oneof.Parent().Name()) + "_" + snakeToPascalCase(oneof.Name())
+	return string(oneof.Parent().Name()) + "_" + snakeToPascalCase(typ.Name())
 }
 
 func NewTree() *Tree {
