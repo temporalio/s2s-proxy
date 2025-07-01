@@ -128,7 +128,8 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 			_ = listener.Close()
 			m.wg.Done()
 		}()
-
+		muxConnLabelValues := []string{setting.ListenAddress, string(m.config.Mode), m.config.Name}
+		metrics.MuxConnectionErrors.WithLabelValues(muxConnLabelValues...) // initialize the metric, so that we get a positive 0
 		for {
 			select {
 			case <-m.shutdownCh:
@@ -141,7 +142,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 					if m.isShuttingDown() {
 						return
 					}
-
+					metrics.MuxConnectionErrors.WithLabelValues(muxConnLabelValues...).Inc()
 					m.logger.Fatal("listener.Accept failed", tag.Error(err))
 				}
 
@@ -188,6 +189,9 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 
 	m.wg.Add(1)
 	go func() {
+		muxConnLabelValues := []string{setting.ServerAddress, string(m.config.Mode), m.config.Name}
+		// init the metric so that we can see 0 when there are no errors
+		metrics.MuxConnectionErrors.WithLabelValues(muxConnLabelValues...)
 		defer m.wg.Done()
 	connect:
 		for {
@@ -206,6 +210,7 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 
 				if err := backoff.ThrottleRetry(op, retryPolicy, func(err error) bool {
 					m.logger.Error("mux client failed to dial", tag.Error(err))
+					metrics.MuxConnectionErrors.WithLabelValues(muxConnLabelValues...).Inc()
 					return !m.isShuttingDown()
 				}); err != nil {
 					m.logger.Error("mux client failed to dial with retry", tag.Error(err))
@@ -222,6 +227,7 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 				session, err := yamux.Client(conn, nil)
 				go observeYamuxSession(session, m.config, m.logger)
 				if err != nil {
+					metrics.MuxConnectionErrors.WithLabelValues(muxConnLabelValues...).Inc()
 					m.logger.Fatal("yamux.Client failed", tag.Error(err))
 				}
 
@@ -241,16 +247,21 @@ func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfi
 		// If we got a null session, we can't even generate tags to report
 		return
 	}
-	defer func() {
-		// This is an async monitor. Don't let it crash the rest of the program if there's a problem
-		err := recover()
-		logger.Warn("Yamux observer died!", tag.NewStringTag("muxConfigName", config.Name), tag.NewAnyTag("err", err))
-	}()
 	labels := []string{session.LocalAddr().String(),
 		session.RemoteAddr().String(),
 		string(config.Mode),
 		config.Name,
 	}
+	// Initialize metrics so we get 0 metrics when the observer starts
+	metrics.MuxConnectionClosed.WithLabelValues(labels...)
+	metrics.MuxSessionOpen.WithLabelValues(labels...)
+	metrics.MuxStreamsActive.WithLabelValues(labels...)
+	metrics.MuxObserverReportCount.WithLabelValues(labels...)
+	defer func() {
+		// This is an async monitor. Don't let it crash the rest of the program if there's a problem
+		_ = recover()
+		metrics.MuxConnectionClosed.WithLabelValues(labels...).Inc()
+	}()
 	var sessionActive int8 = 1
 	ticker := time.NewTicker(time.Minute)
 	for sessionActive == 1 {
