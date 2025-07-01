@@ -25,8 +25,12 @@ func visit(
 ) {
 	// Key by `Type.Field` so that we visit every field once.
 	//
-	// Does this handle field names correctly? (Idk)
+	// This DOESN'T work in all cases. We need proper cycle detection.
 	//
+	// type Node struct {
+	//         Failure string
+	//         Next *Node
+	// }
 	seenKey := string(obj.Parent().Name() + "." + obj.Name())
 	if _, ok := seen[seenKey]; ok {
 		// fmt.Printf("// skipping already seen key %s\n", seenKey)

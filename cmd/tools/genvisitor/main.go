@@ -25,23 +25,6 @@ func main() {
 			return fmt.Sprintf(`ret = ret || repairUTF8InLastFailure(%s)`, varName)
 		},
 	)
-	//emitter.AddHandler(
-	//	func(s string) bool {
-	//		return s == "ReplicationTask"
-	//	},
-	//	func(varName string) string {
-	//		return fmt.Sprintf(`repairUTF8InReplicationTask(%s)`, varName)
-	//	},
-	//)
-	//emitter.AddHandler(
-	//	func(s string) bool {
-	//		return s == "HistoryEvent"
-	//	},
-	//	func(varName string) string {
-	//		return fmt.Sprintf(`repairUTF8InHistoryEvent(%s)`, varName)
-	//	},
-	//)
-
 	protoregistry.GlobalTypes.RangeMessages(func(mt protoreflect.MessageType) bool {
 		emitter.Visit(mt)
 		return true
