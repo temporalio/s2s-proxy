@@ -4,7 +4,6 @@ package admin
 
 import (
 	"context"
-
 	"go.temporal.io/server/api/adminservice/v1"
 	"google.golang.org/grpc"
 )
