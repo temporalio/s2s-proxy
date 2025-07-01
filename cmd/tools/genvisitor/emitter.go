@@ -22,7 +22,6 @@ type (
 		imports       map[string]struct{}
 		root          *Tree
 		inScopeVars   map[string]struct{}
-		header        string
 		trailer       string
 	}
 
