@@ -57,6 +57,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.image-names.outputs.images }}
+          # Don't set latest label if it is a prerelease.
+          tags: |
+            type=raw,value=${{ github.ref_name }}
+            ${{ github.event_name == 'release' && github.event.release.prerelease != true && 'type=raw,value=latest' || '' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
