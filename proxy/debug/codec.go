@@ -133,14 +133,31 @@ func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
 
 // In old versions of Temporal, it was possible that certain history events could
 // be written with invalid UTF-8.
-func repairUTF8InLastFailure(logger log.Logger, lastFailure *failure122.Failure) bool {
-	cause := lastFailure.GetCause()
-	if !utf8.ValidString(cause.GetMessage()) {
-		cause.Message = strings.ToValidUTF8(cause.Message, string(utf8.RuneError))
-		logger.Info("repaired invalid utf-8 in LastFailure field")
-		return true
+func repairUTF8InLastFailure(logger log.Logger, failure *failure122.Failure) bool {
+	return repairUTF8InLastFailureWithDepth(logger, failure, 0)
+}
+
+const maxFailureDepth = 10
+
+func repairUTF8InLastFailureWithDepth(logger log.Logger, failure *failure122.Failure, depth int) bool {
+	if failure == nil {
+		return false
 	}
-	return false
+
+	// Check if we've exceeded maximum depth
+	if depth >= maxFailureDepth {
+		logger.Warn("reached maximum failure chain depth, stopping recursion")
+		return false
+	}
+
+	ret := false
+	if !utf8.ValidString(failure.GetMessage()) {
+		failure.Message = strings.ToValidUTF8(failure.Message, string(utf8.RuneError))
+		logger.Info("repaired invalid utf-8 in LastFailure field")
+		ret = true
+	}
+
+	return ret || repairUTF8InLastFailureWithDepth(logger, failure.GetCause(), depth+1)
 }
 
 var _ encoding.CodecV2 = (*CodecV2)(nil)
