@@ -52,8 +52,8 @@ func createNamespaceAccessControl(access *auth.AccessControl) stringMatcher {
 	}
 }
 
-func isNamespaceAccessAllowed(obj any, access *auth.AccessControl) (bool, error) {
-	notAllowed, err := visitNamespace(obj, createNamespaceAccessControl(access))
+func isNamespaceAccessAllowed(logger log.Logger, obj any, access *auth.AccessControl) (bool, error) {
+	notAllowed, err := visitNamespace(logger, obj, createNamespaceAccessControl(access))
 	if err != nil {
 		return false, err
 	}
@@ -83,7 +83,7 @@ func (i *AccessControlInterceptor) Intercept(
 
 	if i.namespaceAccess != nil &&
 		(strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) || strings.HasPrefix(info.FullMethod, api.AdminServicePrefix)) {
-		allowed, err := isNamespaceAccessAllowed(req, i.namespaceAccess)
+		allowed, err := isNamespaceAccessAllowed(i.logger, req, i.namespaceAccess)
 		if !allowed || err != nil {
 			methodName := api.MethodName(info.FullMethod)
 			if err != nil {
