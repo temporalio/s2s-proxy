@@ -274,7 +274,11 @@ func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfi
 			// wake up so we can report NumStreams
 		}
 		metrics.MuxSessionOpen.WithLabelValues(labels...).Set(float64(sessionActive))
-		metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(session.NumStreams()))
+		if sessionActive == 1 {
+			metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(session.NumStreams()))
+		} else {
+			metrics.MuxStreamsActive.DeleteLabelValues(labels...) // Cleanup the gauge so it doesn't hang around on the dashboardC
+		}
 		metrics.MuxObserverReportCount.WithLabelValues(labels...).Inc()
 	}
 }
