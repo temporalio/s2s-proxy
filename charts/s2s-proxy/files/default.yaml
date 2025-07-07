@@ -25,6 +25,7 @@ inbound:
         - StreamWorkflowReplicationMessages
         - ReapplyEvents
         - GetNamespace
+        - AddTasks # for merging dlq task
 
 outbound:
   name: "outbound-server"

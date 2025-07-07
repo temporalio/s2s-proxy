@@ -20,7 +20,7 @@ data:
           - StreamWorkflowReplicationMessages
           - ReapplyEvents
           - GetNamespace
-          - AddTasks # for merging dlq task
+          - AddTasks
       client:
         tcp:
           serverAddress: frontend-address:7233
