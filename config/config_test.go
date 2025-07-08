@@ -3,8 +3,10 @@ package config
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc/keepalive"
 )
 
 func TestLoadS2SConfig(t *testing.T) {
@@ -30,6 +32,7 @@ func TestLoadS2SConfig(t *testing.T) {
 	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.AllowedNamespaces)
 	assert.Equal(t, HTTP, s2sConfig.HealthCheck.Protocol)
 	assert.Equal(t, int64(100), *s2sConfig.Inbound.APIOverrides.AdminSerivce.DescribeCluster.Response.FailoverVersionIncrement)
+	assert.Equal(t, KeepaliveConfig{}.ServerParameters(), s2sConfig.Inbound.Server.KeepaliveConfig.ServerParameters())
 }
 
 func TestLoadS2SConfigMux(t *testing.T) {
@@ -45,4 +48,27 @@ func TestLoadS2SConfigMux(t *testing.T) {
 		assert.Equal(t, MuxTransport, s2sConfig.Outbound.Client.Type)
 		assert.NoError(t, err)
 	}
+}
+
+func TestPartialKeepaliveConfig(t *testing.T) {
+	samplePath := filepath.Join("..", "develop", "test-configs", "config-with-partial-keepalive.yaml")
+	s2sConfig, err := LoadConfig[S2SProxyConfig](samplePath)
+	assert.NoError(t, err)
+	assert.Equal(t, KeepaliveConfig{
+		MaxConnectionIdle: 60 * time.Second,
+		MaxConnectionAge:  61 * time.Second,
+	}.ServerParameters(), s2sConfig.Inbound.Server.KeepaliveConfig.ServerParameters())
+}
+
+func TestLoadKeepaliveConfig(t *testing.T) {
+	samplePath := filepath.Join("..", "develop", "test-configs", "config-with-keepalive.yaml")
+	s2sConfig, err := LoadConfig[S2SProxyConfig](samplePath)
+	assert.NoError(t, err)
+	assert.Equal(t, keepalive.ServerParameters{
+		MaxConnectionIdle:     60 * time.Second,
+		MaxConnectionAge:      61 * time.Second,
+		MaxConnectionAgeGrace: 62 * time.Second,
+		Time:                  63 * time.Second,
+		Timeout:               64 * time.Second,
+	}, s2sConfig.Inbound.Server.KeepaliveConfig.ServerParameters())
 }
