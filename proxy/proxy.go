@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
@@ -12,6 +13,7 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
@@ -109,6 +111,16 @@ func makeServerOptions(
 		}
 		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
 	}
+
+	// Trying out some keepalive options that should proactively clear out inbound connections from Temporal OSS.
+	// Without these, a worker will happily TCP-establish to a single host and stay connected forever
+	opts = append(opts, grpc.KeepaliveParams(keepalive.ServerParameters{
+		MaxConnectionIdle:     60 * time.Second,
+		MaxConnectionAge:      300 * time.Second,
+		MaxConnectionAgeGrace: 60 * time.Second,
+		Time:                  60 * time.Second,
+		Timeout:               10 * time.Second,
+	}))
 
 	return opts, nil
 }
