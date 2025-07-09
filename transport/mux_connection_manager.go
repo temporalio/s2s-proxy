@@ -130,6 +130,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 		}()
 		muxConnLabelValues := []string{setting.ListenAddress, string(m.config.Mode), m.config.Name}
 		metrics.MuxConnectionErrors.WithLabelValues(muxConnLabelValues...) // initialize the metric, so that we get a positive 0
+		metrics.MuxConnectionEstablish.WithLabelValues(muxConnLabelValues...)
 		for {
 			select {
 			case <-m.shutdownCh:
@@ -159,7 +160,10 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 				session, err := yamux.Server(conn, nil)
 				go observeYamuxSession(session, m.config, m.logger)
 				if err != nil {
+					metrics.MuxConnectionErrors.WithLabelValues(muxConnLabelValues...).Inc()
 					m.logger.Fatal("yamux.Server failed", tag.Error(err))
+				} else {
+					metrics.MuxConnectionEstablish.WithLabelValues(muxConnLabelValues...).Inc()
 				}
 
 				m.muxTransport = newMuxTransport(conn, session)
@@ -229,6 +233,8 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 				if err != nil {
 					metrics.MuxConnectionErrors.WithLabelValues(muxConnLabelValues...).Inc()
 					m.logger.Fatal("yamux.Client failed", tag.Error(err))
+				} else {
+					metrics.MuxConnectionEstablish.WithLabelValues(muxConnLabelValues...).Inc()
 				}
 
 				m.muxTransport = newMuxTransport(conn, session)

@@ -27,17 +27,23 @@ var (
 	// /transport/mux_connection_manager.go
 
 	// Every yamux session has these available, so let's use them in the prometheus tags so we can clearly see each connection
-	muxSessionLabels = []string{"local_addr", "remote_addr", "mode", "config_name"}
-	MuxSessionOpen   = DefaultGaugeVec("mux_connection_active", "Yes/no gauge displaying whether yamux server is connected",
-		muxSessionLabels...)
+	muxObserverLabels = []string{"local_addr", "remote_addr", "mode", "config_name"}
+	MuxSessionOpen    = DefaultGaugeVec("mux_connection_active", "Yes/no gauge displaying whether yamux server is connected",
+		muxObserverLabels...)
 	MuxStreamsActive = DefaultGaugeVec("mux_streams_active", "Immediate count of the current streams open",
-		muxSessionLabels...)
+		muxObserverLabels...)
 	MuxObserverReportCount = DefaultCounterVec("mux_observer_report_count", "Number of observer executions",
-		muxSessionLabels...)
+		muxObserverLabels...)
 	MuxConnectionClosed = DefaultCounterVec("mux_connection_closed_count", "Number of connections closed by the server",
-		muxSessionLabels...)
-	MuxConnectionErrors = DefaultCounterVec("mux_connection_error_count", "Number of connection errors",
-		"addr", "mode", "config_name")
+		muxObserverLabels...)
+
+	// The connection manager only knows about its own address (server), or the address to connect to (client).
+	// So, we have a smaller number of labels than the muxObserver does
+	connectionManagerLabels = []string{"addr", "mode", "config_name"}
+	MuxConnectionErrors     = DefaultCounterVec("mux_connection_error_count", "Number of connection errors",
+		connectionManagerLabels...)
+	MuxConnectionEstablish = DefaultCounterVec("mux_connection_establish_count", "Number of times a connection has been established/reestablished",
+		connectionManagerLabels...)
 )
 
 func init() {
@@ -46,14 +52,20 @@ func init() {
 	// Re-register the go collector with all non-debug metrics. See: https://pkg.go.dev/runtime/metrics
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
 		collectors.WithoutGoCollectorRuntimeMetrics(collectors.MetricsDebug.Matcher)))
-	prometheus.MustRegister(ProxyStartCount)
-	prometheus.MustRegister(GRPCServerMetrics)
+
+	prometheus.MustRegister(AdminServiceStreamsActive)
+
 	prometheus.MustRegister(HealthCheckIsHealthy)
 	prometheus.MustRegister(HealthCheckHealthyCount)
-	prometheus.MustRegister(AdminServiceStreamsActive)
+
+	prometheus.MustRegister(GRPCServerMetrics)
+	prometheus.MustRegister(ProxyStartCount)
+
 	prometheus.MustRegister(MuxSessionOpen)
 	prometheus.MustRegister(MuxStreamsActive)
 	prometheus.MustRegister(MuxObserverReportCount)
-	prometheus.MustRegister(MuxConnectionErrors)
 	prometheus.MustRegister(MuxConnectionClosed)
+
+	prometheus.MustRegister(MuxConnectionErrors)
+	prometheus.MustRegister(MuxConnectionEstablish)
 }
