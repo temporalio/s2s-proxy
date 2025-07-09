@@ -137,9 +137,16 @@ func (s *workflowServiceProxyServer) GetWorkflowExecutionHistory(ctx context.Con
 
 	resp, err := s.workflowServiceClient.GetWorkflowExecutionHistory(ctx, in0)
 	deadline, ok := ctx.Deadline()
+	var deadline_duration int
+	if ok {
+		deadline_duration = int(deadline.Sub(start).Milliseconds())
+	}
+
 	s.logger.Warn(fmt.Sprintf("GetWorkflowExecutionHistory called. is_deadline_set: %v, deadline: %v\n", ok, deadline),
 		tag.Timestamp(deadline), tag.Error(err),
-		tag.NewInt("duration_ms", int(time.Since(start).Milliseconds())))
+		tag.NewInt("duration_ms", int(time.Since(start).Milliseconds())),
+		tag.NewInt("deadline_duration_ms", deadline_duration),
+	)
 
 	return resp, err
 }
