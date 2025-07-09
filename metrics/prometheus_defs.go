@@ -21,7 +21,7 @@ var (
 
 	// /proxy/proxy.go
 
-	GRPCServerMetrics = GetStandardGRPCInterceptor()
+	GRPCServerMetrics = GetStandardGRPCInterceptor("direction")
 	ProxyStartCount   = DefaultCounter("proxy_start_count", "Emitted once per startup")
 
 	// /transport/mux_connection_manager.go
