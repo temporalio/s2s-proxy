@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -159,12 +160,14 @@ func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistory(ctx context.Con
 }
 
 func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistoryV2(ctx context.Context, in0 *adminservice.GetWorkflowExecutionRawHistoryV2Request) (*adminservice.GetWorkflowExecutionRawHistoryV2Response, error) {
+	start := time.Now()
+
 	resp, err := s.adminClient.GetWorkflowExecutionRawHistoryV2(ctx, in0)
 	if err != nil {
 		deadline, ok := ctx.Deadline()
-		if ok {
-			s.logger.Warn(fmt.Sprintf("GetWorkflowExecutionRawHistoryV2 failed. Dead is set: %v\n", deadline), tag.Timestamp(deadline), tag.Error(err))
-		}
+		s.logger.Warn(fmt.Sprintf("GetWorkflowExecutionRawHistoryV2 failed. is_deadline_set: %v, deadline: %v\n", ok, deadline),
+			tag.Timestamp(deadline), tag.Error(err),
+			tag.NewInt("duration_ms", int(time.Since(start).Milliseconds())))
 	}
 
 	return resp, err
