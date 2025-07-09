@@ -36,7 +36,7 @@ func SanitizeForPrometheus(value string) string {
 // GetStandardGRPCInterceptor returns a ServerMetrics with our preferred standard config for monitoring gRPC servers.
 // Want to change/add options? Check the docs at https://pkg.go.dev/github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus@v1.1.0#section-documentation
 // Some more handy links: https://prometheus.io/docs/concepts/metric_types/#histogram
-func GetStandardGRPCInterceptor() *grpcprom.ServerMetrics {
+func GetStandardGRPCInterceptor(labelNamesInContext ...string) *grpcprom.ServerMetrics {
 	return grpcprom.NewServerMetrics(
 		grpcprom.WithServerHandlingTimeHistogram(
 			grpcprom.WithHistogramNamespace("temporal"),
@@ -47,6 +47,7 @@ func GetStandardGRPCInterceptor() *grpcprom.ServerMetrics {
 			grpcprom.WithNamespace("temporal"),
 			grpcprom.WithSubsystem("s2s_proxy"),
 		),
+		grpcprom.WithContextLabels(labelNamesInContext...),
 	)
 }
 

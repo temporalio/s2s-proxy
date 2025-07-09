@@ -1,10 +1,13 @@
 package proxy
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
@@ -53,9 +56,17 @@ func makeServerOptions(
 	unaryInterceptors := []grpc.UnaryServerInterceptor{}
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
+	directionValue := "inbound"
+	if !proxyOpts.IsInbound {
+		directionValue = "outbound"
+	}
+	labelGenerator := grpcprom.WithLabelsFromContext(func(_ context.Context) (labels prometheus.Labels) {
+		return prometheus.Labels{"direction": directionValue}
+	})
+
 	// Ordering matters! These metrics happen BEFORE the translations/acl
-	unaryInterceptors = append(unaryInterceptors, metrics.GRPCServerMetrics.UnaryServerInterceptor())
-	streamInterceptors = append(streamInterceptors, metrics.GRPCServerMetrics.StreamServerInterceptor())
+	unaryInterceptors = append(unaryInterceptors, metrics.GRPCServerMetrics.UnaryServerInterceptor(labelGenerator))
+	streamInterceptors = append(streamInterceptors, metrics.GRPCServerMetrics.StreamServerInterceptor(labelGenerator))
 
 	var translators []interceptor.Translator
 	if tln := proxyOpts.Config.NamespaceNameTranslation; tln.IsEnabled() {
