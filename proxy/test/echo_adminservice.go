@@ -55,6 +55,13 @@ func (s *echoAdminService) DeleteWorkflowExecution(ctx context.Context, in0 *adm
 }
 
 func (s *echoAdminService) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
+	deadline, ok := ctx.Deadline()
+	if ok {
+		s.logger.Info(fmt.Sprintf("Deadline is set: %v", deadline), tag.Timestamp(deadline))
+	} else {
+		s.logger.Info("no Deadline is set:")
+	}
+
 	return &adminservice.DescribeClusterResponse{
 		ClusterName: s.serviceName,
 	}, nil
