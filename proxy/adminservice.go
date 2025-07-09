@@ -159,7 +159,15 @@ func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistory(ctx context.Con
 }
 
 func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistoryV2(ctx context.Context, in0 *adminservice.GetWorkflowExecutionRawHistoryV2Request) (*adminservice.GetWorkflowExecutionRawHistoryV2Response, error) {
-	return s.adminClient.GetWorkflowExecutionRawHistoryV2(ctx, in0)
+	resp, err := s.adminClient.GetWorkflowExecutionRawHistoryV2(ctx, in0)
+	if err != nil {
+		deadline, ok := ctx.Deadline()
+		if ok {
+			s.logger.Warn(fmt.Sprintf("GetWorkflowExecutionRawHistoryV2 failed. Dead is set: %v\n", deadline), tag.Timestamp(deadline), tag.Error(err))
+		}
+	}
+
+	return resp, err
 }
 
 func (s *adminServiceProxyServer) ImportWorkflowExecution(ctx context.Context, in0 *adminservice.ImportWorkflowExecutionRequest) (*adminservice.ImportWorkflowExecutionResponse, error) {
