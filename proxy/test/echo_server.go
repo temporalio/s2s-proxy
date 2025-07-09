@@ -12,7 +12,6 @@ import (
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
-	"go.temporal.io/server/common/rpc"
 	codes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -230,10 +229,7 @@ func (s *echoServer) DescribeCluster(req *adminservice.DescribeClusterRequest) (
 		return nil, err
 	}
 
-	ctx, cancel := rpc.NewContextFromParentWithTimeoutAndVersionHeaders(context.Background(), 30*time.Second)
-	defer cancel()
-
-	return adminClient.DescribeCluster(ctx, req)
+	return adminClient.DescribeCluster(context.Background(), req)
 }
 
 func (s *echoServer) DescribeMutableState(req *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {

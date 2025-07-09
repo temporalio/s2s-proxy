@@ -82,14 +82,6 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
 	resp, err := s.adminClient.DescribeCluster(ctx, in0)
-
-	deadline, ok := ctx.Deadline()
-	if ok {
-		s.logger.Info(fmt.Sprintf("Deadline is set: %v", deadline), tag.Timestamp(deadline))
-	} else {
-		s.logger.Info("no Deadline is set:")
-	}
-
 	if common.IsRequestTranslationDisabled(ctx) {
 		return resp, err
 	}
