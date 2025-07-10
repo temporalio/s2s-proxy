@@ -413,22 +413,13 @@ func makeGetMatchingClient(reqType reflect.Type) string {
 	panic("I don't know how to get a client from a " + t.String())
 }
 
-func writeTemplatedMethod(w io.Writer, service service, impl string, m reflect.Method, text string, skipMethodCheck bool) {
-	key := fmt.Sprintf("%s.%s.%s", impl, service.name, m.Name)
-	if ignoreMethod[key] {
-		return
-	}
+func methodKey(impl string, svc service, m reflect.Method) string {
+	return fmt.Sprintf("%s.%s.%s", impl, svc.name, m.Name)
+}
 
-	mt := m.Type // should look like: func(context.Context, request reqType, opts []grpc.CallOption) (respType, error)
-	if !skipMethodCheck {
-		if !mt.IsVariadic() ||
-			mt.NumIn() != 3 ||
-			mt.NumOut() != 2 ||
-			mt.In(0).String() != "context.Context" ||
-			mt.Out(1).String() != "error" {
-			panic(key + " doesn't look like a grpc handler method")
-		}
-	}
+func writeTemplatedMethod(w io.Writer, service service, impl string, m reflect.Method, text string) {
+	key := methodKey(impl, service, m)
+	mt := m.Type
 	reqType := mt.In(1)
 	respType := mt.Out(0)
 
@@ -465,7 +456,21 @@ func writeTemplatedMethod(w io.Writer, service service, impl string, m reflect.M
 func writeTemplatedMethods(w io.Writer, service service, impl string, text string) {
 	sType := service.clientType.Elem()
 	for n := 0; n < sType.NumMethod(); n++ {
-		writeTemplatedMethod(w, service, impl, sType.Method(n), text, false)
+		m := sType.Method(n)
+		if ignoreMethod[methodKey(impl, service, m)] {
+			continue
+		}
+
+		// should look like: func(context.Context, request reqType, opts []grpc.CallOption) (respType, error)
+		mt := m.Type
+		if !mt.IsVariadic() ||
+			mt.NumIn() != 3 ||
+			mt.NumOut() != 2 ||
+			mt.In(0).String() != "context.Context" ||
+			mt.Out(1).String() != "error" {
+			panic(mt.Name() + " doesn't look like a grpc handler method")
+		}
+		writeTemplatedMethod(w, service, impl, m, text)
 	}
 }
 

@@ -101,15 +101,16 @@ func (c *lazyClient) {{.Method}}(
 
 func generate122ConversionCode(w io.Writer, service service) {
 	writeTemplatedCode(w, service, `
-package common
+package compat
 import (
 	svc "{{.ServicePackagePath}}"
 	svc122 "{{.ServicePackagePath122}}"
+	"github.com/temporalio/s2s-proxy/common"
 )
 
 // {{.ServiceNameTitle}}ConvertTo122 accepts a protobuf type and returns
 // the corresponding gogo-based protobuf type from Temporal v1.22.
-func {{.ServiceNameTitle}}ConvertTo122(vAny any) (Marshaler, bool) {
+func {{.ServiceNameTitle}}ConvertTo122(vAny any) (common.Marshaler, bool) {
 	switch vAny.(type) {
 `)
 
@@ -133,6 +134,6 @@ func writeTemplatedMethods122(w io.Writer, service service, impl string, text st
 		if ignoreMethodsNotIn122[m.Name] {
 			continue
 		}
-		writeTemplatedMethod(w, service, impl, m, text, true)
+		writeTemplatedMethod(w, service, impl, m, text)
 	}
 }
