@@ -79,14 +79,16 @@ generate-rpcwrappers:
 	rm -rf $(GENRPCWRAPPERS_DIR)/*_gen.go
 	cd $(GENRPCWRAPPERS_DIR); go run .  -service frontend -license_file ../../../LICENSE
 	cp $(GENRPCWRAPPERS_DIR)/lazy_client_gen.go client/frontend/lazy_client_gen.go
+	mkdir -p proto/compat
+	cp $(GENRPCWRAPPERS_DIR)/conversion_gen.go proto/compat/frontend_conversion_gen.go
 
 	rm -rf ./cmd/tools/genrpcwrappers/*_gen.go
 	cd $(GENRPCWRAPPERS_DIR); go run .  -service admin -license_file ../../../LICENSE
 	cp ./cmd/tools/genrpcwrappers/lazy_client_gen.go client/admin/lazy_client_gen.go
+	cp $(GENRPCWRAPPERS_DIR)/conversion_gen.go proto/compat/admin_conversion_gen.go
 
 	rm -rf ./cmd/tools/genrpcwrappers/*_gen.go
-
-	go fmt ./client/...
+	go fmt ./client/... ./proto/compat/...
 
 test: generate-test-certs
 	go test $(TEST_ARG) ./...
