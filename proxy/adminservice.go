@@ -181,6 +181,8 @@ func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistoryV2(ctx context.C
 				tag.Timestamp(start),
 				tag.Error(err),
 				tag.WorkflowID(wid),
+				tag.NewInt64("start_event_id", in0.GetStartEventId()),
+				tag.NewInt64("end_event_id", in0.GetEndEventId()),
 				tag.NewInt32("max_page_size", in0.MaximumPageSize),
 				tag.NewInt64("duration_ms", time.Since(start).Milliseconds()),
 				tag.NewInt64("deadline_duration_ms", deadline_duration),
