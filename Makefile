@@ -106,6 +106,11 @@ clean-builds:
 
 build: clean-builds amd64-build
 
+.PHONY: vendor-protos
+vendor-protos:
+	@if ! comby --version $> /dev/null ; then brew install comby; fi
+	./develop/vendor-protos.sh
+
 # Docker
 AWS_ECR_REGION ?=
 AWS_ECR_PROFILE ?=
