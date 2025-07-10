@@ -157,9 +157,11 @@ func panicIfErr(err error) {
 
 func writeTemplatedCode(w io.Writer, service service, text string) {
 	pkgPath := service.clientType.Elem().PkgPath()
+	titleCase := strings.ToUpper(service.name[:1]) + service.name[1:]
 	panicIfErr(template.Must(template.New("code").Parse(text)).Execute(w, map[string]string{
 		"ServiceName":           service.name,
 		"ServicePackagePath":    pkgPath,
+		"ServiceNameTitle":      titleCase,
 		"ServicePackagePath122": strings.Replace(pkgPath, "go.temporal.io", "github.com/temporalio/s2s-proxy/proto/1_22", 1),
 	}))
 }

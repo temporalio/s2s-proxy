@@ -7,9 +7,9 @@ import (
 	svc "go.temporal.io/api/workflowservice/v1"
 )
 
-// frontendConvertTo122 accepts a protobuf type and returns
+// FrontendConvertTo122 accepts a protobuf type and returns
 // the corresponding gogo-based protobuf type from Temporal v1.22.
-func frontendConvertTo122(vAny any) (Marshaler, bool) {
+func FrontendConvertTo122(vAny any) (Marshaler, bool) {
 	switch vAny.(type) {
 
 	case *svc.CountWorkflowExecutionsResponse:

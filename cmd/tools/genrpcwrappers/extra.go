@@ -107,9 +107,9 @@ import (
 	svc122 "{{.ServicePackagePath122}}"
 )
 
-// {{.ServiceName}}ConvertTo122 accepts a protobuf type and returns
+// {{.ServiceNameTitle}}ConvertTo122 accepts a protobuf type and returns
 // the corresponding gogo-based protobuf type from Temporal v1.22.
-func {{.ServiceName}}ConvertTo122(vAny any) (Marshaler, bool) {
+func {{.ServiceNameTitle}}ConvertTo122(vAny any) (Marshaler, bool) {
 	switch vAny.(type) {
 `)
 
