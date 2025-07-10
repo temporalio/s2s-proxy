@@ -156,9 +156,11 @@ func panicIfErr(err error) {
 }
 
 func writeTemplatedCode(w io.Writer, service service, text string) {
+	pkgPath := service.clientType.Elem().PkgPath()
 	panicIfErr(template.Must(template.New("code").Parse(text)).Execute(w, map[string]string{
-		"ServiceName":        service.name,
-		"ServicePackagePath": service.clientType.Elem().PkgPath(),
+		"ServiceName":           service.name,
+		"ServicePackagePath":    pkgPath,
+		"ServicePackagePath122": strings.Replace(pkgPath, "go.temporal.io", "github.com/temporalio/s2s-proxy/proto/1_22", 1),
 	}))
 }
 
@@ -409,21 +411,22 @@ func makeGetMatchingClient(reqType reflect.Type) string {
 	panic("I don't know how to get a client from a " + t.String())
 }
 
-func writeTemplatedMethod(w io.Writer, service service, impl string, m reflect.Method, text string) {
+func writeTemplatedMethod(w io.Writer, service service, impl string, m reflect.Method, text string, skipMethodCheck bool) {
 	key := fmt.Sprintf("%s.%s.%s", impl, service.name, m.Name)
 	if ignoreMethod[key] {
 		return
 	}
 
 	mt := m.Type // should look like: func(context.Context, request reqType, opts []grpc.CallOption) (respType, error)
-	if !mt.IsVariadic() ||
-		mt.NumIn() != 3 ||
-		mt.NumOut() != 2 ||
-		mt.In(0).String() != "context.Context" ||
-		mt.Out(1).String() != "error" {
-		panic(key + " doesn't look like a grpc handler method")
+	if !skipMethodCheck {
+		if !mt.IsVariadic() ||
+			mt.NumIn() != 3 ||
+			mt.NumOut() != 2 ||
+			mt.In(0).String() != "context.Context" ||
+			mt.Out(1).String() != "error" {
+			panic(key + " doesn't look like a grpc handler method")
+		}
 	}
-
 	reqType := mt.In(1)
 	respType := mt.Out(0)
 
@@ -460,7 +463,7 @@ func writeTemplatedMethod(w io.Writer, service service, impl string, m reflect.M
 func writeTemplatedMethods(w io.Writer, service service, impl string, text string) {
 	sType := service.clientType.Elem()
 	for n := 0; n < sType.NumMethod(); n++ {
-		writeTemplatedMethod(w, service, impl, sType.Method(n), text)
+		writeTemplatedMethod(w, service, impl, sType.Method(n), text, false)
 	}
 }
 
@@ -675,4 +678,6 @@ func main() {
 	if svc.name == "admin" {
 		callWithFile(generateACLServer, svc, "acl_server", "")
 	}
+
+	callWithFile(generate122ConversionCode, svc, "conversion", "")
 }

@@ -4,7 +4,6 @@ package frontend
 
 import (
 	"context"
-
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
 )
