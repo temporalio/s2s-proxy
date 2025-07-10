@@ -457,7 +457,8 @@ func writeTemplatedMethods(w io.Writer, service service, impl string, text strin
 	sType := service.clientType.Elem()
 	for n := 0; n < sType.NumMethod(); n++ {
 		m := sType.Method(n)
-		if ignoreMethod[methodKey(impl, service, m)] {
+		key := methodKey(impl, service, m)
+		if ignoreMethod[key] {
 			continue
 		}
 
@@ -468,7 +469,7 @@ func writeTemplatedMethods(w io.Writer, service service, impl string, text strin
 			mt.NumOut() != 2 ||
 			mt.In(0).String() != "context.Context" ||
 			mt.Out(1).String() != "error" {
-			panic(mt.Name() + " doesn't look like a grpc handler method")
+			panic(key + " doesn't look like a grpc handler method")
 		}
 		writeTemplatedMethod(w, service, impl, m, text)
 	}

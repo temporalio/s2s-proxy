@@ -134,6 +134,7 @@ func writeTemplatedMethods122(w io.Writer, service service, impl string, text st
 		if ignoreMethodsNotIn122[m.Name] {
 			continue
 		}
+
 		writeTemplatedMethod(w, service, impl, m, text)
 	}
 }
