@@ -52,6 +52,13 @@ outbound:
         keyPath: ""
         clientCAPath: ""
         requireClientAuth: true
+    # You don't need this struct, these are the default values!
+    keepalive:
+      maxConnectionIdle: "60s"
+      maxConnectionAge: "300s"
+      maxConnectionAgeGrace: "60s"
+      time: "60s"
+      timeout: "10s"
   client:
     tcp:
       serverAddress:

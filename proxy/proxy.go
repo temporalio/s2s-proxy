@@ -111,8 +111,12 @@ func makeServerOptions(
 		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
 	}
 
-	opts = append(opts, grpc.KeepaliveParams(cfg.Server.KeepaliveConfig.ServerParameters()))
-	logger.Info("Added keepalive params", cfg.Server.KeepaliveConfig.LogTags()...)
+	// The inbound connection is typically muxed from the remote. We only
+	// want to force-close the local traffic, not the mux!
+	if !proxyOpts.IsInbound {
+		opts = append(opts, grpc.KeepaliveParams(cfg.Server.KeepaliveConfig.ServerParameters()))
+		logger.Info("Added keepalive params", cfg.Server.KeepaliveConfig.LogTags()...)
+	}
 
 	return opts, nil
 }
