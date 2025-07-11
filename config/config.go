@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/urfave/cli/v2"
+	"go.temporal.io/server/common/log/tag"
+	"google.golang.org/grpc/keepalive"
 	"gopkg.in/yaml.v3"
 
 	"github.com/temporalio/s2s-proxy/encryption"
@@ -59,9 +62,20 @@ type (
 	}
 
 	ProxyServerConfig struct {
-		Type             TransportType `yaml:"type"`
+		Type             TransportType   `yaml:"type"`
+		MuxTransportName string          `yaml:"mux"`
+		KeepaliveConfig  KeepaliveConfig `yaml:"keepalive"`
 		TCPServerSetting `yaml:"tcp"`
-		MuxTransportName string `yaml:"mux"`
+	}
+
+	// KeepaliveConfig matches grpc's keepalive.ServerParameters. Refer to that struct for docs
+	// The default config is in KeepaliveConfig.ServerParameters
+	KeepaliveConfig struct {
+		MaxConnectionIdle     time.Duration `yaml:"maxConnectionIdle"`
+		MaxConnectionAge      time.Duration `yaml:"maxConnectionAge"`
+		MaxConnectionAgeGrace time.Duration `yaml:"maxConnectionAgeGrace"`
+		Time                  time.Duration `yaml:"time"`
+		Timeout               time.Duration `yaml:"timeout"`
 	}
 
 	ProxyClientConfig struct {
@@ -201,6 +215,47 @@ func (c *ProxyServerConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	// Alias to avoid infinite recursion
 	type plain ProxyServerConfig
 	return unmarshal((*plain)(c))
+}
+
+func (c KeepaliveConfig) ServerParameters() keepalive.ServerParameters {
+	defaultParams := keepalive.ServerParameters{
+		MaxConnectionIdle:     60 * time.Second,
+		MaxConnectionAge:      300 * time.Second,
+		MaxConnectionAgeGrace: 60 * time.Second,
+		Time:                  60 * time.Second,
+		Timeout:               10 * time.Second,
+	}
+
+	// Copy non-zero values from c to defaultParams. We tried reflection here, but it was less readable
+	if c.MaxConnectionIdle != 0 {
+		defaultParams.MaxConnectionIdle = c.MaxConnectionIdle
+	}
+	if c.MaxConnectionAge != 0 {
+		defaultParams.MaxConnectionAge = c.MaxConnectionAge
+	}
+	if c.MaxConnectionAgeGrace != 0 {
+		defaultParams.MaxConnectionAgeGrace = c.MaxConnectionAgeGrace
+	}
+	if c.Time != 0 {
+		defaultParams.Time = c.Time
+	}
+	if c.Timeout != 0 {
+		defaultParams.Timeout = c.Timeout
+	}
+
+	return defaultParams
+}
+
+func (c KeepaliveConfig) LogTags() []tag.Tag {
+	// Keep the default nil value handling in KeepaliveConfig.ServerParameters
+	params := c.ServerParameters()
+	return []tag.Tag{
+		tag.NewDurationTag("keepalive.MaxConnectionIdle", params.MaxConnectionIdle),
+		tag.NewDurationTag("keepalive.MaxConnectionAge", params.MaxConnectionAge),
+		tag.NewDurationTag("keepalive.MaxConnectionAgeGrace", params.MaxConnectionAgeGrace),
+		tag.NewDurationTag("keepalive.Time", params.Time),
+		tag.NewDurationTag("keepalive.Timeout", params.Timeout),
+	}
 }
 
 func newConfigProvider(ctx *cli.Context) (ConfigProvider, error) {
