@@ -2,7 +2,13 @@ package proxy
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	replication "go.temporal.io/server/api/replication/v1"
 
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -48,6 +54,105 @@ func (s *adminserviceSuite) newAdminServiceProxyServer(opts proxyOptions) admins
 	}
 	s.clientFactoryMock.EXPECT().NewRemoteAdminClient(cfg).Return(s.adminClientMock, nil).Times(1)
 	return NewAdminServiceProxyServer("test-service-name", cfg, s.clientFactoryMock, opts, log.NewTestLogger())
+}
+
+func (s *adminserviceSuite) TestRequestLimit() {
+	testReq := &adminservice.StreamWorkflowReplicationMessagesRequest{
+		Attributes: &adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState{
+			SyncReplicationState: &replication.SyncReplicationState{
+				InclusiveLowWatermark: 100,
+				HighPriorityState: &replication.ReplicationState{
+					InclusiveLowWatermark: 50,
+				},
+				LowPriorityState: &replication.ReplicationState{
+					InclusiveLowWatermark: 25,
+				},
+			},
+		},
+	}
+
+	testResp := &adminservice.StreamWorkflowReplicationMessagesResponse{
+		Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
+			Messages: &replication.WorkflowReplicationMessages{
+				ExclusiveHighWatermark: 150,
+				ReplicationTasks: []*replication.ReplicationTask{
+					{
+						SourceTaskId: 1,
+						TaskType:     1,
+					},
+				},
+			},
+		},
+	}
+	cases := []struct {
+		name                string
+		messageCount        int
+		messagesBeforeClose int
+	}{
+		{
+			name:                "Normal EOF session",
+			messageCount:        100,
+			messagesBeforeClose: 200,
+		},
+		{
+			name:                "Request limit enforcement",
+			messageCount:        100,
+			messagesBeforeClose: 50,
+		},
+		{
+			name:                "Request limit matches EOF",
+			messageCount:        100,
+			messagesBeforeClose: 100,
+		},
+	}
+	for _, tc := range cases {
+		s.SetupTest()
+		s.Run(tc.name, func() {
+			initiatingServerStream := adminservicemock.NewMockAdminService_StreamWorkflowReplicationMessagesServer(s.ctrl)
+			destinationServerStream := adminservicemock.NewMockAdminService_StreamWorkflowReplicationMessagesClient(s.ctrl)
+
+			minTimes := min(tc.messageCount, tc.messagesBeforeClose)
+			maxTimes := max(tc.messageCount, tc.messagesBeforeClose) + 2 // One more recv than usually expected, because we proceed to block on the last recv
+
+			// Messages from initiator to destination. Counts are atomic because two goroutines are incrementing these
+			initiatingServerRecvCount, destinationServerSentCount := atomic.Uint32{}, atomic.Uint32{}
+			initiatingServerStream.EXPECT().Recv().DoAndReturn(func() (*adminservice.StreamWorkflowReplicationMessagesRequest, error) {
+				initiatingServerRecvCount.Add(1)
+				return testReq, nil
+			}).MinTimes(minTimes).MaxTimes(maxTimes)
+			initiatingServerStream.EXPECT().Recv().DoAndReturn(func() (*adminservice.StreamWorkflowReplicationMessagesRequest, error) {
+				initiatingServerRecvCount.Add(1)
+				time.Sleep(1 * time.Second)
+				return testReq, nil
+			}).AnyTimes()
+			initiatingServerStream.EXPECT().Recv().Return(nil, io.EOF).AnyTimes()
+			destinationServerStream.EXPECT().Send(gomock.Any()).Do(func(_ *adminservice.StreamWorkflowReplicationMessagesRequest) error {
+				destinationServerSentCount.Add(1)
+				return nil
+			}).MinTimes(minTimes).MaxTimes(maxTimes)
+			destinationServerStream.EXPECT().Send(gomock.Any()).Return(io.EOF).AnyTimes()
+			destinationServerStream.EXPECT().CloseSend().Return(nil).AnyTimes()
+
+			// Messages from destination to initiator. These are AnyTimes because the responses will be cancelled randomly
+			destinationServerRecvCount, initiatingServerSentCount := atomic.Uint32{}, atomic.Uint32{}
+			destinationServerStream.EXPECT().Recv().DoAndReturn(func() (*adminservice.StreamWorkflowReplicationMessagesResponse, error) {
+				destinationServerRecvCount.Add(1)
+				return testResp, nil
+			}).AnyTimes()
+			initiatingServerStream.EXPECT().Send(gomock.Any()).Do(func(_ *adminservice.StreamWorkflowReplicationMessagesResponse) error {
+				initiatingServerSentCount.Add(1)
+				return nil
+			}).AnyTimes()
+
+			connectInitiatorToDestination(initiatingServerStream, destinationServerStream, tc.messagesBeforeClose, log.NewTestLogger())
+			fmt.Printf("Expected calls range [%d,%d]\n", minTimes, maxTimes)
+			fmt.Printf("Initiating Server Recv Count: %d\n", initiatingServerRecvCount.Load())
+			fmt.Printf("Destination Server Sent Count: %d\n", destinationServerSentCount.Load())
+			fmt.Printf("Responses count (Not enforced)\n")
+			fmt.Printf("Initiating Server Sent Count: %d\n", initiatingServerSentCount.Load())
+			fmt.Printf("Destination Server Recv Count: %d\n", destinationServerRecvCount.Load())
+		})
+	}
 }
 
 func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {

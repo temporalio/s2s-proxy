@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"sync"
+	"time"
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -47,6 +49,9 @@ func NewAdminServiceProxyServer(
 	}
 }
 
+// Functions in this section reimplement or wrap the underlying client.
+// Functions in the next section are passthrough.
+
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
 	if !common.IsRequestTranslationDisabled(ctx) {
 		if outbound := s.Config.Outbound; s.IsInbound && outbound != nil && len(outbound.Server.ExternalAddress) > 0 {
@@ -57,26 +62,6 @@ func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, 
 		}
 	}
 	return s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
-}
-
-func (s *adminServiceProxyServer) AddSearchAttributes(ctx context.Context, in0 *adminservice.AddSearchAttributesRequest) (*adminservice.AddSearchAttributesResponse, error) {
-	return s.adminClient.AddSearchAttributes(ctx, in0)
-}
-
-func (s *adminServiceProxyServer) AddTasks(ctx context.Context, in0 *adminservice.AddTasksRequest) (*adminservice.AddTasksResponse, error) {
-	return s.adminClient.AddTasks(ctx, in0)
-}
-
-func (s *adminServiceProxyServer) CancelDLQJob(ctx context.Context, in0 *adminservice.CancelDLQJobRequest) (*adminservice.CancelDLQJobResponse, error) {
-	return s.adminClient.CancelDLQJob(ctx, in0)
-}
-
-func (s *adminServiceProxyServer) CloseShard(ctx context.Context, in0 *adminservice.CloseShardRequest) (*adminservice.CloseShardResponse, error) {
-	return s.adminClient.CloseShard(ctx, in0)
-}
-
-func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, in0 *adminservice.DeleteWorkflowExecutionRequest) (*adminservice.DeleteWorkflowExecutionResponse, error) {
-	return s.adminClient.DeleteWorkflowExecution(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
@@ -104,6 +89,255 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 	}
 
 	return resp, err
+}
+
+// ClusterShardIDtoString stringifies a shard ID for logging
+func ClusterShardIDtoString(sd history.ClusterShardID) string {
+	return fmt.Sprintf("(id: %d, shard: %d)", sd.ClusterID, sd.ShardID)
+}
+
+func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
+	// The inbound connection establishes a
+	initiatingServerStream adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+) (retError error) {
+	defer log.CapturePanic(s.logger, &retError)
+
+	targetMetadata, ok := metadata.FromIncomingContext(initiatingServerStream.Context())
+	if !ok {
+		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
+	}
+	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(
+		headers.NewGRPCHeaderGetter(initiatingServerStream.Context()),
+	)
+	if err != nil {
+		return err
+	}
+
+	logger := log.With(s.logger,
+		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
+		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
+
+	// Record streams active
+	directionLabel := "inbound"
+	if !s.IsInbound {
+		directionLabel = "outbound"
+	}
+	logger.Info("AdminStreamReplicationMessages started.")
+	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
+	streamsActiveGauge.Inc()
+	defer streamsActiveGauge.Dec()
+	defer logger.Info("AdminStreamReplicationMessages stopped.")
+
+	// simply forwarding target metadata
+	outgoingContext := metadata.NewOutgoingContext(initiatingServerStream.Context(), targetMetadata)
+	outgoingContext, cancel := context.WithCancel(outgoingContext)
+	defer cancel()
+
+	destinationStreamClient, err := s.adminClient.StreamWorkflowReplicationMessages(outgoingContext)
+	if err != nil {
+		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
+		return err
+	}
+
+	// Close the connection after this many requests have been handled. Jitter to more evenly balance clients using round-robin
+	messagesBeforeClose := 10_000 + rand.IntN(10_000)
+	connectInitiatorToDestination(initiatingServerStream, destinationStreamClient, messagesBeforeClose, logger)
+
+	// For streaming returns, returning nil out of this function will send io.EOF to the stream
+	return nil
+}
+
+func connectInitiatorToDestination(initiatingServerStream adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	destinationStreamClient adminservice.AdminService_StreamWorkflowReplicationMessagesClient,
+	messagesBeforeClose int,
+	logger log.Logger,
+) {
+
+	// Put each stream direction in its own goroutine so that if one side breaks, we can close both sides without waiting
+	shutdownChan := channel.NewShutdownOnce()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	// Initiator -> client (targetStreamServer) recv loop
+	go transferInitiatorToDestination(shutdownChan, destinationStreamClient, initiatingServerStream, &wg, messagesBeforeClose, logger)
+	// Upstream (sourceStreamClient) recv loop
+	go transferDestinationToInitiator(shutdownChan, destinationStreamClient, initiatingServerStream, &wg, logger)
+	wg.Wait()
+}
+
+type ReplicationMessageRequestOrError struct {
+	req *adminservice.StreamWorkflowReplicationMessagesRequest
+	err error
+}
+type ReplicationMessageResponseOrError struct {
+	resp *adminservice.StreamWorkflowReplicationMessagesResponse
+	err  error
+}
+
+// transferInitiatorToDestination listens to the initiating connection and retransmits Requests to the destination connection.
+// Keep in mind there are two gRPC servers, "inbound" and "outbound". On inbound, the initiator is the remote Temporal.
+// On outbound, the initiator is the local Temporal and the destination is the remote Temporal.
+// TODO: These two directions are ALMOST identical. We could probably do something with generics here
+func transferInitiatorToDestination(shutdownChan channel.ShutdownOnce,
+	destinationStreamClient adminservice.AdminService_StreamWorkflowReplicationMessagesClient,
+	initiatingServerStream adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	wg *sync.WaitGroup,
+	messagesBeforeClose int,
+	logger log.Logger,
+) {
+	defer func() {
+		logger.Info("Shutdown targetStreamServer.Recv loop.")
+		shutdownChan.Shutdown()
+		var err error
+		closeSent := make(chan struct{})
+		go func() {
+			err = destinationStreamClient.CloseSend()
+			closeSent <- struct{}{}
+		}()
+		timeout := time.After(30 * time.Second)
+		select {
+		case <-closeSent:
+			break
+		case <-timeout:
+			err = fmt.Errorf("timed out waiting for destination stream to close")
+		}
+
+		if err != nil {
+			logger.Error("Failed to close sourceStreamClient", tag.Error(err))
+		}
+		wg.Done()
+	}()
+
+	messagesHandled := 0
+	ch := make(chan ReplicationMessageRequestOrError)
+	for !shutdownChan.IsShutdown() {
+		go func() {
+			req, err := initiatingServerStream.Recv()
+			ch <- ReplicationMessageRequestOrError{req: req, err: err}
+		}()
+		var req *adminservice.StreamWorkflowReplicationMessagesRequest
+		var err error
+		select {
+		case callValue := <-ch:
+			req = callValue.req
+			err = callValue.err
+		case <-shutdownChan.Channel():
+			return
+		}
+		if err == io.EOF {
+			logger.Info("initiatingServerStream.Recv encountered EOF", tag.Error(err))
+			return
+		}
+
+		if err != nil {
+			logger.Error("targetStreamServer.Recv encountered error", tag.Error(err))
+			return
+		}
+
+		switch attr := req.GetAttributes().(type) {
+		case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
+			logger.Debug(fmt.Sprintf("forwarding SyncReplicationState: inclusive %v", attr.SyncReplicationState.InclusiveLowWatermark))
+			if err = destinationStreamClient.Send(req); err != nil {
+				if err != io.EOF {
+					logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
+				} else {
+					logger.Info("sourceStreamClient.Send encountered EOF", tag.Error(err))
+				}
+				return
+			}
+		default:
+			logger.Error("targetStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
+				"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
+			))))
+			return
+		}
+		// Close the channels after messagesBeforeClose messages have been passed. This helps
+		// avoid clients maxing out a single server
+		messagesHandled++
+		if messagesHandled > messagesBeforeClose {
+			shutdownChan.Shutdown()
+		}
+	}
+}
+
+// transferDestinationToInitiator listens to the destination connection and retransmits Responses to the initiating connection.
+// Keep in mind there are two gRPC servers, "inbound" and "outbound". On inbound, the initiator is the remote Temporal.
+// On outbound, the initiator is the local Temporal and the destination is the remote Temporal.
+func transferDestinationToInitiator(shutdownChan channel.ShutdownOnce,
+	destinationStreamClient adminservice.AdminService_StreamWorkflowReplicationMessagesClient,
+	initiatingServerStream adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	wg *sync.WaitGroup,
+	logger log.Logger,
+) {
+	defer func() {
+		logger.Info("Shutdown destinationStreamClient.Recv loop.")
+		shutdownChan.Shutdown()
+		wg.Done()
+	}()
+
+	ch := make(chan ReplicationMessageResponseOrError)
+	for !shutdownChan.IsShutdown() {
+		go func() {
+			resp, err := destinationStreamClient.Recv()
+			ch <- ReplicationMessageResponseOrError{resp, err}
+		}()
+		var resp *adminservice.StreamWorkflowReplicationMessagesResponse
+		var err error
+		select {
+		case callValue := <-ch:
+			resp = callValue.resp
+			err = callValue.err
+		case <-shutdownChan.Channel():
+			return
+		}
+		if err == io.EOF {
+			logger.Info("destinationStreamClient.Recv encountered EOF", tag.Error(err))
+			return
+		}
+
+		if err != nil {
+			logger.Error("destinationStreamClient.Recv encountered error", tag.Error(err))
+			return
+		}
+		switch attr := resp.GetAttributes().(type) {
+		case *adminservice.StreamWorkflowReplicationMessagesResponse_Messages:
+			logger.Debug(fmt.Sprintf("forwarding ReplicationMessages: exclusive %v", attr.Messages.ExclusiveHighWatermark))
+			if err = initiatingServerStream.Send(resp); err != nil {
+				if err != io.EOF {
+					logger.Error("targetStreamServer.Send encountered error", tag.Error(err))
+				} else {
+					logger.Info("targetStreamServer.Send encountered EOF", tag.Error(err))
+				}
+				return
+			}
+		default:
+			logger.Error("destinationStreamClient.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
+				"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
+			))))
+			return
+		}
+	}
+}
+
+// Passthrough APIs below this point
+
+func (s *adminServiceProxyServer) AddSearchAttributes(ctx context.Context, in0 *adminservice.AddSearchAttributesRequest) (*adminservice.AddSearchAttributesResponse, error) {
+	return s.adminClient.AddSearchAttributes(ctx, in0)
+}
+
+func (s *adminServiceProxyServer) AddTasks(ctx context.Context, in0 *adminservice.AddTasksRequest) (*adminservice.AddTasksResponse, error) {
+	return s.adminClient.AddTasks(ctx, in0)
+}
+
+func (s *adminServiceProxyServer) CancelDLQJob(ctx context.Context, in0 *adminservice.CancelDLQJobRequest) (*adminservice.CancelDLQJobResponse, error) {
+	return s.adminClient.CancelDLQJob(ctx, in0)
+}
+
+func (s *adminServiceProxyServer) CloseShard(ctx context.Context, in0 *adminservice.CloseShardRequest) (*adminservice.CloseShardResponse, error) {
+	return s.adminClient.CloseShard(ctx, in0)
+}
+
+func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, in0 *adminservice.DeleteWorkflowExecutionRequest) (*adminservice.DeleteWorkflowExecutionResponse, error) {
+	return s.adminClient.DeleteWorkflowExecution(ctx, in0)
 }
 
 func (s *adminServiceProxyServer) DescribeDLQJob(ctx context.Context, in0 *adminservice.DescribeDLQJobRequest) (*adminservice.DescribeDLQJobResponse, error) {
@@ -224,147 +458,4 @@ func (s *adminServiceProxyServer) RemoveTask(ctx context.Context, in0 *adminserv
 
 func (s *adminServiceProxyServer) ResendReplicationTasks(ctx context.Context, in0 *adminservice.ResendReplicationTasksRequest) (*adminservice.ResendReplicationTasksResponse, error) {
 	return s.adminClient.ResendReplicationTasks(ctx, in0)
-}
-
-func ClusterShardIDtoString(sd history.ClusterShardID) string {
-	return fmt.Sprintf("(id: %d, shard: %d)", sd.ClusterID, sd.ShardID)
-}
-
-func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
-	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
-) (retError error) {
-	defer log.CapturePanic(s.logger, &retError)
-
-	targetMetadata, ok := metadata.FromIncomingContext(targetStreamServer.Context())
-	if !ok {
-		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
-	}
-	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(
-		headers.NewGRPCHeaderGetter(targetStreamServer.Context()),
-	)
-	if err != nil {
-		return err
-	}
-
-	logger := log.With(s.logger,
-		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
-		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
-
-	// Record streams active
-	directionLabel := "inbound"
-	if !s.IsInbound {
-		directionLabel = "outbound"
-	}
-	logger.Info("AdminStreamReplicationMessages started.")
-	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
-	streamsActiveGauge.Inc()
-	defer streamsActiveGauge.Dec()
-	defer logger.Info("AdminStreamReplicationMessages stopped.")
-
-	// simply forwarding target metadata
-	outgoingContext := metadata.NewOutgoingContext(targetStreamServer.Context(), targetMetadata)
-	outgoingContext, cancel := context.WithCancel(outgoingContext)
-	defer cancel()
-
-	sourceStreamClient, err := s.adminClient.StreamWorkflowReplicationMessages(outgoingContext)
-	if err != nil {
-		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
-		return err
-	}
-
-	shutdownChan := channel.NewShutdownOnce()
-
-	// Downstream (targetStreamServer) recv loop
-	go func() {
-		defer func() {
-			logger.Info("Shutdown targetStreamServer.Recv loop.")
-			shutdownChan.Shutdown()
-
-			err = sourceStreamClient.CloseSend()
-			if err != nil {
-				logger.Error("Failed to close sourceStreamClient", tag.Error(err))
-			}
-		}()
-
-		for !shutdownChan.IsShutdown() {
-			req, err := targetStreamServer.Recv()
-			if err == io.EOF {
-				logger.Info("targetStreamServer.Recv encountered EOF", tag.Error(err))
-				return
-			}
-
-			if err != nil {
-				logger.Error("targetStreamServer.Recv encountered error", tag.Error(err))
-				return
-			}
-
-			switch attr := req.GetAttributes().(type) {
-			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
-				logger.Debug(fmt.Sprintf("forwarding SyncReplicationState: inclusive %v", attr.SyncReplicationState.InclusiveLowWatermark))
-				if err = sourceStreamClient.Send(req); err != nil {
-					if err != io.EOF {
-						logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
-					} else {
-						logger.Info("sourceStreamClient.Send encountered EOF", tag.Error(err))
-					}
-					return
-				}
-			default:
-				logger.Error("targetStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
-					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
-				))))
-				return
-			}
-		}
-	}()
-
-	// Upstream (sourceStreamClient) recv loop
-	// If Upstream recv loop failed (sourceStream server restart for example), StreamWorkflowReplicationMessages
-	// returns without waiting for Downstream loop to stop. This is because Downstream loop can be blocked at
-	// targetStreamServer.Recv, which prevent StreamWorkflowReplicationMessages from returning.
-	// Once StreamWorkflowReplicationMessages returns, targetStreamServer.Recv will be unblocked
-	// (see https://stackoverflow.com/questions/68218469/how-to-un-wedge-go-grpc-bidi-streaming-server-from-the-blocking-recv-call)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer func() {
-			logger.Info("Shutdown sourceStreamClient.Recv loop.")
-
-			shutdownChan.Shutdown()
-			wg.Done()
-		}()
-
-		for !shutdownChan.IsShutdown() {
-			resp, err := sourceStreamClient.Recv()
-			if err == io.EOF {
-				logger.Info("sourceStreamClient.Recv encountered EOF", tag.Error(err))
-				return
-			}
-
-			if err != nil {
-				logger.Error("sourceStreamClient.Recv encountered error", tag.Error(err))
-				return
-			}
-			switch attr := resp.GetAttributes().(type) {
-			case *adminservice.StreamWorkflowReplicationMessagesResponse_Messages:
-				logger.Debug(fmt.Sprintf("forwarding ReplicationMessages: exclusive %v", attr.Messages.ExclusiveHighWatermark))
-				if err = targetStreamServer.Send(resp); err != nil {
-					if err != io.EOF {
-						logger.Error("targetStreamServer.Send encountered error", tag.Error(err))
-					} else {
-						logger.Info("targetStreamServer.Send encountered EOF", tag.Error(err))
-					}
-					return
-				}
-			default:
-				logger.Error("sourceStreamClient.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
-					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
-				))))
-				return
-			}
-		}
-	}()
-
-	wg.Wait()
-	return nil
 }

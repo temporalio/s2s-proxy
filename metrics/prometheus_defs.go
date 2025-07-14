@@ -13,6 +13,9 @@ var (
 
 	AdminServiceStreamsActive = DefaultGaugeVec("admin_service_streams_active", "Number of admin service streams open",
 		"stream_direction")
+	DisconnectLoad = DefaultCounterVec("admin_service_stream_force_disconnect_total",
+		"The number of times the stream was forcibly closed to help balance connections",
+		"stream_direction")
 
 	// /proxy/health_check.go
 
