@@ -49,11 +49,20 @@ func init() {
 	// Re-register the go collector with all non-debug metrics. See: https://pkg.go.dev/runtime/metrics
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
 		collectors.WithoutGoCollectorRuntimeMetrics(collectors.MetricsDebug.Matcher)))
-	prometheus.MustRegister(ProxyStartCount)
-	prometheus.MustRegister(GRPCServerMetrics)
+
+	prometheus.MustRegister(AdminServiceStreamsActive)
+	prometheus.MustRegister(ForceDisconnectCount)
+	prometheus.MustRegister(AdminServiceStreamReqCount)
+	prometheus.MustRegister(AdminServiceStreamRespCount)
+	prometheus.MustRegister(AdminServiceStreamsClosedCount)
+	prometheus.MustRegister(AdminServiceStreamsOpenedCount)
+
 	prometheus.MustRegister(HealthCheckIsHealthy)
 	prometheus.MustRegister(HealthCheckHealthyCount)
-	prometheus.MustRegister(AdminServiceStreamsActive)
+
+	prometheus.MustRegister(ProxyStartCount)
+	prometheus.MustRegister(GRPCServerMetrics)
+
 	prometheus.MustRegister(MuxSessionOpen)
 	prometheus.MustRegister(MuxStreamsActive)
 	prometheus.MustRegister(MuxObserverReportCount)
