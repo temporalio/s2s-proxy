@@ -122,11 +122,11 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	if !s.IsInbound {
 		directionLabel = "outbound"
 	}
-	logger.Info("AdminStreamReplicationMessages started.")
+	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(directionLabel).Inc()
 	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
 	streamsActiveGauge.Inc()
 	defer streamsActiveGauge.Dec()
-	defer logger.Info("AdminStreamReplicationMessages stopped.")
+	defer metrics.AdminServiceStreamsClosedCount.WithLabelValues(directionLabel).Inc()
 
 	// simply forwarding target metadata
 	outgoingContext := metadata.NewOutgoingContext(initiatingServerStream.Context(), targetMetadata)
