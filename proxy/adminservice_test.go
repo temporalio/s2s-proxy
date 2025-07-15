@@ -144,7 +144,7 @@ func (s *adminserviceSuite) TestRequestLimit() {
 				return nil
 			}).AnyTimes()
 
-			connectInitiatorToDestination(initiatingServerStream, destinationServerStream, tc.messagesBeforeClose, log.NewTestLogger())
+			connectInitiatorToDestination(initiatingServerStream, destinationServerStream, tc.messagesBeforeClose, "inbound", log.NewTestLogger())
 			fmt.Printf("Expected calls range [%d,%d]\n", minTimes, maxTimes)
 			fmt.Printf("Initiating Server Recv Count: %d\n", initiatingServerRecvCount.Load())
 			fmt.Printf("Destination Server Sent Count: %d\n", destinationServerSentCount.Load())

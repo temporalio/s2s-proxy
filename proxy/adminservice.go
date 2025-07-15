@@ -141,7 +141,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	// Close the connection after this many requests have been handled. Jitter to more evenly balance clients using round-robin
 	messagesBeforeClose := 10_000 + rand.IntN(10_000)
-	connectInitiatorToDestination(initiatingServerStream, destinationStreamClient, messagesBeforeClose, logger)
+	connectInitiatorToDestination(initiatingServerStream, destinationStreamClient, messagesBeforeClose, directionLabel, logger)
 
 	// For streaming returns, returning nil out of this function will send io.EOF to the stream
 	return nil
@@ -150,17 +150,17 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 func connectInitiatorToDestination(initiatingServerStream adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	destinationStreamClient adminservice.AdminService_StreamWorkflowReplicationMessagesClient,
 	messagesBeforeClose int,
+	directionLabel string,
 	logger log.Logger,
 ) {
-
 	// Put each stream direction in its own goroutine so that if one side breaks, we can close both sides without waiting
 	shutdownChan := channel.NewShutdownOnce()
 	var wg sync.WaitGroup
 	wg.Add(2)
 	// Initiator -> client (targetStreamServer) recv loop
-	go transferInitiatorToDestination(shutdownChan, destinationStreamClient, initiatingServerStream, &wg, messagesBeforeClose, logger)
+	go transferInitiatorToDestination(shutdownChan, destinationStreamClient, initiatingServerStream, &wg, messagesBeforeClose, directionLabel, logger)
 	// Upstream (sourceStreamClient) recv loop
-	go transferDestinationToInitiator(shutdownChan, destinationStreamClient, initiatingServerStream, &wg, logger)
+	go transferDestinationToInitiator(shutdownChan, destinationStreamClient, initiatingServerStream, &wg, directionLabel, logger)
 	wg.Wait()
 }
 
@@ -182,6 +182,7 @@ func transferInitiatorToDestination(shutdownChan channel.ShutdownOnce,
 	initiatingServerStream adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	wg *sync.WaitGroup,
 	messagesBeforeClose int,
+	directionLabel string,
 	logger log.Logger,
 ) {
 	defer func() {
@@ -218,6 +219,7 @@ func transferInitiatorToDestination(shutdownChan channel.ShutdownOnce,
 		var err error
 		select {
 		case callValue := <-ch:
+			metrics.AdminServiceStreamReqCount.WithLabelValues(directionLabel).Inc()
 			req = callValue.req
 			err = callValue.err
 		case <-shutdownChan.Channel():
@@ -254,6 +256,7 @@ func transferInitiatorToDestination(shutdownChan channel.ShutdownOnce,
 		// avoid clients maxing out a single server
 		messagesHandled++
 		if messagesHandled > messagesBeforeClose {
+			metrics.ForceDisconnectCount.WithLabelValues(directionLabel).Inc()
 			shutdownChan.Shutdown()
 		}
 	}
@@ -266,6 +269,7 @@ func transferDestinationToInitiator(shutdownChan channel.ShutdownOnce,
 	destinationStreamClient adminservice.AdminService_StreamWorkflowReplicationMessagesClient,
 	initiatingServerStream adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	wg *sync.WaitGroup,
+	directionLabel string,
 	logger log.Logger,
 ) {
 	defer func() {
@@ -284,6 +288,7 @@ func transferDestinationToInitiator(shutdownChan channel.ShutdownOnce,
 		var err error
 		select {
 		case callValue := <-ch:
+			metrics.AdminServiceStreamRespCount.WithLabelValues(directionLabel).Inc()
 			resp = callValue.resp
 			err = callValue.err
 		case <-shutdownChan.Channel():
