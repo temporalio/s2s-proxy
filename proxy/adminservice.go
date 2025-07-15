@@ -143,7 +143,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 
 	// Close the connection after this many requests have been handled. Jitter to more evenly balance clients using round-robin
-	messagesBeforeClose := 300 + rand.IntN(300)
+	messagesBeforeClose := 120 + rand.IntN(120)
 	connectInitiatorToDestination(initiatingServerStream, destinationStreamClient, messagesBeforeClose, directionLabel, logger)
 
 	// For streaming returns, returning nil out of this function will send io.EOF to the stream
