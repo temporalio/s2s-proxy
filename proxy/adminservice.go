@@ -255,6 +255,7 @@ func transferInitiatorToDestination(shutdownChan channel.ShutdownOnce,
 		// Close the channels after messagesBeforeClose messages have been passed. This helps
 		// avoid clients maxing out a single server
 		messagesHandled++
+		metrics.AdminServiceStreamsMessagesHandledGauge.WithLabelValues(directionLabel).Set(float64(messagesHandled))
 		if messagesHandled > messagesBeforeClose {
 			metrics.ForceDisconnectCount.WithLabelValues(directionLabel).Inc()
 			shutdownChan.Shutdown()

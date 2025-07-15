@@ -16,10 +16,11 @@ var (
 	ForceDisconnectCount = DefaultCounterVec("admin_service_stream_force_disconnect_count",
 		"The number of times the stream was forcibly closed to help balance connections",
 		"stream_direction")
-	AdminServiceStreamReqCount     = DefaultCounterVec("admin_service_rep_stream_request_count", "Number of messages received", "stream_direction")
-	AdminServiceStreamRespCount    = DefaultCounterVec("admin_service_rep_stream_response_count", "Number of messages received", "stream_direction")
-	AdminServiceStreamsClosedCount = DefaultCounterVec("admin_service_streams_closed_count", "Number of streams closed", "stream_direction")
-	AdminServiceStreamsOpenedCount = DefaultCounterVec("admin_service_streams_opened_count", "Number of streams opened", "stream_direction")
+	AdminServiceStreamReqCount              = DefaultCounterVec("admin_service_rep_stream_request_count", "Number of messages received", "stream_direction")
+	AdminServiceStreamRespCount             = DefaultCounterVec("admin_service_rep_stream_response_count", "Number of messages received", "stream_direction")
+	AdminServiceStreamsClosedCount          = DefaultCounterVec("admin_service_streams_closed_count", "Number of streams closed", "stream_direction")
+	AdminServiceStreamsOpenedCount          = DefaultCounterVec("admin_service_streams_opened_count", "Number of streams opened", "stream_direction")
+	AdminServiceStreamsMessagesHandledGauge = DefaultGaugeVec("admin_service_streams_messages_handled", "Messages handled before closing", "stream_direction")
 
 	// /proxy/health_check.go
 
@@ -56,6 +57,7 @@ func init() {
 	prometheus.MustRegister(AdminServiceStreamRespCount)
 	prometheus.MustRegister(AdminServiceStreamsClosedCount)
 	prometheus.MustRegister(AdminServiceStreamsOpenedCount)
+	prometheus.MustRegister(AdminServiceStreamsMessagesHandledGauge)
 
 	prometheus.MustRegister(HealthCheckIsHealthy)
 	prometheus.MustRegister(HealthCheckHealthyCount)
