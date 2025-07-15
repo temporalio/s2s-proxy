@@ -96,8 +96,11 @@ func ClusterShardIDtoString(sd history.ClusterShardID) string {
 	return fmt.Sprintf("(id: %d, shard: %d)", sd.ClusterID, sd.ShardID)
 }
 
+// The inbound connection establishes an HTTP/2 stream. gRPC passes us a stream that represents the initiating server,
+// and we can freely Send and Recv on that "server". Because this is a proxy, we also establish a bidirectional
+// stream using our configured adminClient. When we Recv on the initiator, we Send to the client.
+// When we Recv on the client, we Send to the initator
 func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
-	// The inbound connection establishes a
 	initiatingServerStream adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 ) (retError error) {
 	defer log.CapturePanic(s.logger, &retError)
@@ -140,7 +143,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 
 	// Close the connection after this many requests have been handled. Jitter to more evenly balance clients using round-robin
-	messagesBeforeClose := 10_000 + rand.IntN(10_000)
+	messagesBeforeClose := 300 + rand.IntN(300)
 	connectInitiatorToDestination(initiatingServerStream, destinationStreamClient, messagesBeforeClose, directionLabel, logger)
 
 	// For streaming returns, returning nil out of this function will send io.EOF to the stream
