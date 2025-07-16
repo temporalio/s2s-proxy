@@ -118,18 +118,16 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(directionLabel).Inc()
 	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
 	streamsActiveGauge.Inc()
-	checkStreams := openStreams.Load()
+	var checkStreams int32
 	// Pessimistic spinlock here strictly enforces MAX_STREAMS even under high connect load
 	for {
-		if checkStreams < MAX_STREAMS {
-			break
-		}
+		checkStreams := openStreams.Load()
 		if openStreams.CompareAndSwap(checkStreams, checkStreams+1) {
+			metrics.AdminServiceStreamsMeterGauge.WithLabelValues(directionLabel).Set(float64(checkStreams))
 			// Putting the defer here is cleaner than trying to carry the decision variables down to the cleanup function
 			defer openStreams.Add(-1)
 			break
 		}
-		checkStreams = openStreams.Load()
 	}
 	if checkStreams >= MAX_STREAMS {
 		metrics.AdminServiceStreamsRejectedCount.WithLabelValues(directionLabel).Inc()
