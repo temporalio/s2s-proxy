@@ -135,6 +135,8 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	if checkStreams >= MAX_STREAMS {
 		metrics.AdminServiceStreamsRejectedCount.WithLabelValues(directionLabel).Inc()
 		return status.Errorf(codes.ResourceExhausted, "too many streams registered. Please retry")
+	} else {
+		metrics.AdminServiceStreamsAllowedGauge.WithLabelValues(directionLabel).Set(float64(checkStreams))
 	}
 	defer func() {
 		// report metrics and logs
