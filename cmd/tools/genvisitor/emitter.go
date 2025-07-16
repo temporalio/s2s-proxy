@@ -25,19 +25,20 @@ type (
 		logger        log.Logger
 		mode          Mode
 		funcSignature string
+		funcTrailer   string
 		handlers      []*Handler
 		imports       map[string]struct{}
 		extraImports  map[string]struct{}
 		root          *Tree
 		inScopeVars   map[string]struct{}
-		trailer       string
 	}
 
-	// Handler can match a field in the type hierarchy
-	// and contains a function to generate code for that field
+	// Handler matches a field in the type hierarchy to a function that generates code.
 	Handler struct {
-		// Include returns whether to
-		Include    func(VisitType, VisitPath) bool
+		// Include returns whether to include this path during code generation.
+		Include func(VisitType, VisitPath) bool
+		// Invocation returns a snippet of generated code.
+		// It is passed a variable name that can be used for code generation.
 		Invocation func(string) string
 	}
 
@@ -60,7 +61,7 @@ func (e *Emitter) SetFunctionSignature(sig string) {
 }
 
 func (e *Emitter) SetFunctionTrailer(trailer string) {
-	e.trailer = trailer
+	e.funcTrailer = trailer
 }
 
 func (e *Emitter) AddHandler(include func(vt VisitType, path VisitPath) bool, invocation func(string) string) {
@@ -120,7 +121,7 @@ func (e *Emitter) Generate(out io.Writer) {
 		}
 	}
 	writeln(out, "}")
-	writeln(out, e.trailer)
+	writeln(out, e.funcTrailer)
 	writeln(out, "}")
 }
 
