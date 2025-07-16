@@ -82,6 +82,13 @@ func visit(
 	}
 }
 
+// camelToPascalCase converts a camelCaseName to a PascalCaseName
+//
+// Ex:
+//   - childWorkflowExecutionFailureInfo -> ChildWorkflowExecutionFailureInfo
+//   - activityType -> ActivityType
+//
+// (This just capitalizes the first letter)
 func camelToPascalCase[T ~string](s T) string {
 	if len(s) == 0 {
 		return string(s)
@@ -91,6 +98,12 @@ func camelToPascalCase[T ~string](s T) string {
 	return string(result)
 }
 
+// snakeToPascalCase converts a snake_case_name to a PascalCaseName.
+//
+// Ex:
+//   - activity_task_failed_event_attributes -> ActivityTaskFailedEventAttributes
+//   - workflow_task_failed_event_attributes -> WorkflowTaskFailedEventAttributes
+//   - failure -> Failure
 func snakeToPascalCase[T ~string](s T) string {
 	if len(s) == 0 {
 		return string(s)

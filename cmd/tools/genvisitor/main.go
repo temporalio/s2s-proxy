@@ -35,11 +35,13 @@ func main() {
 	emitter.AddHandler(
 		// Match any type called "Failure"
 		func(vt VisitType, path VisitPath) bool {
-			// Match Failure types, but not Cause fields.
+			// Match Failure types
 			if vt.GoTypeName() != "Failure" {
 				logger.Debug("ignore non Failure field", tag.NewAnyTag("path", path.String()))
 				return false
 			}
+			// Skip nested "Cause" field in Failure types. The repairInvalidUTF8InFailure handler function
+			// will descend into these.
 			if strings.Contains(path.String(), "/Cause") {
 				logger.Debug("ignore failure Cause", tag.NewAnyTag("path", path.String()))
 				return false
@@ -57,6 +59,10 @@ func main() {
 		},
 	)
 
+	// We traverse the current version of protobuf types (not the gogo-based protos)
+	// because protoreflect only works with the current version of protobuf types.
+	// The emitter can translate back to gogo-based types, if it is configured with
+	// Mode=Gogo122Version.
 	protoregistry.GlobalTypes.RangeMessages(func(mt protoreflect.MessageType) bool {
 		emitter.Visit(mt)
 		return true
