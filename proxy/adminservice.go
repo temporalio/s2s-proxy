@@ -125,7 +125,10 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		if openStreams.CompareAndSwap(checkStreams, checkStreams+1) {
 			metrics.AdminServiceStreamsMeterGauge.WithLabelValues(directionLabel).Set(float64(checkStreams))
 			// Putting the defer here is cleaner than trying to carry the decision variables down to the cleanup function
-			defer openStreams.Add(-1)
+			defer func() {
+				newVal := openStreams.Add(-1)
+				metrics.AdminServiceStreamsMeterGauge.WithLabelValues(directionLabel).Set(float64(newVal))
+			}()
 			break
 		}
 	}
