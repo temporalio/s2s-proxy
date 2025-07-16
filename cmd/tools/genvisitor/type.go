@@ -24,7 +24,7 @@ func (v VisitType) GoName() string {
 	return string(v.Name())
 }
 
-func (v *VisitType) GoTypeName() string {
+func (v VisitType) GoTypeName() string {
 	return string(v.Name())
 }
 

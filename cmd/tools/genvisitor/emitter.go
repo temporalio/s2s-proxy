@@ -14,8 +14,9 @@ const (
 	CurrentVersion Mode = iota
 
 	// Gogo122Version means to emit code for the older gogo-based protos
-	// from Temporal v1.22. The way this works is to "walk" type hierarchies
-	// current version of protos, but
+	// from Temporal v1.22. The way this works is to walk type hierarchies
+	// for current version of protos, but convert the current protos back
+	// to the corresponding gogo-based types/packages.
 	Gogo122Version
 )
 
