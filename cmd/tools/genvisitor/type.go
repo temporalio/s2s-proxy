@@ -9,15 +9,11 @@ import (
 
 // VisitType represents a visited protobuf type.
 type VisitType struct {
-	FieldName   string
-	VisitParent *VisitType
+	FieldName string
 	protoreflect.Descriptor
 }
 
-func (v *VisitType) GoFieldName() string {
-	if v == nil {
-		return ""
-	}
+func (v VisitType) GoFieldName() string {
 	return v.FieldName
 }
 
@@ -29,9 +25,6 @@ func (v VisitType) GoName() string {
 }
 
 func (v *VisitType) GoTypeName() string {
-	if v == nil {
-		return ""
-	}
 	return string(v.Name())
 }
 
