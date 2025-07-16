@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	maxFailureDepth    = 10
+	maxFailureDepth      = 10
 	replacementCharacter = string(utf8.RuneError)
 )
 
