@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/rand/v2"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.temporal.io/api/serviceerror"
@@ -15,7 +16,9 @@ import (
 	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/temporalio/s2s-proxy/client"
 	adminclient "github.com/temporalio/s2s-proxy/client/admin"
@@ -32,6 +35,10 @@ type (
 		proxyOptions
 	}
 )
+
+var openStreams atomic.Int32
+
+const MAX_STREAMS = 300
 
 func NewAdminServiceProxyServer(
 	serviceName string,
@@ -103,7 +110,36 @@ func ClusterShardIDtoString(sd history.ClusterShardID) string {
 func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	initiatingServerStream adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 ) (retError error) {
-	defer log.CapturePanic(s.logger, &retError)
+	// Record streams active
+	directionLabel := "inbound"
+	if !s.IsInbound {
+		directionLabel = "outbound"
+	}
+	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(directionLabel).Inc()
+	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
+	streamsActiveGauge.Inc()
+	checkStreams := openStreams.Load()
+	// Pessimistic spinlock here strictly enforces MAX_STREAMS even under high connect load
+	for {
+		if checkStreams < MAX_STREAMS {
+			break
+		}
+		if openStreams.CompareAndSwap(checkStreams, checkStreams+1) {
+			// Putting the defer here is cleaner than trying to carry the decision variables down to the cleanup function
+			defer openStreams.Add(-1)
+			break
+		}
+		checkStreams = openStreams.Load()
+	}
+	if checkStreams >= MAX_STREAMS {
+		return status.Errorf(codes.ResourceExhausted, "too many streams registered. Please retry")
+	}
+	defer func() {
+		// report metrics and logs
+		streamsActiveGauge.Dec()
+		metrics.AdminServiceStreamsClosedCount.WithLabelValues(directionLabel).Inc()
+		log.CapturePanic(s.logger, &retError)
+	}()
 
 	targetMetadata, ok := metadata.FromIncomingContext(initiatingServerStream.Context())
 	if !ok {
@@ -119,17 +155,6 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	logger := log.With(s.logger,
 		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
 		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
-
-	// Record streams active
-	directionLabel := "inbound"
-	if !s.IsInbound {
-		directionLabel = "outbound"
-	}
-	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(directionLabel).Inc()
-	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
-	streamsActiveGauge.Inc()
-	defer streamsActiveGauge.Dec()
-	defer metrics.AdminServiceStreamsClosedCount.WithLabelValues(directionLabel).Inc()
 
 	// simply forwarding target metadata
 	outgoingContext := metadata.NewOutgoingContext(initiatingServerStream.Context(), targetMetadata)
@@ -259,10 +284,10 @@ func transferInitiatorToDestination(shutdownChan channel.ShutdownOnce,
 		// avoid clients maxing out a single server
 		messagesHandled++
 		metrics.AdminServiceStreamsMessagesHandledGauge.WithLabelValues(directionLabel).Set(float64(messagesHandled))
-		if messagesHandled > messagesBeforeClose {
-			metrics.ForceDisconnectCount.WithLabelValues(directionLabel).Inc()
-			shutdownChan.Shutdown()
-		}
+		// if messagesHandled > messagesBeforeClose {
+		// metrics.ForceDisconnectCount.WithLabelValues(directionLabel).Inc()
+		// shutdownChan.Shutdown()
+		// }
 	}
 }
 
