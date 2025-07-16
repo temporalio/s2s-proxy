@@ -51,7 +51,6 @@ bench:
 GENVISITOR_FLAGS ?= # -debug -dump-tree
 genvisitor:
 	go run ./cmd/tools/genvisitor/ $(GENVISITOR_FLAGS) > proto/compat/repair_utf8_gen.go
-	sed -i '' 's/package main_test/package compat/' proto/compat/repair_utf8_gen.go
 	go fmt proto/compat/repair_utf8_gen.go
 	make fmt
 
