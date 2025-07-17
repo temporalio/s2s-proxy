@@ -37,7 +37,7 @@ type (
 	}
 	maximumConnectedClients struct {
 		connectedClients map[string]int
-		count            int
+		uniqueCount      int
 		sync.RWMutex
 	}
 )
@@ -46,13 +46,13 @@ func (c *maximumConnectedClients) reserve(address string) int {
 	c.Lock()
 	// TODO: Slow, use the reader part of the lock if this works
 	defer c.Unlock()
-	c.count++
 	if val, ok := c.connectedClients[address]; ok {
 		c.connectedClients[address] = val + 1
 	} else {
+		c.uniqueCount++
 		c.connectedClients[address] = 1
 	}
-	return int(c.count)
+	return int(c.uniqueCount)
 }
 
 func (c *maximumConnectedClients) release(address string) int {
@@ -60,13 +60,13 @@ func (c *maximumConnectedClients) release(address string) int {
 	// TODO: Slow, use the reader part of the lock if this works
 	defer c.Unlock()
 	if val, ok := c.connectedClients[address]; ok {
-		c.count--
 		if val <= 1 {
+			c.uniqueCount--
 			delete(c.connectedClients, address)
 		} else {
 			c.connectedClients[address] = val - 1
 		}
-		return c.count
+		return c.uniqueCount
 	} else {
 		panic(fmt.Sprintf("Invalid release on address %s!", address))
 	}
@@ -75,7 +75,7 @@ func (c *maximumConnectedClients) release(address string) int {
 var openStreams atomic.Int32
 var clientLock maximumConnectedClients = maximumConnectedClients{
 	connectedClients: make(map[string]int),
-	count:            0,
+	uniqueCount:      0,
 	RWMutex:          sync.RWMutex{},
 }
 
