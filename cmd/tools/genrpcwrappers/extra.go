@@ -108,9 +108,9 @@ import (
 	"github.com/temporalio/s2s-proxy/common"
 )
 
-// {{.ServiceNameTitle}}ConvertTo122 accepts a protobuf type and returns
+// {{.ServiceName}}ConvertTo122 accepts a protobuf type and returns
 // the corresponding gogo-based protobuf type from Temporal v1.22.
-func {{.ServiceNameTitle}}ConvertTo122(vAny any) (common.Marshaler, bool) {
+func {{.ServiceName}}ConvertTo122(vAny any) (common.Marshaler, bool) {
 	switch vAny.(type) {
 `)
 

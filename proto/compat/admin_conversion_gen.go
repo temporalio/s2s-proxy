@@ -8,9 +8,9 @@ import (
 	svc "go.temporal.io/server/api/adminservice/v1"
 )
 
-// AdminConvertTo122 accepts a protobuf type and returns
+// adminConvertTo122 accepts a protobuf type and returns
 // the corresponding gogo-based protobuf type from Temporal v1.22.
-func AdminConvertTo122(vAny any) (common.Marshaler, bool) {
+func adminConvertTo122(vAny any) (common.Marshaler, bool) {
 	switch vAny.(type) {
 
 	case *svc.AddOrUpdateRemoteClusterResponse:
