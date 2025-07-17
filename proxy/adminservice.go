@@ -38,7 +38,7 @@ type (
 
 var openStreams atomic.Int32
 
-const MAX_STREAMS = 325
+const MAX_STREAMS = 1025
 
 func NewAdminServiceProxyServer(
 	serviceName string,

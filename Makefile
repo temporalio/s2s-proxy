@@ -127,7 +127,8 @@ docker-login:
 
 .PHONY: docker-build-push
 docker-build-push:
-	@docker buildx build --platform=linux/amd64,linux/arm64 -t "${DOCKER_REPO}/${DOCKER_IMAGE}:${DOCKER_TAG}" --push .
+	@docker buildx build --platform=linux/amd64,linux/arm64 -t "${DOCKER_REPO}/${DOCKER_IMAGE}:${DOCKER_TAG}" --push . \
+	|| echo "build & push failed. Check if @aws gave you the wrong credentials: omni aws ecr get-login-password --region ${AWS_ECR_REGION} --profile ${AWS_ECR_PROFILE} | docker login --username AWS --password-stdin ${DOCKER_REPO}"
 
 
 .PHONY: helm-install
