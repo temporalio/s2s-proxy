@@ -116,8 +116,10 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		directionLabel = "outbound"
 	}
 	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(directionLabel).Inc()
+	defer metrics.AdminServiceStreamsClosedCount.WithLabelValues(directionLabel).Inc()
 	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
 	streamsActiveGauge.Inc()
+	defer streamsActiveGauge.Dec()
 	var checkStreams int32
 	// Pessimistic spinlock here strictly enforces MAX_STREAMS even under high connect load
 	for {
@@ -136,12 +138,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	} else {
 		metrics.AdminServiceStreamsAllowedGauge.WithLabelValues(directionLabel).Set(float64(checkStreams))
 	}
-	defer func() {
-		// report metrics and logs
-		streamsActiveGauge.Dec()
-		metrics.AdminServiceStreamsClosedCount.WithLabelValues(directionLabel).Inc()
-		log.CapturePanic(s.logger, &retError)
-	}()
+	defer log.CapturePanic(s.logger, &retError)
 
 	targetMetadata, ok := metadata.FromIncomingContext(initiatingServerStream.Context())
 	if !ok {
