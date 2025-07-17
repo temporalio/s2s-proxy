@@ -73,7 +73,11 @@ func (c *maximumConnectedClients) release(address string) int {
 }
 
 var openStreams atomic.Int32
-var clientLock maximumConnectedClients
+var clientLock maximumConnectedClients = maximumConnectedClients{
+	connectedClients: make(map[string]int),
+	count:            0,
+	RWMutex:          sync.RWMutex{},
+}
 
 const maxStreams = 1025
 const maxUniqueInboundConnections = 10
