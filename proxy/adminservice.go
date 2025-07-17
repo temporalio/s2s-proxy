@@ -18,6 +18,7 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"github.com/temporalio/s2s-proxy/client"
@@ -34,11 +35,48 @@ type (
 		logger      log.Logger
 		proxyOptions
 	}
+	maximumConnectedClients struct {
+		connectedClients map[string]int
+		count            int
+		sync.RWMutex
+	}
 )
 
-var openStreams atomic.Int32
+func (c *maximumConnectedClients) reserve(address string) int {
+	c.Lock()
+	// TODO: Slow, use the reader part of the lock if this works
+	defer c.Unlock()
+	c.count++
+	if val, ok := c.connectedClients[address]; ok {
+		c.connectedClients[address] = val + 1
+	} else {
+		c.connectedClients[address] = 1
+	}
+	return int(c.count)
+}
 
-const MAX_STREAMS = 1025
+func (c *maximumConnectedClients) release(address string) int {
+	c.Lock()
+	// TODO: Slow, use the reader part of the lock if this works
+	defer c.Unlock()
+	if val, ok := c.connectedClients[address]; ok {
+		c.count--
+		if val <= 1 {
+			delete(c.connectedClients, address)
+		} else {
+			c.connectedClients[address] = val - 1
+		}
+		return c.count
+	} else {
+		panic(fmt.Sprintf("Invalid release on address %s!", address))
+	}
+}
+
+var openStreams atomic.Int32
+var clientLock maximumConnectedClients
+
+const maxStreams = 1025
+const maxUniqueInboundConnections = 10
 
 func NewAdminServiceProxyServer(
 	serviceName string,
@@ -103,7 +141,7 @@ func ClusterShardIDtoString(sd history.ClusterShardID) string {
 	return fmt.Sprintf("(id: %d, shard: %d)", sd.ClusterID, sd.ShardID)
 }
 
-// The inbound connection establishes an HTTP/2 stream. gRPC passes us a stream that represents the initiating server,
+// StreamWorkflowReplicationMessages establishes an HTTP/2 stream. gRPC passes us a stream that represents the initiating server,
 // and we can freely Send and Recv on that "server". Because this is a proxy, we also establish a bidirectional
 // stream using our configured adminClient. When we Recv on the initiator, we Send to the client.
 // When we Recv on the client, we Send to the initator
@@ -120,6 +158,23 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
 	streamsActiveGauge.Inc()
 	defer streamsActiveGauge.Dec()
+
+	var checkClients int
+	if p, ok := peer.FromContext(initiatingServerStream.Context()); ok {
+		addr := p.Addr.String()
+		metricInstance := metrics.AdminServiceStreamsClientConnections.WithLabelValues(addr, directionLabel)
+		checkClients = clientLock.reserve(addr)
+		metricInstance.Inc()
+		defer clientLock.reserve(addr)
+		defer metricInstance.Dec()
+	} else {
+		metrics.AdminServiceStreamsNoClientAddress.WithLabelValues(directionLabel).Inc()
+	}
+	if checkClients > maxUniqueInboundConnections {
+		metrics.AdminServiceStreamsClientRejected.WithLabelValues(directionLabel).Inc()
+		return status.Errorf(codes.ResourceExhausted, "there are already too many clients connected to this instance. Please reconnect")
+	}
+
 	var checkStreams int32
 	// Pessimistic spinlock here strictly enforces MAX_STREAMS even under high connect load
 	for {
@@ -132,7 +187,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		}()
 		break
 	}
-	if checkStreams >= MAX_STREAMS {
+	if checkStreams >= maxStreams {
 		metrics.AdminServiceStreamsRejectedCount.WithLabelValues(directionLabel).Inc()
 		return status.Errorf(codes.ResourceExhausted, "too many streams registered. Please retry")
 	} else {

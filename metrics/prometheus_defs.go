@@ -25,6 +25,9 @@ var (
 	AdminServiceStreamsAllowedGauge         = DefaultGaugeVec("admin_service_streams_allowed_value", "Instantaneous number of streams allowed", "stream_direction")
 	AdminServiceStreamsMessagesHandledGauge = DefaultGaugeVec("admin_service_streams_messages_handled", "Messages handled before closing", "stream_direction")
 	AdminServiceStreamsClientHangupCount    = DefaultCounterVec("admin_service_streams_client_hangup", "Times client closed the connection", "stream_direction")
+	AdminServiceStreamsNoClientAddress      = DefaultCounterVec("admin_service_streams_no_client_address", "When querying context, there was no client address", "stream_direction")
+	AdminServiceStreamsClientConnections    = DefaultGaugeVec("admin_service_streams_client_connections", "The number of active client connections", "source_address", "stream_direction")
+	AdminServiceStreamsClientRejected       = DefaultCounterVec("admin_service_streams_client_rejected", "Client rejections due to rate exceeded", "stream_direction")
 
 	// /proxy/health_check.go
 
@@ -66,6 +69,9 @@ func init() {
 	prometheus.MustRegister(AdminServiceStreamsAllowedGauge)
 	prometheus.MustRegister(AdminServiceStreamsMessagesHandledGauge)
 	prometheus.MustRegister(AdminServiceStreamsClientHangupCount)
+	prometheus.MustRegister(AdminServiceStreamsNoClientAddress)
+	prometheus.MustRegister(AdminServiceStreamsClientConnections)
+	prometheus.MustRegister(AdminServiceStreamsClientRejected)
 
 	prometheus.MustRegister(HealthCheckIsHealthy)
 	prometheus.MustRegister(HealthCheckHealthyCount)
