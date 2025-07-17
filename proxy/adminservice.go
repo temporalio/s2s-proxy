@@ -261,7 +261,12 @@ func transferInitiatorToDestination(shutdownChan channel.ShutdownOnce,
 		}
 
 		if err != nil {
-			logger.Error("targetStreamServer.Recv encountered error", tag.Error(err))
+			status := status.Convert(err)
+			if status.Code() == codes.Canceled {
+				metrics.AdminServiceStreamsClientHangupCount.WithLabelValues(directionLabel).Inc()
+			} else {
+				logger.Error("destinationStreamClient.Recv encountered unknown error", tag.Error(err), tag.NewStringTag("grpc_status", status.String()))
+			}
 			return
 		}
 
@@ -331,7 +336,12 @@ func transferDestinationToInitiator(shutdownChan channel.ShutdownOnce,
 		}
 
 		if err != nil {
-			logger.Error("destinationStreamClient.Recv encountered error", tag.Error(err))
+			status := status.Convert(err)
+			if status.Code() == codes.Canceled {
+				metrics.AdminServiceStreamsClientHangupCount.WithLabelValues(directionLabel).Inc()
+			} else {
+				logger.Error("destinationStreamClient.Recv encountered unknown error", tag.Error(err), tag.NewStringTag("grpc_status", status.String()))
+			}
 			return
 		}
 		switch attr := resp.GetAttributes().(type) {
