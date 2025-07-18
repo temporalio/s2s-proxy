@@ -171,7 +171,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		metricInstance := metrics.AdminServiceStreamsClientConnections.WithLabelValues(addr, directionLabel)
 		checkClients = clientLock.reserve(addr)
 		metricInstance.Inc()
-		defer clientLock.reserve(addr)
+		defer clientLock.release(addr)
 		defer metricInstance.Dec()
 	} else {
 		metrics.AdminServiceStreamsNoClientAddress.WithLabelValues(directionLabel).Inc()
