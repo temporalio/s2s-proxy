@@ -81,7 +81,7 @@ func (c *maximumConnectedClients) release(address string) int {
 }
 
 var openStreams atomic.Int32
-var clientLock maximumConnectedClients = maximumConnectedClients{
+var outboundClientLock maximumConnectedClients = maximumConnectedClients{
 	connectedClients: make(map[string]int),
 	uniqueCount:      0,
 	RWMutex:          sync.RWMutex{},
@@ -175,8 +175,8 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	if p, ok := peer.FromContext(initiatingServerStream.Context()); ok {
 		addr := p.Addr.String()
 		if !s.IsInbound {
-			uniqueOutboundClients = clientLock.reserve(addr)
-			defer clientLock.release(addr)
+			uniqueOutboundClients = outboundClientLock.reserve(addr)
+			defer outboundClientLock.release(addr)
 		}
 		metricInstance := metrics.AdminServiceStreamsClientConnections.WithLabelValues(addr, directionLabel)
 		metricInstance.Inc()
@@ -186,7 +186,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 	if !s.IsInbound && uniqueOutboundClients > maxUniqueOutboundConnections {
 		metrics.AdminServiceStreamsClientRejected.WithLabelValues(directionLabel).Inc()
-		return nil
+		return io.EOF
 	}
 
 	var checkStreams int32
