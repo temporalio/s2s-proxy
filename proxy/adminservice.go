@@ -88,7 +88,7 @@ var clientLock maximumConnectedClients = maximumConnectedClients{
 }
 
 const maxStreams = 1025
-const maxUniqueOutboundConnections = 2
+const maxUniqueOutboundConnections = 1
 
 func NewAdminServiceProxyServer(
 	serviceName string,
@@ -171,20 +171,22 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	streamsActiveGauge.Inc()
 	defer streamsActiveGauge.Dec()
 
-	var checkClients int
+	var uniqueOutboundClients int
 	if p, ok := peer.FromContext(initiatingServerStream.Context()); ok {
 		addr := p.Addr.String()
-		metricInstance := metrics.AdminServiceStreamsClientConnections.WithLabelValues(addr, directionLabel)
-		checkClients = clientLock.reserve(addr)
-		metricInstance.Inc()
+		if !s.IsInbound {
+			uniqueOutboundClients = clientLock.reserve(addr)
+		}
 		defer clientLock.release(addr)
+		metricInstance := metrics.AdminServiceStreamsClientConnections.WithLabelValues(addr, directionLabel)
+		metricInstance.Inc()
 		defer metricInstance.Dec()
 	} else {
 		metrics.AdminServiceStreamsNoClientAddress.WithLabelValues(directionLabel).Inc()
 	}
-	if !s.IsInbound && checkClients > maxUniqueOutboundConnections {
+	if !s.IsInbound && uniqueOutboundClients > maxUniqueOutboundConnections {
 		metrics.AdminServiceStreamsClientRejected.WithLabelValues(directionLabel).Inc()
-		return io.EOF
+		return nil
 	}
 
 	var checkStreams int32
