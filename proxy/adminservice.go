@@ -42,6 +42,12 @@ type (
 	}
 )
 
+func (c *maximumConnectedClients) overLimit() bool {
+	c.Lock()
+	defer c.Unlock()
+	return c.uniqueCount > maxUniqueOutboundConnections
+}
+
 func (c *maximumConnectedClients) reserve(address string) int {
 	c.Lock()
 	// TODO: Slow, use the reader part of the lock if this works
@@ -310,7 +316,6 @@ func transferInitiatorToDestination(shutdownChan channel.ShutdownOnce,
 		select {
 		case callValue := <-ch:
 			metrics.AdminServiceStreamReqCount.WithLabelValues(directionLabel).Inc()
-			metrics.AdminServiceStreamsTrafficByShard.WithLabelValues(shardLabel).Inc()
 			req = callValue.req
 			err = callValue.err
 		case <-shutdownChan.Channel():
@@ -387,7 +392,6 @@ func transferDestinationToInitiator(shutdownChan channel.ShutdownOnce,
 		select {
 		case callValue := <-ch:
 			metrics.AdminServiceStreamRespCount.WithLabelValues(directionLabel).Inc()
-			metrics.AdminServiceStreamsTrafficByShard.WithLabelValues(shardLabel).Inc()
 			resp = callValue.resp
 			err = callValue.err
 		case <-shutdownChan.Channel():
