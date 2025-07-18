@@ -73,6 +73,7 @@ func init() {
 	prometheus.MustRegister(AdminServiceStreamsNoClientAddress)
 	prometheus.MustRegister(AdminServiceStreamsClientConnections)
 	prometheus.MustRegister(AdminServiceStreamsClientRejected)
+	prometheus.MustRegister(AdminServiceStreamsUniqueClients)
 
 	prometheus.MustRegister(HealthCheckIsHealthy)
 	prometheus.MustRegister(HealthCheckHealthyCount)
