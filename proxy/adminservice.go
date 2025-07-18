@@ -52,7 +52,8 @@ func (c *maximumConnectedClients) reserve(address string) int {
 		c.uniqueCount++
 		c.connectedClients[address] = 1
 	}
-	return int(c.uniqueCount)
+	metrics.AdminServiceStreamsUniqueClients.Set(float64(c.uniqueCount))
+	return c.uniqueCount
 }
 
 func (c *maximumConnectedClients) release(address string) int {
@@ -66,6 +67,7 @@ func (c *maximumConnectedClients) release(address string) int {
 		} else {
 			c.connectedClients[address] = val - 1
 		}
+		metrics.AdminServiceStreamsUniqueClients.Set(float64(c.uniqueCount))
 		return c.uniqueCount
 	} else {
 		panic(fmt.Sprintf("Invalid release on address %s!", address))
@@ -80,7 +82,7 @@ var clientLock maximumConnectedClients = maximumConnectedClients{
 }
 
 const maxStreams = 1025
-const maxUniqueOutboundConnections = 3
+const maxUniqueOutboundConnections = 4
 
 func NewAdminServiceProxyServer(
 	serviceName string,

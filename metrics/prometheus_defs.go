@@ -28,6 +28,7 @@ var (
 	AdminServiceStreamsNoClientAddress      = DefaultCounterVec("admin_service_streams_no_client_address", "When querying context, there was no client address", "stream_direction")
 	AdminServiceStreamsClientConnections    = DefaultGaugeVec("admin_service_streams_client_connections", "The number of active client connections", "source_address", "stream_direction")
 	AdminServiceStreamsClientRejected       = DefaultCounterVec("admin_service_streams_client_rejected", "Client rejections due to rate exceeded", "stream_direction")
+	AdminServiceStreamsUniqueClients        = DefaultGauge("admin_service_streams_unique_clients", "Number of unique connected clients")
 
 	// /proxy/health_check.go
 
