@@ -80,7 +80,7 @@ var clientLock maximumConnectedClients = maximumConnectedClients{
 }
 
 const maxStreams = 1025
-const maxUniqueInboundConnections = 10
+const maxUniqueOutboundConnections = 2
 
 func NewAdminServiceProxyServer(
 	serviceName string,
@@ -174,7 +174,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	} else {
 		metrics.AdminServiceStreamsNoClientAddress.WithLabelValues(directionLabel).Inc()
 	}
-	if checkClients > maxUniqueInboundConnections {
+	if !s.IsInbound && checkClients > maxUniqueOutboundConnections {
 		metrics.AdminServiceStreamsClientRejected.WithLabelValues(directionLabel).Inc()
 		return status.Errorf(codes.ResourceExhausted, "there are already too many clients connected to this instance. Please reconnect")
 	}
