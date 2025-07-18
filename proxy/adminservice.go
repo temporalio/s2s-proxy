@@ -184,7 +184,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 	if !s.IsInbound && checkClients > maxUniqueOutboundConnections {
 		metrics.AdminServiceStreamsClientRejected.WithLabelValues(directionLabel).Inc()
-		return status.Errorf(codes.ResourceExhausted, "there are already too many clients connected to this instance. Please reconnect")
+		return io.EOF
 	}
 
 	var checkStreams int32
