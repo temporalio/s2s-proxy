@@ -229,7 +229,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	// Close the connection after this many requests have been handled. Jitter to more evenly balance clients using round-robin
 	messagesBeforeClose := 120 + rand.IntN(120)
-	connectInitiatorToDestination(initiatingServerStream, destinationStreamClient, messagesBeforeClose, directionLabel, logger)
+	connectInitiatorToDestination(initiatingServerStream, destinationStreamClient, messagesBeforeClose, directionLabel, string(sourceClusterShardID.ShardID), logger)
 
 	// For streaming returns, returning nil out of this function will send io.EOF to the stream
 	return nil
@@ -239,6 +239,7 @@ func connectInitiatorToDestination(initiatingServerStream adminservice.AdminServ
 	destinationStreamClient adminservice.AdminService_StreamWorkflowReplicationMessagesClient,
 	messagesBeforeClose int,
 	directionLabel string,
+	shardLabel string,
 	logger log.Logger,
 ) {
 	// Put each stream direction in its own goroutine so that if one side breaks, we can close both sides without waiting
@@ -246,9 +247,9 @@ func connectInitiatorToDestination(initiatingServerStream adminservice.AdminServ
 	var wg sync.WaitGroup
 	wg.Add(2)
 	// Initiator -> client (targetStreamServer) recv loop
-	go transferInitiatorToDestination(shutdownChan, destinationStreamClient, initiatingServerStream, &wg, messagesBeforeClose, directionLabel, logger)
+	go transferInitiatorToDestination(shutdownChan, destinationStreamClient, initiatingServerStream, &wg, messagesBeforeClose, directionLabel, shardLabel, logger)
 	// Upstream (sourceStreamClient) recv loop
-	go transferDestinationToInitiator(shutdownChan, destinationStreamClient, initiatingServerStream, &wg, directionLabel, logger)
+	go transferDestinationToInitiator(shutdownChan, destinationStreamClient, initiatingServerStream, &wg, directionLabel, shardLabel, logger)
 	wg.Wait()
 }
 
@@ -271,6 +272,7 @@ func transferInitiatorToDestination(shutdownChan channel.ShutdownOnce,
 	wg *sync.WaitGroup,
 	messagesBeforeClose int,
 	directionLabel string,
+	shardLabel string,
 	logger log.Logger,
 ) {
 	defer func() {
@@ -308,6 +310,7 @@ func transferInitiatorToDestination(shutdownChan channel.ShutdownOnce,
 		select {
 		case callValue := <-ch:
 			metrics.AdminServiceStreamReqCount.WithLabelValues(directionLabel).Inc()
+			metrics.AdminServiceStreamsTrafficByShard.WithLabelValues(shardLabel).Inc()
 			req = callValue.req
 			err = callValue.err
 		case <-shutdownChan.Channel():
@@ -364,6 +367,7 @@ func transferDestinationToInitiator(shutdownChan channel.ShutdownOnce,
 	initiatingServerStream adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	wg *sync.WaitGroup,
 	directionLabel string,
+	shardLabel string,
 	logger log.Logger,
 ) {
 	defer func() {
@@ -383,6 +387,7 @@ func transferDestinationToInitiator(shutdownChan channel.ShutdownOnce,
 		select {
 		case callValue := <-ch:
 			metrics.AdminServiceStreamRespCount.WithLabelValues(directionLabel).Inc()
+			metrics.AdminServiceStreamsTrafficByShard.WithLabelValues(shardLabel).Inc()
 			resp = callValue.resp
 			err = callValue.err
 		case <-shutdownChan.Channel():

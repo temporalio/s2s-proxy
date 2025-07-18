@@ -29,6 +29,7 @@ var (
 	AdminServiceStreamsClientConnections    = DefaultGaugeVec("admin_service_streams_client_connections", "The number of active client connections", "source_address", "stream_direction")
 	AdminServiceStreamsClientRejected       = DefaultCounterVec("admin_service_streams_client_rejected", "Client rejections due to rate exceeded", "stream_direction")
 	AdminServiceStreamsUniqueClients        = DefaultGauge("admin_service_streams_unique_clients", "Number of unique connected clients")
+	AdminServiceStreamsTrafficByShard       = DefaultCounterVec("admin_service_streams_traffic_by_shard", "Rate of traffic per shard ID", "shardId")
 
 	// /proxy/health_check.go
 
@@ -74,6 +75,7 @@ func init() {
 	prometheus.MustRegister(AdminServiceStreamsClientConnections)
 	prometheus.MustRegister(AdminServiceStreamsClientRejected)
 	prometheus.MustRegister(AdminServiceStreamsUniqueClients)
+	prometheus.MustRegister(AdminServiceStreamsTrafficByShard)
 
 	prometheus.MustRegister(HealthCheckIsHealthy)
 	prometheus.MustRegister(HealthCheckHealthyCount)
