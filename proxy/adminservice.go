@@ -87,8 +87,8 @@ var outboundClientLock maximumConnectedClients = maximumConnectedClients{
 	RWMutex:          sync.RWMutex{},
 }
 
-const maxStreams = 1025
-const maxUniqueOutboundConnections = 1
+const maxOutboundStreams = 200
+const maxUniqueOutboundConnections = 4 // Not limiting
 
 func NewAdminServiceProxyServer(
 	serviceName string,
@@ -190,8 +190,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 
 	var checkStreams int32
-	// Pessimistic spinlock here strictly enforces MAX_STREAMS even under high connect load
-	for {
+	if !s.IsInbound {
 		checkStreams = openStreams.Add(1)
 		metrics.AdminServiceStreamsMeterGauge.WithLabelValues(directionLabel).Set(float64(checkStreams))
 		// Putting the defer here is cleaner than trying to carry the decision variables down to the cleanup function
@@ -199,13 +198,12 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			newVal := openStreams.Add(-1)
 			metrics.AdminServiceStreamsMeterGauge.WithLabelValues(directionLabel).Set(float64(newVal))
 		}()
-		break
-	}
-	if checkStreams >= maxStreams {
-		metrics.AdminServiceStreamsRejectedCount.WithLabelValues(directionLabel).Inc()
-		return status.Errorf(codes.ResourceExhausted, "too many streams registered. Please retry")
-	} else {
-		metrics.AdminServiceStreamsAllowedGauge.WithLabelValues(directionLabel).Set(float64(checkStreams))
+		if checkStreams >= maxOutboundStreams {
+			metrics.AdminServiceStreamsRejectedCount.WithLabelValues(directionLabel).Inc()
+			return io.EOF
+		} else {
+			metrics.AdminServiceStreamsAllowedGauge.WithLabelValues(directionLabel).Set(float64(checkStreams))
+		}
 	}
 	defer log.CapturePanic(s.logger, &retError)
 
