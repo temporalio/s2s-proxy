@@ -87,8 +87,8 @@ var outboundClientLock maximumConnectedClients = maximumConnectedClients{
 	RWMutex:          sync.RWMutex{},
 }
 
-const maxOutboundStreams = 200
-const maxUniqueOutboundConnections = 4 // Not limiting
+const maxOutboundStreams = 1024
+const maxUniqueOutboundConnections = 1
 
 func NewAdminServiceProxyServer(
 	serviceName string,
@@ -198,7 +198,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			newVal := openStreams.Add(-1)
 			metrics.AdminServiceStreamsMeterGauge.WithLabelValues(directionLabel).Set(float64(newVal))
 		}()
-		if checkStreams >= maxOutboundStreams {
+		if checkStreams > maxOutboundStreams {
 			metrics.AdminServiceStreamsRejectedCount.WithLabelValues(directionLabel).Inc()
 			return io.EOF
 		} else {
