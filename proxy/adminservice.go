@@ -88,7 +88,7 @@ var outboundClientLock maximumConnectedClients = maximumConnectedClients{
 }
 
 const maxOutboundStreams = 1024
-const maxUniqueOutboundConnections = 1
+const maxUniqueOutboundConnections = 4
 
 func NewAdminServiceProxyServer(
 	serviceName string,
