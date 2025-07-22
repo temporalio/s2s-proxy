@@ -15,6 +15,7 @@ import (
 	enumsspb "go.temporal.io/server/api/enums/v1"
 	"go.temporal.io/server/api/persistence/v1"
 	replicationspb "go.temporal.io/server/api/replication/v1"
+	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/persistence/serialization"
 )
 
@@ -501,6 +502,7 @@ func testTranslateObj(
 	objCases []objCase,
 	equalityAssertion func(t require.TestingT, exp, actual any, extra ...any),
 ) {
+	logger := log.NewTestLogger()
 	testcases := []struct {
 		testName   string
 		inputName  string
@@ -540,7 +542,7 @@ func testTranslateObj(
 					expOutput := c.makeType(ts.outputName)
 					expChanged := ts.inputName != ts.outputName
 
-					changed, err := visitor(input, createStringMatcher(ts.mapping))
+					changed, err := visitor(logger, input, createStringMatcher(ts.mapping))
 					if len(c.expError) != 0 {
 						require.ErrorContains(t, err, c.expError)
 					} else {

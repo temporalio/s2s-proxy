@@ -3,15 +3,25 @@ package interceptor
 import (
 	"fmt"
 	"reflect"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/keilerkonzept/visit"
 	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
+	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/persistence/serialization"
+
+	common122 "github.com/temporalio/s2s-proxy/proto/1_22/api/common/v1"
+	enums122 "github.com/temporalio/s2s-proxy/proto/1_22/api/enums/v1"
+	history122 "github.com/temporalio/s2s-proxy/proto/1_22/api/history/v1"
+	serialization122 "github.com/temporalio/s2s-proxy/proto/1_22/server/common/persistence/serialization"
 )
 
 var (
-	serializer = serialization.NewSerializer()
+	serializer     = serialization.NewSerializer()
+	gogoSerializer = serialization122.NewSerializer()
 
 	namespaceFieldNames = map[string]bool{
 		"Namespace":               true,
@@ -47,12 +57,12 @@ type stringMatcher func(name string) (string, bool)
 
 // visitor visits each field in obj matching the matcher.
 // It returns whether anything was matched and any error it encountered.
-type visitor func(obj any, match stringMatcher) (bool, error)
+type visitor func(logger log.Logger, obj any, match stringMatcher) (bool, error)
 
 // visitNamespace uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
 // the provided match function.
-func visitNamespace(obj any, match stringMatcher) (bool, error) {
+func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, error) {
 	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
@@ -78,7 +88,7 @@ func visitNamespace(obj any, match stringMatcher) (bool, error) {
 			}
 			matched = matched || ok
 		} else if dataBlobFieldNames[fieldType.Name] {
-			changed, err := visitDataBlobs(vwp, match, visitNamespace)
+			changed, err := visitDataBlobs(logger, vwp, match, visitNamespace)
 			matched = matched || changed
 			if err != nil {
 				return visit.Stop, err
@@ -108,7 +118,7 @@ func visitNamespace(obj any, match stringMatcher) (bool, error) {
 // visitSearchAttributes uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
 // the provided match function.
-func visitSearchAttributes(obj any, match stringMatcher) (bool, error) {
+func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (bool, error) {
 	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
@@ -123,7 +133,7 @@ func visitSearchAttributes(obj any, match stringMatcher) (bool, error) {
 			return action, nil
 		}
 		if dataBlobFieldNames[fieldType.Name] {
-			changed, err := visitDataBlobs(vwp, match, visitSearchAttributes)
+			changed, err := visitDataBlobs(logger, vwp, match, visitSearchAttributes)
 			matched = matched || changed
 			if err != nil {
 				return visit.Stop, err
@@ -185,10 +195,10 @@ func getParentFieldType(vwp visit.ValueWithParent) (result reflect.StructField, 
 	return fieldType, action
 }
 
-func visitDataBlobs(vwp visit.ValueWithParent, match stringMatcher, visitor visitor) (bool, error) {
+func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMatcher, visitor visitor) (bool, error) {
 	switch evt := vwp.Interface().(type) {
 	case []*common.DataBlob:
-		newEvts, matched, err := translateDataBlobs(match, visitor, evt...)
+		newEvts, matched, err := translateDataBlobs(logger, match, visitor, evt...)
 		if err != nil {
 			return matched, err
 		}
@@ -199,7 +209,7 @@ func visitDataBlobs(vwp visit.ValueWithParent, match stringMatcher, visitor visi
 		}
 		return matched, nil
 	case *common.DataBlob:
-		newEvt, matched, err := translateOneDataBlob(match, visitor, evt)
+		newEvt, matched, err := translateOneDataBlob(logger, match, visitor, evt)
 		if err != nil {
 			return matched, err
 		}
@@ -214,10 +224,10 @@ func visitDataBlobs(vwp visit.ValueWithParent, match stringMatcher, visitor visi
 	}
 }
 
-func translateDataBlobs(match stringMatcher, visitor visitor, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
+func translateDataBlobs(logger log.Logger, match stringMatcher, visitor visitor, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
 	var anyChanged bool
 	for i, blob := range blobs {
-		newBlob, changed, err := translateOneDataBlob(match, visitor, blob)
+		newBlob, changed, err := translateOneDataBlob(logger, match, visitor, blob)
 		anyChanged = anyChanged || changed
 		if err != nil {
 			return blobs, anyChanged, err
@@ -227,21 +237,86 @@ func translateDataBlobs(match stringMatcher, visitor visitor, blobs ...*common.D
 	return blobs, anyChanged, nil
 }
 
-func translateOneDataBlob(match stringMatcher, visitor visitor, blob *common.DataBlob) (*common.DataBlob, bool, error) {
+func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visitor, blob *common.DataBlob) (*common.DataBlob, bool, error) {
+	var anyChanged bool
+
 	if blob == nil || len(blob.Data) == 0 {
-		return blob, false, nil
-
+		return blob, anyChanged, nil
 	}
-	evt, err := serializer.DeserializeEvents(blob)
+
+	events, err := serializer.DeserializeEvents(blob)
 	if err != nil {
-		return blob, false, err
+		// https://github.com/protocolbuffers/protobuf-go/blob/8e8926ef675d99b1c9612f5d008f4dc803839f7a/internal/impl/codec_field.go#L17
+		if !strings.Contains(err.Error(), "invalid UTF-8") {
+			return blob, anyChanged, err
+		}
+
+		repairedEvents, changed, err := tryRepairInvalidUTF8InBlob(logger, blob)
+		anyChanged = anyChanged || changed
+		if err != nil {
+			return blob, anyChanged, err
+		}
+
+		events = repairedEvents
 	}
 
-	changed, err := visitor(evt, match)
+	changed, err := visitor(logger, events, match)
+	anyChanged = anyChanged || changed
+	if err != nil || !anyChanged {
+		return blob, anyChanged, err
+	}
+
+	newBlob, err := serializer.SerializeEvents(events, blob.EncodingType)
+	return newBlob, anyChanged, err
+}
+
+// tryRepairInvalidUTF8InBlob attempts to deserialize the blob as history events using old gogo-based protos.
+// It returns the history events, which may be nil if (de)serializations fail, and a bool and error
+// indicating if invalid UTF8 was repaired and whether there was any error.
+func tryRepairInvalidUTF8InBlob(logger log.Logger, blob *common.DataBlob) ([]*history.HistoryEvent, bool, error) {
+	// If we encountered a utf-8 error, try to repair it.
+	encodingType122 := enums122.EncodingType(blob.EncodingType.Number())
+	events122, err := gogoSerializer.DeserializeEvents(&common122.DataBlob{
+		EncodingType: encodingType122,
+		Data:         blob.Data,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	changed, err := validateAndRepairHistoryEvents(logger, events122)
 	if err != nil || !changed {
-		return blob, changed, err
+		return nil, changed, err
 	}
 
-	newBlob, err := serializer.SerializeEvents(evt, blob.EncodingType)
-	return newBlob, changed, err
+	// To avoid a bunch of type conversions, reserialize and deserialize with the new version.
+	repairedEvents, err := gogoSerializer.SerializeEvents(events122, encodingType122)
+	if err != nil {
+		return nil, changed, err
+	}
+	events, err := serializer.DeserializeEvents(&common.DataBlob{
+		EncodingType: blob.EncodingType,
+		Data:         repairedEvents.Data,
+	})
+	return events, changed, err
+}
+
+// In old versions of Temporal, it was possible that certain history events could
+// be written with invalid UTF-8.
+func validateAndRepairHistoryEvents(logger log.Logger, events []*history122.HistoryEvent) (bool, error) {
+	var changed bool
+	for _, event := range events {
+		// only this field has been observed to have bad data
+		cause := event.
+			GetActivityTaskStartedEventAttributes().
+			GetLastFailure().
+			GetCause()
+		if !utf8.ValidString(cause.GetMessage()) {
+			changed = true
+			cause.Message = strings.ToValidUTF8(cause.Message, string(utf8.RuneError))
+
+			logger.Warn("repaired invalid utf-8 in history event")
+		}
+	}
+	return changed, nil
 }
