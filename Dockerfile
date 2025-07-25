@@ -23,7 +23,7 @@ COPY . .
 RUN make clean && CGO_ENABLED=0 make bins
 
 # Stage 2: Create image
-FROM alpine:3.17 AS base
+FROM alpine:3.22 AS base
 
 COPY --from=builder /s2s-proxy/bins/s2s-proxy /usr/local/bin/
 COPY --from=builder /s2s-proxy/scripts/entrypoint.sh /opt/entrypoint.sh
