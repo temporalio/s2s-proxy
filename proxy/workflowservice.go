@@ -261,6 +261,7 @@ func (s *workflowServiceProxyServer) RespondWorkflowTaskFailed(ctx context.Conte
 	return s.workflowServiceClient.RespondWorkflowTaskFailed(ctx, in0)
 }
 
+// nolint:staticcheck // SA1019: workflowservice.ScanWorkflowExecutionsRequest is deprecated: Use with `ListWorkflowExecutions`
 func (s *workflowServiceProxyServer) ScanWorkflowExecutions(ctx context.Context, in0 *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
 	return s.workflowServiceClient.ScanWorkflowExecutions(ctx, in0)
 }
