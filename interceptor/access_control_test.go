@@ -168,7 +168,14 @@ func testNamespaceAccessControl(t *testing.T, objCases []objCase) {
 							require.True(t, allowed)
 						}
 
-						require.Equal(t, c.makeType(ts.inputNSName), input)
+						var expOutput any
+						if c.makeExpected != nil {
+							expOutput = c.makeExpected(ts.inputNSName)
+						} else {
+							expOutput = c.makeType(ts.inputNSName)
+						}
+
+						require.Equal(t, expOutput, input)
 					}
 				})
 			}

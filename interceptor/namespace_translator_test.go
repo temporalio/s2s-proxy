@@ -1,12 +1,15 @@
 package interceptor
 
 import (
+	"bytes"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/command/v1"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/replication/v1"
@@ -47,7 +50,10 @@ type (
 		objName     string
 		containsObj bool
 		makeType    func(ns string) any
-		expError    string
+		// optional override for the expected value after translation.
+		// if not set, makeType(outputName) is used for the expected value.
+		makeExpected func(ns string) any
+		expError     string
 	}
 )
 
@@ -185,6 +191,32 @@ func generateNamespaceObjCases() []objCase {
 					HistoryBatches: []*common.DataBlob{
 						makeHistoryEventsBlobWithNamespaceField(ns),
 						makeHistoryEventsBlobWithNamespaceField(ns),
+					},
+					HistoryNodeIds: []int64{123},
+				}
+			},
+		},
+		{
+			objName:     "GetWorkflowExecutionRawHistoryV2Response with invalid utf8",
+			containsObj: true,
+			makeType: func(ns string) any {
+				invalid := "\xff\xff"
+				return &adminservice.GetWorkflowExecutionRawHistoryV2Response{
+					NextPageToken: []byte("some-token"),
+					HistoryBatches: []*common.DataBlob{
+						makeHistoryEventsBlobWithNamespaceField(ns),
+						makeHistoryEventsBlobWithUTF8(invalid),
+					},
+					HistoryNodeIds: []int64{123},
+				}
+			},
+			makeExpected: func(ns string) any {
+				fixed := []rune{utf8.RuneError}
+				return &adminservice.GetWorkflowExecutionRawHistoryV2Response{
+					NextPageToken: []byte("some-token"),
+					HistoryBatches: []*common.DataBlob{
+						makeHistoryEventsBlobWithNamespaceField(ns),
+						makeHistoryEventsBlobWithUTF8(string(fixed)),
 					},
 					HistoryNodeIds: []int64{123},
 				}
@@ -539,7 +571,12 @@ func testTranslateObj(
 			for _, ts := range testcases {
 				t.Run(ts.testName, func(t *testing.T) {
 					input := c.makeType(ts.inputName)
-					expOutput := c.makeType(ts.outputName)
+					var expOutput any
+					if c.makeExpected != nil {
+						expOutput = c.makeExpected(ts.outputName)
+					} else {
+						expOutput = c.makeType(ts.outputName)
+					}
 					expChanged := ts.inputName != ts.outputName
 
 					changed, err := visitor(logger, input, createStringMatcher(ts.mapping))
@@ -593,5 +630,56 @@ func makeHistoryEventsBlobWithNamespaceField(ns string) *common.DataBlob {
 	if err != nil {
 		panic(err)
 	}
+	return blob
+}
+
+func makeHistoryEventsBlobWithUTF8(utf string) *common.DataBlob {
+	// Because the serializer errors on invalid utf8, do a find/replace to construct
+	// a blob with invalid utf8 in it: "abcXX" -> "abc\xff\xff", for example.
+	src := []byte("abc")
+	for range []byte(utf) {
+		src = append(src, 'X')
+	}
+	dst := []byte("abc" + utf)
+
+	makeFailure := func() *failure.Failure {
+		return &failure.Failure{
+			Message: string(src),
+			Cause: &failure.Failure{
+				Message: string(src),
+			},
+		}
+	}
+
+	evts := []*history.HistoryEvent{
+		{
+			Attributes: &history.HistoryEvent_ActivityTaskStartedEventAttributes{
+				ActivityTaskStartedEventAttributes: &history.ActivityTaskStartedEventAttributes{
+					LastFailure: makeFailure(),
+				},
+			},
+		},
+		{
+			Attributes: &history.HistoryEvent_ActivityTaskFailedEventAttributes{
+				ActivityTaskFailedEventAttributes: &history.ActivityTaskFailedEventAttributes{
+					Failure: makeFailure(),
+				},
+			},
+		},
+		{
+			Attributes: &history.HistoryEvent_ActivityTaskTimedOutEventAttributes{
+				ActivityTaskTimedOutEventAttributes: &history.ActivityTaskTimedOutEventAttributes{
+					Failure: makeFailure(),
+				},
+			},
+		},
+	}
+
+	s := serialization.NewSerializer()
+	blob, err := s.SerializeEvents(evts, enums.ENCODING_TYPE_PROTO3)
+	if err != nil {
+		panic(err)
+	}
+	blob.Data = bytes.ReplaceAll(blob.Data, src, dst)
 	return blob
 }

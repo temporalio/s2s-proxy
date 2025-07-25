@@ -138,7 +138,7 @@ func TestRepairUTF8(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			changed, err := repairInvalidUTF8(tc.msg122)
+			changed, err := RepairInvalidUTF8(tc.msg122)
 			require.Equal(t, tc.expChange, changed)
 			if len(tc.expError) != 0 {
 				require.ErrorContains(t, err, tc.expError)

@@ -2,7 +2,6 @@ package compat
 
 import (
 	"fmt"
-	"strings"
 
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -10,6 +9,8 @@ import (
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
+
+	"github.com/temporalio/s2s-proxy/common"
 )
 
 const (
@@ -57,7 +58,7 @@ func (c *RepairUTF8Codec) Name() string {
 // Unmarshal implements encoding.CodecV2.
 func (c *RepairUTF8Codec) Unmarshal(data mem.BufferSlice, v any) error {
 	err := c.delegate.Unmarshal(data, v)
-	if err != nil && strings.Contains(err.Error(), "invalid UTF-8") {
+	if common.IsInvalidUTF8Error(err) {
 		if err := convertAndRepairInvalidUTF8(data.Materialize(), v); err != nil {
 			c.Logger.Error("during UTF-8 repair", tag.NewErrorTag("error", err))
 		} else {
@@ -71,15 +72,11 @@ func (c *RepairUTF8Codec) Unmarshal(data mem.BufferSlice, v any) error {
 // Marshal implements encoding.CodecV2.
 func (c *RepairUTF8Codec) Marshal(v any) (mem.BufferSlice, error) {
 	out, err := c.delegate.Marshal(v)
-	if isInvalidUTF8Error(err) {
+	if common.IsInvalidUTF8Error(err) {
 		// We have no known cases where marshalling would fail due to invalid UTF-8.
 		c.Logger.Error("unhandled invalid UTF-8 error during marshalling", tag.NewErrorTag("error", err))
 	}
 	return out, err
-}
-
-func isInvalidUTF8Error(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "invalid UTF-8")
 }
 
 var _ encoding.CodecV2 = (*RepairUTF8Codec)(nil)

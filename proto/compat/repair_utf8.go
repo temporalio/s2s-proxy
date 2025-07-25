@@ -38,7 +38,7 @@ func convertAndRepairInvalidUTF8(data []byte, v any) error {
 		return fmt.Errorf("could not unmarshal data into %T: %w", msg122, err)
 	}
 
-	changed, err := repairInvalidUTF8(msg122)
+	changed, err := RepairInvalidUTF8(msg122)
 	if err != nil {
 		return err
 	}

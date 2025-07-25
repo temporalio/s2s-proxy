@@ -3,20 +3,21 @@ package interceptor
 import (
 	"fmt"
 	"reflect"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/keilerkonzept/visit"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	"go.temporal.io/server/common/persistence/serialization"
 
+	s2scommon "github.com/temporalio/s2s-proxy/common"
 	common122 "github.com/temporalio/s2s-proxy/proto/1_22/api/common/v1"
 	enums122 "github.com/temporalio/s2s-proxy/proto/1_22/api/enums/v1"
 	history122 "github.com/temporalio/s2s-proxy/proto/1_22/api/history/v1"
 	serialization122 "github.com/temporalio/s2s-proxy/proto/1_22/server/common/persistence/serialization"
+	"github.com/temporalio/s2s-proxy/proto/compat"
 )
 
 var (
@@ -198,22 +199,22 @@ func getParentFieldType(vwp visit.ValueWithParent) (result reflect.StructField, 
 func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMatcher, visitor visitor) (bool, error) {
 	switch evt := vwp.Interface().(type) {
 	case []*common.DataBlob:
-		newEvts, matched, err := translateDataBlobs(logger, match, visitor, evt...)
+		newEvts, matched, changed, err := translateDataBlobs(logger, match, visitor, evt...)
 		if err != nil {
 			return matched, err
 		}
-		if matched {
+		if matched || changed {
 			if err := visit.Assign(vwp, reflect.ValueOf(newEvts)); err != nil {
 				return matched, err
 			}
 		}
 		return matched, nil
 	case *common.DataBlob:
-		newEvt, matched, err := translateOneDataBlob(logger, match, visitor, evt)
+		newEvt, matched, changed, err := translateOneDataBlob(logger, match, visitor, evt)
 		if err != nil {
 			return matched, err
 		}
-		if matched {
+		if matched || changed {
 			if err := visit.Assign(vwp, reflect.ValueOf(newEvt)); err != nil {
 				return matched, err
 			}
@@ -224,56 +225,60 @@ func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMa
 	}
 }
 
-func translateDataBlobs(logger log.Logger, match stringMatcher, visitor visitor, blobs ...*common.DataBlob) ([]*common.DataBlob, bool, error) {
-	var anyChanged bool
+func translateDataBlobs(logger log.Logger, match stringMatcher, visitor visitor, blobs ...*common.DataBlob) (result []*common.DataBlob, anyMatched, anyChanged bool, retErr error) {
 	for i, blob := range blobs {
-		newBlob, changed, err := translateOneDataBlob(logger, match, visitor, blob)
+		newBlob, matched, changed, err := translateOneDataBlob(logger, match, visitor, blob)
 		anyChanged = anyChanged || changed
+		anyMatched = anyMatched || matched
 		if err != nil {
-			return blobs, anyChanged, err
+			return blobs, anyMatched, anyChanged, err
 		}
 		blobs[i] = newBlob
 	}
-	return blobs, anyChanged, nil
+	return blobs, anyMatched, anyChanged, nil
 }
 
-func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visitor, blob *common.DataBlob) (*common.DataBlob, bool, error) {
-	var anyChanged bool
-
+func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visitor, blob *common.DataBlob) (result *common.DataBlob, matched, changed bool, retErr error) {
 	if blob == nil || len(blob.Data) == 0 {
-		return blob, anyChanged, nil
+		return blob, matched, changed, nil
 	}
 
 	events, err := serializer.DeserializeEvents(blob)
 	if err != nil {
-		// https://github.com/protocolbuffers/protobuf-go/blob/8e8926ef675d99b1c9612f5d008f4dc803839f7a/internal/impl/codec_field.go#L17
-		if !strings.Contains(err.Error(), "invalid UTF-8") {
-			return blob, anyChanged, err
+		if !s2scommon.IsInvalidUTF8Error(err) {
+			return blob, matched, changed, err
 		}
 
-		repairedEvents, changed, err := tryRepairInvalidUTF8InBlob(logger, blob)
-		anyChanged = anyChanged || changed
+		// A change due to repairing invalid UTF8 does not count as a "match".
+		// For example, the access control visitor only wants to match if
+		// a request is allowed or not.
+		repairedEvents, c, err := tryRepairInvalidUTF8InBlob(blob)
+		changed = changed || c
 		if err != nil {
-			return blob, anyChanged, err
+			logger.Error("failed to repair invalid utf-8 in history event blob", tag.NewErrorTag("error", err))
+			return blob, matched, changed, err
+		} else if changed {
+			logger.Info("repaired invalid utf-8 in history event blob")
+			events = repairedEvents
 		}
 
-		events = repairedEvents
 	}
 
-	changed, err := visitor(logger, events, match)
-	anyChanged = anyChanged || changed
-	if err != nil || !anyChanged {
-		return blob, anyChanged, err
+	m, err := visitor(logger, events, match)
+	matched = matched || m
+	if err != nil {
+		return blob, matched, changed, err
 	}
-
-	newBlob, err := serializer.SerializeEvents(events, blob.EncodingType)
-	return newBlob, anyChanged, err
+	if matched || changed {
+		blob, err = serializer.SerializeEvents(events, blob.EncodingType)
+	}
+	return blob, matched, changed, err
 }
 
 // tryRepairInvalidUTF8InBlob attempts to deserialize the blob as history events using old gogo-based protos.
 // It returns the history events, which may be nil if (de)serializations fail, and a bool and error
 // indicating if invalid UTF8 was repaired and whether there was any error.
-func tryRepairInvalidUTF8InBlob(logger log.Logger, blob *common.DataBlob) ([]*history.HistoryEvent, bool, error) {
+func tryRepairInvalidUTF8InBlob(blob *common.DataBlob) ([]*history.HistoryEvent, bool, error) {
 	// If we encountered a utf-8 error, try to repair it.
 	encodingType122 := enums122.EncodingType(blob.EncodingType.Number())
 	events122, err := gogoSerializer.DeserializeEvents(&common122.DataBlob{
@@ -284,7 +289,7 @@ func tryRepairInvalidUTF8InBlob(logger log.Logger, blob *common.DataBlob) ([]*hi
 		return nil, false, err
 	}
 
-	changed, err := validateAndRepairHistoryEvents(logger, events122)
+	changed, err := validateAndRepairHistoryEvents(events122)
 	if err != nil || !changed {
 		return nil, changed, err
 	}
@@ -301,21 +306,13 @@ func tryRepairInvalidUTF8InBlob(logger log.Logger, blob *common.DataBlob) ([]*hi
 	return events, changed, err
 }
 
-// In old versions of Temporal, it was possible that certain history events could
-// be written with invalid UTF-8.
-func validateAndRepairHistoryEvents(logger log.Logger, events []*history122.HistoryEvent) (bool, error) {
+func validateAndRepairHistoryEvents(events []*history122.HistoryEvent) (bool, error) {
 	var changed bool
 	for _, event := range events {
-		// only this field has been observed to have bad data
-		cause := event.
-			GetActivityTaskStartedEventAttributes().
-			GetLastFailure().
-			GetCause()
-		if !utf8.ValidString(cause.GetMessage()) {
-			changed = true
-			cause.Message = strings.ToValidUTF8(cause.Message, string(utf8.RuneError))
-
-			logger.Warn("repaired invalid utf-8 in history event")
+		c, err := compat.RepairInvalidUTF8(event)
+		changed = changed || c
+		if err != nil {
+			return changed, err
 		}
 	}
 	return changed, nil
