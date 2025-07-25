@@ -226,10 +226,6 @@ func (s *echoWorkflowService) RespondWorkflowTaskFailed(ctx context.Context, in0
 	return nil, status.Errorf(codes.PermissionDenied, "Calling method RespondWorkflowTaskFailed is not allowed.")
 }
 
-func (s *echoWorkflowService) ScanWorkflowExecutions(ctx context.Context, in0 *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
-	return nil, status.Errorf(codes.PermissionDenied, "Calling method ScanWorkflowExecutions is not allowed.")
-}
-
 func (s *echoWorkflowService) SignalWithStartWorkflowExecution(ctx context.Context, in0 *workflowservice.SignalWithStartWorkflowExecutionRequest) (*workflowservice.SignalWithStartWorkflowExecutionResponse, error) {
 	return nil, status.Errorf(codes.PermissionDenied, "Calling method SignalWithStartWorkflowExecution is not allowed.")
 }
