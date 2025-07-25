@@ -13,6 +13,22 @@ var (
 
 	AdminServiceStreamsActive = DefaultGaugeVec("admin_service_streams_active", "Number of admin service streams open",
 		"stream_direction")
+	ForceDisconnectCount = DefaultCounterVec("admin_service_stream_force_disconnect_count",
+		"The number of times the stream was forcibly closed to help balance connections",
+		"stream_direction")
+	AdminServiceStreamReqCount              = DefaultCounterVec("admin_service_rep_stream_request_count", "Number of messages received", "stream_direction")
+	AdminServiceStreamRespCount             = DefaultCounterVec("admin_service_rep_stream_response_count", "Number of messages received", "stream_direction")
+	AdminServiceStreamsClosedCount          = DefaultCounterVec("admin_service_streams_closed_count", "Number of streams closed", "stream_direction")
+	AdminServiceStreamsOpenedCount          = DefaultCounterVec("admin_service_streams_opened_count", "Number of streams opened", "stream_direction")
+	AdminServiceStreamsRejectedCount        = DefaultCounterVec("admin_service_streams_rejected_count", "Number of streams rejected", "stream_direction")
+	AdminServiceStreamsMeterGauge           = DefaultGaugeVec("admin_service_streams_meter_value", "Number of streams rejected", "stream_direction")
+	AdminServiceStreamsAllowedGauge         = DefaultGaugeVec("admin_service_streams_allowed_value", "Instantaneous number of streams allowed", "stream_direction")
+	AdminServiceStreamsMessagesHandledGauge = DefaultGaugeVec("admin_service_streams_messages_handled", "Messages handled before closing", "stream_direction")
+	AdminServiceStreamsClientHangupCount    = DefaultCounterVec("admin_service_streams_client_hangup", "Times client closed the connection", "stream_direction")
+	AdminServiceStreamsNoClientAddress      = DefaultCounterVec("admin_service_streams_no_client_address", "When querying context, there was no client address", "stream_direction")
+	AdminServiceStreamsClientConnections    = DefaultGaugeVec("admin_service_streams_client_connections", "The number of active client connections", "source_address", "stream_direction")
+	AdminServiceStreamsClientRejected       = DefaultCounterVec("admin_service_streams_client_rejected", "Client rejections due to rate exceeded", "stream_direction")
+	AdminServiceStreamsUniqueClients        = DefaultGauge("admin_service_streams_unique_clients", "Number of unique connected clients")
 
 	// /proxy/health_check.go
 
@@ -42,11 +58,29 @@ func init() {
 	// Re-register the go collector with all non-debug metrics. See: https://pkg.go.dev/runtime/metrics
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
 		collectors.WithoutGoCollectorRuntimeMetrics(collectors.MetricsDebug.Matcher)))
-	prometheus.MustRegister(ProxyStartCount)
-	prometheus.MustRegister(GRPCServerMetrics)
+
+	prometheus.MustRegister(AdminServiceStreamsActive)
+	prometheus.MustRegister(ForceDisconnectCount)
+	prometheus.MustRegister(AdminServiceStreamReqCount)
+	prometheus.MustRegister(AdminServiceStreamRespCount)
+	prometheus.MustRegister(AdminServiceStreamsClosedCount)
+	prometheus.MustRegister(AdminServiceStreamsOpenedCount)
+	prometheus.MustRegister(AdminServiceStreamsRejectedCount)
+	prometheus.MustRegister(AdminServiceStreamsMeterGauge)
+	prometheus.MustRegister(AdminServiceStreamsAllowedGauge)
+	prometheus.MustRegister(AdminServiceStreamsMessagesHandledGauge)
+	prometheus.MustRegister(AdminServiceStreamsClientHangupCount)
+	prometheus.MustRegister(AdminServiceStreamsNoClientAddress)
+	prometheus.MustRegister(AdminServiceStreamsClientConnections)
+	prometheus.MustRegister(AdminServiceStreamsClientRejected)
+	prometheus.MustRegister(AdminServiceStreamsUniqueClients)
+
 	prometheus.MustRegister(HealthCheckIsHealthy)
 	prometheus.MustRegister(HealthCheckHealthyCount)
-	prometheus.MustRegister(AdminServiceStreamsActive)
+
+	prometheus.MustRegister(ProxyStartCount)
+	prometheus.MustRegister(GRPCServerMetrics)
+
 	prometheus.MustRegister(MuxSessionOpen)
 	prometheus.MustRegister(MuxStreamsActive)
 	prometheus.MustRegister(MuxObserverReportCount)

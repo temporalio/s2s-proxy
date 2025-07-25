@@ -92,6 +92,7 @@ func makeServerOptions(
 	}
 
 	if proxyOpts.IsInbound && cfg.ACLPolicy != nil {
+		logger.Info("ACL policy enabled", tag.NewAnyTag("policy", cfg.ACLPolicy))
 		aclInterceptor := interceptor.NewAccessControlInterceptor(logger, cfg.ACLPolicy)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
 		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
@@ -108,6 +109,13 @@ func makeServerOptions(
 			return opts, err
 		}
 		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	}
+
+	// The inbound connection is typically muxed from the remote. We only
+	// want to force-close the local traffic, not the mux!
+	if !proxyOpts.IsInbound {
+		opts = append(opts, grpc.KeepaliveParams(cfg.Server.KeepaliveConfig.ServerParameters()))
+		logger.Info("Added keepalive params", cfg.Server.KeepaliveConfig.LogTags()...)
 	}
 
 	return opts, nil
