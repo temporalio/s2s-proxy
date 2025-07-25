@@ -23,6 +23,7 @@ func shouldIgnoreTypeIfDoesntExistIn122(mt protoreflect.Descriptor) bool {
 		strings.Contains(fullName, "HSMCompletionCallbackArg") ||
 		strings.Contains(fullName, "WorkflowMutableStateMutation") ||
 		strings.Contains(fullName, "Callback") ||
+		strings.Contains(fullName, "Deployment") ||
 		strings.HasPrefix(fullName, "temporal.api.export.v1")
 }
 
