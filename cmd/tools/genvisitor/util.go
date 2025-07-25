@@ -54,3 +54,10 @@ func writef(out io.Writer, msg string, args ...any) {
 		panic(err)
 	}
 }
+
+func write(out io.Writer, args ...any) {
+	_, err := fmt.Fprint(out, args...)
+	if err != nil {
+		panic(err)
+	}
+}
