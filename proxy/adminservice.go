@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -159,7 +160,37 @@ func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistory(ctx context.Con
 }
 
 func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistoryV2(ctx context.Context, in0 *adminservice.GetWorkflowExecutionRawHistoryV2Request) (*adminservice.GetWorkflowExecutionRawHistoryV2Response, error) {
-	return s.adminClient.GetWorkflowExecutionRawHistoryV2(ctx, in0)
+	start := time.Now()
+	deadline, ok := ctx.Deadline()
+	var deadline_duration int64
+	if ok {
+		deadline_duration = deadline.Sub(start).Milliseconds()
+	}
+
+	resp, err := s.adminClient.GetWorkflowExecutionRawHistoryV2(ctx, in0)
+	workflowIDsToLog := []string{
+		"e-2SeAIiK2Rb3cWtslIqDUV",
+		"e-1q5kCdPFeN5hp2NnENi0e",
+		"e-3v5hDixs4DHkhh3wO1wNG",
+	}
+
+	workflowID := in0.Execution.GetWorkflowId()
+	for _, wid := range workflowIDsToLog {
+		if workflowID == wid {
+			s.logger.Warn(fmt.Sprintf("GetWorkflowExecutionRawHistoryV2 called. is_deadline_set: %v, deadline: %v", ok, deadline),
+				tag.Timestamp(start),
+				tag.Error(err),
+				tag.WorkflowID(wid),
+				tag.NewInt64("start_event_id", in0.GetStartEventId()),
+				tag.NewInt64("end_event_id", in0.GetEndEventId()),
+				tag.NewInt32("max_page_size", in0.MaximumPageSize),
+				tag.NewInt64("duration_ms", time.Since(start).Milliseconds()),
+				tag.NewInt64("deadline_duration_ms", deadline_duration),
+			)
+		}
+	}
+
+	return resp, err
 }
 
 func (s *adminServiceProxyServer) ImportWorkflowExecution(ctx context.Context, in0 *adminservice.ImportWorkflowExecutionRequest) (*adminservice.ImportWorkflowExecutionResponse, error) {
