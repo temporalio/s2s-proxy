@@ -14,7 +14,7 @@ import (
 	serverapireplication "github.com/temporalio/s2s-proxy/proto/1_22/server/api/replication/v1"
 )
 
-func repairInvalidUTF8(vAny any) (ret bool, retErr error) {
+func RepairInvalidUTF8(vAny any) (ret bool, retErr error) {
 	switch root := vAny.(type) {
 	case *apicommand.Command:
 		switch oneof := root.GetAttributes().(type) {
