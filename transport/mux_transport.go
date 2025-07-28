@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/hashicorp/yamux"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 )
 
@@ -14,7 +15,7 @@ type muxTransportImpl struct {
 	closeCh chan struct{} // if closed, means transport is closed (or disconnected).
 }
 
-func newMuxTransport(conn net.Conn, session *yamux.Session) *muxTransportImpl {
+func newMuxTransport(conn net.Conn, session *yamux.Session, labels prometheus.Labels) *muxTransportImpl {
 	return &muxTransportImpl{
 		conn:    conn,
 		session: session,
@@ -22,13 +23,13 @@ func newMuxTransport(conn net.Conn, session *yamux.Session) *muxTransportImpl {
 	}
 }
 
-func (s *muxTransportImpl) Connect() (*grpc.ClientConn, error) {
+func (s *muxTransportImpl) Connect(metricLabels prometheus.Labels) (*grpc.ClientConn, error) {
 	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
 		return s.session.Open()
 	}
 
 	// Set hostname to unused since custom dialer is used.
-	return dial("unused", nil, dialer)
+	return dial("unused", nil, metricLabels, dialer)
 }
 
 func (s *muxTransportImpl) Serve(server *grpc.Server) error {

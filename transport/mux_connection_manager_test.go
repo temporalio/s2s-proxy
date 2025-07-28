@@ -77,7 +77,7 @@ func startServer(t *testing.T, serverTs ServerTransport) *grpc.Server {
 }
 
 func testClient(t *testing.T, clientTs ClientTransport) {
-	conn, err := clientTs.Connect()
+	conn, err := clientTs.Connect(make(map[string]string))
 	require.NoError(t, err)
 	adminClient := adminservice.NewAdminServiceClient(conn)
 

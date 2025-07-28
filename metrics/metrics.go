@@ -51,6 +51,19 @@ func GetStandardGRPCInterceptor(labelNamesInContext ...string) *grpcprom.ServerM
 	)
 }
 
+func GetStandardGRPCClientInterceptor() *grpcprom.ClientMetrics {
+	return grpcprom.NewClientMetrics(
+		grpcprom.WithClientHandlingTimeHistogram(
+			grpcprom.WithHistogramNamespace("temporal"),
+			grpcprom.WithHistogramSubsystem("s2s_proxy"),
+		),
+		grpcprom.WithClientCounterOptions(
+			grpcprom.WithNamespace("temporal"),
+			grpcprom.WithSubsystem("s2s_proxy"),
+		),
+	)
+}
+
 // DefaultGauge provides a prometheus Gauge for the requested name. The name will be sanitized, and the recommended
 // namespace and subsystem will be set.
 func DefaultGauge(name string, help string) prometheus.Gauge {

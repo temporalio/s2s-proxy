@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 
+	prometheus "github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
 
@@ -11,7 +12,7 @@ import (
 
 type (
 	ClientTransport interface {
-		Connect() (*grpc.ClientConn, error)
+		Connect(metricLabels prometheus.Labels) (*grpc.ClientConn, error)
 	}
 
 	ServerTransport interface {
@@ -61,7 +62,7 @@ func (tm *TransportManager) openMuxTransport(transportName string) (MuxTransport
 	return mux.open()
 }
 
-func (tm *TransportManager) OpenClient(clientConfig config.ProxyClientConfig) (ClientTransport, error) {
+func (tm *TransportManager) OpenClient(metricLabels prometheus.Labels, clientConfig config.ProxyClientConfig) (ClientTransport, error) {
 	if clientConfig.Type == config.MuxTransport {
 		return tm.openMuxTransport(clientConfig.MuxTransportName)
 	}

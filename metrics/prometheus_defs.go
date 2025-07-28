@@ -24,6 +24,9 @@ var (
 	GRPCServerMetrics = GetStandardGRPCInterceptor("direction")
 	ProxyStartCount   = DefaultCounter("proxy_start_count", "Emitted once per startup")
 
+	// /transport/grpc.go
+	GRPCClientMetrics = GetStandardGRPCClientInterceptor()
+
 	// /transport/mux_connection_manager.go
 
 	// Every yamux session has these available, so let's use them in the prometheus tags so we can clearly see each connection
@@ -43,6 +46,7 @@ func init() {
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
 		collectors.WithoutGoCollectorRuntimeMetrics(collectors.MetricsDebug.Matcher)))
 	prometheus.MustRegister(ProxyStartCount)
+	prometheus.MustRegister(GRPCClientMetrics)
 	prometheus.MustRegister(GRPCServerMetrics)
 	prometheus.MustRegister(HealthCheckIsHealthy)
 	prometheus.MustRegister(HealthCheckHealthyCount)
