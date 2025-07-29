@@ -98,7 +98,9 @@ func (s *workflowServiceProxyServer) DescribeTaskQueue(ctx context.Context, in0 
 }
 
 func (s *workflowServiceProxyServer) DescribeWorkflowExecution(ctx context.Context, in0 *workflowservice.DescribeWorkflowExecutionRequest) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
-	return s.workflowServiceClient.DescribeWorkflowExecution(ctx, in0)
+	resp, err := s.workflowServiceClient.DescribeWorkflowExecution(ctx, in0)
+	logRequestResponse(ctx, s.logger, "workflowservice.DescribeWorkflowExecution", in0, resp, err)
+	return resp, err
 }
 
 func (s *workflowServiceProxyServer) ExecuteMultiOperation(ctx context.Context, in0 *workflowservice.ExecuteMultiOperationRequest) (*workflowservice.ExecuteMultiOperationResponse, error) {

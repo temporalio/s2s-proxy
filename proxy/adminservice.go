@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"sync"
 
 	"go.temporal.io/api/serviceerror"
@@ -13,6 +14,7 @@ import (
 	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
+	"go.temporal.io/server/common/rpc/interceptor"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/temporalio/s2s-proxy/client"
@@ -115,7 +117,9 @@ func (s *adminServiceProxyServer) DescribeHistoryHost(ctx context.Context, in0 *
 }
 
 func (s *adminServiceProxyServer) DescribeMutableState(ctx context.Context, in0 *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
-	return s.adminClient.DescribeMutableState(ctx, in0)
+	resp, err := s.adminClient.DescribeMutableState(ctx, in0)
+	logRequestResponse(ctx, s.logger, "adminservice.DescribeMutableState", in0, resp, err)
+	return resp, err
 }
 
 func (s *adminServiceProxyServer) GetDLQMessages(ctx context.Context, in0 *adminservice.GetDLQMessagesRequest) (*adminservice.GetDLQMessagesResponse, error) {
@@ -367,4 +371,37 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	wg.Wait()
 	return nil
+}
+
+func logRequestResponse(ctx context.Context, logger log.Logger, msg string, req, resp any, err error) {
+	redirectHeader := getRedirectHeader(ctx)
+
+	if err != nil {
+		logger.Error(msg,
+			tag.NewAnyTag("req", req),
+			tag.NewAnyTag("resp", resp),
+			tag.NewBoolTag("xdc-redirection", redirectHeader),
+			tag.NewErrorTag("error", err),
+		)
+	} else {
+		logger.Info(msg,
+			tag.NewAnyTag("req", resp),
+			tag.NewAnyTag("resp", resp),
+			tag.NewBoolTag("xdc-redirection", redirectHeader),
+		)
+	}
+}
+
+// Based on https://github.com/temporalio/temporal/blob/9a1060c4162ff62576cb899d7e5b1bae179af814/common/rpc/interceptor/redirection.go#L294
+func getRedirectHeader(ctx context.Context) bool {
+	// default to allow dc redirection
+	values := metadata.ValueFromIncomingContext(ctx, interceptor.DCRedirectionContextHeaderName)
+	if len(values) == 0 {
+		return true
+	}
+	allowed, err := strconv.ParseBool(values[0])
+	if err != nil {
+		return true
+	}
+	return allowed
 }
