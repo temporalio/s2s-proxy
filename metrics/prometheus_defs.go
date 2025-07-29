@@ -12,7 +12,7 @@ var (
 	// /proxy/adminservice.go
 
 	AdminServiceStreamsActive = DefaultGaugeVec("admin_service_streams_active", "Number of admin service streams open",
-		"stream_direction")
+		"direction")
 
 	// /proxy/health_check.go
 
@@ -23,6 +23,13 @@ var (
 
 	GRPCServerMetrics = GetStandardGRPCInterceptor("direction")
 	ProxyStartCount   = DefaultCounter("proxy_start_count", "Emitted once per startup")
+
+	// /transport/grpc.go
+	// Gratuitous hack: Until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783 is addressed,
+	// we need to register a dependent registry with constant labels applied.
+
+	GRPCOutboundClientMetrics = GetStandardGRPCClientInterceptor("outbound")
+	GRPCInboundClientMetrics  = GetStandardGRPCClientInterceptor("inbound")
 
 	// /transport/mux_connection_manager.go
 
@@ -44,6 +51,8 @@ func init() {
 		collectors.WithoutGoCollectorRuntimeMetrics(collectors.MetricsDebug.Matcher)))
 	prometheus.MustRegister(ProxyStartCount)
 	prometheus.MustRegister(GRPCServerMetrics)
+	prometheus.MustRegister(GRPCOutboundClientMetrics)
+	prometheus.MustRegister(GRPCInboundClientMetrics)
 	prometheus.MustRegister(HealthCheckIsHealthy)
 	prometheus.MustRegister(HealthCheckHealthyCount)
 	prometheus.MustRegister(AdminServiceStreamsActive)
