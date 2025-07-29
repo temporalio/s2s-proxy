@@ -5,6 +5,7 @@ import (
 
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/temporalio/s2s-proxy/auth"
@@ -101,7 +102,9 @@ func (s *workflowServiceProxyServer) DescribeTaskQueue(ctx context.Context, in0 
 }
 
 func (s *workflowServiceProxyServer) DescribeWorkflowExecution(ctx context.Context, in0 *workflowservice.DescribeWorkflowExecutionRequest) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
-	return s.workflowServiceClient.DescribeWorkflowExecution(copyContext(ctx), in0)
+	resp, err := s.workflowServiceClient.DescribeWorkflowExecution(copyContext(ctx), in0)
+	logRequestResponse(ctx, s.logger, "workflowservice.DescribeWorkflowExecution", in0, resp, err)
+	return resp, err
 }
 
 func (s *workflowServiceProxyServer) ExecuteMultiOperation(ctx context.Context, in0 *workflowservice.ExecuteMultiOperationRequest) (*workflowservice.ExecuteMultiOperationResponse, error) {
@@ -319,4 +322,22 @@ func copyContext(src context.Context) context.Context {
 		src = metadata.AppendToOutgoingContext(src, DCRedirectionContextHeaderName, val[0])
 	}
 	return src
+}
+
+func logRequestResponse(ctx context.Context, logger log.Logger, msg string, req, resp any, err error) {
+	redirectHeader := metadata.ValueFromIncomingContext(ctx, DCRedirectionContextHeaderName)
+	if err != nil {
+		logger.Error(msg,
+			tag.NewAnyTag("req", req),
+			tag.NewAnyTag("resp", resp),
+			tag.NewAnyTag("xdc-redirection", redirectHeader),
+			tag.NewErrorTag("error", err),
+		)
+	} else {
+		logger.Info(msg,
+			tag.NewAnyTag("req", resp),
+			tag.NewAnyTag("resp", resp),
+			tag.NewAnyTag("xdc-redirection", redirectHeader),
+		)
+	}
 }
