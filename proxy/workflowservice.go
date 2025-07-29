@@ -2,9 +2,12 @@ package proxy
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
@@ -130,7 +133,23 @@ func (s *workflowServiceProxyServer) GetWorkerVersioningRules(ctx context.Contex
 }
 
 func (s *workflowServiceProxyServer) GetWorkflowExecutionHistory(ctx context.Context, in0 *workflowservice.GetWorkflowExecutionHistoryRequest) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
-	return s.workflowServiceClient.GetWorkflowExecutionHistory(ctx, in0)
+	start := time.Now()
+	deadline, ok := ctx.Deadline()
+	var deadline_duration int
+	if ok {
+		deadline_duration = int(deadline.Sub(start).Milliseconds())
+	}
+
+	resp, err := s.workflowServiceClient.GetWorkflowExecutionHistory(ctx, in0)
+
+	s.logger.Warn(fmt.Sprintf("GetWorkflowExecutionHistory called. is_deadline_set: %v, deadline: %v\n", ok, deadline),
+		tag.Timestamp(deadline), tag.Error(err),
+		tag.Timestamp(start), tag.Error(err),
+		tag.NewInt("duration_ms", int(time.Since(start).Milliseconds())),
+		tag.NewInt("deadline_duration_ms", deadline_duration),
+	)
+
+	return resp, err
 }
 
 func (s *workflowServiceProxyServer) GetWorkflowExecutionHistoryReverse(ctx context.Context, in0 *workflowservice.GetWorkflowExecutionHistoryReverseRequest) (*workflowservice.GetWorkflowExecutionHistoryReverseResponse, error) {
