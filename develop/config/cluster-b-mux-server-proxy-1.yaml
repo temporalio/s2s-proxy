@@ -1,0 +1,27 @@
+inbound:
+  name: "b-inbound-server"
+  server:
+    type: "mux"
+    mux: "muxed"
+  client:
+    tcp:
+      serverAddress: "localhost:8233"
+outbound:
+  name: "b-outbound-server"
+  server:
+    tcp:
+      listenAddress: "0.0.0.0:6333"
+  client:
+    type: "mux"
+    mux: "muxed"
+mux:
+  - name: "muxed"
+    mode: "server"
+    server:
+      listenAddress: "0.0.0.0:6334"
+shardCount:
+  mode: "lcm"
+  localShardCount: 3
+  remoteShardCount: 2
+profiling:
+  pprofAddress: "localhost:6070"

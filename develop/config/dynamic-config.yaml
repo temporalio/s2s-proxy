@@ -27,3 +27,5 @@ history.persistenceMaxQPS:
 frontend.persistenceMaxQPS:
   - value: 100000
     constraints: {}
+history.shardUpdateMinInterval:
+  - value: 1s

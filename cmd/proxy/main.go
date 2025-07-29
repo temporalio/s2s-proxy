@@ -69,6 +69,11 @@ func startPProfHTTPServer(logger log.Logger, c config.ProfilingConfig) {
 		return
 	}
 
+	// Add debug endpoint handler
+	http.HandleFunc("/debug/connections", func(w http.ResponseWriter, r *http.Request) {
+		proxy.HandleDebugInfo(w, r, logger)
+	})
+
 	go func() {
 		logger.Info("Start pprof http server", tag.NewStringTag("address", addr))
 		if err := http.ListenAndServe(addr, nil); err != nil {
