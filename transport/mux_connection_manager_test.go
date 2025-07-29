@@ -13,6 +13,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 const (
@@ -77,7 +78,7 @@ func startServer(t *testing.T, serverTs ServerTransport) *grpc.Server {
 }
 
 func testClient(t *testing.T, clientTs ClientTransport) {
-	conn, err := clientTs.Connect()
+	conn, err := clientTs.Connect(metrics.GRPCInboundClientMetrics)
 	require.NoError(t, err)
 	adminClient := adminservice.NewAdminServiceClient(conn)
 

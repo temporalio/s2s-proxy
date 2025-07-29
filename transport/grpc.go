@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
@@ -32,7 +33,7 @@ const (
 // The hostName syntax is defined in
 // https://github.com/grpc/grpc/blob/master/doc/naming.md.
 // e.g. to use dns resolver, a "dns:///" prefix should be applied to the target.
-func dial(hostName string, tlsConfig *tls.Config, dialer func(ctx context.Context, addr string) (net.Conn, error)) (*grpc.ClientConn, error) {
+func dial(hostName string, tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics, dialer func(ctx context.Context, addr string) (net.Conn, error)) (*grpc.ClientConn, error) {
 	var grpcSecureOpt grpc.DialOption
 	if tlsConfig == nil {
 		grpcSecureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
@@ -57,6 +58,8 @@ func dial(hostName string, tlsConfig *tls.Config, dialer func(ctx context.Contex
 		grpc.WithDefaultServiceConfig(DefaultServiceConfig),
 		grpc.WithDisableServiceConfig(),
 		grpc.WithConnectParams(cp),
+		grpc.WithUnaryInterceptor(clientMetrics.UnaryClientInterceptor()),
+		grpc.WithStreamInterceptor(clientMetrics.StreamClientInterceptor()),
 	}
 
 	if dialer != nil {

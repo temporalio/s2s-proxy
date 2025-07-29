@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/hashicorp/yamux"
 	"google.golang.org/grpc"
 )
@@ -22,13 +23,13 @@ func newMuxTransport(conn net.Conn, session *yamux.Session) *muxTransportImpl {
 	}
 }
 
-func (s *muxTransportImpl) Connect() (*grpc.ClientConn, error) {
+func (s *muxTransportImpl) Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.ClientConn, error) {
 	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
 		return s.session.Open()
 	}
 
 	// Set hostname to unused since custom dialer is used.
-	return dial("unused", nil, dialer)
+	return dial("unused", nil, clientMetrics, dialer)
 }
 
 func (s *muxTransportImpl) Serve(server *grpc.Server) error {

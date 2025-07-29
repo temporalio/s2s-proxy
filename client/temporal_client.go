@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
@@ -20,6 +21,7 @@ type (
 	}
 
 	clientFactory struct {
+		clientMetrics   *grpcprom.ClientMetrics
 		clientTransport transport.ClientTransport
 		logger          log.Logger
 	}
@@ -93,9 +95,11 @@ func (c *clientProvider) GetWorkflowServiceClient() (workflowservice.WorkflowSer
 // NewFactory creates an instance of client factory that knows how to dispatch RPC calls.
 func NewClientFactory(
 	clientTransport transport.ClientTransport,
+	clientMetrics *grpcprom.ClientMetrics,
 	logger log.Logger,
 ) ClientFactory {
 	return &clientFactory{
+		clientMetrics:   clientMetrics,
 		clientTransport: clientTransport,
 		logger:          logger,
 	}
@@ -104,7 +108,7 @@ func NewClientFactory(
 func (cf *clientFactory) NewRemoteAdminClient(
 	clientConfig config.ProxyClientConfig, // TODO: not used. remove it.
 ) (adminservice.AdminServiceClient, error) {
-	connection, err := cf.clientTransport.Connect()
+	connection, err := cf.clientTransport.Connect(cf.clientMetrics)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +119,7 @@ func (cf *clientFactory) NewRemoteAdminClient(
 func (cf *clientFactory) NewRemoteWorkflowServiceClient(
 	clientConfig config.ProxyClientConfig,
 ) (workflowservice.WorkflowServiceClient, error) {
-	connection, err := cf.clientTransport.Connect()
+	connection, err := cf.clientTransport.Connect(cf.clientMetrics)
 	if err != nil {
 		return nil, err
 	}
