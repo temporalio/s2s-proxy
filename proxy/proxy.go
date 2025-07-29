@@ -129,7 +129,12 @@ func (ps *ProxyServer) startServer(
 		return err
 	}
 
-	clientFactory := client.NewClientFactory(clientTransport, prometheus.Labels{"direction": ps.opts.directionLabel()}, logger)
+	clientMetrics := metrics.GRPCOutboundClientMetrics
+	if ps.opts.IsInbound {
+		clientMetrics = metrics.GRPCOutboundClientMetrics
+	}
+
+	clientFactory := client.NewClientFactory(clientTransport, clientMetrics, logger)
 	ps.server = NewTemporalAPIServer(
 		cfg.Name,
 		cfg.Server,

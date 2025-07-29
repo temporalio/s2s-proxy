@@ -20,6 +20,7 @@ import (
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/metrics"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 	"github.com/temporalio/s2s-proxy/transport"
 )
@@ -169,7 +170,7 @@ func newEchoServer(
 		proxy:             proxy,
 		clusterInfo:       localClusterInfo,
 		remoteClusterInfo: remoteClusterInfo,
-		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, prometheus.Labels{}, logger), logger),
+		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, metrics.GRPCOutboundClientMetrics, logger), logger),
 		logger:            logger,
 	}
 }

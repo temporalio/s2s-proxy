@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"net"
 
-	"github.com/prometheus/client_golang/prometheus"
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/config"
@@ -21,7 +21,7 @@ type (
 	}
 )
 
-func (c *tcpClient) Connect(metricLabels prometheus.Labels) (*grpc.ClientConn, error) {
+func (c *tcpClient) Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.ClientConn, error) {
 	var tlsConfig *tls.Config
 	var err error
 	if tls := c.config.TLS; tls.IsEnabled() {
@@ -31,7 +31,7 @@ func (c *tcpClient) Connect(metricLabels prometheus.Labels) (*grpc.ClientConn, e
 		}
 	}
 
-	return dial(c.config.ServerAddress, tlsConfig, metricLabels, nil)
+	return dial(c.config.ServerAddress, tlsConfig, clientMetrics, nil)
 }
 
 func (s *tcpServer) Serve(server *grpc.Server) error {

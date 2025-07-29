@@ -51,15 +51,17 @@ func GetStandardGRPCInterceptor(labelNamesInContext ...string) *grpcprom.ServerM
 	)
 }
 
-func GetStandardGRPCClientInterceptor() *grpcprom.ClientMetrics {
+func GetStandardGRPCClientInterceptor(direction string) *grpcprom.ClientMetrics {
 	return grpcprom.NewClientMetrics(
 		grpcprom.WithClientHandlingTimeHistogram(
 			grpcprom.WithHistogramNamespace("temporal"),
-			grpcprom.WithHistogramSubsystem("s2s_proxy"),
+			// TODO: Gratuitous hack until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783
+			grpcprom.WithHistogramSubsystem("s2s_proxy_"+direction),
 		),
 		grpcprom.WithClientCounterOptions(
 			grpcprom.WithNamespace("temporal"),
-			grpcprom.WithSubsystem("s2s_proxy"),
+			// TODO: Gratuitous hack until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783
+			grpcprom.WithSubsystem("s2s_proxy_"+direction),
 		),
 	)
 }

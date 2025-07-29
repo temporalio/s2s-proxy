@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/server/common/backoff"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -162,7 +161,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 					m.logger.Fatal("yamux.Server failed", tag.Error(err))
 				}
 
-				m.muxTransport = newMuxTransport(conn, session, prometheus.Labels{"direction": "outbound"})
+				m.muxTransport = newMuxTransport(conn, session)
 				m.waitForReconnect()
 			}
 		}
@@ -226,7 +225,7 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 					m.logger.Fatal("yamux.Client failed", tag.Error(err))
 				}
 
-				m.muxTransport = newMuxTransport(conn, session, prometheus.Labels{"direction": "inbound"})
+				m.muxTransport = newMuxTransport(conn, session)
 				m.waitForReconnect()
 			}
 		}

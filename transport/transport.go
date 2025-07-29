@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	prometheus "github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
@@ -12,7 +13,7 @@ import (
 
 type (
 	ClientTransport interface {
-		Connect(metricLabels prometheus.Labels) (*grpc.ClientConn, error)
+		Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.ClientConn, error)
 	}
 
 	ServerTransport interface {
