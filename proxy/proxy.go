@@ -131,7 +131,7 @@ func (ps *ProxyServer) startServer(
 
 	clientMetrics := metrics.GRPCOutboundClientMetrics
 	if ps.opts.IsInbound {
-		clientMetrics = metrics.GRPCOutboundClientMetrics
+		clientMetrics = metrics.GRPCInboundClientMetrics
 	}
 
 	clientFactory := client.NewClientFactory(clientTransport, clientMetrics, logger)
