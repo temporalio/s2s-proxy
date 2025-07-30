@@ -69,7 +69,6 @@ func transferSourceToTarget(
 		case dataWithError := <-dataChan:
 			resp = dataWithError.val
 			err = dataWithError.err
-			break
 		}
 		if err == io.EOF {
 			logger.Debug("sourceStreamClient.Recv encountered EOF", tag.Error(err))
@@ -150,7 +149,6 @@ func transferTargetToSource(
 		case valueWithError := <-dataChan:
 			req = valueWithError.val
 			err = valueWithError.err
-			break
 		}
 		if err == io.EOF {
 			logger.Debug("targetStreamServer.Recv encountered EOF", tag.Error(err))
