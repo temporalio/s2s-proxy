@@ -19,9 +19,30 @@ mux:
     mode: "server"
     server:
       listenAddress: "0.0.0.0:6334"
+# shardCount:
+#   mode: "lcm"
+#   localShardCount: 3
+#   remoteShardCount: 2
 shardCount:
-  mode: "lcm"
+  mode: "fixed"
   localShardCount: 3
   remoteShardCount: 2
 profiling:
   pprofAddress: "localhost:6070"
+memberlist:
+  enabled: true
+  enableForwarding: false
+  nodeName: "proxy-node-b-1"
+  bindAddr: "0.0.0.0"
+  bindPort: 6335
+  joinAddrs:
+    - "localhost:6435"
+  proxyAddresses:
+    "proxy-node-1": "localhost:7001"
+    "proxy-node-2": "proxy-node-2:7001"
+    "proxy-node-3": "proxy-node-3:7001"
+  # TCP-only configuration for restricted networks
+  tcpOnly: true           # Use TCP transport only, disable UDP
+  disableTCPPings: true   # Disable TCP pings for faster convergence
+  probeTimeoutMs: 1000    # Longer timeout for network latency
+  probeIntervalMs: 2000   # Less frequent probes to reduce network noise

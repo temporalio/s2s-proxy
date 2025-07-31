@@ -30,17 +30,19 @@ type (
 		inboundHealthCheckServer  *http.Server
 		outboundHealthCheckServer *http.Server
 		metricsServer             *http.Server
+		shardManager              ShardManager
 		logger                    log.Logger
 	}
 )
 
-func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
+func NewProxy(configProvider config.ConfigProvider, shardManager ShardManager, logger log.Logger) *Proxy {
 	s2sConfig := config.ToClusterConnConfig(configProvider.GetS2SProxyConfig())
 	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
 		lifetime:           ctx,
 		cancel:             cancel,
 		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.MuxTransports)),
+		shardManager:       shardManager,
 		logger: log.NewThrottledLogger(
 			logger,
 			func() float64 {
@@ -55,7 +57,7 @@ func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 		proxy.metricsConfig = s2sConfig.Metrics
 	}
 	for _, clusterCfg := range s2sConfig.ClusterConnections {
-		cc, err := NewClusterConnection(ctx, clusterCfg, logger)
+		cc, err := NewClusterConnection(ctx, clusterCfg, shardManager, logger)
 		if err != nil {
 			logger.Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", clusterCfg.Name))
 			continue
@@ -169,6 +171,12 @@ func (s *Proxy) Start() error {
 			` it needs at least the following path: metrics.prometheus.listenAddress`)
 	}
 
+	if s.shardManager != nil {
+		if err := s.shardManager.Start(s.lifetime); err != nil {
+			return err
+		}
+	}
+
 	for _, v := range s.clusterConnections {
 		v.Start()
 	}
@@ -198,4 +206,9 @@ func (s *Proxy) Describe() string {
 	}
 	sb.WriteString("]")
 	return sb.String()
+}
+
+// GetShardInfo returns debug information about shard distribution
+func (s *Proxy) GetShardInfo() ShardDebugInfo {
+	return s.shardManager.GetShardInfo()
 }

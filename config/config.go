@@ -40,6 +40,7 @@ type ShardCountMode string
 const (
 	ShardCountDefault ShardCountMode = ""
 	ShardCountLCM     ShardCountMode = "lcm"
+	ShardCountFixed   ShardCountMode = "fixed"
 )
 
 type HealthCheckProtocol string
@@ -156,6 +157,7 @@ type (
 		OutboundHealthCheck        *HealthCheckConfig    `yaml:"outboundHealthCheck"`
 		NamespaceNameTranslation   NameTranslationConfig `yaml:"namespaceNameTranslation"`
 		SearchAttributeTranslation SATranslationConfig   `yaml:"searchAttributeTranslation"`
+		MemberlistConfig           *MemberlistConfig     `yaml:"memberlist"`
 		Metrics                    *MetricsConfig        `yaml:"metrics"`
 		ProfilingConfig            ProfilingConfig       `yaml:"profiling"`
 		Logging                    LoggingConfig         `yaml:"logging"`
@@ -216,6 +218,33 @@ type (
 
 	LoggingConfig struct {
 		ThrottleMaxRPS float64 `yaml:"throttleMaxRPS"`
+	}
+
+	MemberlistConfig struct {
+		// Enable distributed shard management using memberlist
+		Enabled bool `yaml:"enabled"`
+		// Enable proxy-to-proxy forwarding (requires Enabled=true)
+		EnableForwarding bool `yaml:"enableForwarding"`
+		// Node name for this proxy instance in the cluster
+		NodeName string `yaml:"nodeName"`
+		// Bind address for memberlist cluster communication
+		BindAddr string `yaml:"bindAddr"`
+		// Bind port for memberlist cluster communication
+		BindPort int `yaml:"bindPort"`
+		// List of existing cluster members to join
+		JoinAddrs []string `yaml:"joinAddrs"`
+		// Shard assignment strategy (deprecated - now uses actual ownership tracking)
+		ShardStrategy string `yaml:"shardStrategy"`
+		// Map of node names to their proxy service addresses for forwarding
+		ProxyAddresses map[string]string `yaml:"proxyAddresses"`
+		// Use TCP-only transport (disables UDP) for restricted networks
+		TCPOnly bool `yaml:"tcpOnly"`
+		// Disable TCP pings when using TCP-only mode
+		DisableTCPPings bool `yaml:"disableTCPPings"`
+		// Probe timeout for memberlist health checks
+		ProbeTimeoutMs int `yaml:"probeTimeoutMs"`
+		// Probe interval for memberlist health checks
+		ProbeIntervalMs int `yaml:"probeIntervalMs"`
 	}
 )
 

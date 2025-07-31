@@ -172,25 +172,25 @@ func newPairedLocalClusterConnection(t *testing.T, isMux bool, logger log.Logger
 		var localCtx context.Context
 		localCtx, cancelLocalCC = context.WithCancel(t.Context())
 		localCC, err = NewClusterConnection(localCtx, makeTCPClusterConfig("TCP-only Connection Local Proxy",
-			a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound), logger)
+			a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound), nil, logger)
 		require.NoError(t, err)
 
 		var remoteCtx context.Context
 		remoteCtx, cancelRemoteCC = context.WithCancel(t.Context())
 		remoteCC, err = NewClusterConnection(remoteCtx, makeTCPClusterConfig("TCP-only Connection Remote Proxy",
-			a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound), logger)
+			a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound), nil, logger)
 		require.NoError(t, err)
 	} else {
 		var localCtx context.Context
 		localCtx, cancelLocalCC = context.WithCancel(t.Context())
 		localCC, err = NewClusterConnection(localCtx, makeMuxClusterConfig("Mux Connection Local Establishing Proxy",
-			config.ConnTypeMuxClient, a.localTemporalAddr, a.localProxyOutbound, a.remoteProxyInbound), logger)
+			config.ConnTypeMuxClient, a.localTemporalAddr, a.localProxyOutbound, a.remoteProxyInbound), nil, logger)
 		require.NoError(t, err)
 
 		var remoteCtx context.Context
 		remoteCtx, cancelRemoteCC = context.WithCancel(t.Context())
 		remoteCC, err = NewClusterConnection(remoteCtx, makeMuxClusterConfig("Mux Connection Remote Receiving Proxy",
-			config.ConnTypeMuxServer, a.remoteTemporalAddr, a.remoteProxyOutbound, a.remoteProxyInbound), logger)
+			config.ConnTypeMuxServer, a.remoteTemporalAddr, a.remoteProxyOutbound, a.remoteProxyInbound), nil, logger)
 		require.NoError(t, err)
 	}
 	clientFromLocal, err := grpc.NewClient(a.localProxyOutbound, grpcutil.MakeDialOptions(nil, metrics.GetStandardGRPCClientInterceptor("outbound-local"))...)
@@ -259,7 +259,7 @@ func TestMuxCCFailover(t *testing.T) {
 	cancel()
 	newConnection, err := NewClusterConnection(t.Context(),
 		makeMuxClusterConfig("newRemoteMux", config.ConnTypeMuxServer, plcc.addresses.remoteTemporalAddr, plcc.addresses.remoteProxyOutbound, plcc.addresses.remoteProxyInbound,
-			func(cc *config.ClusterConnConfig) { cc.RemoteServer.Connection.MuxCount = 5 }), logger)
+			func(cc *config.ClusterConnConfig) { cc.RemoteServer.Connection.MuxCount = 5 }), nil, logger)
 	require.NoError(t, err)
 	newConnection.Start()
 	// Wait for localCC's client retry...

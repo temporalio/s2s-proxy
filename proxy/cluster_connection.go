@@ -59,6 +59,7 @@ type (
 		inboundClient    closableClientConn
 		inboundObserver  *ReplicationStreamObserver
 		outboundObserver *ReplicationStreamObserver
+		shardManager     ShardManager
 		logger           log.Logger
 	}
 	// contextAwareServer represents a startable gRPC server used to provide the Temporal interface on some connection.
@@ -103,12 +104,13 @@ func sanitizeConnectionName(name string) string {
 }
 
 // NewClusterConnection unpacks the connConfig and creates the inbound and outbound clients and servers.
-func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logger log.Logger) (*ClusterConnection, error) {
+func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, shardManager ShardManager, logger log.Logger) (*ClusterConnection, error) {
 	// The name is used in metrics and in the protocol for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
 	sanitizedConnectionName := sanitizeConnectionName(connConfig.Name)
 	cc := &ClusterConnection{
-		lifetime: lifetime,
-		logger:   log.With(logger, tag.NewStringTag("clusterConn", sanitizedConnectionName)),
+		lifetime:     lifetime,
+		logger:       log.With(logger, tag.NewStringTag("clusterConn", sanitizedConnectionName)),
+		shardManager: shardManager,
 	}
 	var err error
 	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.LocalServer.Connection, "inbound")

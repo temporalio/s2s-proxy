@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 )
@@ -21,28 +22,45 @@ type (
 		LastSeen    time.Time `json:"last_seen"`
 	}
 
+	// ShardDebugInfo contains debug information about shard distribution
+	ShardDebugInfo struct {
+		Enabled           bool                     `json:"enabled"`
+		ForwardingEnabled bool                     `json:"forwarding_enabled"`
+		NodeName          string                   `json:"node_name"`
+		LocalShards       []history.ClusterShardID `json:"local_shards"`
+		LocalShardCount   int                      `json:"local_shard_count"`
+		ClusterNodes      []string                 `json:"cluster_nodes"`
+		ClusterSize       int                      `json:"cluster_size"`
+		RemoteShards      map[string]string        `json:"remote_shards"`       // shard_id -> node_name
+		RemoteShardCounts map[string]int           `json:"remote_shard_counts"` // node_name -> shard_count
+	}
+
 	DebugResponse struct {
-		Timestamp     time.Time    `json:"timestamp"`
-		ActiveStreams []StreamInfo `json:"active_streams"`
-		StreamCount   int          `json:"stream_count"`
+		Timestamp     time.Time      `json:"timestamp"`
+		ActiveStreams []StreamInfo   `json:"active_streams"`
+		StreamCount   int            `json:"stream_count"`
+		ShardInfo     ShardDebugInfo `json:"shard_info"`
 	}
 )
 
-func HandleDebugInfo(w http.ResponseWriter, r *http.Request, logger log.Logger) {
+func HandleDebugInfo(w http.ResponseWriter, r *http.Request, proxyInstance *Proxy, logger log.Logger) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var activeStreams []StreamInfo
 	var streamCount int
+	var shardInfo ShardDebugInfo
 
 	// Get active streams information
 	streamTracker := GetGlobalStreamTracker()
 	activeStreams = streamTracker.GetActiveStreams()
 	streamCount = streamTracker.GetStreamCount()
+	shardInfo = proxyInstance.GetShardInfo()
 
 	response := DebugResponse{
 		Timestamp:     time.Now(),
 		ActiveStreams: activeStreams,
 		StreamCount:   streamCount,
+		ShardInfo:     shardInfo,
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
