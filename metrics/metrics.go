@@ -41,11 +41,13 @@ func GetStandardGRPCInterceptor(labelNamesInContext ...string) *grpcprom.ServerM
 		grpcprom.WithServerHandlingTimeHistogram(
 			grpcprom.WithHistogramNamespace("temporal"),
 			grpcprom.WithHistogramSubsystem("s2s_proxy"),
-			grpcprom.WithHistogramOpts(&prometheus.HistogramOpts{
-				// Only Buckets, NativeHistogramBucketFactor, and other NativeHistogram options are supported here.
-				// Other histogram options should be supplied with grpcprom.WithXXXX
-				NativeHistogramBucketFactor: 1.1,
-			}),
+			// TODO: Enable native histograms later
+			//grpcprom.WithHistogramOpts(&prometheus.HistogramOpts{
+			//	// Only Buckets, NativeHistogramBucketFactor, and other NativeHistogram options are supported here.
+			//	// Other histogram options should be supplied with grpcprom.WithXXXX
+			//	NativeHistogramBucketFactor:    1.1,
+			//	NativeHistogramMaxBucketNumber: 10,
+			//}),
 		),
 		grpcprom.WithServerCounterOptions(
 			grpcprom.WithNamespace("temporal"),
@@ -61,11 +63,12 @@ func GetStandardGRPCClientInterceptor(direction string) *grpcprom.ClientMetrics 
 			grpcprom.WithHistogramNamespace("temporal"),
 			// TODO: Gratuitous hack until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783
 			grpcprom.WithHistogramSubsystem("s2s_proxy_"+direction),
-			grpcprom.WithHistogramOpts(&prometheus.HistogramOpts{
-				// Only Buckets, NativeHistogramBucketFactor, and other NativeHistogram options are supported here.
-				// Other histogram options should be supplied with grpcprom.WithXXXX
-				NativeHistogramBucketFactor: 1.1,
-			}),
+			// TODO: Enable native histograms later
+			//grpcprom.WithHistogramOpts(&prometheus.HistogramOpts{
+			//	// Only Buckets, NativeHistogramBucketFactor, and other NativeHistogram options are supported here.
+			//	// Other histogram options should be supplied with grpcprom.WithXXXX
+			//	NativeHistogramBucketFactor: 1.1,
+			//}),
 		),
 		grpcprom.WithClientCounterOptions(
 			grpcprom.WithNamespace("temporal"),
