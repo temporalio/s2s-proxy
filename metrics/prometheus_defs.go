@@ -41,6 +41,9 @@ var (
 		muxSessionLabels...)
 	MuxObserverReportCount = DefaultCounterVec("mux_observer_report_count", "Number of observer executions",
 		muxSessionLabels...)
+	muxManagerLabels       = []string{"addr", "mode", "config_name"}
+	MuxErrors              = DefaultCounterVec("mux_errors", "Number of errors observed from mux", muxManagerLabels...)
+	MuxConnectionEstablish = DefaultCounterVec("mux_connection_establish", "Number of times mux has established", muxManagerLabels...)
 )
 
 func init() {
@@ -59,4 +62,6 @@ func init() {
 	prometheus.MustRegister(MuxSessionOpen)
 	prometheus.MustRegister(MuxStreamsActive)
 	prometheus.MustRegister(MuxObserverReportCount)
+	prometheus.MustRegister(MuxErrors)
+	prometheus.MustRegister(MuxConnectionEstablish)
 }
