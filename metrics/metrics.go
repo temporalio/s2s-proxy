@@ -104,11 +104,12 @@ func DefaultGaugeVec(name string, help string, labels ...string) *prometheus.Gau
 // namespace and subsystem will be set. Vector metrics allow the use of labels, so if you need labels on your metrics, then use this.
 func DefaultHistogramVec(name string, help string, labels ...string) *prometheus.HistogramVec {
 	return prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:                   "temporal",
-		Subsystem:                   "s2s_proxy",
-		Name:                        SanitizeForPrometheus(name),
-		Help:                        help,
-		NativeHistogramBucketFactor: 1.1,
+		Namespace: "temporal",
+		Subsystem: "s2s_proxy",
+		Name:      SanitizeForPrometheus(name),
+		Help:      help,
+		// TODO: Native histograms aren't supported in our Grafana just yet
+		//NativeHistogramBucketFactor: 1.1,
 	}, labels)
 }
 
