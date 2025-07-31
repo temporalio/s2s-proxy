@@ -41,7 +41,13 @@ func GetStandardGRPCInterceptor(labelNamesInContext ...string) *grpcprom.ServerM
 		grpcprom.WithServerHandlingTimeHistogram(
 			grpcprom.WithHistogramNamespace("temporal"),
 			grpcprom.WithHistogramSubsystem("s2s_proxy"),
-			// TODO: Use Native histograms or configure the buckets here?
+			// TODO: Enable native histograms later
+			//grpcprom.WithHistogramOpts(&prometheus.HistogramOpts{
+			//	// Only Buckets, NativeHistogramBucketFactor, and other NativeHistogram options are supported here.
+			//	// Other histogram options should be supplied with grpcprom.WithXXXX
+			//	NativeHistogramBucketFactor:    1.1,
+			//	NativeHistogramMaxBucketNumber: 10,
+			//}),
 		),
 		grpcprom.WithServerCounterOptions(
 			grpcprom.WithNamespace("temporal"),
@@ -57,6 +63,12 @@ func GetStandardGRPCClientInterceptor(direction string) *grpcprom.ClientMetrics 
 			grpcprom.WithHistogramNamespace("temporal"),
 			// TODO: Gratuitous hack until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783
 			grpcprom.WithHistogramSubsystem("s2s_proxy_"+direction),
+			// TODO: Enable native histograms later
+			//grpcprom.WithHistogramOpts(&prometheus.HistogramOpts{
+			//	// Only Buckets, NativeHistogramBucketFactor, and other NativeHistogram options are supported here.
+			//	// Other histogram options should be supplied with grpcprom.WithXXXX
+			//	NativeHistogramBucketFactor: 1.1,
+			//}),
 		),
 		grpcprom.WithClientCounterOptions(
 			grpcprom.WithNamespace("temporal"),
@@ -85,6 +97,19 @@ func DefaultGaugeVec(name string, help string, labels ...string) *prometheus.Gau
 		Subsystem: "s2s_proxy",
 		Name:      SanitizeForPrometheus(name),
 		Help:      help,
+	}, labels)
+}
+
+// DefaultHistogramVec provides a prometheus HistogramVec for the requested name. The name will be sanitized, and the recommended
+// namespace and subsystem will be set. Vector metrics allow the use of labels, so if you need labels on your metrics, then use this.
+func DefaultHistogramVec(name string, help string, labels ...string) *prometheus.HistogramVec {
+	return prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "temporal",
+		Subsystem: "s2s_proxy",
+		Name:      SanitizeForPrometheus(name),
+		Help:      help,
+		// TODO: Native histograms aren't supported in our Grafana just yet
+		//NativeHistogramBucketFactor: 1.1,
 	}, labels)
 }
 
