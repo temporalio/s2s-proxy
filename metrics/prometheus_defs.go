@@ -14,10 +14,15 @@ var (
 	AdminServiceStreamsActive = DefaultGaugeVec("admin_service_streams_active", "Number of admin service streams open",
 		"direction")
 
+	// /proxy/inbound_health_check.go
+
+	InboundIsHealthy        = DefaultGauge("health_check_success", "Inbound mux server is healthy")
+	InboundHealthCheckCount = DefaultCounter("health_check_success_count", "Inbound health check count")
+
 	// /proxy/health_check.go
 
-	HealthCheckIsHealthy    = DefaultGauge("health_check_success", "s2s-proxy service is healthy")
-	HealthCheckHealthyCount = DefaultCounter("health_check_success_count", "Number of healthy checks from s2s-proxy since service start")
+	OutboundIsHealthy        = DefaultGauge("outbound_is_healthy", "Outbound proxy service is healthy")
+	OutboundHealthCheckCount = DefaultCounter("outbound_health_check_count", "Outbound health check count")
 
 	// /proxy/proxy.go
 
@@ -53,8 +58,10 @@ func init() {
 	prometheus.MustRegister(GRPCServerMetrics)
 	prometheus.MustRegister(GRPCOutboundClientMetrics)
 	prometheus.MustRegister(GRPCInboundClientMetrics)
-	prometheus.MustRegister(HealthCheckIsHealthy)
-	prometheus.MustRegister(HealthCheckHealthyCount)
+	prometheus.MustRegister(InboundIsHealthy)
+	prometheus.MustRegister(InboundHealthCheckCount)
+	prometheus.MustRegister(OutboundIsHealthy)
+	prometheus.MustRegister(OutboundHealthCheckCount)
 	prometheus.MustRegister(AdminServiceStreamsActive)
 	prometheus.MustRegister(MuxSessionOpen)
 	prometheus.MustRegister(MuxStreamsActive)
