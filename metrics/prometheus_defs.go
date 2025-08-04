@@ -29,8 +29,8 @@ var (
 
 	// /proxy/proxy.go
 
-	GRPCServerMetrics = GetStandardGRPCInterceptor("direction")
-	ProxyStartCount   = DefaultCounter("proxy_start_count", "Emitted once per startup")
+	GRPCServerMetrics         = GetStandardGRPCInterceptor("direction")
+	ProxyStartCount           = DefaultCounter("proxy_start_count", "Emitted once per startup")
 
 	// /transport/grpc.go
 	// Gratuitous hack: Until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783 is addressed,
