@@ -11,16 +11,19 @@ var (
 
 	// /proxy/adminservice.go
 
-	AdminServiceStreamsActive = DefaultGaugeVec("admin_service_streams_active", "Number of admin service streams open",
-		"direction")
-
-	// /proxy/inbound_health_check.go
-
-	InboundIsHealthy        = DefaultGauge("health_check_success", "Inbound mux server is healthy")
-	InboundHealthCheckCount = DefaultCounter("health_check_success_count", "Inbound health check count")
+	AdminServiceStreamsActive      = DefaultGaugeVec("admin_service_streams_active", "Number of admin service streams open", "direction")
+	AdminServiceStreamDuration     = DefaultHistogramVec("admin_service_stream_duration", "The length of time each stream was open", "direction")
+	AdminServiceStreamsOpenedCount = DefaultCounterVec("admin_service_streams_opened_count", "Number of streams opened", "direction")
+	AdminServiceStreamsClosedCount = DefaultCounterVec("admin_service_streams_closed_count", "Number of streams closed", "direction")
+	AdminServiceStreamReqCount     = DefaultCounterVec("admin_service_stream_request_count", "Number of messages received", "direction")
+	AdminServiceStreamRespCount    = DefaultCounterVec("admin_service_stream_response_count", "Number of messages received", "direction")
+	// AdminServiceStreamTerminatedCount's labels are direction (inbound/outbound) and terminated_by (source/target)
+	AdminServiceStreamTerminatedCount = DefaultCounterVec("admin_service_stream_terminated_count", "Stream was terminated by remote server", "direction", "terminated_by")
 
 	// /proxy/health_check.go
 
+	InboundIsHealthy        = DefaultGauge("health_check_success", "Inbound mux server is healthy")
+	InboundHealthCheckCount = DefaultCounter("health_check_success_count", "Inbound health check count")
 	OutboundIsHealthy        = DefaultGauge("outbound_is_healthy", "Outbound proxy service is healthy")
 	OutboundHealthCheckCount = DefaultCounter("outbound_health_check_count", "Outbound health check count")
 
@@ -54,15 +57,30 @@ func init() {
 	// Re-register the go collector with all non-debug metrics. See: https://pkg.go.dev/runtime/metrics
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
 		collectors.WithoutGoCollectorRuntimeMetrics(collectors.MetricsDebug.Matcher)))
-	prometheus.MustRegister(ProxyStartCount)
+	prometheus.MustRegister(AdminServiceStreamsActive)
+	prometheus.MustRegister(AdminServiceStreamDuration)
+	prometheus.MustRegister(AdminServiceStreamsOpenedCount)
+	prometheus.MustRegister(AdminServiceStreamsClosedCount)
+	prometheus.MustRegister(AdminServiceStreamReqCount)
+	prometheus.MustRegister(AdminServiceStreamRespCount)
+	prometheus.MustRegister(AdminServiceStreamTerminatedCount)
+
+	prometheus.MustRegister(HealthCheckIsHealthy)
+	prometheus.MustRegister(HealthCheckHealthyCount)
+
 	prometheus.MustRegister(GRPCServerMetrics)
+	prometheus.MustRegister(ProxyStartCount)
+
 	prometheus.MustRegister(GRPCOutboundClientMetrics)
 	prometheus.MustRegister(GRPCInboundClientMetrics)
+
 	prometheus.MustRegister(InboundIsHealthy)
 	prometheus.MustRegister(InboundHealthCheckCount)
 	prometheus.MustRegister(OutboundIsHealthy)
 	prometheus.MustRegister(OutboundHealthCheckCount)
-	prometheus.MustRegister(AdminServiceStreamsActive)
+
+
+
 	prometheus.MustRegister(MuxSessionOpen)
 	prometheus.MustRegister(MuxStreamsActive)
 	prometheus.MustRegister(MuxObserverReportCount)
