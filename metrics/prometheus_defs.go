@@ -22,15 +22,15 @@ var (
 
 	// /proxy/health_check.go
 
-	InboundIsHealthy        = DefaultGauge("health_check_success", "Inbound mux server is healthy")
-	InboundHealthCheckCount = DefaultCounter("health_check_success_count", "Inbound health check count")
+	InboundIsHealthy         = DefaultGauge("health_check_success", "Inbound mux server is healthy")
+	InboundHealthCheckCount  = DefaultCounter("health_check_success_count", "Inbound health check count")
 	OutboundIsHealthy        = DefaultGauge("outbound_is_healthy", "Outbound proxy service is healthy")
 	OutboundHealthCheckCount = DefaultCounter("outbound_health_check_count", "Outbound health check count")
 
 	// /proxy/proxy.go
 
-	GRPCServerMetrics         = GetStandardGRPCInterceptor("direction")
-	ProxyStartCount           = DefaultCounter("proxy_start_count", "Emitted once per startup")
+	GRPCServerMetrics = GetStandardGRPCInterceptor("direction")
+	ProxyStartCount   = DefaultCounter("proxy_start_count", "Emitted once per startup")
 
 	// /transport/grpc.go
 	// Gratuitous hack: Until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783 is addressed,
@@ -65,21 +65,16 @@ func init() {
 	prometheus.MustRegister(AdminServiceStreamRespCount)
 	prometheus.MustRegister(AdminServiceStreamTerminatedCount)
 
-	prometheus.MustRegister(HealthCheckIsHealthy)
-	prometheus.MustRegister(HealthCheckHealthyCount)
+	prometheus.MustRegister(InboundIsHealthy)
+	prometheus.MustRegister(InboundHealthCheckCount)
+	prometheus.MustRegister(OutboundIsHealthy)
+	prometheus.MustRegister(OutboundHealthCheckCount)
 
 	prometheus.MustRegister(GRPCServerMetrics)
 	prometheus.MustRegister(ProxyStartCount)
 
 	prometheus.MustRegister(GRPCOutboundClientMetrics)
 	prometheus.MustRegister(GRPCInboundClientMetrics)
-
-	prometheus.MustRegister(InboundIsHealthy)
-	prometheus.MustRegister(InboundHealthCheckCount)
-	prometheus.MustRegister(OutboundIsHealthy)
-	prometheus.MustRegister(OutboundHealthCheckCount)
-
-
 
 	prometheus.MustRegister(MuxSessionOpen)
 	prometheus.MustRegister(MuxStreamsActive)
