@@ -33,13 +33,14 @@ type (
 	}
 
 	Proxy struct {
-		config            config.S2SProxyConfig
-		transManager      *transport.TransportManager
-		outboundServer    *ProxyServer
-		inboundServer     *ProxyServer
-		healthCheckServer *http.Server
-		metricsServer     *http.Server
-		logger            log.Logger
+		config                    config.S2SProxyConfig
+		transManager              *transport.TransportManager
+		outboundServer            *ProxyServer
+		inboundServer             *ProxyServer
+		healthCheckServer         *http.Server
+		outboundHealthCheckServer *http.Server
+		metricsServer             *http.Server
+		logger                    log.Logger
 	}
 
 	proxyOptions struct {
@@ -293,21 +294,22 @@ func NewProxy(
 	return proxy
 }
 
-func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
+// startHealthCheckHandler has some fancier arguments: healthChecker is the health check to register. storeReference will
+// receive the http.Server and put it somewhere so we can shut it down later.
+func (s *Proxy) startHealthCheckHandler(healthChecker HealthChecker, storeReference func(*http.Server), cfg config.HealthCheckConfig) error {
 	if cfg.Protocol != config.HTTP {
 		return fmt.Errorf("unsupported health check protocol %s", cfg.Protocol)
 	}
 
 	// Set up the handler. Avoid the global ServeMux so that we can create N of these in unit test suites
 	mux := http.NewServeMux()
-	// Register the health check endpoint
-	checker := newHealthCheck(s.logger)
-	mux.HandleFunc("/health", checker.createHandler())
+	mux.HandleFunc("/health", healthChecker.createHandler())
 	// Define the server and its settings
-	s.healthCheckServer = &http.Server{
+	healthCheckServer := &http.Server{
 		Addr:    cfg.ListenAddress,
 		Handler: mux,
 	}
+	storeReference(healthCheckServer)
 
 	go func() {
 		s.logger.Info("Starting health check server", tag.Address(cfg.ListenAddress))
@@ -320,7 +322,7 @@ func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 }
 
 func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
-	// Why not default? So that it can be used in unit tests
+	// Why not use the global ServeMux? So that it can be used in unit tests
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", metrics.NewMetricsHandler(s.logger))
 	s.metricsServer = &http.Server{
@@ -339,12 +341,27 @@ func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
 
 func (s *Proxy) Start() error {
 	if s.config.HealthCheck != nil {
-		if err := s.startHealthCheckHandler(*s.config.HealthCheck); err != nil {
+		setHealthFn := func(server *http.Server) { s.healthCheckServer = server }
+		if err := s.startHealthCheckHandler(newInboundHealthCheck(s.logger), setHealthFn, *s.config.HealthCheck); err != nil {
 			return err
 		}
 	} else {
-		s.logger.Warn("Started up without health check! Double-check the YAML config," +
+		s.logger.Warn("Started up without inbound health check! Double-check the YAML config," +
 			" it needs at least the following path: healthCheck.listenAddress")
+	}
+
+	if s.config.OutboundHealthCheck != nil {
+		healthFn := func() bool {
+			// s.config.Outbound.Server.MuxTransportName: There's one mux per outbound server right now.
+			return s.transManager.IsMuxActive(s.config.Outbound.Server.MuxTransportName)
+		}
+		setHealthFn := func(server *http.Server) { s.outboundHealthCheckServer = server }
+		if err := s.startHealthCheckHandler(newOutboundHealthCheck(healthFn, s.logger), setHealthFn, *s.config.OutboundHealthCheck); err != nil {
+			return err
+		}
+	} else {
+		s.logger.Warn("Started up without outbound health check! Double-check the YAML config," +
+			" it needs at least the following path: outboundHealthCheck.listenAddress")
 	}
 
 	if s.config.Metrics != nil {
