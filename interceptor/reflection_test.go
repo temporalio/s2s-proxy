@@ -2,6 +2,8 @@ package interceptor
 
 import (
 	"testing"
+
+	"go.temporal.io/server/common/log"
 )
 
 func BenchmarkVisitNamespace(b *testing.B) {
@@ -23,6 +25,7 @@ func BenchmarkVisitNamespace(b *testing.B) {
 	}
 	cases := generateNamespaceObjCases()
 
+	logger := log.NewTestLogger()
 	for _, c := range cases {
 		b.Run(c.objName, func(b *testing.B) {
 			for _, variant := range variants {
@@ -33,7 +36,7 @@ func BenchmarkVisitNamespace(b *testing.B) {
 						input := c.makeType(variant.inputNSName)
 
 						b.StartTimer()
-						_, _ = visitNamespace(input, translator)
+						_, _ = visitNamespace(logger, input, translator)
 					}
 				})
 			}

@@ -151,12 +151,13 @@ func testNamespaceAccessControl(t *testing.T, objCases []objCase) {
 		},
 	}
 
+	logger := log.NewTestLogger()
 	for _, c := range objCases {
 		t.Run(c.objName, func(t *testing.T) {
 			for _, ts := range testcases {
 				t.Run(ts.testName, func(t *testing.T) {
 					input := c.makeType(ts.inputNSName)
-					allowed, err := isNamespaceAccessAllowed(input, ts.access)
+					allowed, err := isNamespaceAccessAllowed(logger, input, ts.access)
 					if len(c.expError) != 0 {
 						require.ErrorContains(t, err, c.expError)
 					} else {
@@ -167,7 +168,14 @@ func testNamespaceAccessControl(t *testing.T, objCases []objCase) {
 							require.True(t, allowed)
 						}
 
-						require.Equal(t, c.makeType(ts.inputNSName), input)
+						var expOutput any
+						if c.makeExpected != nil {
+							expOutput = c.makeExpected(ts.inputNSName)
+						} else {
+							expOutput = c.makeType(ts.inputNSName)
+						}
+
+						require.Equal(t, expOutput, input)
 					}
 				})
 			}
