@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
-
 )
 
 const (
@@ -21,6 +20,8 @@ const (
 	// To use DNS resolver, a "dns:///" prefix should be applied to the hostPort.
 	// https://github.com/grpc/grpc/blob/master/doc/naming.md
 	DefaultServiceConfig = `{"loadBalancingConfig": [{"round_robin":{}}]}`
+
+	CustomServiceConfig = `{"loadBalancingConfig": [{"custom_round_robin":{}}]}`
 
 	// MaxBackoffDelay is a maximum interval between reconnect attempts.
 	MaxBackoffDelay = 10 * time.Second
@@ -55,22 +56,9 @@ func dial(hostName string, tlsConfig *tls.Config, clientMetrics *grpcprom.Client
 	}
 	cp.Backoff.MaxDelay = MaxBackoffDelay
 
-	//mr := manual.NewBuilderWithScheme("example")
-	//mr.InitialState(resolver.State{
-	//	Endpoints: []resolver.Endpoint{
-	//		{Addresses: []resolver.Address{{Addr: addr1}}},
-	//		{Addresses: []resolver.Address{{Addr: addr2}}},
-	//	},
-	//	// I don't see an exported function for parsing service config.
-	//	// I'm hoping this will re-use the default service config included in the dial options.
-
-	//	//ServiceConfig: sc,
-	//})
-
 	dialOptions := []grpc.DialOption{
 		grpcSecureOpt,
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxInternodeRecvPayloadSize)),
-		grpc.WithDefaultServiceConfig(DefaultServiceConfig),
 		grpc.WithDisableServiceConfig(),
 		grpc.WithConnectParams(cp),
 		grpc.WithUnaryInterceptor(clientMetrics.UnaryClientInterceptor()),
@@ -82,9 +70,41 @@ func dial(hostName string, tlsConfig *tls.Config, clientMetrics *grpcprom.Client
 			grpc.WithContextDialer(dialer))
 	}
 
-	// nolint:staticcheck // SA1019 grpc.Dial is deprecated. Need to figure out how to use grpc.NewClient.
-	return grpc.Dial(
-		hostName,
-		dialOptions...,
-	)
+	// If we are not mux transport, use a custom grpc load balancer
+	// which force round robins.
+	if hostName != "unused" {
+		mr := manual.NewBuilderWithScheme("example")
+		mr.InitialState(resolver.State{
+			Endpoints: []resolver.Endpoint{
+				{Addresses: []resolver.Address{{Addr: "localhost:7233"}}},
+				{Addresses: []resolver.Address{{Addr: "127.0.0.1:7233"}}},
+			},
+			// I don't see an exported function for parsing service config.
+			// This seems to re-use the default service config included in the dial options,
+			// based on debug logging...
+			//ServiceConfig: sc,
+		})
+
+		dialOptions = append(dialOptions,
+			grpc.WithResolvers(mr),
+			grpc.WithDefaultServiceConfig(CustomServiceConfig),
+		)
+		// nolint:staticcheck // SA1019 grpc.Dial is deprecated. Need to figure out how to use grpc.NewClient.
+		return grpc.Dial(
+			mr.Scheme()+":///",
+			dialOptions...,
+		)
+
+	} else {
+		dialOptions = append(dialOptions,
+			grpc.WithDefaultServiceConfig(DefaultServiceConfig),
+		)
+		// nolint:staticcheck // SA1019 grpc.Dial is deprecated. Need to figure out how to use grpc.NewClient.
+		return grpc.Dial(
+			hostName,
+			dialOptions...,
+		)
+
+	}
+
 }

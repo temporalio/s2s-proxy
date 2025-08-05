@@ -75,7 +75,7 @@ func (i *TranslationInterceptor) InterceptStream(
 	i.logger.Debug("InterceptStream", tag.NewAnyTag("method", info.FullMethod))
 	err := handler(srv, newStreamTranslator(ss, i.logger, i.translators))
 	if err != nil {
-		i.logger.Error("grpc handler with error: %v", tag.Error(err))
+		i.logger.Debug("grpc handler error", tag.Error(err))
 	}
 	return err
 }
