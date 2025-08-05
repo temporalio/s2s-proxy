@@ -80,10 +80,10 @@ func (crr *customRoundRobin) UpdateClientConnState(state balancer.ClientConnStat
 	}
 
 	// Optional process store something here based on number of endpoints.
-
-	if el := state.ResolverState.Endpoints; len(el) != 2 {
-		return fmt.Errorf("UpdateClientConnState wants two endpoints, got: %v", el)
+	if el := state.ResolverState.Endpoints; len(el) < 2 {
+		return fmt.Errorf("UpdateClientConnState wants at least two endpoints, got: %v", el)
 	}
+
 	crr.cfg.Store(crrCfg)
 	// A call to UpdateClientConnState should always produce a new Picker.  That
 	// is guaranteed to happen since the aggregator will always call
