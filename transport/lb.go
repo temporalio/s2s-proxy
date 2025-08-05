@@ -94,7 +94,7 @@ func (crr *customRoundRobin) UpdateClientConnState(state balancer.ClientConnStat
 }
 
 func (crr *customRoundRobin) UpdateState(state balancer.State) {
-	log.Printf("lb UpdateState: %v", state)
+	log.Printf("lb UpdateState: %#v", state)
 
 	if state.ConnectivityState != connectivity.Ready {
 		// Delegate to default behavior/picker from below.

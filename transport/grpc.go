@@ -8,6 +8,7 @@ import (
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/attributes"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -74,11 +75,28 @@ func dial(hostName string, tlsConfig *tls.Config, clientMetrics *grpcprom.Client
 	// which force round robins.
 	if hostName != "unused" {
 		mr := manual.NewBuilderWithScheme("example")
-		mr.InitialState(resolver.State{
-			Endpoints: []resolver.Endpoint{
-				{Addresses: []resolver.Address{{Addr: "localhost:7233"}}},
-				{Addresses: []resolver.Address{{Addr: "127.0.0.1:7233"}}},
+		endpoints := []resolver.Endpoint{
+			{
+				Addresses: []resolver.Address{{
+					Addr: "localhost:7233",
+					//Attributes: attributes.New("dedup", &unequalAttr{}),
+					Attributes: attributes.New("dedup", 1),
+				}},
+				//Attributes: attributes.New("dedup", &unequalAttr{}),
+				Attributes: attributes.New("dedup", 10),
 			},
+			{
+				Addresses: []resolver.Address{{
+					Addr: "localhost:7233",
+					//Attributes: attributes.New("dedup", &unequalAttr{}),
+					Attributes: attributes.New("dedup", 2),
+				}},
+				//Attributes: attributes.New("dedup", &unequalAttr{}),
+				Attributes: attributes.New("dedup", 11),
+			},
+		}
+		mr.InitialState(resolver.State{
+			Endpoints: endpoints,
 			// I don't see an exported function for parsing service config.
 			// This seems to re-use the default service config included in the dial options,
 			// based on debug logging...
@@ -107,4 +125,10 @@ func dial(hostName string, tlsConfig *tls.Config, clientMetrics *grpcprom.Client
 
 	}
 
+}
+
+type unequalAttr struct{}
+
+func (*unequalAttr) Equal(_ any) bool {
+	return false
 }
