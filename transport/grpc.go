@@ -11,6 +11,9 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/resolver"
+	"google.golang.org/grpc/resolver/manual"
+
 )
 
 const (
@@ -51,6 +54,18 @@ func dial(hostName string, tlsConfig *tls.Config, clientMetrics *grpcprom.Client
 		MinConnectTimeout: minConnectTimeout,
 	}
 	cp.Backoff.MaxDelay = MaxBackoffDelay
+
+	//mr := manual.NewBuilderWithScheme("example")
+	//mr.InitialState(resolver.State{
+	//	Endpoints: []resolver.Endpoint{
+	//		{Addresses: []resolver.Address{{Addr: addr1}}},
+	//		{Addresses: []resolver.Address{{Addr: addr2}}},
+	//	},
+	//	// I don't see an exported function for parsing service config.
+	//	// I'm hoping this will re-use the default service config included in the dial options.
+
+	//	//ServiceConfig: sc,
+	//})
 
 	dialOptions := []grpc.DialOption{
 		grpcSecureOpt,
