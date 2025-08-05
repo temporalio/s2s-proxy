@@ -27,6 +27,8 @@ package transport
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	rand "math/rand/v2"
 	"sync"
 	"sync/atomic"
@@ -48,9 +50,9 @@ type ChildState struct {
 	Balancer balancer.ExitIdler
 }
 
-// Options are the options to configure the behaviour of the
+// EndpointShardingOptions are the options to configure the behaviour of the
 // endpointsharding balancer.
-type Options struct {
+type EndpointShardingOptions struct {
 	// DisableAutoReconnect allows the balancer to keep child balancer in the
 	// IDLE state until they are explicitly triggered to exit using the
 	// ChildState obtained from the endpointsharding picker. When set to false,
@@ -63,17 +65,17 @@ type Options struct {
 // type as the balancer.Builder.Build method.
 type ChildBuilderFunc func(cc balancer.ClientConn, opts balancer.BuildOptions) balancer.Balancer
 
-// NewBalancer returns a load balancing policy that manages homogeneous child
+// NewEndpointShardingLoadbalancer returns a load balancing policy that manages homogeneous child
 // policies each owning a single endpoint. The endpointsharding balancer
 // forwards the LoadBalancingConfig in ClientConn state updates to its children.
-func NewBalancer(cc balancer.ClientConn, opts balancer.BuildOptions, childBuilder ChildBuilderFunc, esOpts Options) balancer.Balancer {
+func NewEndpointShardingLoadbalancer(cc balancer.ClientConn, opts balancer.BuildOptions, childBuilder ChildBuilderFunc, esOpts EndpointShardingOptions) balancer.Balancer {
 	es := &endpointSharding{
 		cc:           cc,
 		bOpts:        opts,
 		esOpts:       esOpts,
 		childBuilder: childBuilder,
 	}
-	es.children.Store(resolver.NewEndpointMap())
+	es.children.Store(resolver.NewAddressMap())
 	return es
 }
 
@@ -83,14 +85,14 @@ func NewBalancer(cc balancer.ClientConn, opts balancer.BuildOptions, childBuilde
 type endpointSharding struct {
 	cc           balancer.ClientConn
 	bOpts        balancer.BuildOptions
-	esOpts       Options
+	esOpts       EndpointShardingOptions
 	childBuilder ChildBuilderFunc
 
 	// childMu synchronizes calls to any single child. It must be held for all
 	// calls into a child. To avoid deadlocks, do not acquire childMu while
 	// holding mu.
 	childMu  sync.Mutex
-	children atomic.Pointer[resolver.EndpointMap] // endpoint -> *balancerWrapper
+	children atomic.Pointer[resolver.AddressMap] // endpoint -> *balancerWrapper
 
 	// inhibitChildUpdates is set during UpdateClientConnState/ResolverError
 	// calls (calls to children will each produce an update, only want one
@@ -111,6 +113,7 @@ type endpointSharding struct {
 // addresses it will ignore that endpoint. Otherwise, returns first error found
 // from a child, but fully processes the new update.
 func (es *endpointSharding) UpdateClientConnState(state balancer.ClientConnState) error {
+	log.Printf("endpointSharding UpdateClientConnState (%d endpoints) %+v", len(state.ResolverState.Endpoints), state)
 	es.childMu.Lock()
 	defer es.childMu.Unlock()
 
@@ -122,44 +125,45 @@ func (es *endpointSharding) UpdateClientConnState(state balancer.ClientConnState
 	var ret error
 
 	children := es.children.Load()
-	newChildren := resolver.NewEndpointMap()
+	newChildren := resolver.NewAddressMap()
 
 	// Update/Create new children.
 	for _, endpoint := range state.ResolverState.Endpoints {
-		if _, ok := newChildren.Get(endpoint); ok {
-			// Endpoint child was already created, continue to avoid duplicate
-			// update.
-			continue
+		if len(endpoint.Addresses) != 1 {
+			return fmt.Errorf("each endpoint must have only 1 address")
 		}
-		var childBalancer *balancerWrapper
-		if val, ok := children.Get(endpoint); ok {
-			childBalancer = val.(*balancerWrapper)
-			// Endpoint attributes may have changed, update the stored endpoint.
-			es.mu.Lock()
-			childBalancer.childState.Endpoint = endpoint
-			es.mu.Unlock()
-		} else {
-			childBalancer = &balancerWrapper{
-				childState: ChildState{Endpoint: endpoint},
-				ClientConn: es.cc,
-				es:         es,
+
+		for _, address := range endpoint.Addresses {
+			var childBalancer *balancerWrapper
+			if val, ok := children.Get(address); ok {
+				childBalancer = val.(*balancerWrapper)
+				// Endpoint attributes may have changed, update the stored endpoint.
+				es.mu.Lock()
+				childBalancer.childState.Endpoint = endpoint
+				es.mu.Unlock()
+			} else {
+				childBalancer = &balancerWrapper{
+					childState: ChildState{Endpoint: endpoint},
+					ClientConn: es.cc,
+					es:         es,
+				}
+				childBalancer.childState.Balancer = childBalancer
+				childBalancer.child = es.childBuilder(childBalancer, es.bOpts)
 			}
-			childBalancer.childState.Balancer = childBalancer
-			childBalancer.child = es.childBuilder(childBalancer, es.bOpts)
-		}
-		newChildren.Set(endpoint, childBalancer)
-		if err := childBalancer.updateClientConnStateLocked(balancer.ClientConnState{
-			BalancerConfig: state.BalancerConfig,
-			ResolverState: resolver.State{
-				Endpoints:  []resolver.Endpoint{endpoint},
-				Attributes: state.ResolverState.Attributes,
-			},
-		}); err != nil && ret == nil {
-			// Return first error found, and always commit full processing of
-			// updating children. If desired to process more specific errors
-			// across all endpoints, caller should make these specific
-			// validations, this is a current limitation for simplicity sake.
-			ret = err
+			newChildren.Set(address, childBalancer)
+			if err := childBalancer.updateClientConnStateLocked(balancer.ClientConnState{
+				BalancerConfig: state.BalancerConfig,
+				ResolverState: resolver.State{
+					Endpoints:  []resolver.Endpoint{endpoint},
+					Attributes: state.ResolverState.Attributes,
+				},
+			}); err != nil && ret == nil {
+				// Return first error found, and always commit full processing of
+				// updating children. If desired to process more specific errors
+				// across all endpoints, caller should make these specific
+				// validations, this is a current limitation for simplicity sake.
+				ret = err
+			}
 		}
 	}
 	// Delete old children that are no longer present.

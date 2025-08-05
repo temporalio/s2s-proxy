@@ -8,7 +8,6 @@ import (
 
 	_ "google.golang.org/grpc" // to register pick_first
 	"google.golang.org/grpc/balancer"
-	"google.golang.org/grpc/balancer/endpointsharding"
 	"google.golang.org/grpc/balancer/pickfirst/pickfirstleaf"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/serviceconfig"
@@ -51,7 +50,7 @@ func (customRoundRobinBuilder) Build(cc balancer.ClientConn, bOpts balancer.Buil
 		ClientConn: cc,
 		bOpts:      bOpts,
 	}
-	crr.Balancer = endpointsharding.NewBalancer(crr, bOpts, balancer.Get(pickfirstleaf.Name).Build, endpointsharding.Options{})
+	crr.Balancer = NewEndpointShardingLoadbalancer(crr, bOpts, balancer.Get(pickfirstleaf.Name).Build, EndpointShardingOptions{})
 	return crr
 }
 
@@ -70,7 +69,7 @@ type customRoundRobin struct {
 }
 
 func (crr *customRoundRobin) UpdateClientConnState(state balancer.ClientConnState) (err error) {
-	log.Printf("lb UpdateClienConnState: %#v", state)
+	log.Printf("lb UpdateClienConnState: (%d endpoints) %#v", len(state.ResolverState.Endpoints), state)
 	defer func() {
 		log.Printf("lb UpdateClienConnState: %v", err)
 	}()
@@ -103,7 +102,7 @@ func (crr *customRoundRobin) UpdateState(state balancer.State) {
 	}
 
 	// collect the ready pickers
-	childStates := endpointsharding.ChildStatesFromPicker(state.Picker)
+	childStates := ChildStatesFromPicker(state.Picker)
 	var readyPickers []balancer.Picker
 	for _, childState := range childStates {
 		if childState.State.ConnectivityState == connectivity.Ready {
@@ -134,10 +133,14 @@ type customRoundRobinPicker struct {
 	next uint32
 }
 
-func (crrp *customRoundRobinPicker) Pick(info balancer.PickInfo) (balancer.PickResult, error) {
+func (crrp *customRoundRobinPicker) Pick(info balancer.PickInfo) (result balancer.PickResult, err error) {
 	next := int(atomic.AddUint32(&crrp.next, 1))
+	index := next % len(crrp.pickers)
 
-	log.Printf("lb Pick: %d %v", next, info)
-	childPicker := crrp.pickers[next%len(crrp.pickers)]
+	defer func() {
+		log.Printf("lb Pick %d %s >> %+v, err=%v", index, info.FullMethodName, result, err)
+	}()
+
+	childPicker := crrp.pickers[index]
 	return childPicker.Pick(info)
 }
