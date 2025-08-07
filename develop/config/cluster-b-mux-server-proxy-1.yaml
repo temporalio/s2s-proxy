@@ -31,7 +31,7 @@ profiling:
   pprofAddress: "localhost:6070"
 memberlist:
   enabled: true
-  enableForwarding: false
+  enableForwarding: true
   nodeName: "proxy-node-b-1"
   bindAddr: "0.0.0.0"
   bindPort: 6335

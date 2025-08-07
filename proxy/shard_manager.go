@@ -403,7 +403,7 @@ func (sd *shardDelegate) NotifyMsg(data []byte) {
 		return
 	}
 
-	sd.logger.Debug("Received shard message",
+	sd.logger.Info("Received shard message",
 		tag.NewStringTag("type", msg.Type),
 		tag.NewStringTag("node", msg.NodeName),
 		tag.NewStringTag("shard", ClusterShardIDtoString(msg.ClientShard)))
@@ -425,7 +425,7 @@ func (sd *shardDelegate) MergeRemoteState(buf []byte, join bool) {
 		return
 	}
 
-	sd.logger.Debug("Merged remote shard state",
+	sd.logger.Info("Merged remote shard state",
 		tag.NewStringTag("node", state.NodeName),
 		tag.NewStringTag("shards", strconv.Itoa(len(state.Shards))))
 }
@@ -465,7 +465,7 @@ func (sed *shardEventDelegate) NotifyLeave(node *memberlist.Node) {
 }
 
 func (sed *shardEventDelegate) NotifyUpdate(node *memberlist.Node) {
-	sed.logger.Debug("Node updated",
+	sed.logger.Info("Node updated",
 		tag.NewStringTag("node", node.Name),
 		tag.NewStringTag("addr", node.Addr.String()))
 }
