@@ -87,6 +87,10 @@ type streamTranslator struct {
 }
 
 func (w *streamTranslator) RecvMsg(m any) error {
+	for range 10000 {
+		w.logger.Info("spam interceptor")
+	}
+
 	w.logger.Debug("Intercept RecvMsg", tag.NewAnyTag("message", m))
 	for _, tr := range w.translators {
 		changed, trErr := tr.TranslateRequest(m)

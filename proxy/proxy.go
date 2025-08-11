@@ -182,6 +182,9 @@ func (ps *ProxyServer) start() error {
 	clientConfig := ps.config.Client
 
 	go func() {
+		for range 10000 {
+			ps.logger.Info("spam ProxyServer.start")
+		}
 		for {
 			// If using mux transport underneath, Open call will be blocked until
 			// underlying connection is established.
@@ -343,6 +346,10 @@ func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
 }
 
 func (s *Proxy) Start() error {
+	for range 10000 {
+		s.logger.Info("spam proxy start")
+	}
+
 	if s.config.HealthCheck != nil {
 		if err := s.startHealthCheckHandler(*s.config.HealthCheck); err != nil {
 			return err
