@@ -255,7 +255,12 @@ func NewProxy(
 	proxy := &Proxy{
 		config:       s2sConfig,
 		transManager: transManager,
-		logger:       logger,
+		logger: log.NewThrottledLogger(
+			logger,
+			func() float64 {
+				return s2sConfig.Logging.GetThrottleMaxRPS()
+			},
+		),
 	}
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
@@ -272,7 +277,7 @@ func NewProxy(
 				Config:    s2sConfig,
 			},
 			transManager,
-			logger,
+			proxy.logger,
 		)
 	}
 
@@ -284,7 +289,7 @@ func NewProxy(
 				Config:    s2sConfig,
 			},
 			transManager,
-			logger,
+			proxy.logger,
 		)
 	}
 
