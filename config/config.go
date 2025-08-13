@@ -117,6 +117,11 @@ type (
 		Metrics                    *MetricsConfig        `yaml:"metrics"`
 		ProfilingConfig            ProfilingConfig       `yaml:"profiling"`
 		Logging                    LoggingConfig         `yaml:"logging"`
+		Debug                      Debug                 `yaml:"debug'`
+	}
+
+	Debug struct {
+		GetWorkflowExecutionWorkflowIds []string `yaml:"getWorkflowExecutionWorkflowIds"`
 	}
 
 	SATranslationConfig struct {
