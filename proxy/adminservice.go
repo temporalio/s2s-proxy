@@ -182,6 +182,7 @@ func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistoryV2(ctx context.C
 				tag.NewInt32("max_page_size", in0.MaximumPageSize),
 				tag.NewInt64("duration_ms", time.Since(start).Milliseconds()),
 				tag.NewInt64("deadline_duration_ms", deadline_duration),
+				tag.NewBinaryTag("next_page_token", in0.GetNextPageToken()),
 			)
 		}
 	}
