@@ -35,9 +35,14 @@ func startListener[T StreamRequestOrResponse](
 ) chan ValueWithError[T] {
 	targetStreamServerData := make(chan ValueWithError[T])
 	go func() {
+		defer close(targetStreamServerData)
 		for !shutdownChan.IsShutdown() {
 			req, err := receiver.Recv()
-			targetStreamServerData <- ValueWithError[T]{val: req, err: err}
+			select {
+			case targetStreamServerData <- ValueWithError[T]{val: req, err: err}:
+			case <-shutdownChan.Channel():
+				return
+			}
 		}
 	}()
 	return targetStreamServerData
