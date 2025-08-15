@@ -37,7 +37,11 @@ func startListener[T StreamRequestOrResponse](
 	go func() {
 		for !shutdownChan.IsShutdown() {
 			req, err := receiver.Recv()
-			targetStreamServerData <- ValueWithError[T]{val: req, err: err}
+			select {
+			case targetStreamServerData <- ValueWithError[T]{val: req, err: err}:
+			case <-shutdownChan.Channel():
+				return
+			}
 		}
 	}()
 	return targetStreamServerData
