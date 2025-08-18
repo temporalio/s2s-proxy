@@ -317,7 +317,7 @@ func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 	go func() {
 		s.logger.Info("Starting health check server", tag.Address(cfg.ListenAddress))
 		if err := s.healthCheckServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.logger.Error("Error starting server: %v\n", tag.Error(err))
+			s.logger.Error("Error starting server", tag.Error(err))
 		}
 	}()
 
@@ -336,7 +336,7 @@ func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
 	go func() {
 		s.logger.Info("Starting metrics server", tag.Address(cfg.Prometheus.ListenAddress))
 		if err := s.metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.logger.Error("Error starting server: %v\n", tag.Error(err))
+			s.logger.Error("Error starting server", tag.Error(err))
 		}
 	}()
 	return nil
