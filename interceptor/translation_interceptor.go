@@ -42,7 +42,6 @@ func (i *TranslationInterceptor) Intercept(
 		strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
 
 		methodName := api.MethodName(info.FullMethod)
-		i.logger.Debug("intercepted request", tag.NewStringTag("method", methodName))
 
 		for _, tr := range i.translators {
 			if tr.MatchMethod(info.FullMethod) {
@@ -72,12 +71,7 @@ func (i *TranslationInterceptor) InterceptStream(
 	info *grpc.StreamServerInfo,
 	handler grpc.StreamHandler,
 ) error {
-	i.logger.Debug("InterceptStream", tag.NewAnyTag("method", info.FullMethod))
-	err := handler(srv, newStreamTranslator(ss, i.logger, i.translators))
-	if err != nil {
-		i.logger.Error("grpc handler with error: %v", tag.Error(err))
-	}
-	return err
+	return handler(srv, newStreamTranslator(ss, i.logger, i.translators))
 }
 
 type streamTranslator struct {
@@ -87,7 +81,6 @@ type streamTranslator struct {
 }
 
 func (w *streamTranslator) RecvMsg(m any) error {
-	w.logger.Debug("Intercept RecvMsg", tag.NewAnyTag("message", m))
 	for _, tr := range w.translators {
 		changed, trErr := tr.TranslateRequest(m)
 		logTranslateResult(w.logger, changed, trErr, "RecvMsg", m)
@@ -96,7 +89,6 @@ func (w *streamTranslator) RecvMsg(m any) error {
 }
 
 func (w *streamTranslator) SendMsg(m any) error {
-	w.logger.Debug("Intercept SendMsg", tag.NewStringTag("type", fmt.Sprintf("%T", m)), tag.NewAnyTag("message", m))
 	for _, tr := range w.translators {
 		changed, trErr := tr.TranslateResponse(m)
 		logTranslateResult(w.logger, changed, trErr, "SendMsg", m)
@@ -117,16 +109,12 @@ func newStreamTranslator(
 }
 
 func logTranslateResult(logger log.Logger, changed bool, err error, methodName string, obj any) {
-	logger = log.With(
-		logger,
-		tag.NewStringTag("method", methodName),
-		tag.NewAnyTag("obj", obj),
-	)
+	methodTag := tag.NewStringTag("method", methodName)
 	if err != nil {
-		logger.Error("translation error", tag.Error(err))
+		logger.Error("translation error", methodTag, tag.Error(err), tag.NewStringTag("type", fmt.Sprintf("%T", obj)))
 	} else if changed {
-		logger.Debug("translation applied")
+		logger.Debug("translation applied", methodTag, tag.NewAnyTag("obj", obj))
 	} else {
-		logger.Debug("translation not applied")
+		logger.Debug("translation not applied", methodTag, tag.NewAnyTag("obj", obj))
 	}
 }

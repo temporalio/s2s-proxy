@@ -89,7 +89,8 @@ func transferSourceToTarget(
 		}
 		switch attr := resp.GetAttributes().(type) {
 		case *adminservice.StreamWorkflowReplicationMessagesResponse_Messages:
-			logger.Debug(fmt.Sprintf("forwarding ReplicationMessages: exclusive %v", attr.Messages.ExclusiveHighWatermark))
+			logger.Debug("forwarding ReplicationMessages", tag.NewInt64("exclusive", attr.Messages.GetExclusiveHighWatermark()))
+
 			if err = targetStreamServer.Send(resp); err != nil {
 				if err != io.EOF {
 					logger.Error("targetStreamServer.Send encountered error", tag.Error(err))
@@ -169,7 +170,7 @@ func transferTargetToSource(
 
 		switch attr := req.GetAttributes().(type) {
 		case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
-			logger.Debug(fmt.Sprintf("forwarding SyncReplicationState: inclusive %v", attr.SyncReplicationState.InclusiveLowWatermark))
+			logger.Debug("forwarding SyncReplicationState", tag.NewInt64("inclusive", attr.SyncReplicationState.GetInclusiveLowWatermark()))
 			if err = sourceStreamClient.Send(req); err != nil {
 				if err != io.EOF {
 					logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
