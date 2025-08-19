@@ -67,7 +67,7 @@ func (t *Tree) dump(out io.Writer, depth int) {
 	for f, ch := range t.Children {
 		vt := t.Types[f]
 		_, isoneof := vt.Descriptor.(protoreflect.OneofDescriptor)
-		writef(out, indent)
+		write(out, indent)
 		if isoneof {
 			writef(out, " oneof")
 		}

@@ -56,12 +56,8 @@ func makeServerOptions(
 	unaryInterceptors := []grpc.UnaryServerInterceptor{}
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
-	directionValue := "inbound"
-	if !proxyOpts.IsInbound {
-		directionValue = "outbound"
-	}
 	labelGenerator := grpcprom.WithLabelsFromContext(func(_ context.Context) (labels prometheus.Labels) {
-		return prometheus.Labels{"direction": directionValue}
+		return prometheus.Labels{"direction": proxyOpts.directionLabel()}
 	})
 
 	// Ordering matters! These metrics happen BEFORE the translations/acl
@@ -133,7 +129,12 @@ func (ps *ProxyServer) startServer(
 		return err
 	}
 
-	clientFactory := client.NewClientFactory(clientTransport, logger)
+	clientMetrics := metrics.GRPCOutboundClientMetrics
+	if ps.opts.IsInbound {
+		clientMetrics = metrics.GRPCInboundClientMetrics
+	}
+
+	clientFactory := client.NewClientFactory(clientTransport, clientMetrics, logger)
 	ps.server = NewTemporalAPIServer(
 		cfg.Name,
 		cfg.Server,
@@ -168,6 +169,14 @@ func monitorClosable(closable transport.Closable, retryCh chan struct{}, shutDow
 	}
 }
 
+func (opts *proxyOptions) directionLabel() string {
+	directionValue := "outbound"
+	if opts.IsInbound {
+		directionValue = "inbound"
+	}
+	return directionValue
+}
+
 func (ps *ProxyServer) start() error {
 	serverConfig := ps.config.Server
 	clientConfig := ps.config.Client
@@ -176,7 +185,8 @@ func (ps *ProxyServer) start() error {
 		for {
 			// If using mux transport underneath, Open call will be blocked until
 			// underlying connection is established.
-			clientTransport, err := ps.transManager.OpenClient(clientConfig)
+			// Also note: GRPC requires the client interceptors (like metrics) to be defined on the transport, not on the client.
+			clientTransport, err := ps.transManager.OpenClient(prometheus.Labels{"direction": ps.opts.directionLabel()}, clientConfig)
 			if err != nil {
 				ps.logger.Error("Open client transport is failed", tag.Error(err))
 				return
@@ -245,7 +255,12 @@ func NewProxy(
 	proxy := &Proxy{
 		config:       s2sConfig,
 		transManager: transManager,
-		logger:       logger,
+		logger: log.NewThrottledLogger(
+			logger,
+			func() float64 {
+				return s2sConfig.Logging.GetThrottleMaxRPS()
+			},
+		),
 	}
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
@@ -262,7 +277,7 @@ func NewProxy(
 				Config:    s2sConfig,
 			},
 			transManager,
-			logger,
+			proxy.logger,
 		)
 	}
 
@@ -274,7 +289,7 @@ func NewProxy(
 				Config:    s2sConfig,
 			},
 			transManager,
-			logger,
+			proxy.logger,
 		)
 	}
 
@@ -302,7 +317,7 @@ func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 	go func() {
 		s.logger.Info("Starting health check server", tag.Address(cfg.ListenAddress))
 		if err := s.healthCheckServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.logger.Error("Error starting server: %v\n", tag.Error(err))
+			s.logger.Error("Error starting server", tag.Error(err))
 		}
 	}()
 
@@ -321,7 +336,7 @@ func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
 	go func() {
 		s.logger.Info("Starting metrics server", tag.Address(cfg.Prometheus.ListenAddress))
 		if err := s.metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.logger.Error("Error starting server: %v\n", tag.Error(err))
+			s.logger.Error("Error starting server", tag.Error(err))
 		}
 	}()
 	return nil

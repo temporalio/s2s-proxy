@@ -23,6 +23,7 @@ func shouldIgnoreTypeIfDoesntExistIn122(mt protoreflect.Descriptor) bool {
 		strings.Contains(fullName, "HSMCompletionCallbackArg") ||
 		strings.Contains(fullName, "WorkflowMutableStateMutation") ||
 		strings.Contains(fullName, "Callback") ||
+		strings.Contains(fullName, "Deployment") ||
 		strings.HasPrefix(fullName, "temporal.api.export.v1")
 }
 
@@ -50,6 +51,13 @@ func writeln(out io.Writer, args ...any) {
 
 func writef(out io.Writer, msg string, args ...any) {
 	_, err := fmt.Fprintf(out, msg, args...)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func write(out io.Writer, args ...any) {
+	_, err := fmt.Fprint(out, args...)
 	if err != nil {
 		panic(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"net"
 
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/config"
@@ -20,7 +21,7 @@ type (
 	}
 )
 
-func (c *tcpClient) Connect() (*grpc.ClientConn, error) {
+func (c *tcpClient) Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.ClientConn, error) {
 	var tlsConfig *tls.Config
 	var err error
 	if tls := c.config.TLS; tls.IsEnabled() {
@@ -30,7 +31,7 @@ func (c *tcpClient) Connect() (*grpc.ClientConn, error) {
 		}
 	}
 
-	return dial(c.config.ServerAddress, tlsConfig, nil)
+	return dial(c.config.ServerAddress, tlsConfig, clientMetrics, nil)
 }
 
 func (s *tcpServer) Serve(server *grpc.Server) error {

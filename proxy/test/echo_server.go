@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gogo/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
@@ -19,6 +20,7 @@ import (
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/metrics"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 	"github.com/temporalio/s2s-proxy/transport"
 )
@@ -81,7 +83,6 @@ func newEchoServer(
 	}
 
 	var proxy *s2sproxy.Proxy
-	var err error
 	var clientConfig config.ProxyClientConfig
 
 	localProxyCfg := localClusterInfo.s2sProxyConfig
@@ -113,10 +114,6 @@ func newEchoServer(
 			transport.NewTransportManager(configProvider, logger),
 			logger,
 		)
-
-		if err != nil {
-			logger.Fatal("Failed to create proxy", tag.Error(err))
-		}
 
 		clientConfig = config.ProxyClientConfig{
 			TCPClientSetting: config.TCPClientSetting{
@@ -152,7 +149,7 @@ func newEchoServer(
 		logger.Fatal("Failed to create server transport", tag.Error(err))
 	}
 
-	clientTransport, err := tm.OpenClient(clientConfig)
+	clientTransport, err := tm.OpenClient(prometheus.Labels{}, clientConfig)
 	if err != nil {
 		logger.Fatal("Failed to create client transport", tag.Error(err))
 	}
@@ -173,7 +170,7 @@ func newEchoServer(
 		proxy:             proxy,
 		clusterInfo:       localClusterInfo,
 		remoteClusterInfo: remoteClusterInfo,
-		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, logger), logger),
+		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, metrics.GRPCOutboundClientMetrics, logger), logger),
 		logger:            logger,
 	}
 }

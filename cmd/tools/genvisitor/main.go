@@ -43,8 +43,16 @@ func main() {
 			}
 			// Skip nested "Cause" field in Failure types. The repairInvalidUTF8InFailure handler function
 			// will descend into these.
-			if strings.Contains(path.String(), "/Cause") {
+			ps := path.String()
+			if strings.Contains(ps, "/Cause") {
 				logger.Debug("ignore failure Cause", tag.NewAnyTag("path", path.String()))
+				return false
+			}
+
+			// These do not have a failure field in Temporal v1.22 (they do in later versions)
+			if strings.Contains(ps, "WorkflowQueryResult") ||
+				strings.Contains(ps, "RespondQueryTaskCompletedRequest") ||
+				strings.Contains(ps, "QueryFailedFailure") {
 				return false
 			}
 			return true
