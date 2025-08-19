@@ -57,34 +57,38 @@ func NewClientProvider(
 }
 
 func (c *clientProvider) GetAdminClient() (adminservice.AdminServiceClient, error) {
-	c.adminClientsLock.Lock()
-	defer c.adminClientsLock.Unlock()
-
 	if c.adminClient == nil {
-		c.logger.Info(fmt.Sprintf("Create adminclient with config: %v", c.clientConfig))
-		adminClient, err := c.clientFactory.NewRemoteAdminClient(c.clientConfig)
-		if err != nil {
-			return nil, err
-		}
+		c.adminClientsLock.Lock()
+		defer c.adminClientsLock.Unlock()
 
-		c.adminClient = adminClient
+		if c.adminClient == nil {
+			c.logger.Info(fmt.Sprintf("Create adminclient with config: %v", c.clientConfig))
+			adminClient, err := c.clientFactory.NewRemoteAdminClient(c.clientConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			c.adminClient = adminClient
+		}
 	}
 
 	return c.adminClient, nil
 }
 
 func (c *clientProvider) GetWorkflowServiceClient() (workflowservice.WorkflowServiceClient, error) {
-	c.workflowserviceClientsLock.Lock()
-	defer c.workflowserviceClientsLock.Unlock()
-
 	if c.workflowserviceClient == nil {
-		c.logger.Info(fmt.Sprintf("Create workflowservice client with config: %v", c.clientConfig))
-		workflowserviceClient, err := c.clientFactory.NewRemoteWorkflowServiceClient(c.clientConfig)
-		if err != nil {
-			return nil, err
-		}
+		c.workflowserviceClientsLock.Lock()
+		defer c.workflowserviceClientsLock.Unlock()
 
-		c.workflowserviceClient = workflowserviceClient
+		if c.workflowserviceClient == nil {
+			c.logger.Info(fmt.Sprintf("Create workflowservice client with config: %v", c.clientConfig))
+			workflowserviceClient, err := c.clientFactory.NewRemoteWorkflowServiceClient(c.clientConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			c.workflowserviceClient = workflowserviceClient
+		}
 	}
 
 	return c.workflowserviceClient, nil
