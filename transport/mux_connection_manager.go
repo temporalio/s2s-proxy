@@ -108,11 +108,11 @@ func (m *muxConnectMananger) isShuttingDown() bool {
 	}
 }
 
-func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
+func (m *muxConnectMananger) serverLoop(metricLabels []string, setting config.TCPServerSetting) error {
 	var tlsConfig *tls.Config
 	var err error
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
-		tlsConfig, err = encryption.GetServerTLSConfig(tlsCfg)
+		tlsConfig, err = encryption.GetServerTLSConfig(tlsCfg, m.logger)
 		if err != nil {
 			return err
 		}
@@ -144,6 +144,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 					}
 
 					m.logger.Fatal("listener.Accept failed", tag.Error(err))
+					metrics.MuxErrors.WithLabelValues(metricLabels...).Inc()
 				}
 
 				var conn net.Conn
@@ -157,12 +158,14 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 				m.logger.Info("Accept new connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
 
 				session, err := yamux.Server(conn, nil)
-				go observeYamuxSession(session, m.config, m.logger)
+				go observeYamuxSession(session, m.config)
 				if err != nil {
 					m.logger.Fatal("yamux.Server failed", tag.Error(err))
+					metrics.MuxErrors.WithLabelValues(metricLabels...).Inc()
 				}
 
 				m.muxTransport = newMuxTransport(conn, session)
+				metrics.MuxConnectionEstablish.WithLabelValues(metricLabels...).Inc()
 				m.waitForReconnect()
 			}
 		}
@@ -177,7 +180,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 	return nil
 }
 
-func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
+func (m *muxConnectMananger) clientLoop(metricLabels []string, setting config.TCPClientSetting) error {
 	var tlsConfig *tls.Config
 	var err error
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
@@ -210,6 +213,7 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 					return !m.isShuttingDown()
 				}); err != nil {
 					m.logger.Error("mux client failed to dial with retry", tag.Error(err))
+					metrics.MuxErrors.WithLabelValues(metricLabels...).Inc()
 					continue connect
 				}
 
@@ -221,12 +225,14 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 				}
 
 				session, err := yamux.Client(conn, nil)
-				go observeYamuxSession(session, m.config, m.logger)
+				go observeYamuxSession(session, m.config)
 				if err != nil {
 					m.logger.Fatal("yamux.Client failed", tag.Error(err))
+					metrics.MuxErrors.WithLabelValues(metricLabels...).Inc()
 				}
 
 				m.muxTransport = newMuxTransport(conn, session)
+				metrics.MuxConnectionEstablish.WithLabelValues(metricLabels...).Inc()
 				m.waitForReconnect()
 
 				// Don't retry more frequently than once per second.
@@ -241,16 +247,11 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 
 // observeYamuxSession creates a goroutine that pings the provided yamux session repeatedly and gathers its two
 // metrics: Whether the server is alive and how many streams it has open.
-func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfig, logger log.Logger) {
+func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfig) {
 	if session == nil {
 		// If we got a null session, we can't even generate tags to report
 		return
 	}
-	defer func() {
-		// This is an async monitor. Don't let it crash the rest of the program if there's a problem
-		err := recover()
-		logger.Warn("Yamux observer died!", tag.NewStringTag("muxConfigName", config.Name), tag.NewAnyTag("err", err))
-	}()
 	labels := []string{session.LocalAddr().String(),
 		session.RemoteAddr().String(),
 		string(config.Mode),
@@ -268,7 +269,12 @@ func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfi
 			// wake up so we can report NumStreams
 		}
 		metrics.MuxSessionOpen.WithLabelValues(labels...).Set(float64(sessionActive))
-		metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(session.NumStreams()))
+		if sessionActive == 1 {
+			metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(session.NumStreams()))
+		} else {
+			// Clean up the label so we don't report it forever
+			metrics.MuxStreamsActive.DeleteLabelValues(labels...)
+		}
 		metrics.MuxObserverReportCount.WithLabelValues(labels...).Inc()
 	}
 }
@@ -287,12 +293,20 @@ func (m *muxConnectMananger) start() error {
 	switch m.config.Mode {
 	case config.ClientMode:
 		m.logger.Info(fmt.Sprintf("Start ConnectMananger with Config: %v", m.config.Client))
-		if err := m.clientLoop(m.config.Client); err != nil {
+		metricLabels := []string{m.config.Client.ServerAddress,
+			string(m.config.Mode),
+			m.config.Name,
+		}
+		if err := m.clientLoop(metricLabels, m.config.Client); err != nil {
 			return err
 		}
 	case config.ServerMode:
 		m.logger.Info(fmt.Sprintf("Start ConnectMananger with Config: %v", m.config.Server))
-		if err := m.serverLoop(m.config.Server); err != nil {
+		metricLabels := []string{m.config.Server.ListenAddress,
+			string(m.config.Mode),
+			m.config.Name,
+		}
+		if err := m.serverLoop(metricLabels, m.config.Server); err != nil {
 			return err
 		}
 
