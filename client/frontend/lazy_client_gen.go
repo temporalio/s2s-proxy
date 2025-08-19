@@ -47,6 +47,32 @@ func (c *lazyClient) DeleteSchedule(
 	return client.DeleteSchedule(ctx, request, opts...)
 }
 
+func (c *lazyClient) DeleteWorkerDeployment(
+	ctx context.Context,
+	request *workflowservice.DeleteWorkerDeploymentRequest,
+	opts ...grpc.CallOption,
+) (*workflowservice.DeleteWorkerDeploymentResponse, error) {
+	var resp *workflowservice.DeleteWorkerDeploymentResponse
+	client, err := c.clientProvider.GetWorkflowServiceClient()
+	if err != nil {
+		return resp, err
+	}
+	return client.DeleteWorkerDeployment(ctx, request, opts...)
+}
+
+func (c *lazyClient) DeleteWorkerDeploymentVersion(
+	ctx context.Context,
+	request *workflowservice.DeleteWorkerDeploymentVersionRequest,
+	opts ...grpc.CallOption,
+) (*workflowservice.DeleteWorkerDeploymentVersionResponse, error) {
+	var resp *workflowservice.DeleteWorkerDeploymentVersionResponse
+	client, err := c.clientProvider.GetWorkflowServiceClient()
+	if err != nil {
+		return resp, err
+	}
+	return client.DeleteWorkerDeploymentVersion(ctx, request, opts...)
+}
+
 func (c *lazyClient) DeleteWorkflowExecution(
 	ctx context.Context,
 	request *workflowservice.DeleteWorkflowExecutionRequest,
@@ -136,6 +162,32 @@ func (c *lazyClient) DescribeTaskQueue(
 		return resp, err
 	}
 	return client.DescribeTaskQueue(ctx, request, opts...)
+}
+
+func (c *lazyClient) DescribeWorkerDeployment(
+	ctx context.Context,
+	request *workflowservice.DescribeWorkerDeploymentRequest,
+	opts ...grpc.CallOption,
+) (*workflowservice.DescribeWorkerDeploymentResponse, error) {
+	var resp *workflowservice.DescribeWorkerDeploymentResponse
+	client, err := c.clientProvider.GetWorkflowServiceClient()
+	if err != nil {
+		return resp, err
+	}
+	return client.DescribeWorkerDeployment(ctx, request, opts...)
+}
+
+func (c *lazyClient) DescribeWorkerDeploymentVersion(
+	ctx context.Context,
+	request *workflowservice.DescribeWorkerDeploymentVersionRequest,
+	opts ...grpc.CallOption,
+) (*workflowservice.DescribeWorkerDeploymentVersionResponse, error) {
+	var resp *workflowservice.DescribeWorkerDeploymentVersionResponse
+	client, err := c.clientProvider.GetWorkflowServiceClient()
+	if err != nil {
+		return resp, err
+	}
+	return client.DescribeWorkerDeploymentVersion(ctx, request, opts...)
 }
 
 func (c *lazyClient) DescribeWorkflowExecution(
@@ -411,6 +463,19 @@ func (c *lazyClient) ListTaskQueuePartitions(
 	return client.ListTaskQueuePartitions(ctx, request, opts...)
 }
 
+func (c *lazyClient) ListWorkerDeployments(
+	ctx context.Context,
+	request *workflowservice.ListWorkerDeploymentsRequest,
+	opts ...grpc.CallOption,
+) (*workflowservice.ListWorkerDeploymentsResponse, error) {
+	var resp *workflowservice.ListWorkerDeploymentsResponse
+	client, err := c.clientProvider.GetWorkflowServiceClient()
+	if err != nil {
+		return resp, err
+	}
+	return client.ListWorkerDeployments(ctx, request, opts...)
+}
+
 func (c *lazyClient) ListWorkflowExecutions(
 	ctx context.Context,
 	request *workflowservice.ListWorkflowExecutionsRequest,
@@ -437,17 +502,17 @@ func (c *lazyClient) PatchSchedule(
 	return client.PatchSchedule(ctx, request, opts...)
 }
 
-func (c *lazyClient) PauseActivityById(
+func (c *lazyClient) PauseActivity(
 	ctx context.Context,
-	request *workflowservice.PauseActivityByIdRequest,
+	request *workflowservice.PauseActivityRequest,
 	opts ...grpc.CallOption,
-) (*workflowservice.PauseActivityByIdResponse, error) {
-	var resp *workflowservice.PauseActivityByIdResponse
+) (*workflowservice.PauseActivityResponse, error) {
+	var resp *workflowservice.PauseActivityResponse
 	client, err := c.clientProvider.GetWorkflowServiceClient()
 	if err != nil {
 		return resp, err
 	}
-	return client.PauseActivityById(ctx, request, opts...)
+	return client.PauseActivity(ctx, request, opts...)
 }
 
 func (c *lazyClient) PollActivityTaskQueue(
@@ -567,17 +632,17 @@ func (c *lazyClient) RequestCancelWorkflowExecution(
 	return client.RequestCancelWorkflowExecution(ctx, request, opts...)
 }
 
-func (c *lazyClient) ResetActivityById(
+func (c *lazyClient) ResetActivity(
 	ctx context.Context,
-	request *workflowservice.ResetActivityByIdRequest,
+	request *workflowservice.ResetActivityRequest,
 	opts ...grpc.CallOption,
-) (*workflowservice.ResetActivityByIdResponse, error) {
-	var resp *workflowservice.ResetActivityByIdResponse
+) (*workflowservice.ResetActivityResponse, error) {
+	var resp *workflowservice.ResetActivityResponse
 	client, err := c.clientProvider.GetWorkflowServiceClient()
 	if err != nil {
 		return resp, err
 	}
-	return client.ResetActivityById(ctx, request, opts...)
+	return client.ResetActivity(ctx, request, opts...)
 }
 
 func (c *lazyClient) ResetStickyTaskQueue(
@@ -775,6 +840,32 @@ func (c *lazyClient) SetCurrentDeployment(
 	return client.SetCurrentDeployment(ctx, request, opts...)
 }
 
+func (c *lazyClient) SetWorkerDeploymentCurrentVersion(
+	ctx context.Context,
+	request *workflowservice.SetWorkerDeploymentCurrentVersionRequest,
+	opts ...grpc.CallOption,
+) (*workflowservice.SetWorkerDeploymentCurrentVersionResponse, error) {
+	var resp *workflowservice.SetWorkerDeploymentCurrentVersionResponse
+	client, err := c.clientProvider.GetWorkflowServiceClient()
+	if err != nil {
+		return resp, err
+	}
+	return client.SetWorkerDeploymentCurrentVersion(ctx, request, opts...)
+}
+
+func (c *lazyClient) SetWorkerDeploymentRampingVersion(
+	ctx context.Context,
+	request *workflowservice.SetWorkerDeploymentRampingVersionRequest,
+	opts ...grpc.CallOption,
+) (*workflowservice.SetWorkerDeploymentRampingVersionResponse, error) {
+	var resp *workflowservice.SetWorkerDeploymentRampingVersionResponse
+	client, err := c.clientProvider.GetWorkflowServiceClient()
+	if err != nil {
+		return resp, err
+	}
+	return client.SetWorkerDeploymentRampingVersion(ctx, request, opts...)
+}
+
 func (c *lazyClient) ShutdownWorker(
 	ctx context.Context,
 	request *workflowservice.ShutdownWorkerRequest,
@@ -866,30 +957,30 @@ func (c *lazyClient) TerminateWorkflowExecution(
 	return client.TerminateWorkflowExecution(ctx, request, opts...)
 }
 
-func (c *lazyClient) UnpauseActivityById(
+func (c *lazyClient) UnpauseActivity(
 	ctx context.Context,
-	request *workflowservice.UnpauseActivityByIdRequest,
+	request *workflowservice.UnpauseActivityRequest,
 	opts ...grpc.CallOption,
-) (*workflowservice.UnpauseActivityByIdResponse, error) {
-	var resp *workflowservice.UnpauseActivityByIdResponse
+) (*workflowservice.UnpauseActivityResponse, error) {
+	var resp *workflowservice.UnpauseActivityResponse
 	client, err := c.clientProvider.GetWorkflowServiceClient()
 	if err != nil {
 		return resp, err
 	}
-	return client.UnpauseActivityById(ctx, request, opts...)
+	return client.UnpauseActivity(ctx, request, opts...)
 }
 
-func (c *lazyClient) UpdateActivityOptionsById(
+func (c *lazyClient) UpdateActivityOptions(
 	ctx context.Context,
-	request *workflowservice.UpdateActivityOptionsByIdRequest,
+	request *workflowservice.UpdateActivityOptionsRequest,
 	opts ...grpc.CallOption,
-) (*workflowservice.UpdateActivityOptionsByIdResponse, error) {
-	var resp *workflowservice.UpdateActivityOptionsByIdResponse
+) (*workflowservice.UpdateActivityOptionsResponse, error) {
+	var resp *workflowservice.UpdateActivityOptionsResponse
 	client, err := c.clientProvider.GetWorkflowServiceClient()
 	if err != nil {
 		return resp, err
 	}
-	return client.UpdateActivityOptionsById(ctx, request, opts...)
+	return client.UpdateActivityOptions(ctx, request, opts...)
 }
 
 func (c *lazyClient) UpdateNamespace(
@@ -929,6 +1020,19 @@ func (c *lazyClient) UpdateWorkerBuildIdCompatibility(
 		return resp, err
 	}
 	return client.UpdateWorkerBuildIdCompatibility(ctx, request, opts...)
+}
+
+func (c *lazyClient) UpdateWorkerDeploymentVersionMetadata(
+	ctx context.Context,
+	request *workflowservice.UpdateWorkerDeploymentVersionMetadataRequest,
+	opts ...grpc.CallOption,
+) (*workflowservice.UpdateWorkerDeploymentVersionMetadataResponse, error) {
+	var resp *workflowservice.UpdateWorkerDeploymentVersionMetadataResponse
+	client, err := c.clientProvider.GetWorkflowServiceClient()
+	if err != nil {
+		return resp, err
+	}
+	return client.UpdateWorkerDeploymentVersionMetadata(ctx, request, opts...)
 }
 
 func (c *lazyClient) UpdateWorkerVersioningRules(

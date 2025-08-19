@@ -3,17 +3,20 @@ package transport
 import (
 	"crypto/tls"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
 	"go.temporal.io/server/common/backoff"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
+
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type status int32
@@ -60,7 +63,7 @@ func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *mux
 
 func (m *muxConnectMananger) open() (MuxTransport, error) {
 	if !m.isStarted() {
-		return nil, fmt.Errorf("Connection manager is not running.")
+		return nil, fmt.Errorf("connection manager is not running")
 	}
 
 	// Wait for transport to be connected
@@ -83,7 +86,7 @@ func (m *muxConnectMananger) open() (MuxTransport, error) {
 	select {
 	case <-m.shutdownCh:
 		m.mu.Unlock()
-		return nil, fmt.Errorf("Connection manager is not running.")
+		return nil, fmt.Errorf("connection manager is not running")
 
 	case <-m.connectedCh:
 		muxTransport = m.muxTransport
@@ -91,7 +94,7 @@ func (m *muxConnectMananger) open() (MuxTransport, error) {
 	m.mu.Unlock()
 
 	if muxTransport.session.IsClosed() {
-		return nil, fmt.Errorf("Session is closed")
+		return nil, fmt.Errorf("session is closed")
 	}
 	return muxTransport, nil
 }
@@ -105,7 +108,7 @@ func (m *muxConnectMananger) isShuttingDown() bool {
 	}
 }
 
-func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
+func (m *muxConnectMananger) serverLoop(metricLabels []string, setting config.TCPServerSetting) error {
 	var tlsConfig *tls.Config
 	var err error
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
@@ -123,7 +126,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 	m.wg.Add(1)
 	go func() {
 		defer func() {
-			listener.Close()
+			_ = listener.Close()
 			m.wg.Done()
 		}()
 
@@ -141,6 +144,7 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 					}
 
 					m.logger.Fatal("listener.Accept failed", tag.Error(err))
+					metrics.MuxErrors.WithLabelValues(metricLabels...).Inc()
 				}
 
 				var conn net.Conn
@@ -154,11 +158,14 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 				m.logger.Info("Accept new connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
 
 				session, err := yamux.Server(conn, nil)
+				go observeYamuxSession(session, m.config)
 				if err != nil {
 					m.logger.Fatal("yamux.Server failed", tag.Error(err))
+					metrics.MuxErrors.WithLabelValues(metricLabels...).Inc()
 				}
 
 				m.muxTransport = newMuxTransport(conn, session)
+				metrics.MuxConnectionEstablish.WithLabelValues(metricLabels...).Inc()
 				m.waitForReconnect()
 			}
 		}
@@ -167,13 +174,13 @@ func (m *muxConnectMananger) serverLoop(setting config.TCPServerSetting) error {
 	go func() {
 		// wait for shutdown
 		<-m.shutdownCh
-		listener.Close() // this will cause listener.Accept to fail.
+		_ = listener.Close() // this will cause listener.Accept to fail.
 	}()
 
 	return nil
 }
 
-func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
+func (m *muxConnectMananger) clientLoop(metricLabels []string, setting config.TCPClientSetting) error {
 	var tlsConfig *tls.Config
 	var err error
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
@@ -186,6 +193,7 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
+	connect:
 		for {
 			select {
 			case <-m.shutdownCh:
@@ -201,10 +209,12 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 				}
 
 				if err := backoff.ThrottleRetry(op, retryPolicy, func(err error) bool {
+					m.logger.Error("mux client failed to dial", tag.Error(err))
 					return !m.isShuttingDown()
 				}); err != nil {
-					m.logger.Error("mux client failed to dial", tag.Error(err))
-					return
+					m.logger.Error("mux client failed to dial with retry", tag.Error(err))
+					metrics.MuxErrors.WithLabelValues(metricLabels...).Inc()
+					continue connect
 				}
 
 				var conn net.Conn
@@ -215,12 +225,19 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 				}
 
 				session, err := yamux.Client(conn, nil)
+				go observeYamuxSession(session, m.config)
 				if err != nil {
 					m.logger.Fatal("yamux.Client failed", tag.Error(err))
+					metrics.MuxErrors.WithLabelValues(metricLabels...).Inc()
 				}
 
 				m.muxTransport = newMuxTransport(conn, session)
+				metrics.MuxConnectionEstablish.WithLabelValues(metricLabels...).Inc()
 				m.waitForReconnect()
+
+				// Don't retry more frequently than once per second.
+				// Sleep a random amount between 1s-2s.
+				time.Sleep(time.Second + time.Duration(rand.IntN(1000))*time.Millisecond)
 			}
 		}
 	}()
@@ -228,12 +245,46 @@ func (m *muxConnectMananger) clientLoop(setting config.TCPClientSetting) error {
 	return nil
 }
 
+// observeYamuxSession creates a goroutine that pings the provided yamux session repeatedly and gathers its two
+// metrics: Whether the server is alive and how many streams it has open.
+func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfig) {
+	if session == nil {
+		// If we got a null session, we can't even generate tags to report
+		return
+	}
+	labels := []string{session.LocalAddr().String(),
+		session.RemoteAddr().String(),
+		string(config.Mode),
+		config.Name,
+	}
+	var sessionActive int8 = 1
+	ticker := time.NewTicker(time.Minute)
+	for sessionActive == 1 {
+		// Prometheus gauges are cheap, but Session.NumStreams() takes a mutex in the session! Only check once per minute
+		// to minimize overhead
+		select {
+		case <-session.CloseChan():
+			sessionActive = 0
+		case <-ticker.C:
+			// wake up so we can report NumStreams
+		}
+		metrics.MuxSessionOpen.WithLabelValues(labels...).Set(float64(sessionActive))
+		if sessionActive == 1 {
+			metrics.MuxStreamsActive.WithLabelValues(labels...).Set(float64(session.NumStreams()))
+		} else {
+			// Clean up the label so we don't report it forever
+			metrics.MuxStreamsActive.DeleteLabelValues(labels...)
+		}
+		metrics.MuxObserverReportCount.WithLabelValues(labels...).Inc()
+	}
+}
+
 func (m *muxConnectMananger) start() error {
 	if !m.status.CompareAndSwap(
 		int32(statusInitialized),
 		int32(statusStarted),
 	) {
-		return fmt.Errorf("Connection manager can't be started. status: %d", m.getStatus())
+		return fmt.Errorf("connection manager can't be started. status: %d", m.getStatus())
 	}
 
 	m.shutdownCh = make(chan struct{})
@@ -242,17 +293,25 @@ func (m *muxConnectMananger) start() error {
 	switch m.config.Mode {
 	case config.ClientMode:
 		m.logger.Info(fmt.Sprintf("Start ConnectMananger with Config: %v", m.config.Client))
-		if err := m.clientLoop(m.config.Client); err != nil {
+		metricLabels := []string{m.config.Client.ServerAddress,
+			string(m.config.Mode),
+			m.config.Name,
+		}
+		if err := m.clientLoop(metricLabels, m.config.Client); err != nil {
 			return err
 		}
 	case config.ServerMode:
 		m.logger.Info(fmt.Sprintf("Start ConnectMananger with Config: %v", m.config.Server))
-		if err := m.serverLoop(m.config.Server); err != nil {
+		metricLabels := []string{m.config.Server.ListenAddress,
+			string(m.config.Mode),
+			m.config.Name,
+		}
+		if err := m.serverLoop(metricLabels, m.config.Server); err != nil {
 			return err
 		}
 
 	default:
-		return fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s.", m.config.Name, m.config.Mode)
+		return fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s", m.config.Name, m.config.Mode)
 	}
 
 	return nil

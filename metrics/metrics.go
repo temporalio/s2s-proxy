@@ -2,153 +2,153 @@ package metrics
 
 import (
 	"fmt"
-	"time"
+	"net/http"
+	"regexp"
 
-	"github.com/temporalio/s2s-proxy/config"
-
-	"github.com/uber-go/tally/v4"
-	"github.com/uber-go/tally/v4/prometheus"
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
 )
 
 const (
-	PROXY_START_COUNT          = "proxy_start_count"
-	HEALTH_CHECK_SUCCESS_COUNT = "health_check_success_count"
+	prometheusDisallowedCharacters  = `[^a-zA-Z0-9_:]`
+	prometheusFirstCharacterPattern = `[^a-zA-Z_:]` // No 0-9 for first character
 )
 
-// tally sanitizer options that satisfy both Prometheus and M3 restrictions.
-// This will rename metrics at the tally emission level, so metrics name we
-// use maybe different from what gets emitted. In the current implementation
-// it will replace - and . with _
-// We should still ensure that the base metrics are prometheus compatible,
-// but this is necessary as the same prom client initialization is used by
-// our system workflows.
 var (
-	safeCharacters      = []rune{'_'}
-	safeValueCharacters = []rune{'_', '-', '.'}
-
-	sanitizeOptions = tally.SanitizeOptions{
-		NameCharacters: tally.ValidCharacters{
-			Ranges:     tally.AlphanumericRange,
-			Characters: safeCharacters,
-		},
-		KeyCharacters: tally.ValidCharacters{
-			Ranges:     tally.AlphanumericRange,
-			Characters: safeCharacters,
-		},
-		ValueCharacters: tally.ValidCharacters{
-			Ranges:     tally.AlphanumericRange,
-			Characters: safeValueCharacters,
-		},
-		ReplacementCharacter: tally.DefaultReplacementCharacter,
-	}
-
-	defaultHistogramBuckets = []time.Duration{
-		0 * time.Millisecond,
-		1 * time.Millisecond,
-		2 * time.Millisecond,
-		5 * time.Millisecond,
-		10 * time.Millisecond,
-		25 * time.Millisecond,
-		50 * time.Millisecond,
-		75 * time.Millisecond,
-		100 * time.Millisecond,
-		200 * time.Millisecond,
-		300 * time.Millisecond,
-		400 * time.Millisecond,
-		500 * time.Millisecond,
-		600 * time.Millisecond,
-		800 * time.Millisecond,
-		1 * time.Second,
-		2 * time.Second,
-		3 * time.Second,
-		4 * time.Second,
-		5 * time.Second,
-		7 * time.Second,
-		10 * time.Second,
-		15 * time.Second,
-		20 * time.Second,
-		30 * time.Second,
-		45 * time.Second,
-		60 * time.Second,
-		120 * time.Second,
-		180 * time.Second,
-		240 * time.Second,
-		300 * time.Second,
-		450 * time.Second,
-		600 * time.Second,
-		900 * time.Second,
-		1200 * time.Second,
-		1800 * time.Second,
-		2400 * time.Second,
-		3000 * time.Second,
-		3600 * time.Second,
-	}
+	prometheusReplacePattern   = regexp.MustCompile(prometheusDisallowedCharacters)
+	prometheusFirstCharPattern = regexp.MustCompile(prometheusFirstCharacterPattern)
 )
 
-func newMetricsScope(
-	configProvider config.ConfigProvider,
-	logger log.Logger,
-) (tally.Scope, error) {
-	scope := tally.NoopScope
-	s2sConfig := configProvider.GetS2SProxyConfig()
-	if metricsCfg := s2sConfig.Metrics; metricsCfg != nil {
-		reporterConfig := prometheus.ConfigurationOptions{
-			OnError: func(err error) {
-				logger.Warn("error in prometheus reporter", tag.Error(err))
-			},
-		}
-
-		prometheusConfig := getPrometheusConfig(metricsCfg.Prometheus, logger)
-		if prometheusConfig != nil {
-			reporter, err := prometheusConfig.NewReporter(reporterConfig)
-			if err != nil {
-				logger.Error("error creating prometheus reporter", tag.Error(err))
-				return nil, err
-			}
-			scopeOpts := tally.ScopeOptions{
-				Tags: map[string]string{
-					"service_name":          "s2s-proxy",
-					"temporal_service_type": "s2s-proxy",
-				},
-				CachedReporter:  reporter,
-				Separator:       prometheus.DefaultSeparator,
-				SanitizeOptions: &sanitizeOptions,
-			}
-
-			scope, _ = tally.NewRootScope(scopeOpts, time.Second)
-		}
+// SanitizeForPrometheus cleans a string so that it may be used in prometheus namespaces, subsystems, and names
+// See: https://prometheus.io/docs/concepts/data_model/
+func SanitizeForPrometheus(value string) string {
+	if len(value) == 0 {
+		return value
 	}
-
-	return scope, nil
+	if prometheusFirstCharPattern.MatchString(value[:1]) {
+		value = "_" + value[1:]
+	}
+	return prometheusReplacePattern.ReplaceAllLiteralString(value, "_")
 }
 
-func getPrometheusConfig(config config.PrometheusConfig, logger log.Logger) *prometheus.Configuration {
-	if config.ListenAddress == "" {
-		logger.Warn("no prometheus host-port supplied. prometheus reporter will not be configured")
-		return nil
-	}
-
-	if config.Framework != "tally" {
-		logger.Warn(fmt.Sprintf("prometheus framework %s is not supported. prometheus reporter will not be configured", config.Framework))
-		return nil
-	}
-
-	return &prometheus.Configuration{
-		ListenAddress:           config.ListenAddress,
-		TimerType:               "histogram",
-		DefaultHistogramBuckets: generateHistogramBuckets(),
-	}
+// GetStandardGRPCInterceptor returns a ServerMetrics with our preferred standard config for monitoring gRPC servers.
+// Want to change/add options? Check the docs at https://pkg.go.dev/github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus@v1.1.0#section-documentation
+// Some more handy links: https://prometheus.io/docs/concepts/metric_types/#histogram
+func GetStandardGRPCInterceptor(labelNamesInContext ...string) *grpcprom.ServerMetrics {
+	return grpcprom.NewServerMetrics(
+		grpcprom.WithServerHandlingTimeHistogram(
+			grpcprom.WithHistogramNamespace("temporal"),
+			grpcprom.WithHistogramSubsystem("s2s_proxy"),
+			// TODO: Enable native histograms later
+			//grpcprom.WithHistogramOpts(&prometheus.HistogramOpts{
+			//	// Only Buckets, NativeHistogramBucketFactor, and other NativeHistogram options are supported here.
+			//	// Other histogram options should be supplied with grpcprom.WithXXXX
+			//	NativeHistogramBucketFactor:    1.1,
+			//	NativeHistogramMaxBucketNumber: 10,
+			//}),
+		),
+		grpcprom.WithServerCounterOptions(
+			grpcprom.WithNamespace("temporal"),
+			grpcprom.WithSubsystem("s2s_proxy"),
+		),
+		grpcprom.WithContextLabels(labelNamesInContext...),
+	)
 }
 
-func generateHistogramBuckets() []prometheus.HistogramObjective {
-	var result []prometheus.HistogramObjective
-	for _, b := range defaultHistogramBuckets {
-		result = append(result, prometheus.HistogramObjective{
-			Upper: b.Seconds(),
-		})
-	}
+func GetStandardGRPCClientInterceptor(direction string) *grpcprom.ClientMetrics {
+	return grpcprom.NewClientMetrics(
+		grpcprom.WithClientHandlingTimeHistogram(
+			grpcprom.WithHistogramNamespace("temporal"),
+			// TODO: Gratuitous hack until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783
+			grpcprom.WithHistogramSubsystem("s2s_proxy_"+direction),
+			// TODO: Enable native histograms later
+			//grpcprom.WithHistogramOpts(&prometheus.HistogramOpts{
+			//	// Only Buckets, NativeHistogramBucketFactor, and other NativeHistogram options are supported here.
+			//	// Other histogram options should be supplied with grpcprom.WithXXXX
+			//	NativeHistogramBucketFactor: 1.1,
+			//}),
+		),
+		grpcprom.WithClientCounterOptions(
+			grpcprom.WithNamespace("temporal"),
+			// TODO: Gratuitous hack until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783
+			grpcprom.WithSubsystem("s2s_proxy_"+direction),
+		),
+	)
+}
 
-	return result
+// DefaultGauge provides a prometheus Gauge for the requested name. The name will be sanitized, and the recommended
+// namespace and subsystem will be set.
+func DefaultGauge(name string, help string) prometheus.Gauge {
+	return prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "temporal",
+		Subsystem: "s2s_proxy",
+		Name:      SanitizeForPrometheus(name),
+		Help:      help,
+	})
+}
+
+// DefaultGaugeVec provides a prometheus GaugeVec for the requested name. The name will be sanitized, and the recommended
+// namespace and subsystem will be set. Vector metrics allow the use of labels, so if you need labels on your metrics, then use this.
+func DefaultGaugeVec(name string, help string, labels ...string) *prometheus.GaugeVec {
+	return prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "temporal",
+		Subsystem: "s2s_proxy",
+		Name:      SanitizeForPrometheus(name),
+		Help:      help,
+	}, labels)
+}
+
+// DefaultHistogramVec provides a prometheus HistogramVec for the requested name. The name will be sanitized, and the recommended
+// namespace and subsystem will be set. Vector metrics allow the use of labels, so if you need labels on your metrics, then use this.
+func DefaultHistogramVec(name string, help string, labels ...string) *prometheus.HistogramVec {
+	return prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "temporal",
+		Subsystem: "s2s_proxy",
+		Name:      SanitizeForPrometheus(name),
+		Help:      help,
+		// TODO: Native histograms aren't supported in our Grafana just yet
+		//NativeHistogramBucketFactor: 1.1,
+	}, labels)
+}
+
+// DefaultCounter provides a prometheus Counter for the requested name. The name will be sanitized, and the recommended
+// namespace and subsystem will be set.
+func DefaultCounter(name string, help string) prometheus.Counter {
+	return prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "temporal",
+		Subsystem: "s2s_proxy",
+		Name:      SanitizeForPrometheus(name),
+		Help:      help,
+	})
+}
+
+// DefaultCounterVec provides a prometheus CounterVec for the requested name. The name will be sanitized, and the recommended
+// namespace and subsystem will be set. Vector metrics allow the use of labels, so if you need labels on your metrics, then use this.
+func DefaultCounterVec(name string, help string, labels ...string) *prometheus.CounterVec {
+	return prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "temporal",
+		Subsystem: "s2s_proxy",
+		Name:      SanitizeForPrometheus(name),
+		Help:      help,
+	}, labels)
+}
+
+// wrapLoggerForPrometheus is necessary to adapt our temporal Logger to Prometheus's Println interface
+type wrapLoggerForPrometheus struct {
+	log.Logger
+}
+
+func (wls *wrapLoggerForPrometheus) Println(v ...interface{}) {
+	wls.Error(fmt.Sprintln(v...))
+}
+
+// NewMetricsHandler returns an http handler that will talk to Prometheus. This uses the global-default registry right now
+func NewMetricsHandler(logger log.Logger) http.Handler {
+	return promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
+		ErrorLog:          &wrapLoggerForPrometheus{Logger: logger},
+		Registry:          nil, // use default
+		EnableOpenMetrics: true,
+	})
 }

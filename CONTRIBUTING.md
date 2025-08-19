@@ -65,7 +65,7 @@ Start s2s-proxy
 ./bins/s2s-proxy start --config develop/config/cluster-a-tcp-inbound-proxy.yaml
 ```
 
-Run 
+Run
 ```
 temporal operator --address 127.0.0.1:6233 cluster describe
 ```
@@ -85,6 +85,27 @@ Start proxies
 ./bins/s2s-proxy start --config develop/config/cluster-a-mux-client-proxy.yaml
 ./bins/s2s-proxy start --config develop/config/cluster-b-mux-server-proxy.yaml
 ```
+
+## Code Generation
+
+### gRPC client generation
+
+Run `make generate-rpcwrappers` to re-generate the clients
+
+This uses the `cmd/tools/genrpcwrappers` tool to generates frontend and admin clients.
+
+### Invalid UTF-8 Repair Functions
+
+The proxy supports automatically repairing invalid UTF-8 strings in Temporal protobuf messages.
+
+Background: Invalid UTF-8 strings could appear in protobuf messages in older versions of Temporal (<=1.22) which used [gogo/protobuf](https://github.com/gogo/protobuf). Newer versions of Temporal use `google.golang.org/protobuf` which validates UTF-8 strings during serialization. This means any messages with invalid UTF-8 strings cannot be processed by s2s-proxy or by newer Temporal server versions. To fix this, s2s-proxy automatically repairs invalid UTF-8 strings by rewriting messages as the pass through the proxy. It does this by including a copy of the old gogo-based protos and when an invalid UTF-8 error is seen during protobuf deserialization, it can use the gogo-based protos to deserialize the message and repair the invalid UTF-8 string.
+
+Code generation is used to generate functions to handle all possible cases:
+
+* `make generate-rpcwrappers` to re-generates type conversion functions
+* `make genvisitor` re-generates the invalid UTF-8 repair functions
+
+Both of these code generation tools are based on protobuf reflection.
 
 ## License
 

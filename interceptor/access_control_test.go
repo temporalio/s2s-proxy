@@ -5,11 +5,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/temporalio/s2s-proxy/auth"
-	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/auth"
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 func TestMethodAccessControlInterceptor(t *testing.T) {
@@ -160,7 +161,7 @@ func testNamespaceAccessControl(t *testing.T, objCases []objCase) {
 						require.ErrorContains(t, err, c.expError)
 					} else {
 						require.NoError(t, err)
-						if c.containsNamespace {
+						if c.containsObj {
 							require.Equal(t, ts.expAllowed, allowed)
 						} else {
 							require.True(t, allowed)

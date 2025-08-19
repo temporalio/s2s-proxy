@@ -20,6 +20,7 @@ data:
           - StreamWorkflowReplicationMessages
           - ReapplyEvents
           - GetNamespace
+          - AddTasks
       client:
         tcp:
           serverAddress: frontend-address:7233
@@ -102,7 +103,7 @@ metadata:
     app.kubernetes.io/version: "0.1.0"
     app.kubernetes.io/managed-by: Helm
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: s2s-proxy

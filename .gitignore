@@ -14,6 +14,9 @@
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
+#Workspace directory from GoLand
+.idea/
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
@@ -22,6 +25,7 @@ go.work
 go.work.sum
 
 # misc file
+!.golangci.yml
 /*.yaml
 /*.yml
 *.pem

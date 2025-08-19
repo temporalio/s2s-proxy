@@ -3,9 +3,10 @@ package admin
 import (
 	"context"
 
-	"github.com/temporalio/s2s-proxy/client"
 	"go.temporal.io/server/api/adminservice/v1"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/client"
 )
 
 type (

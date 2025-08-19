@@ -1,20 +1,25 @@
 package proxy
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+
+	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport"
-	"github.com/uber-go/tally/v4"
-	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 type (
@@ -33,8 +38,8 @@ type (
 		outboundServer    *ProxyServer
 		inboundServer     *ProxyServer
 		healthCheckServer *http.Server
+		metricsServer     *http.Server
 		logger            log.Logger
-		scope             tally.Scope
 	}
 
 	proxyOptions struct {
@@ -43,19 +48,46 @@ type (
 	}
 )
 
-func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool, nameTranslations config.NamespaceNameTranslationConfig) ([]grpc.ServerOption, error) {
+func makeServerOptions(
+	logger log.Logger,
+	cfg config.ProxyConfig,
+	proxyOpts proxyOptions,
+) ([]grpc.ServerOption, error) {
 	unaryInterceptors := []grpc.UnaryServerInterceptor{}
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
-	if len(nameTranslations.Mappings) > 0 {
+	labelGenerator := grpcprom.WithLabelsFromContext(func(_ context.Context) (labels prometheus.Labels) {
+		return prometheus.Labels{"direction": proxyOpts.directionLabel()}
+	})
+
+	// Ordering matters! These metrics happen BEFORE the translations/acl
+	unaryInterceptors = append(unaryInterceptors, metrics.GRPCServerMetrics.UnaryServerInterceptor(labelGenerator))
+	streamInterceptors = append(streamInterceptors, metrics.GRPCServerMetrics.StreamServerInterceptor(labelGenerator))
+
+	var translators []interceptor.Translator
+	if tln := proxyOpts.Config.NamespaceNameTranslation; tln.IsEnabled() {
 		// NamespaceNameTranslator needs to be called before namespace access control so that
 		// local name can be used in namespace allowed list.
-		translator := interceptor.NewNamespaceNameTranslator(logger, cfg, isInbound, nameTranslations)
-		unaryInterceptors = append(unaryInterceptors, translator.Intercept)
-		streamInterceptors = append(streamInterceptors, translator.InterceptStream)
+		translators = append(translators,
+			interceptor.NewNamespaceNameTranslator(tln.ToMaps(proxyOpts.IsInbound)))
 	}
 
-	if isInbound && cfg.ACLPolicy != nil {
+	if tln := proxyOpts.Config.SearchAttributeTranslation; tln.IsEnabled() {
+		logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", tln.NamespaceMappings))
+		if len(tln.NamespaceMappings) > 1 {
+			panic("multiple namespace search attribute mappings are not supported")
+		}
+		translators = append(translators,
+			interceptor.NewSearchAttributeTranslator(tln.ToMaps(proxyOpts.IsInbound)))
+	}
+
+	if len(translators) > 0 {
+		tr := interceptor.NewTranslationInterceptor(logger, translators)
+		unaryInterceptors = append(unaryInterceptors, tr.Intercept)
+		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
+	}
+
+	if proxyOpts.IsInbound && cfg.ACLPolicy != nil {
 		aclInterceptor := interceptor.NewAccessControlInterceptor(logger, cfg.ACLPolicy)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
 		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
@@ -77,6 +109,13 @@ func makeServerOptions(logger log.Logger, cfg config.ProxyConfig, isInbound bool
 	return opts, nil
 }
 
+func (ps *ProxyServer) makeNamespaceACL() *auth.AccessControl {
+	if ps.opts.IsInbound && ps.config.ACLPolicy != nil {
+		return auth.NewAccesControl(ps.config.ACLPolicy.AllowedNamespaces)
+	}
+	return nil
+}
+
 func (ps *ProxyServer) startServer(
 	serverTransport transport.ServerTransport,
 	clientTransport transport.ClientTransport,
@@ -85,17 +124,22 @@ func (ps *ProxyServer) startServer(
 	opts := ps.opts
 	logger := ps.logger
 
-	serverOpts, err := makeServerOptions(logger, cfg, opts.IsInbound, opts.Config.NamespaceNameTranslation)
+	serverOpts, err := makeServerOptions(logger, cfg, opts)
 	if err != nil {
 		return err
 	}
 
-	clientFactory := client.NewClientFactory(clientTransport, logger)
+	clientMetrics := metrics.GRPCOutboundClientMetrics
+	if ps.opts.IsInbound {
+		clientMetrics = metrics.GRPCInboundClientMetrics
+	}
+
+	clientFactory := client.NewClientFactory(clientTransport, clientMetrics, logger)
 	ps.server = NewTemporalAPIServer(
 		cfg.Name,
 		cfg.Server,
 		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, opts, logger),
-		NewWorkflowServiceProxyServer(cfg.Name, cfg.Client, clientFactory, logger),
+		NewWorkflowServiceProxyServer(cfg.Name, cfg.Client, clientFactory, ps.makeNamespaceACL(), logger),
 		serverOpts,
 		serverTransport,
 		logger,
@@ -125,6 +169,14 @@ func monitorClosable(closable transport.Closable, retryCh chan struct{}, shutDow
 	}
 }
 
+func (opts *proxyOptions) directionLabel() string {
+	directionValue := "outbound"
+	if opts.IsInbound {
+		directionValue = "inbound"
+	}
+	return directionValue
+}
+
 func (ps *ProxyServer) start() error {
 	serverConfig := ps.config.Server
 	clientConfig := ps.config.Client
@@ -133,7 +185,8 @@ func (ps *ProxyServer) start() error {
 		for {
 			// If using mux transport underneath, Open call will be blocked until
 			// underlying connection is established.
-			clientTransport, err := ps.transManager.OpenClient(clientConfig)
+			// Also note: GRPC requires the client interceptors (like metrics) to be defined on the transport, not on the client.
+			clientTransport, err := ps.transManager.OpenClient(prometheus.Labels{"direction": ps.opts.directionLabel()}, clientConfig)
 			if err != nil {
 				ps.logger.Error("Open client transport is failed", tag.Error(err))
 				return
@@ -197,17 +250,18 @@ func NewProxy(
 	configProvider config.ConfigProvider,
 	transManager *transport.TransportManager,
 	logger log.Logger,
-	scope tally.Scope,
 ) *Proxy {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	proxy := &Proxy{
 		config:       s2sConfig,
 		transManager: transManager,
-		logger:       logger,
-		scope:        scope,
+		logger: log.NewThrottledLogger(
+			logger,
+			func() float64 {
+				return s2sConfig.Logging.GetThrottleMaxRPS()
+			},
+		),
 	}
-
-	scope.Counter(metrics.PROXY_START_COUNT).Inc(1)
 
 	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
 	//    local server -> proxy(outbound) -> remote server
@@ -223,7 +277,7 @@ func NewProxy(
 				Config:    s2sConfig,
 			},
 			transManager,
-			logger,
+			proxy.logger,
 		)
 	}
 
@@ -235,36 +289,56 @@ func NewProxy(
 				Config:    s2sConfig,
 			},
 			transManager,
-			logger,
+			proxy.logger,
 		)
 	}
+
+	metrics.ProxyStartCount.Inc()
 
 	return proxy
 }
 
 func (s *Proxy) startHealthCheckHandler(cfg config.HealthCheckConfig) error {
 	if cfg.Protocol != config.HTTP {
-		return fmt.Errorf("Not supported health check protocol %s", cfg.Protocol)
+		return fmt.Errorf("unsupported health check protocol %s", cfg.Protocol)
 	}
 
+	// Set up the handler. Avoid the global ServeMux so that we can create N of these in unit test suites
+	mux := http.NewServeMux()
+	// Register the health check endpoint
+	checker := newHealthCheck(s.logger)
+	mux.HandleFunc("/health", checker.createHandler())
 	// Define the server and its settings
 	s.healthCheckServer = &http.Server{
 		Addr:    cfg.ListenAddress,
-		Handler: nil, // Default HTTP handler (using http.HandleFunc registrations)
+		Handler: mux,
 	}
-
-	checker := newHealthCheck(s.logger, s.scope)
-
-	// Register the health check endpoint
-	http.HandleFunc("/health", checker.createHandler())
 
 	go func() {
 		s.logger.Info("Starting health check server", tag.Address(cfg.ListenAddress))
-		if err := s.healthCheckServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			s.logger.Error("Error starting server: %v\n", tag.Error(err))
+		if err := s.healthCheckServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			s.logger.Error("Error starting server", tag.Error(err))
 		}
 	}()
 
+	return nil
+}
+
+func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
+	// Why not default? So that it can be used in unit tests
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", metrics.NewMetricsHandler(s.logger))
+	s.metricsServer = &http.Server{
+		Addr:    cfg.Prometheus.ListenAddress,
+		Handler: mux,
+	}
+
+	go func() {
+		s.logger.Info("Starting metrics server", tag.Address(cfg.Prometheus.ListenAddress))
+		if err := s.metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			s.logger.Error("Error starting server", tag.Error(err))
+		}
+	}()
 	return nil
 }
 
@@ -273,6 +347,18 @@ func (s *Proxy) Start() error {
 		if err := s.startHealthCheckHandler(*s.config.HealthCheck); err != nil {
 			return err
 		}
+	} else {
+		s.logger.Warn("Started up without health check! Double-check the YAML config," +
+			" it needs at least the following path: healthCheck.listenAddress")
+	}
+
+	if s.config.Metrics != nil {
+		if err := s.startMetricsHandler(*s.config.Metrics); err != nil {
+			return err
+		}
+	} else {
+		s.logger.Warn(`Started up without metrics! Double-check the YAML config,` +
+			` it needs at least the following path: metrics.prometheus.listenAddress`)
 	}
 
 	if err := s.transManager.Start(); err != nil {
@@ -297,7 +383,11 @@ func (s *Proxy) Start() error {
 func (s *Proxy) Stop() {
 	if s.healthCheckServer != nil {
 		// Close without waiting for in-flight requests to complete.
-		s.healthCheckServer.Close()
+		_ = s.healthCheckServer.Close()
+	}
+
+	if s.metricsServer != nil {
+		_ = s.metricsServer.Close()
 	}
 
 	if s.inboundServer != nil {

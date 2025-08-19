@@ -5,13 +5,14 @@ import (
 	"strings"
 
 	"github.com/gogo/status"
-	"github.com/temporalio/s2s-proxy/auth"
-	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+
+	"github.com/temporalio/s2s-proxy/auth"
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 type (
@@ -40,7 +41,7 @@ func NewAccessControlInterceptor(
 	}
 }
 
-func createNamespaceAccessControl(access *auth.AccessControl) matcher {
+func createNamespaceAccessControl(access *auth.AccessControl) stringMatcher {
 	return func(name string) (string, bool) {
 		var notAllowed bool
 		if access != nil {

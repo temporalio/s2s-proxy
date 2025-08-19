@@ -5,11 +5,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
-
-	"github.com/temporalio/s2s-proxy/client"
-	adminclient "github.com/temporalio/s2s-proxy/client/admin"
-	"github.com/temporalio/s2s-proxy/common"
-	"github.com/temporalio/s2s-proxy/config"
+	"sync/atomic"
+	"time"
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -19,6 +16,12 @@ import (
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/temporalio/s2s-proxy/client"
+	adminclient "github.com/temporalio/s2s-proxy/client/admin"
+	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type (
@@ -229,6 +232,10 @@ func ClusterShardIDtoString(sd history.ClusterShardID) string {
 	return fmt.Sprintf("(id: %d, shard: %d)", sd.ClusterID, sd.ShardID)
 }
 
+// StreamWorkflowReplicationMessages establishes an HTTP/2 stream. gRPC passes us a stream that represents the initiating server,
+// and we can freely Send and Recv on that "server". Because this is a proxy, we also establish a bidirectional
+// stream using our configured adminClient. When we Recv on the initiator, we Send to the client.
+// When we Recv on the client, we Send to the initiator
 func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 ) (retError error) {
@@ -249,7 +256,16 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
 		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
 
+	// Record streams active
+	directionLabel := "inbound"
+	if !s.IsInbound {
+		directionLabel = "outbound"
+	}
 	logger.Info("AdminStreamReplicationMessages started.")
+	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
+	streamsActiveGauge.Inc()
+	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(directionLabel).Inc()
+	defer streamsActiveGauge.Dec()
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
 	// simply forwarding target metadata
@@ -262,93 +278,39 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err
 	}
+	streamStartTime := time.Now()
 
-	shutdownChan := channel.NewShutdownOnce()
-
-	// Downstream (targetStreamServer) recv loop
-	go func() {
-		defer func() {
-			logger.Info("Shutdown targetStreamServer.Recv loop.")
-			shutdownChan.Shutdown()
-
-			err = sourceStreamClient.CloseSend()
-			if err != nil {
-				logger.Error("Failed to close sourceStreamClient", tag.Error(err))
-			}
-		}()
-
-		for !shutdownChan.IsShutdown() {
-			req, err := targetStreamServer.Recv()
-			if err == io.EOF {
-				return
-			}
-
-			if err != nil {
-				logger.Error("targetStreamServer.Recv encountered error", tag.Error(err))
-				return
-			}
-
-			switch attr := req.GetAttributes().(type) {
-			case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
-				logger.Debug(fmt.Sprintf("forwarding SyncReplicationState: inclusive %v", attr.SyncReplicationState.InclusiveLowWatermark))
-				if err = sourceStreamClient.Send(req); err != nil {
-					logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
-					return
-				}
-			default:
-				logger.Error("targetStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
-					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
-				))))
-				return
-			}
-		}
-	}()
-
-	// Upstream (sourceStreamClient) recv loop
-	// If Upstream recv loop failed (sourceStream server restart for example), StreamWorkflowReplicationMessages
-	// returns without waiting for Downstream loop to stop. This is because Downstream loop can be blocked at
-	// targetStreamServer.Recv, which prevent StreamWorkflowReplicationMessages from returning.
-	// Once StreamWorkflowReplicationMessages returns, targetStreamServer.Recv will be unblocked
+	// When one side of the stream dies, we want to tell the other side to hang up
 	// (see https://stackoverflow.com/questions/68218469/how-to-un-wedge-go-grpc-bidi-streaming-server-from-the-blocking-recv-call)
+	// One call to StreamWorkflowReplicationMessages establishes a one-way channel through the proxy from one server to another.
+	// For an outbound stream, we have:
+	// StreamWorkflowReplicationMessagesRequest
+	// Local.Recv ===> Proxy ===> Remote.Send
+	//  ^targetStreamServer    ^sourceStreamClient
+	//
+	// StreamWorkflowReplicationMessagesResponse
+	// Local.Send <=== Proxy <=== Remote.Recv
+	//  ^targetStreamServer   ^sourceStreamClient
+	//
+	// We can freely close sourceStreamClient with closeSend. gRPC will only cancel targetStreamServer when we return from
+	// this function.
+	// Scenario 1: Remote disconnects. sourceStreamClient.Recv will return EOF. This unblocks transferSourceToTarget and sets shutdownChan.
+	//             transferTargetToSource needs to be unblocked from targetStreamServer.Recv
+	// Scenario 2: Local disconnects. targetStreamServer.Recv will return EOF. This unblocks transferTargetToSource and sets shutdownChan.
+	//             transferSourceToTarget needs to be unblocked from sourceStreamClient.Recv
+	shutdownChan := channel.NewShutdownOnce()
+	sendEOFToServer := atomic.Bool{}
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer func() {
-			logger.Info("Shutdown sourceStreamClient.Recv loop.")
-
-			shutdownChan.Shutdown()
-			wg.Done()
-		}()
-
-		for !shutdownChan.IsShutdown() {
-			resp, err := sourceStreamClient.Recv()
-			if err == io.EOF {
-				return
-			}
-
-			if err != nil {
-				logger.Error("sourceStreamClient.Recv encountered error", tag.Error(err))
-				return
-			}
-			switch attr := resp.GetAttributes().(type) {
-			case *adminservice.StreamWorkflowReplicationMessagesResponse_Messages:
-				logger.Debug(fmt.Sprintf("forwarding ReplicationMessages: exclusive %v", attr.Messages.ExclusiveHighWatermark))
-				if err = targetStreamServer.Send(resp); err != nil {
-					if err != io.EOF {
-						logger.Error("targetStreamServer.Send encountered error", tag.Error(err))
-
-					}
-					return
-				}
-			default:
-				logger.Error("sourceStreamClient.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
-					"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
-				))))
-				return
-			}
-		}
-	}()
-
+	wg.Add(2)
+	go transferTargetToSource(sourceStreamClient, targetStreamServer, &wg, shutdownChan, &sendEOFToServer, directionLabel, logger)
+	go transferSourceToTarget(sourceStreamClient, targetStreamServer, &wg, shutdownChan, &sendEOFToServer, directionLabel, logger)
 	wg.Wait()
+
+	streamDuration := time.Since(streamStartTime)
+	metrics.AdminServiceStreamDuration.WithLabelValues(directionLabel).Observe(streamDuration.Seconds())
+	metrics.AdminServiceStreamsClosedCount.WithLabelValues(directionLabel).Inc()
+	if sendEOFToServer.Load() {
+		return io.EOF
+	}
 	return nil
 }

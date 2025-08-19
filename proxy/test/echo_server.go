@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gogo/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
@@ -15,13 +17,12 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/gogo/status"
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/metrics"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 	"github.com/temporalio/s2s-proxy/transport"
-	"github.com/uber-go/tally/v4"
 )
 
 type (
@@ -82,7 +83,6 @@ func newEchoServer(
 	}
 
 	var proxy *s2sproxy.Proxy
-	var err error
 	var clientConfig config.ProxyClientConfig
 
 	localProxyCfg := localClusterInfo.s2sProxyConfig
@@ -113,12 +113,7 @@ func newEchoServer(
 			configProvider,
 			transport.NewTransportManager(configProvider, logger),
 			logger,
-			tally.NoopScope,
 		)
-
-		if err != nil {
-			logger.Fatal("Failed to create proxy", tag.Error(err))
-		}
 
 		clientConfig = config.ProxyClientConfig{
 			TCPClientSetting: config.TCPClientSetting{
@@ -154,7 +149,7 @@ func newEchoServer(
 		logger.Fatal("Failed to create server transport", tag.Error(err))
 	}
 
-	clientTransport, err := tm.OpenClient(clientConfig)
+	clientTransport, err := tm.OpenClient(prometheus.Labels{}, clientConfig)
 	if err != nil {
 		logger.Fatal("Failed to create client transport", tag.Error(err))
 	}
@@ -175,7 +170,7 @@ func newEchoServer(
 		proxy:             proxy,
 		clusterInfo:       localClusterInfo,
 		remoteClusterInfo: remoteClusterInfo,
-		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, logger), logger),
+		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, metrics.GRPCOutboundClientMetrics, logger), logger),
 		logger:            logger,
 	}
 }
@@ -312,9 +307,12 @@ func (s *echoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
 
 	s.logger.Info("==== SendAndRecv starting ====")
 	echoed, err = sendRecv(stream, sequence)
+	if err != nil {
+		s.logger.Error("sendRecv", tag.NewErrorTag("error", err))
+	}
 	_ = stream.CloseSend()
 	s.logger.Info("==== SendAndRecv completed ====")
-	return echoed, nil
+	return echoed, err
 }
 
 // Test workflowservice by making some request.

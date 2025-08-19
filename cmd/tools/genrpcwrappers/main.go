@@ -39,15 +39,14 @@ import (
 
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/server/api/adminservice/v1"
+	"go.temporal.io/server/api/historyservice/v1"
+	"go.temporal.io/server/api/matchingservice/v1"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
-
-	"go.temporal.io/server/api/adminservice/v1"
-	"go.temporal.io/server/api/historyservice/v1"
-	"go.temporal.io/server/api/matchingservice/v1"
 )
 
 type (
@@ -157,9 +156,13 @@ func panicIfErr(err error) {
 }
 
 func writeTemplatedCode(w io.Writer, service service, text string) {
+	pkgPath := service.clientType.Elem().PkgPath()
+	titleCase := strings.ToUpper(service.name[:1]) + service.name[1:]
 	panicIfErr(template.Must(template.New("code").Parse(text)).Execute(w, map[string]string{
-		"ServiceName":        service.name,
-		"ServicePackagePath": service.clientType.Elem().PkgPath(),
+		"ServiceName":           service.name,
+		"ServicePackagePath":    pkgPath,
+		"ServiceNameTitle":      titleCase,
+		"ServicePackagePath122": strings.Replace(pkgPath, "go.temporal.io", "github.com/temporalio/s2s-proxy/proto/1_22", 1),
 	}))
 }
 
@@ -410,21 +413,13 @@ func makeGetMatchingClient(reqType reflect.Type) string {
 	panic("I don't know how to get a client from a " + t.String())
 }
 
+func methodKey(impl string, svc service, m reflect.Method) string {
+	return fmt.Sprintf("%s.%s.%s", impl, svc.name, m.Name)
+}
+
 func writeTemplatedMethod(w io.Writer, service service, impl string, m reflect.Method, text string) {
-	key := fmt.Sprintf("%s.%s.%s", impl, service.name, m.Name)
-	if ignoreMethod[key] {
-		return
-	}
-
-	mt := m.Type // should look like: func(context.Context, request reqType, opts []grpc.CallOption) (respType, error)
-	if !mt.IsVariadic() ||
-		mt.NumIn() != 3 ||
-		mt.NumOut() != 2 ||
-		mt.In(0).String() != "context.Context" ||
-		mt.Out(1).String() != "error" {
-		panic(key + " doesn't look like a grpc handler method")
-	}
-
+	key := methodKey(impl, service, m)
+	mt := m.Type
 	reqType := mt.In(1)
 	respType := mt.Out(0)
 
@@ -443,13 +438,14 @@ func writeTemplatedMethod(w io.Writer, service service, impl string, m reflect.M
 		fields["WithLargeTimeout"] = "WithLargeTimeout"
 	}
 	if impl == "client" {
-		if service.name == "history" {
+		switch service.name {
+		case "history":
 			routingOptions := historyRoutingOptions(reqType)
 			if routingOptions.Custom {
 				return
 			}
 			fields["GetClient"] = makeGetHistoryClient(reqType, routingOptions)
-		} else if service.name == "matching" {
+		case "matching":
 			fields["GetClient"] = makeGetMatchingClient(reqType)
 		}
 	}
@@ -460,7 +456,22 @@ func writeTemplatedMethod(w io.Writer, service service, impl string, m reflect.M
 func writeTemplatedMethods(w io.Writer, service service, impl string, text string) {
 	sType := service.clientType.Elem()
 	for n := 0; n < sType.NumMethod(); n++ {
-		writeTemplatedMethod(w, service, impl, sType.Method(n), text)
+		m := sType.Method(n)
+		key := methodKey(impl, service, m)
+		if ignoreMethod[key] {
+			continue
+		}
+
+		// should look like: func(context.Context, request reqType, opts []grpc.CallOption) (respType, error)
+		mt := m.Type
+		if !mt.IsVariadic() ||
+			mt.NumIn() != 3 ||
+			mt.NumOut() != 2 ||
+			mt.In(0).String() != "context.Context" ||
+			mt.Out(1).String() != "error" {
+			panic(key + " doesn't look like a grpc handler method")
+		}
+		writeTemplatedMethod(w, service, impl, m, text)
 	}
 }
 
@@ -675,4 +686,6 @@ func main() {
 	if svc.name == "admin" {
 		callWithFile(generateACLServer, svc, "acl_server", "")
 	}
+
+	callWithFile(generate122ConversionCode, svc, "conversion", "")
 }

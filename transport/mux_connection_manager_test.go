@@ -7,11 +7,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 const (
@@ -76,7 +78,7 @@ func startServer(t *testing.T, serverTs ServerTransport) *grpc.Server {
 }
 
 func testClient(t *testing.T, clientTs ClientTransport) {
-	conn, err := clientTs.Connect()
+	conn, err := clientTs.Connect(metrics.GRPCInboundClientMetrics)
 	require.NoError(t, err)
 	adminClient := adminservice.NewAdminServiceClient(conn)
 
@@ -85,7 +87,7 @@ func testClient(t *testing.T, clientTs ClientTransport) {
 	require.NoError(t, err)
 	require.Equal(t, clusterName, res.ClusterName)
 
-	conn.Close()
+	require.NoError(t, conn.Close())
 }
 
 func testMuxConnection(t *testing.T, muxClientCfg config.MuxTransportConfig, muxServerCfg config.MuxTransportConfig, repeat int) {

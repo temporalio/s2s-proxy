@@ -3,14 +3,17 @@ package transport
 import (
 	"fmt"
 
-	"github.com/temporalio/s2s-proxy/config"
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+	prometheus "github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 type (
 	ClientTransport interface {
-		Connect() (*grpc.ClientConn, error)
+		Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.ClientConn, error)
 	}
 
 	ServerTransport interface {
@@ -54,13 +57,13 @@ func NewTransportManager(
 func (tm *TransportManager) openMuxTransport(transportName string) (MuxTransport, error) {
 	mux := tm.muxConnManagers[transportName]
 	if mux == nil {
-		return nil, fmt.Errorf("Multiplexed transport %s is not found", transportName)
+		return nil, fmt.Errorf("multiplexed transport %s is not found", transportName)
 	}
 
 	return mux.open()
 }
 
-func (tm *TransportManager) OpenClient(clientConfig config.ProxyClientConfig) (ClientTransport, error) {
+func (tm *TransportManager) OpenClient(metricLabels prometheus.Labels, clientConfig config.ProxyClientConfig) (ClientTransport, error) {
 	if clientConfig.Type == config.MuxTransport {
 		return tm.openMuxTransport(clientConfig.MuxTransportName)
 	}

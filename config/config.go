@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
+
+	"github.com/temporalio/s2s-proxy/encryption"
 )
 
 const (
 	ConfigPathFlag = "config"
 	LogLevelFlag   = "level"
 
-	DefaultPProfAddress = "localhost:6060"
+	DefaultPProfAddress          = "localhost:6060"
+	DefaultLoggingThrottleMaxRPS = 10.0
 )
 
 type TransportType string
@@ -106,20 +108,37 @@ type (
 	}
 
 	S2SProxyConfig struct {
-		Inbound                  *ProxyConfig                   `yaml:"inbound"`
-		Outbound                 *ProxyConfig                   `yaml:"outbound"`
-		MuxTransports            []MuxTransportConfig           `yaml:"mux"`
-		HealthCheck              *HealthCheckConfig             `yaml:"healthCheck"`
-		NamespaceNameTranslation NamespaceNameTranslationConfig `yaml:"namespaceNameTranslation"`
-		Metrics                  *MetricsConfig                 `yaml:"metrics"`
-		ProfilingConfig          ProfilingConfig                `yaml:"profiling"`
+		Inbound                    *ProxyConfig          `yaml:"inbound"`
+		Outbound                   *ProxyConfig          `yaml:"outbound"`
+		MuxTransports              []MuxTransportConfig  `yaml:"mux"`
+		HealthCheck                *HealthCheckConfig    `yaml:"healthCheck"`
+		NamespaceNameTranslation   NameTranslationConfig `yaml:"namespaceNameTranslation"`
+		SearchAttributeTranslation SATranslationConfig   `yaml:"searchAttributeTranslation"`
+		Metrics                    *MetricsConfig        `yaml:"metrics"`
+		ProfilingConfig            ProfilingConfig       `yaml:"profiling"`
+		Logging                    LoggingConfig         `yaml:"logging"`
+	}
+
+	SATranslationConfig struct {
+		NamespaceMappings []SANamespaceMapping `yaml:"namespaceMappings"`
+	}
+
+	SANamespaceMapping struct {
+		Name        string      `yaml:"name"`
+		NamespaceId string      `yaml:"namespaceId"`
+		Mappings    []SAMapping `yaml:"mappings"`
+	}
+
+	SAMapping struct {
+		LocalName  string `yaml:"localFieldName"`
+		RemoteName string `yaml:"remoteFieldName"`
 	}
 
 	ProfilingConfig struct {
 		PProfHTTPAddress string `yaml:"pprofAddress"`
 	}
 
-	NamespaceNameTranslationConfig struct {
+	NameTranslationConfig struct {
 		Mappings []NameMappingConfig `yaml:"mappings"`
 	}
 
@@ -149,6 +168,10 @@ type (
 
 	MetricsConfig struct {
 		Prometheus PrometheusConfig `yaml:"prometheus"`
+	}
+
+	LoggingConfig struct {
+		ThrottleMaxRPS float64 `yaml:"throttleMaxRPS"`
 	}
 )
 
@@ -282,6 +305,34 @@ func (mc *MockConfigProvider) GetS2SProxyConfig() S2SProxyConfig {
 	return mc.config
 }
 
+func (n NameTranslationConfig) IsEnabled() bool {
+	return len(n.Mappings) > 0
+}
+
+// ToMaps returns request and response mappings.
+func (n NameTranslationConfig) ToMaps(inBound bool) (map[string]string, map[string]string) {
+	reqMap := make(map[string]string)
+	respMap := make(map[string]string)
+	if inBound {
+		// For inbound listener,
+		//   - incoming requests from remote server are modifed to match local server
+		//   - outgoing responses to local server are modified to match remote server
+		for _, tr := range n.Mappings {
+			reqMap[tr.RemoteName] = tr.LocalName
+			respMap[tr.LocalName] = tr.RemoteName
+		}
+	} else {
+		// For outbound listener,
+		//   - incoming requests from local server are modifed to match remote server
+		//   - outgoing responses to remote server are modified to match local server
+		for _, tr := range n.Mappings {
+			reqMap[tr.LocalName] = tr.RemoteName
+			respMap[tr.RemoteName] = tr.LocalName
+		}
+	}
+	return reqMap, respMap
+}
+
 func (c *ProfilingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.PProfHTTPAddress) == 0 {
 		c.PProfHTTPAddress = DefaultPProfAddress
@@ -290,4 +341,44 @@ func (c *ProfilingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error
 	// Alias to avoid infinite recursion
 	type plain ProfilingConfig
 	return unmarshal((*plain)(c))
+}
+
+func (s SATranslationConfig) IsEnabled() bool {
+	return len(s.NamespaceMappings) > 0
+}
+
+// ToMaps returns request and response mappings.
+func (s SATranslationConfig) ToMaps(inBound bool) (map[string]map[string]string, map[string]map[string]string) {
+	reqMap := make(map[string]map[string]string)
+	respMap := make(map[string]map[string]string)
+	for _, ns := range s.NamespaceMappings {
+		reqMap[ns.NamespaceId] = make(map[string]string, len(ns.Mappings))
+		respMap[ns.NamespaceId] = make(map[string]string, len(ns.Mappings))
+
+		if inBound {
+			// For inbound listener,
+			//   - incoming requests from remote server are modifed to match local server
+			//   - outgoing responses to local server are modified to match remote server
+			for _, tr := range ns.Mappings {
+				reqMap[ns.NamespaceId][tr.RemoteName] = tr.LocalName
+				respMap[ns.NamespaceId][tr.LocalName] = tr.RemoteName
+			}
+		} else {
+			// For outbound listener,
+			//   - incoming requests from local server are modifed to match remote server
+			//   - outgoing responses to remote server are modified to match local server
+			for _, tr := range ns.Mappings {
+				reqMap[ns.NamespaceId][tr.LocalName] = tr.RemoteName
+				respMap[ns.NamespaceId][tr.RemoteName] = tr.LocalName
+			}
+		}
+	}
+	return reqMap, respMap
+}
+
+func (l LoggingConfig) GetThrottleMaxRPS() float64 {
+	if l.ThrottleMaxRPS > 0 {
+		return l.ThrottleMaxRPS
+	}
+	return DefaultLoggingThrottleMaxRPS
 }
