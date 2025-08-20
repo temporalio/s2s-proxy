@@ -31,6 +31,9 @@ func IsRequestTranslationDisabled(ctx context.Context) bool {
 }
 
 func IsInvalidUTF8Error(err error) bool {
+	// Unfortunately, there's not a single error type we can import.
+	// This matches the two different 'invalid utf-8' errors that could occur.
+	//
 	// https://github.com/protocolbuffers/protobuf-go/blob/8e8926ef675d99b1c9612f5d008f4dc803839f7a/internal/impl/codec_field.go#L19
 	// https://github.com/temporalio/temporal/blob/4151e25df8096ca254b79518c1eb7fc125871756/common/utf8validator/validate.go#L73
 	return err != nil &&

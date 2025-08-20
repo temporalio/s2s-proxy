@@ -255,10 +255,10 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 		repairedEvents, c, err := tryRepairInvalidUTF8InBlob(blob)
 		changed = changed || c
 		if err != nil {
-			logger.Error("failed to repair invalid utf-8 in history event blob", tag.NewErrorTag("error", err))
+			logger.Error("failed to repair invalid utf-8 in history event blob", tag.Error(err))
 			return blob, matched, changed, err
 		} else if changed {
-			logger.Info("repaired invalid utf-8 in history event blob")
+			logger.Debug("repaired invalid utf-8 in history event blob")
 			events = repairedEvents
 		}
 

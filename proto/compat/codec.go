@@ -60,9 +60,9 @@ func (c *RepairUTF8Codec) Unmarshal(data mem.BufferSlice, v any) error {
 	err := c.delegate.Unmarshal(data, v)
 	if common.IsInvalidUTF8Error(err) {
 		if err := convertAndRepairInvalidUTF8(data.Materialize(), v); err != nil {
-			c.Logger.Error("during UTF-8 repair", tag.NewErrorTag("error", err))
+			c.Logger.Error("during UTF-8 repair", tag.Error(err))
 		} else {
-			c.Logger.Info("repaired invalid UTF-8 string", tag.NewStringTag("type", fmt.Sprintf("%T", v)))
+			c.Logger.Debug("repaired invalid UTF-8 string during unmarshal", tag.NewStringTag("type", fmt.Sprintf("%T", v)))
 			return nil
 		}
 	}
