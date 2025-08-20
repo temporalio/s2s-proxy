@@ -1,6 +1,10 @@
 package interceptor
 
-import "go.temporal.io/server/common/log"
+import (
+	"go.temporal.io/server/common/log"
+
+	"github.com/temporalio/s2s-proxy/metrics"
+)
 
 type (
 	Translator interface {
@@ -27,7 +31,7 @@ func NewNamespaceNameTranslator(logger log.Logger, reqMap, respMap map[string]st
 		matchReq:    createStringMatcher(reqMap),
 		matchResp:   createStringMatcher(respMap),
 		visitor:     visitNamespace,
-		kind:        "namespace",
+		kind:        metrics.NamespaceTranslationKind,
 	}
 }
 

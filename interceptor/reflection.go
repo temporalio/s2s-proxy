@@ -257,11 +257,11 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 		changed = changed || c
 		if err != nil {
 			logger.Error("failed to repair invalid utf-8 in history event blob", tag.Error(err))
-			metrics.TranslationErrors.WithLabelValues(metrics.UTF8RepairTranslationKind, "historyblob").Inc()
+			metrics.TranslationErrors.WithLabelValues(metrics.UTF8RepairTranslationKind, metrics.HistoryBlobMessageType).Inc()
 			return blob, matched, changed, err
 		} else if changed {
 			logger.Debug("repaired invalid utf-8 in history event blob")
-			metrics.TranslationCount.WithLabelValues(metrics.UTF8RepairTranslationKind, "historyblob").Inc()
+			metrics.TranslationCount.WithLabelValues(metrics.UTF8RepairTranslationKind, metrics.HistoryBlobMessageType).Inc()
 			events = repairedEvents
 		}
 	}
