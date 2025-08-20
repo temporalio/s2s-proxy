@@ -29,6 +29,10 @@ func NewSearchAttributeTranslator(logger log.Logger, reqMap, respMap map[string]
 	}
 }
 
+func (s *saTranslator) Kind() string {
+	return "search-attribute"
+}
+
 func (s *saTranslator) MatchMethod(m string) bool {
 	return s.matchMethod(m)
 }

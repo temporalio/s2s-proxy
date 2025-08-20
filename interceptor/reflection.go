@@ -13,6 +13,7 @@ import (
 	"go.temporal.io/server/common/persistence/serialization"
 
 	s2scommon "github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/metrics"
 	common122 "github.com/temporalio/s2s-proxy/proto/1_22/api/common/v1"
 	enums122 "github.com/temporalio/s2s-proxy/proto/1_22/api/enums/v1"
 	history122 "github.com/temporalio/s2s-proxy/proto/1_22/api/history/v1"
@@ -256,12 +257,13 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 		changed = changed || c
 		if err != nil {
 			logger.Error("failed to repair invalid utf-8 in history event blob", tag.Error(err))
+			metrics.TranslationErrors.WithLabelValues(metrics.UTF8RepairTranslationKind, "historyblob").Inc()
 			return blob, matched, changed, err
 		} else if changed {
 			logger.Debug("repaired invalid utf-8 in history event blob")
+			metrics.TranslationCount.WithLabelValues(metrics.UTF8RepairTranslationKind, "historyblob").Inc()
 			events = repairedEvents
 		}
-
 	}
 
 	m, err := visitor(logger, events, match)

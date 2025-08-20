@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/temporalio/s2s-proxy/metrics"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -46,7 +47,7 @@ func (i *TranslationInterceptor) Intercept(
 		for _, tr := range i.translators {
 			if tr.MatchMethod(info.FullMethod) {
 				changed, trErr := tr.TranslateRequest(req)
-				logTranslateResult(i.logger, changed, trErr, methodName+"Request", req)
+				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Request", req)
 			}
 		}
 
@@ -55,7 +56,7 @@ func (i *TranslationInterceptor) Intercept(
 		for _, tr := range i.translators {
 			if tr.MatchMethod(info.FullMethod) {
 				changed, trErr := tr.TranslateResponse(resp)
-				logTranslateResult(i.logger, changed, trErr, methodName+"Response", resp)
+				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Response", resp)
 			}
 		}
 
@@ -83,7 +84,7 @@ type streamTranslator struct {
 func (w *streamTranslator) RecvMsg(m any) error {
 	for _, tr := range w.translators {
 		changed, trErr := tr.TranslateRequest(m)
-		logTranslateResult(w.logger, changed, trErr, "RecvMsg", m)
+		logTranslateResult(tr, w.logger, changed, trErr, "RecvMsg", m)
 	}
 	return w.ServerStream.RecvMsg(m)
 }
@@ -91,7 +92,7 @@ func (w *streamTranslator) RecvMsg(m any) error {
 func (w *streamTranslator) SendMsg(m any) error {
 	for _, tr := range w.translators {
 		changed, trErr := tr.TranslateResponse(m)
-		logTranslateResult(w.logger, changed, trErr, "SendMsg", m)
+		logTranslateResult(tr, w.logger, changed, trErr, "SendMsg", m)
 	}
 	return w.ServerStream.SendMsg(m)
 }
@@ -108,12 +109,14 @@ func newStreamTranslator(
 	}
 }
 
-func logTranslateResult(logger log.Logger, changed bool, err error, methodName string, obj any) {
+func logTranslateResult(tr Translator, logger log.Logger, changed bool, err error, methodName string, obj any) {
 	methodTag := tag.NewStringTag("method", methodName)
 	if err != nil {
 		logger.Error("translation error", methodTag, tag.Error(err), tag.NewStringTag("type", fmt.Sprintf("%T", obj)))
+		metrics.TranslationErrors.WithLabelValues(tr.Kind(), methodName).Inc()
 	} else if changed {
 		logger.Debug("translation applied", methodTag, tag.NewAnyTag("obj", obj))
+		metrics.TranslationCount.WithLabelValues(tr.Kind(), methodName).Inc()
 	} else {
 		logger.Debug("translation not applied", methodTag, tag.NewAnyTag("obj", obj))
 	}

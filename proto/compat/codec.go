@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/mem"
 
 	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 const (
@@ -59,10 +60,13 @@ func (c *RepairUTF8Codec) Name() string {
 func (c *RepairUTF8Codec) Unmarshal(data mem.BufferSlice, v any) error {
 	err := c.delegate.Unmarshal(data, v)
 	if common.IsInvalidUTF8Error(err) {
+		msgType := fmt.Sprintf("%T", v)
 		if err := convertAndRepairInvalidUTF8(data.Materialize(), v); err != nil {
 			c.Logger.Error("during UTF-8 repair", tag.Error(err))
+			metrics.TranslationErrors.WithLabelValues(metrics.UTF8RepairTranslationKind, msgType).Inc()
 		} else {
-			c.Logger.Debug("repaired invalid UTF-8 string during unmarshal", tag.NewStringTag("type", fmt.Sprintf("%T", v)))
+			c.Logger.Debug("repaired invalid UTF-8 string during unmarshal", tag.NewStringTag("type", msgType))
+			metrics.TranslationCount.WithLabelValues(metrics.UTF8RepairTranslationKind, msgType).Inc()
 			return nil
 		}
 	}
