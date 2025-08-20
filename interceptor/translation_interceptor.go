@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/temporalio/s2s-proxy/metrics"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type (
