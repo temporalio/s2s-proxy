@@ -34,8 +34,16 @@ const (
 
 var (
 	retryPolicy = backoff.NewExponentialRetryPolicy(throttleRetryInitialInterval).
-		WithBackoffCoefficient(1.5).
-		WithMaximumInterval(throttleRetryMaxInterval)
+			WithBackoffCoefficient(1.5).
+			WithMaximumInterval(throttleRetryMaxInterval)
+	// clientMuxDisconnectSleepFn allows setting the behavior of the client when the mux disconnects.
+	// We want to avoid a tight retry-loop if the client connects/disconnects many times in a row, but we actually
+	// want that behavior in unit tests
+	clientMuxDisconnectSleepFn = func() {
+		// Don't retry more frequently than once per second.
+		// Sleep a random amount between 1s-2s.
+		time.Sleep(time.Second + time.Duration(rand.IntN(1000))*time.Millisecond)
+	}
 )
 
 type (
@@ -235,9 +243,7 @@ func (m *muxConnectMananger) clientLoop(metricLabels []string, setting config.TC
 				metrics.MuxConnectionEstablish.WithLabelValues(metricLabels...).Inc()
 				m.waitForReconnect()
 
-				// Don't retry more frequently than once per second.
-				// Sleep a random amount between 1s-2s.
-				time.Sleep(time.Second + time.Duration(rand.IntN(1000))*time.Millisecond)
+				clientMuxDisconnectSleepFn()
 			}
 		}
 	}()

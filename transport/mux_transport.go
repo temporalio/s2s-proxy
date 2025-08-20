@@ -50,8 +50,8 @@ func (m *muxTransportImpl) IsClosed() bool {
 }
 
 func (s *muxTransportImpl) closeSession() {
-	_ = s.conn.Close()
 	_ = s.session.Close()
+	_ = s.conn.Close()
 }
 
 func (s *muxTransportImpl) close() {
