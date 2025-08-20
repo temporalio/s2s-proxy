@@ -39,8 +39,16 @@ var (
 		},
 	}
 
-	testLogger = log.NewTestLogger()
+	testLogger log.Logger
 )
+
+func init() {
+	// Uncomment for debug logs
+	//_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "debug")
+	testLogger = log.NewTestLogger()
+	// Disable sleeping for tests
+	clientMuxDisconnectSleepFn = func() {}
+}
 
 type service struct {
 	adminservice.UnimplementedAdminServiceServer

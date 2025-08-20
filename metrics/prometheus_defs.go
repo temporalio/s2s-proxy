@@ -22,8 +22,10 @@ var (
 
 	// /proxy/health_check.go
 
-	HealthCheckIsHealthy    = DefaultGauge("health_check_success", "s2s-proxy service is healthy")
-	HealthCheckHealthyCount = DefaultCounter("health_check_success_count", "Number of healthy checks from s2s-proxy since service start")
+	InboundIsHealthy         = DefaultGauge("health_check_success", "Inbound mux server is healthy")
+	InboundHealthCheckCount  = DefaultCounter("health_check_success_count", "Inbound health check count")
+	OutboundIsHealthy        = DefaultGauge("outbound_is_healthy", "Outbound proxy service is healthy")
+	OutboundHealthCheckCount = DefaultCounter("outbound_health_check_count", "Outbound health check count")
 
 	// /proxy/proxy.go
 
@@ -75,8 +77,10 @@ func init() {
 	prometheus.MustRegister(AdminServiceStreamRespCount)
 	prometheus.MustRegister(AdminServiceStreamTerminatedCount)
 
-	prometheus.MustRegister(HealthCheckIsHealthy)
-	prometheus.MustRegister(HealthCheckHealthyCount)
+	prometheus.MustRegister(InboundIsHealthy)
+	prometheus.MustRegister(InboundHealthCheckCount)
+	prometheus.MustRegister(OutboundIsHealthy)
+	prometheus.MustRegister(OutboundHealthCheckCount)
 
 	prometheus.MustRegister(GRPCServerMetrics)
 	prometheus.MustRegister(ProxyStartCount)

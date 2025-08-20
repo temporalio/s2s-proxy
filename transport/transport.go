@@ -62,6 +62,9 @@ func (tm *TransportManager) openMuxTransport(transportName string) (MuxTransport
 
 	return mux.open()
 }
+func (tm *TransportManager) IsMuxActive(name string) bool {
+	return tm.muxConnManagers[name].status.Load() == int32(statusStarted)
+}
 
 func (tm *TransportManager) OpenClient(metricLabels prometheus.Labels, clientConfig config.ProxyClientConfig) (ClientTransport, error) {
 	if clientConfig.Type == config.MuxTransport {
