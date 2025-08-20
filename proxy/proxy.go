@@ -69,8 +69,8 @@ func makeServerOptions(
 	if tln := proxyOpts.Config.NamespaceNameTranslation; tln.IsEnabled() {
 		// NamespaceNameTranslator needs to be called before namespace access control so that
 		// local name can be used in namespace allowed list.
-		translators = append(translators,
-			interceptor.NewNamespaceNameTranslator(tln.ToMaps(proxyOpts.IsInbound)))
+		reqMap, respMap := tln.ToMaps(proxyOpts.IsInbound)
+		translators = append(translators, interceptor.NewNamespaceNameTranslator(logger, reqMap, respMap))
 	}
 
 	if tln := proxyOpts.Config.SearchAttributeTranslation; tln.IsEnabled() {
@@ -78,8 +78,8 @@ func makeServerOptions(
 		if len(tln.NamespaceMappings) > 1 {
 			panic("multiple namespace search attribute mappings are not supported")
 		}
-		translators = append(translators,
-			interceptor.NewSearchAttributeTranslator(tln.ToMaps(proxyOpts.IsInbound)))
+		reqMap, respMap := tln.ToMaps(proxyOpts.IsInbound)
+		translators = append(translators, interceptor.NewSearchAttributeTranslator(logger, reqMap, respMap))
 	}
 
 	if len(translators) > 0 {

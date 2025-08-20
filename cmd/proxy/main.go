@@ -14,6 +14,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/proto/compat"
 	"github.com/temporalio/s2s-proxy/proxy"
 	"github.com/temporalio/s2s-proxy/transport"
 )
@@ -96,6 +97,7 @@ func startProxy(c *cli.Context) error {
 		client.Module,
 		proxy.Module,
 		fx.Populate(&proxyParams),
+		fx.Populate(compat.GetCodec().CodecParams),
 	)
 
 	if err := app.Err(); err != nil {

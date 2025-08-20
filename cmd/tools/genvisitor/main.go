@@ -30,7 +30,7 @@ func main() {
 	emitter := NewEmitter(logger, Gogo122Version)
 	emitter.SetPackageName("compat")
 	emitter.SetFunctionSignature(
-		`func repairInvalidUTF8(vAny any) (ret bool, retErr error)`,
+		`func RepairInvalidUTF8(vAny any) (ret bool, retErr error)`,
 	)
 	emitter.SetFunctionTrailer("return")
 	emitter.AddHandler(

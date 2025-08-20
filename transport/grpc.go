@@ -11,6 +11,9 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/encoding"
+
+	"github.com/temporalio/s2s-proxy/proto/compat"
 )
 
 const (
@@ -54,7 +57,10 @@ func dial(hostName string, tlsConfig *tls.Config, clientMetrics *grpcprom.Client
 
 	dialOptions := []grpc.DialOption{
 		grpcSecureOpt,
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxInternodeRecvPayloadSize)),
+		grpc.WithDefaultCallOptions(
+			grpc.ForceCodecV2(encoding.GetCodecV2(compat.CodecName)),
+			grpc.MaxCallRecvMsgSize(maxInternodeRecvPayloadSize),
+		),
 		grpc.WithDefaultServiceConfig(DefaultServiceConfig),
 		grpc.WithDisableServiceConfig(),
 		grpc.WithConnectParams(cp),
