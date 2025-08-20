@@ -52,6 +52,15 @@ var (
 	muxManagerLabels       = []string{"addr", "mode", "config_name"}
 	MuxErrors              = DefaultCounterVec("mux_errors", "Number of errors observed from mux", muxManagerLabels...)
 	MuxConnectionEstablish = DefaultCounterVec("mux_connection_establish", "Number of times mux has established", muxManagerLabels...)
+
+	translationLabels = []string{"kind", "message_type"}
+	TranslationCount  = DefaultCounterVec("translation_success", "Count of message translations", translationLabels...)
+	TranslationErrors = DefaultCounterVec("translation_error", "Count of message translation errors", translationLabels...)
+
+	UTF8RepairTranslationKind = "utf8repair"
+	NamespaceTranslationKind  = "namespace"
+	SearchAttrTranslationKind = "search-attribute"
+	HistoryBlobMessageType    = "HistoryEventBlob"
 )
 
 func init() {
@@ -84,4 +93,7 @@ func init() {
 	prometheus.MustRegister(MuxObserverReportCount)
 	prometheus.MustRegister(MuxErrors)
 	prometheus.MustRegister(MuxConnectionEstablish)
+
+	prometheus.MustRegister(TranslationCount)
+	prometheus.MustRegister(TranslationErrors)
 }

@@ -5,6 +5,8 @@ import (
 
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
+
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type (
@@ -27,6 +29,10 @@ func NewSearchAttributeTranslator(logger log.Logger, reqMap, respMap map[string]
 		reqMap:  createStringMatchers(reqMap),
 		respMap: createStringMatchers(respMap),
 	}
+}
+
+func (s *saTranslator) Kind() string {
+	return metrics.SearchAttrTranslationKind
 }
 
 func (s *saTranslator) MatchMethod(m string) bool {
