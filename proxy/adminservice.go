@@ -3,9 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"io"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"go.temporal.io/api/serviceerror"
@@ -299,18 +297,16 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	// Scenario 2: Local disconnects. targetStreamServer.Recv will return EOF. This unblocks transferTargetToSource and sets shutdownChan.
 	//             transferSourceToTarget needs to be unblocked from sourceStreamClient.Recv
 	shutdownChan := channel.NewShutdownOnce()
-	sendEOFToServer := atomic.Bool{}
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go transferTargetToSource(sourceStreamClient, targetStreamServer, &wg, shutdownChan, &sendEOFToServer, directionLabel, logger)
-	go transferSourceToTarget(sourceStreamClient, targetStreamServer, &wg, shutdownChan, &sendEOFToServer, directionLabel, logger)
+	go transferTargetToSource(sourceStreamClient, targetStreamServer, &wg, shutdownChan, directionLabel, logger)
+	go transferSourceToTarget(sourceStreamClient, targetStreamServer, &wg, shutdownChan, directionLabel, logger)
 	wg.Wait()
 
 	streamDuration := time.Since(streamStartTime)
 	metrics.AdminServiceStreamDuration.WithLabelValues(directionLabel).Observe(streamDuration.Seconds())
 	metrics.AdminServiceStreamsClosedCount.WithLabelValues(directionLabel).Inc()
-	if sendEOFToServer.Load() {
-		return io.EOF
-	}
+	// Do not try to transfer EOF from the source here. Just returning "nil" is sufficient to terminate the stream
+	// to the client.
 	return nil
 }

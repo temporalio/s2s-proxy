@@ -1,18 +1,25 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/stretchr/testify/assert"
+	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
-
-	"github.com/temporalio/s2s-proxy/config"
+	"go.temporal.io/server/common/log/tag"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type (
@@ -51,6 +58,67 @@ var (
 	}
 	logger = log.NewTestLogger()
 )
+
+type hangupAdminServer struct {
+	adminservice.UnimplementedAdminServiceServer
+}
+
+func (s *hangupAdminServer) StreamWorkflowReplicationMessages(server adminservice.AdminService_StreamWorkflowReplicationMessagesServer) error {
+	go func() {
+		for {
+			_, err := server.Recv()
+			if status.Code(err) == codes.Canceled {
+				logger.Info("Client closed")
+				return
+			} else if err != nil {
+				logger.Info("Got a message with error", tag.Error(err))
+			}
+		}
+	}()
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		err := server.Send(&adminservice.StreamWorkflowReplicationMessagesResponse{})
+		if err != nil {
+			logger.Info("Got a message with error", tag.Error(err))
+		}
+		err = server.Send(&adminservice.StreamWorkflowReplicationMessagesResponse{})
+		if err != nil {
+			logger.Info("Got a message with error", tag.Error(err))
+		}
+		wg.Done()
+	}()
+	wg.Wait()
+	return nil
+}
+
+func TestEOFFromServer(t *testing.T) {
+	adminHandler := &hangupAdminServer{}
+	grpcHost := grpc.NewServer()
+	adminservice.RegisterAdminServiceServer(grpcHost, adminHandler)
+	listener, _ := net.Listen("tcp", "localhost:8566")
+	go func() {
+		_ = grpcHost.Serve(listener)
+	}()
+	time.Sleep(10 * time.Millisecond)
+	client, err := grpc.NewClient("localhost:8566", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	assert.NoError(t, err)
+	adminServiceClient := adminservice.NewAdminServiceClient(client)
+	clientCtx, cancelCtx := context.WithCancel(t.Context())
+	streamServer, err := adminServiceClient.StreamWorkflowReplicationMessages(clientCtx)
+	assert.NoError(t, err)
+	err = streamServer.Send(&adminservice.StreamWorkflowReplicationMessagesRequest{})
+	assert.NoError(t, err)
+	_, err = streamServer.Recv()
+	assert.NoError(t, err)
+	_, err = streamServer.Recv()
+	assert.NoError(t, err)
+	_, err = streamServer.Recv()
+	assert.True(t, err == io.EOF, "Should have thrown io.EOF, but got %v instead! Error() returned: %v", err, err.Error())
+	grpcHost.Stop()
+	_ = listener.Close()
+	cancelCtx()
+}
 
 func TestWiringWithEchoService(t *testing.T) {
 	echoServer := newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
