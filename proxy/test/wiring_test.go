@@ -12,7 +12,6 @@ import (
 
 	"github.com/gogo/status"
 	"github.com/stretchr/testify/assert"
-	"github.com/temporalio/s2s-proxy/config"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
@@ -20,6 +19,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 type (
