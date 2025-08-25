@@ -149,7 +149,7 @@ func newEchoServer(
 		logger.Fatal("Failed to create server transport", tag.Error(err))
 	}
 
-	clientTransport, err := tm.OpenClient(prometheus.Labels{}, clientConfig)
+	clientTransport, err := tm.OpenClient(clientConfig)
 	if err != nil {
 		logger.Fatal("Failed to create client transport", tag.Error(err))
 	}
