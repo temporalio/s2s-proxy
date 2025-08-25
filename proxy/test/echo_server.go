@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gogo/status"
-	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
