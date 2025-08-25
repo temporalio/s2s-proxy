@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"go.temporal.io/api/serviceerror"
@@ -53,7 +52,6 @@ func transferSourceToTarget(
 	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	wg *sync.WaitGroup,
 	shutdownChan channel.ShutdownOnce,
-	sendEOFToServer *atomic.Bool,
 	directionLabel string,
 	logger log.Logger,
 ) {
@@ -78,13 +76,11 @@ func transferSourceToTarget(
 		if err == io.EOF {
 			logger.Debug("sourceStreamClient.Recv encountered EOF", tag.Error(err))
 			metrics.AdminServiceStreamTerminatedCount.WithLabelValues(directionLabel, "source").Inc()
-			sendEOFToServer.Store(true)
 			return
 		}
 
 		if err != nil {
 			logger.Error("sourceStreamClient.Recv encountered error", tag.Error(err))
-			sendEOFToServer.Store(true)
 			return
 		}
 		switch attr := resp.GetAttributes().(type) {
@@ -98,7 +94,6 @@ func transferSourceToTarget(
 					logger.Debug("targetStreamServer.Send encountered EOF", tag.Error(err))
 					metrics.AdminServiceStreamTerminatedCount.WithLabelValues(directionLabel, "target").Inc()
 				}
-				sendEOFToServer.Store(true)
 				return
 			}
 			metrics.AdminServiceStreamReqCount.WithLabelValues(directionLabel).Inc()
@@ -106,7 +101,6 @@ func transferSourceToTarget(
 			logger.Error("sourceStreamClient.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
 				"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
 			))))
-			sendEOFToServer.Store(true)
 			return
 		}
 	}
@@ -117,7 +111,6 @@ func transferTargetToSource(
 	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	wg *sync.WaitGroup,
 	shutdownChan channel.ShutdownOnce,
-	sendEOFToServer *atomic.Bool,
 	directionLabel string,
 	logger log.Logger,
 ) {
@@ -159,7 +152,6 @@ func transferTargetToSource(
 		if err == io.EOF {
 			logger.Debug("targetStreamServer.Recv encountered EOF", tag.Error(err))
 			metrics.AdminServiceStreamTerminatedCount.WithLabelValues(directionLabel, "target").Inc()
-			sendEOFToServer.Store(true)
 			return
 		}
 
@@ -178,7 +170,6 @@ func transferTargetToSource(
 					logger.Debug("sourceStreamClient.Send encountered EOF", tag.Error(err))
 					metrics.AdminServiceStreamTerminatedCount.WithLabelValues(directionLabel, "source").Inc()
 				}
-				sendEOFToServer.Store(true)
 				return
 			}
 			metrics.AdminServiceStreamRespCount.WithLabelValues(directionLabel).Inc()
@@ -186,7 +177,6 @@ func transferTargetToSource(
 			logger.Error("targetStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
 				"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
 			))))
-			sendEOFToServer.Store(true)
 			return
 		}
 	}
