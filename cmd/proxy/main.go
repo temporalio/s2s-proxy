@@ -5,6 +5,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/urfave/cli/v2"
@@ -103,6 +104,11 @@ func startProxy(c *cli.Context) error {
 	if err := app.Err(); err != nil {
 		return err
 	}
+
+	proxyParams.Logger.Info("Golang runtime info",
+		tag.NewInt("GOMAXPROCS", runtime.GOMAXPROCS(0)), // 0 returns the current value
+		tag.NewInt("NumCPU", runtime.NumCPU()),
+	)
 
 	cfg := proxyParams.ConfigProvider.GetS2SProxyConfig()
 	startPProfHTTPServer(proxyParams.Logger, cfg.ProfilingConfig)
