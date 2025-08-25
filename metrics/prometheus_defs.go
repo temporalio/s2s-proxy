@@ -29,8 +29,11 @@ var (
 
 	// /proxy/proxy.go
 
-	GRPCServerMetrics = GetStandardGRPCInterceptor("direction")
-	ProxyStartCount   = DefaultCounter("proxy_start_count", "Emitted once per startup")
+	GRPCServerMetrics     = GetStandardGRPCInterceptor("direction")
+	ProxyStartCount       = DefaultCounter("proxy_start_count", "Emitted once on Go process start")
+	ProxyServiceCreated   = DefaultCounterVec("proxy_service_created", "Emitted once per service start", "direction")
+	ProxyServiceStopped   = DefaultCounterVec("proxy_service_stopped", "Emitted on service shutdown", "direction")
+	ProxyServiceRestarted = DefaultCounterVec("proxy_service_restarted", "Emitted on service shutdown", "direction")
 
 	// /transport/grpc.go
 	// Gratuitous hack: Until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783 is addressed,
@@ -84,6 +87,9 @@ func init() {
 
 	prometheus.MustRegister(GRPCServerMetrics)
 	prometheus.MustRegister(ProxyStartCount)
+	prometheus.MustRegister(ProxyServiceCreated)
+	prometheus.MustRegister(ProxyServiceStopped)
+	prometheus.MustRegister(ProxyServiceRestarted)
 
 	prometheus.MustRegister(GRPCOutboundClientMetrics)
 	prometheus.MustRegister(GRPCInboundClientMetrics)

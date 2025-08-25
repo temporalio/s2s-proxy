@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gogo/status"
-	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
@@ -149,7 +148,7 @@ func newEchoServer(
 		logger.Fatal("Failed to create server transport", tag.Error(err))
 	}
 
-	clientTransport, err := tm.OpenClient(prometheus.Labels{}, clientConfig)
+	clientTransport, err := tm.OpenClient(clientConfig)
 	if err != nil {
 		logger.Fatal("Failed to create client transport", tag.Error(err))
 	}

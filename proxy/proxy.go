@@ -29,6 +29,7 @@ type (
 		logger       log.Logger
 		server       *TemporalAPIServer
 		transManager *transport.TransportManager
+		metricLabels prometheus.Labels
 		shutDownCh   chan struct{}
 	}
 
@@ -184,10 +185,11 @@ func (ps *ProxyServer) start() error {
 
 	go func() {
 		for {
+			metrics.ProxyServiceCreated.With(ps.metricLabels).Inc()
 			// If using mux transport underneath, Open call will be blocked until
 			// underlying connection is established.
 			// Also note: GRPC requires the client interceptors (like metrics) to be defined on the transport, not on the client.
-			clientTransport, err := ps.transManager.OpenClient(prometheus.Labels{"direction": ps.opts.directionLabel()}, clientConfig)
+			clientTransport, err := ps.transManager.OpenClient(clientConfig)
 			if err != nil {
 				ps.logger.Error("Open client transport is failed", tag.Error(err))
 				return
@@ -215,10 +217,12 @@ func (ps *ProxyServer) start() error {
 
 			select {
 			case <-ps.shutDownCh:
+				metrics.ProxyServiceStopped.With(ps.metricLabels).Inc()
 				ps.stopServer()
 				return
 			case <-retryCh:
 				// If any closable transport is closed, try to restart the proxy server.
+				metrics.ProxyServiceRestarted.With(ps.metricLabels).Inc()
 				ps.stopServer()
 			}
 		}
@@ -243,6 +247,7 @@ func newProxyServer(
 		opts:         opts,
 		transManager: transManager,
 		logger:       logger,
+		metricLabels: prometheus.Labels{"direction": opts.directionLabel()},
 		shutDownCh:   make(chan struct{}),
 	}
 }
