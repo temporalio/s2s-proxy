@@ -10,12 +10,13 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
-	"github.com/temporalio/s2s-proxy/metrics"
 	"go.temporal.io/server/common/backoff"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
+
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type status int32
@@ -60,8 +61,8 @@ type (
 
 func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *muxConnectManager {
 	cm := &muxConnectManager{
-		config:             cfg,
-		logger:             log.With(logger, tag.NewStringTag("Name", cfg.Name), tag.NewStringTag("Mode", string(cfg.Mode))),
+		config: cfg,
+		logger: log.With(logger, tag.NewStringTag("Name", cfg.Name), tag.NewStringTag("Mode", string(cfg.Mode))),
 	}
 
 	cm.status.Store(int32(statusInitialized))
