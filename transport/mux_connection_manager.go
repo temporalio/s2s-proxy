@@ -10,13 +10,12 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"go.temporal.io/server/common/backoff"
-	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
-
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/metrics"
+	"go.temporal.io/server/common/backoff"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 )
 
 type status int32
@@ -47,7 +46,7 @@ var (
 )
 
 type (
-	muxConnectMananger struct {
+	muxConnectManager struct {
 		config       config.MuxTransportConfig
 		muxTransport *muxTransportImpl
 		shutdownCh   chan struct{}
@@ -59,17 +58,17 @@ type (
 	}
 )
 
-func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *muxConnectMananger {
-	cm := &muxConnectMananger{
-		config: cfg,
-		logger: log.With(logger, tag.NewStringTag("Name", cfg.Name), tag.NewStringTag("Mode", string(cfg.Mode))),
+func newMuxConnectManager(cfg config.MuxTransportConfig, logger log.Logger) *muxConnectManager {
+	cm := &muxConnectManager{
+		config:             cfg,
+		logger:             log.With(logger, tag.NewStringTag("Name", cfg.Name), tag.NewStringTag("Mode", string(cfg.Mode))),
 	}
 
 	cm.status.Store(int32(statusInitialized))
 	return cm
 }
 
-func (m *muxConnectMananger) open() (MuxTransport, error) {
+func (m *muxConnectManager) open() (MuxTransport, error) {
 	if !m.isStarted() {
 		return nil, fmt.Errorf("connection manager is not running")
 	}
@@ -107,7 +106,7 @@ func (m *muxConnectMananger) open() (MuxTransport, error) {
 	return muxTransport, nil
 }
 
-func (m *muxConnectMananger) isShuttingDown() bool {
+func (m *muxConnectManager) isShuttingDown() bool {
 	select {
 	case <-m.shutdownCh:
 		return true
@@ -116,7 +115,7 @@ func (m *muxConnectMananger) isShuttingDown() bool {
 	}
 }
 
-func (m *muxConnectMananger) serverLoop(metricLabels []string, setting config.TCPServerSetting) error {
+func (m *muxConnectManager) serverLoop(metricLabels []string, setting config.TCPServerSetting) error {
 	var tlsConfig *tls.Config
 	var err error
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
@@ -188,7 +187,7 @@ func (m *muxConnectMananger) serverLoop(metricLabels []string, setting config.TC
 	return nil
 }
 
-func (m *muxConnectMananger) clientLoop(metricLabels []string, setting config.TCPClientSetting) error {
+func (m *muxConnectManager) clientLoop(metricLabels []string, setting config.TCPClientSetting) error {
 	var tlsConfig *tls.Config
 	var err error
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
@@ -286,7 +285,7 @@ func observeYamuxSession(session *yamux.Session, config config.MuxTransportConfi
 	}
 }
 
-func (m *muxConnectMananger) start() error {
+func (m *muxConnectManager) start() error {
 	if !m.status.CompareAndSwap(
 		int32(statusInitialized),
 		int32(statusStarted),
@@ -324,15 +323,15 @@ func (m *muxConnectMananger) start() error {
 	return nil
 }
 
-func (m *muxConnectMananger) isStarted() bool {
+func (m *muxConnectManager) isStarted() bool {
 	return m.getStatus() == statusStarted
 }
 
-func (m *muxConnectMananger) getStatus() status {
+func (m *muxConnectManager) getStatus() status {
 	return status(m.status.Load())
 }
 
-func (m *muxConnectMananger) stop() {
+func (m *muxConnectManager) stop() {
 	if !m.status.CompareAndSwap(
 		int32(statusStarted),
 		int32(statusStopped),
@@ -345,7 +344,7 @@ func (m *muxConnectMananger) stop() {
 	m.logger.Info("Connection manager stopped")
 }
 
-func (m *muxConnectMananger) waitForReconnect() {
+func (m *muxConnectManager) waitForReconnect() {
 	// Notify transport is connected
 	close(m.connectedCh)
 

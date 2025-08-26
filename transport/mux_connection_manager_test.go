@@ -60,7 +60,7 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 	}, nil
 }
 
-func connect(t *testing.T, clientCM *muxConnectMananger, serverCM *muxConnectMananger) (MuxTransport, MuxTransport) {
+func connect(t *testing.T, clientCM *muxConnectManager, serverCM *muxConnectManager) (MuxTransport, MuxTransport) {
 	clientTs, err := clientCM.open()
 	require.NoError(t, err)
 	serverTs, err := serverCM.open()
