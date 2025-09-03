@@ -23,10 +23,10 @@ mux:
 #   mode: "lcm"
 #   localShardCount: 2
 #   remoteShardCount: 3
-shardCount:
-  mode: "fixed"
-  localShardCount: 2
-  remoteShardCount: 3
+# shardCount:
+#   mode: "fixed"
+#   localShardCount: 2
+#   remoteShardCount: 3
 profiling:
   pprofAddress: "localhost:6061"
 memberlist:
@@ -38,9 +38,8 @@ memberlist:
   joinAddrs:
     - "localhost:6135"
   proxyAddresses:
-    "proxy-node-1": "localhost:7001"
-    "proxy-node-2": "proxy-node-2:7001"
-    "proxy-node-3": "proxy-node-3:7001"
+    "proxy-node-a-1": "localhost:6133"
+    "proxy-node-a-2": "localhost:6233"
   # TCP-only configuration for restricted networks
   tcpOnly: true           # Use TCP transport only, disable UDP
   disableTCPPings: true   # Disable TCP pings for faster convergence

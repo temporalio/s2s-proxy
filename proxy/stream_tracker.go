@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+const (
+	StreamRoleSender    = "Sender"
+	StreamRoleReceiver  = "Receiver"
+	StreamRoleForwarder = "Forwarder"
+)
+
 // StreamTracker tracks active gRPC streams for debugging
 type StreamTracker struct {
 	mu      sync.RWMutex
@@ -20,19 +26,22 @@ func NewStreamTracker() *StreamTracker {
 }
 
 // RegisterStream adds a new active stream
-func (st *StreamTracker) RegisterStream(id, method, direction, clientShard, serverShard string) {
+func (st *StreamTracker) RegisterStream(id, method, direction, clientShard, serverShard, role string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
 	now := time.Now()
 	st.streams[id] = &StreamInfo{
-		ID:          id,
-		Method:      method,
-		Direction:   direction,
-		ClientShard: clientShard,
-		ServerShard: serverShard,
-		StartTime:   now,
-		LastSeen:    now,
+		ID:            id,
+		Method:        method,
+		Direction:     direction,
+		ClientShard:   clientShard,
+		ServerShard:   serverShard,
+		Role:          role,
+		StartTime:     now,
+		LastSeen:      now,
+		SenderDebug:   &SenderDebugInfo{},
+		ReceiverDebug: &ReceiverDebugInfo{},
 	}
 }
 
@@ -69,12 +78,72 @@ func (st *StreamTracker) UpdateStreamReplicationMessages(id string, exclusiveHig
 	}
 }
 
+// UpdateStreamLastTaskIDs updates the last seen task ids for a stream
+func (st *StreamTracker) UpdateStreamLastTaskIDs(id string, taskIDs []int64) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	if stream, exists := st.streams[id]; exists {
+		stream.LastSeen = time.Now()
+		stream.LastTaskIDs = taskIDs
+	}
+}
+
 // UnregisterStream removes a stream from tracking
 func (st *StreamTracker) UnregisterStream(id string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
 	delete(st.streams, id)
+}
+
+// SenderDebugInfo captures proxy-stream-sender internals for debugging
+type SenderDebugInfo struct {
+	RingStartProxyID      int64            `json:"ring_start_proxy_id,omitempty"`
+	RingSize              int              `json:"ring_size,omitempty"`
+	RingCapacity          int              `json:"ring_capacity,omitempty"`
+	RingHead              int              `json:"ring_head,omitempty"`
+	NextProxyTaskID       int64            `json:"next_proxy_task_id,omitempty"`
+	PrevAckBySource       map[string]int64 `json:"prev_ack_by_source,omitempty"`
+	LastHighBySource      map[string]int64 `json:"last_high_by_source,omitempty"`
+	LastProxyHighBySource map[string]int64 `json:"last_proxy_high_by_source,omitempty"`
+	EntriesPreview        []ProxyIDEntry   `json:"entries_preview,omitempty"`
+}
+
+// ProxyIDEntry is a preview of a ring buffer entry
+type ProxyIDEntry struct {
+	ProxyID     int64  `json:"proxy_id"`
+	SourceShard string `json:"source_shard"`
+	SourceTask  int64  `json:"source_task"`
+}
+
+// ReceiverDebugInfo captures proxy-stream-receiver ack aggregation state
+type ReceiverDebugInfo struct {
+	AckByTarget               map[string]int64 `json:"ack_by_target,omitempty"`
+	LastAggregatedMin         int64            `json:"last_aggregated_min,omitempty"`
+	LastExclusiveHighOriginal int64            `json:"last_exclusive_high_original,omitempty"`
+}
+
+// UpdateStreamSenderDebug sets the sender debug snapshot for a stream
+func (st *StreamTracker) UpdateStreamSenderDebug(id string, info *SenderDebugInfo) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	if stream, exists := st.streams[id]; exists {
+		stream.SenderDebug = info
+		stream.LastSeen = time.Now()
+	}
+}
+
+// UpdateStreamReceiverDebug sets the receiver debug snapshot for a stream
+func (st *StreamTracker) UpdateStreamReceiverDebug(id string, info *ReceiverDebugInfo) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	if stream, exists := st.streams[id]; exists {
+		stream.ReceiverDebug = info
+		stream.LastSeen = time.Now()
+	}
 }
 
 // GetActiveStreams returns a copy of all active streams

@@ -29,5 +29,3 @@ frontend.persistenceMaxQPS:
     constraints: {}
 history.shardUpdateMinInterval:
   - value: 1s
-history.ReplicationAllowMultiSourceShard:
-  - value: true

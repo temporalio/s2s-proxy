@@ -303,6 +303,10 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		targetMetadata.Set(history.MetadataKeyServerShardID, strconv.Itoa(int(newSourceShardID.ShardID)))
 	}
 
+	if s.shardCountConfig.Mode == config.ShardCountRouting {
+		return s.streamRouting()
+	}
+
 	forwarder := newStreamForwarder(
 		s.adminClient,
 		targetStreamServer,
@@ -318,6 +322,13 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 	// Do not try to transfer EOF from the source here. Just returning "nil" is sufficient to terminate the stream
 	// to the client.
+	return nil
+}
+
+// streamRouting: placeholder for future stream routing implementation
+func (s *adminServiceProxyServer) streamRouting() error {
+	_ = &proxyStreamSender{}
+	_ = &proxyStreamReceiver{}
 	return nil
 }
 

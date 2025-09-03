@@ -12,6 +12,7 @@ import (
 
 	"github.com/hashicorp/memberlist"
 	"go.temporal.io/server/client/history"
+	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
@@ -41,6 +42,8 @@ type (
 		GetLocalShards() []history.ClusterShardID
 		// GetShardInfo returns debug information about shard distribution
 		GetShardInfo() ShardDebugInfo
+		// DeliverAckToShardOwner routes an ACK request to the appropriate shard owner (local or remote)
+		DeliverAckToShardOwner(srcShard history.ClusterShardID, routedAck *RoutedAck, proxy *Proxy, shutdownChan channel.ShutdownOnce, logger log.Logger)
 	}
 
 	shardManagerImpl struct {
@@ -328,6 +331,37 @@ func (sm *shardManagerImpl) GetShardInfo() ShardDebugInfo {
 	}
 }
 
+// DeliverAckToShardOwner routes an ACK to the local shard owner or records intent for remote forwarding.
+func (sm *shardManagerImpl) DeliverAckToShardOwner(
+	sourceShard history.ClusterShardID,
+	routedAck *RoutedAck,
+	proxy *Proxy,
+	shutdownChan channel.ShutdownOnce,
+	logger log.Logger,
+) {
+	if sm.IsLocalShard(sourceShard) {
+		if proxy != nil {
+			if ackCh, ok := proxy.GetLocalAckChan(sourceShard); ok {
+				select {
+				case ackCh <- *routedAck:
+				case <-shutdownChan.Channel():
+					return
+				}
+			} else {
+				logger.Warn("No local ack channel for source shard", tag.NewStringTag("shard", ClusterShardIDtoString(sourceShard)))
+			}
+		}
+		return
+	}
+
+	// TODO: forward to remote owner via inter-proxy transport.
+	if owner, ok := sm.GetShardOwner(sourceShard); ok {
+		logger.Info("ACK belongs to remote source shard owner", tag.NewStringTag("owner", owner), tag.NewStringTag("shard", ClusterShardIDtoString(sourceShard)))
+	} else {
+		logger.Warn("Unable to determine source shard owner for ACK", tag.NewStringTag("shard", ClusterShardIDtoString(sourceShard)))
+	}
+}
+
 func (sm *shardManagerImpl) broadcastShardChange(msgType string, shard history.ClusterShardID) {
 	if !sm.started || sm.ml == nil {
 		return
@@ -346,9 +380,21 @@ func (sm *shardManagerImpl) broadcastShardChange(msgType string, shard history.C
 		return
 	}
 
-	err = sm.ml.SendReliable(sm.ml.Members()[0], data)
-	if err != nil {
-		sm.logger.Error("Failed to broadcast shard change", tag.Error(err))
+	for _, member := range sm.ml.Members() {
+		// Skip sending to self node
+		if member.Name == sm.config.NodeName {
+			continue
+		}
+
+		// Send in goroutine to make it non-blocking
+		go func(m *memberlist.Node) {
+			err := sm.ml.SendReliable(m, data)
+			if err != nil {
+				sm.logger.Error("Failed to broadcast shard change",
+					tag.Error(err),
+					tag.NewStringTag("target_node", m.Name))
+			}
+		}(member)
 	}
 }
 
@@ -495,5 +541,17 @@ func (nsm *noopShardManager) GetShardInfo() ShardDebugInfo {
 		ClusterSize:       0,
 		RemoteShards:      make(map[string]string),
 		RemoteShardCounts: make(map[string]int),
+	}
+}
+
+func (nsm *noopShardManager) DeliverAckToShardOwner(srcShard history.ClusterShardID, routedAck *RoutedAck, proxy *Proxy, shutdownChan channel.ShutdownOnce, logger log.Logger) {
+	if proxy != nil {
+		if ackCh, ok := proxy.GetLocalAckChan(srcShard); ok {
+			select {
+			case ackCh <- *routedAck:
+			case <-shutdownChan.Channel():
+				return
+			}
+		}
 	}
 }

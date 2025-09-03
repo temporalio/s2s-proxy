@@ -11,20 +11,25 @@ import (
 )
 
 type (
+
 	// StreamInfo represents information about an active gRPC stream
 	StreamInfo struct {
-		ID                         string     `json:"id"`
-		Method                     string     `json:"method"`
-		Direction                  string     `json:"direction"`
-		ClientShard                string     `json:"client_shard"`
-		ServerShard                string     `json:"server_shard"`
-		StartTime                  time.Time  `json:"start_time"`
-		LastSeen                   time.Time  `json:"last_seen"`
-		TotalDuration              string     `json:"total_duration"`
-		IdleDuration               string     `json:"idle_duration"`
-		LastSyncWatermark          *int64     `json:"last_sync_watermark,omitempty"`
-		LastSyncWatermarkTime      *time.Time `json:"last_sync_watermark_time,omitempty"`
-		LastExclusiveHighWatermark *int64     `json:"last_exclusive_high_watermark,omitempty"`
+		ID                         string             `json:"id"`
+		Method                     string             `json:"method"`
+		Direction                  string             `json:"direction"`
+		Role                       string             `json:"role,omitempty"`
+		ClientShard                string             `json:"client_shard"`
+		ServerShard                string             `json:"server_shard"`
+		StartTime                  time.Time          `json:"start_time"`
+		LastSeen                   time.Time          `json:"last_seen"`
+		TotalDuration              string             `json:"total_duration"`
+		IdleDuration               string             `json:"idle_duration"`
+		LastSyncWatermark          *int64             `json:"last_sync_watermark,omitempty"`
+		LastSyncWatermarkTime      *time.Time         `json:"last_sync_watermark_time,omitempty"`
+		LastExclusiveHighWatermark *int64             `json:"last_exclusive_high_watermark,omitempty"`
+		LastTaskIDs                []int64            `json:"last_task_ids"`
+		SenderDebug                *SenderDebugInfo   `json:"sender_debug,omitempty"`
+		ReceiverDebug              *ReceiverDebugInfo `json:"receiver_debug,omitempty"`
 	}
 
 	// ShardDebugInfo contains debug information about shard distribution

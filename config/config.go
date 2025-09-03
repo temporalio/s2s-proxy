@@ -41,6 +41,7 @@ const (
 	ShardCountDefault ShardCountMode = ""
 	ShardCountLCM     ShardCountMode = "lcm"
 	ShardCountFixed   ShardCountMode = "fixed"
+	ShardCountRouting ShardCountMode = "routing"
 )
 
 type HealthCheckProtocol string
