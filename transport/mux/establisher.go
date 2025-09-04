@@ -1,4 +1,4 @@
-package muxproviders
+package mux
 
 import (
 	"context"

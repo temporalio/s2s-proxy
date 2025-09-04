@@ -13,7 +13,7 @@ import (
 	"go.temporal.io/server/common/log/tag"
 
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/transport/muxproviders"
+	"github.com/temporalio/s2s-proxy/transport/mux"
 )
 
 type (
@@ -104,8 +104,8 @@ func (m *muxManager) Start() error {
 				string(m.config.Mode),
 				m.config.Name,
 			}
-			var provider *muxproviders.MuxProvider
-			provider, err = muxproviders.NewMuxEstablisherProvider(m.config.Name, m.ReplaceConnection, m.config.Client, metricLabels, m.logger, m.ctx)
+			var provider *mux.MuxProvider
+			provider, err = mux.NewMuxEstablisherProvider(m.config.Name, m.ReplaceConnection, m.config.Client, metricLabels, m.logger, m.ctx)
 			if err != nil {
 				return
 			}
@@ -116,8 +116,8 @@ func (m *muxManager) Start() error {
 				string(m.config.Mode),
 				m.config.Name,
 			}
-			var provider *muxproviders.MuxProvider
-			provider, err = muxproviders.NewMuxReceiverProvider(m.config.Name, m.ReplaceConnection, m.config.Server, metricLabels, m.logger, m.ctx)
+			var provider *mux.MuxProvider
+			provider, err = mux.NewMuxReceiverProvider(m.config.Name, m.ReplaceConnection, m.config.Server, metricLabels, m.logger, m.ctx)
 			if err != nil {
 				return
 			}
