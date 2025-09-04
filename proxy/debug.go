@@ -12,24 +12,51 @@ import (
 
 type (
 
+	// ProxyIDEntry is a preview of a ring buffer entry
+	ProxyIDEntry struct {
+		ProxyID     int64  `json:"proxy_id"`
+		SourceShard string `json:"source_shard"`
+		SourceTask  int64  `json:"source_task"`
+	}
+
+	// SenderDebugInfo captures proxy-stream-sender internals for debugging
+	SenderDebugInfo struct {
+		RingStartProxyID      int64            `json:"ring_start_proxy_id"`
+		RingSize              int              `json:"ring_size"`
+		RingCapacity          int              `json:"ring_capacity"`
+		RingHead              int              `json:"ring_head"`
+		NextProxyTaskID       int64            `json:"next_proxy_task_id"`
+		PrevAckBySource       map[string]int64 `json:"prev_ack_by_source"`
+		LastHighBySource      map[string]int64 `json:"last_high_by_source"`
+		LastProxyHighBySource map[string]int64 `json:"last_proxy_high_by_source"`
+		EntriesPreview        []ProxyIDEntry   `json:"entries_preview"`
+	}
+
+	// ReceiverDebugInfo captures proxy-stream-receiver ack aggregation state
+	ReceiverDebugInfo struct {
+		AckByTarget               map[string]int64 `json:"ack_by_target"`
+		LastAggregatedMin         int64            `json:"last_aggregated_min"`
+		LastExclusiveHighOriginal int64            `json:"last_exclusive_high_original"`
+	}
+
 	// StreamInfo represents information about an active gRPC stream
 	StreamInfo struct {
 		ID                         string             `json:"id"`
 		Method                     string             `json:"method"`
 		Direction                  string             `json:"direction"`
-		Role                       string             `json:"role,omitempty"`
+		Role                       string             `json:"role"`
 		ClientShard                string             `json:"client_shard"`
 		ServerShard                string             `json:"server_shard"`
 		StartTime                  time.Time          `json:"start_time"`
 		LastSeen                   time.Time          `json:"last_seen"`
 		TotalDuration              string             `json:"total_duration"`
 		IdleDuration               string             `json:"idle_duration"`
-		LastSyncWatermark          *int64             `json:"last_sync_watermark,omitempty"`
-		LastSyncWatermarkTime      *time.Time         `json:"last_sync_watermark_time,omitempty"`
-		LastExclusiveHighWatermark *int64             `json:"last_exclusive_high_watermark,omitempty"`
+		LastSyncWatermark          *int64             `json:"last_sync_watermark"`
+		LastSyncWatermarkTime      *time.Time         `json:"last_sync_watermark_time"`
+		LastExclusiveHighWatermark *int64             `json:"last_exclusive_high_watermark"`
 		LastTaskIDs                []int64            `json:"last_task_ids"`
-		SenderDebug                *SenderDebugInfo   `json:"sender_debug,omitempty"`
-		ReceiverDebug              *ReceiverDebugInfo `json:"receiver_debug,omitempty"`
+		SenderDebug                *SenderDebugInfo   `json:"sender_debug"`
+		ReceiverDebug              *ReceiverDebugInfo `json:"receiver_debug"`
 	}
 
 	// ShardDebugInfo contains debug information about shard distribution

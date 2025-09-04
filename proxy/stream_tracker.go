@@ -97,33 +97,6 @@ func (st *StreamTracker) UnregisterStream(id string) {
 	delete(st.streams, id)
 }
 
-// SenderDebugInfo captures proxy-stream-sender internals for debugging
-type SenderDebugInfo struct {
-	RingStartProxyID      int64            `json:"ring_start_proxy_id,omitempty"`
-	RingSize              int              `json:"ring_size,omitempty"`
-	RingCapacity          int              `json:"ring_capacity,omitempty"`
-	RingHead              int              `json:"ring_head,omitempty"`
-	NextProxyTaskID       int64            `json:"next_proxy_task_id,omitempty"`
-	PrevAckBySource       map[string]int64 `json:"prev_ack_by_source,omitempty"`
-	LastHighBySource      map[string]int64 `json:"last_high_by_source,omitempty"`
-	LastProxyHighBySource map[string]int64 `json:"last_proxy_high_by_source,omitempty"`
-	EntriesPreview        []ProxyIDEntry   `json:"entries_preview,omitempty"`
-}
-
-// ProxyIDEntry is a preview of a ring buffer entry
-type ProxyIDEntry struct {
-	ProxyID     int64  `json:"proxy_id"`
-	SourceShard string `json:"source_shard"`
-	SourceTask  int64  `json:"source_task"`
-}
-
-// ReceiverDebugInfo captures proxy-stream-receiver ack aggregation state
-type ReceiverDebugInfo struct {
-	AckByTarget               map[string]int64 `json:"ack_by_target,omitempty"`
-	LastAggregatedMin         int64            `json:"last_aggregated_min,omitempty"`
-	LastExclusiveHighOriginal int64            `json:"last_exclusive_high_original,omitempty"`
-}
-
 // UpdateStreamSenderDebug sets the sender debug snapshot for a stream
 func (st *StreamTracker) UpdateStreamSenderDebug(id string, info *SenderDebugInfo) {
 	st.mu.Lock()

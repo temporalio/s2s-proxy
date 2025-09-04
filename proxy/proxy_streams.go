@@ -426,7 +426,9 @@ func (s *proxyStreamSender) sendReplicationMessages(
 					s.idRing.Append(proxyID, routed.SourceShard, original)
 					// rewrite id
 					t.SourceTaskId = proxyID
-					t.RawTaskInfo.TaskId = proxyID
+					if t.RawTaskInfo != nil {
+						t.RawTaskInfo.TaskId = proxyID
+					}
 					proxyIDs = append(proxyIDs, proxyID)
 				}
 				s.mu.Unlock()
@@ -435,7 +437,7 @@ func (s *proxyStreamSender) sendReplicationMessages(
 
 				// Ensure exclusive high watermark is in proxy task ID space
 				if len(m.Messages.ReplicationTasks) > 0 {
-					m.Messages.ExclusiveHighWatermark = m.Messages.ReplicationTasks[len(m.Messages.ReplicationTasks)-1].RawTaskInfo.TaskId + 1
+					m.Messages.ExclusiveHighWatermark = m.Messages.ReplicationTasks[len(m.Messages.ReplicationTasks)-1].SourceTaskId + 1
 				} else {
 					// No tasks in this batch: allocate a synthetic proxy task id mapping
 					s.mu.Lock()
