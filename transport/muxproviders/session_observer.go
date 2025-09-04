@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
+
 	"github.com/temporalio/s2s-proxy/metrics"
 )
 

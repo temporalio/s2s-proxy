@@ -8,11 +8,12 @@ import (
 	"sync"
 
 	"github.com/hashicorp/yamux"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
+
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/metrics"
-	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
 )
 
 // NewMuxReceiverProvider runs a TCP server and waits for a client to connect. Once a connection is established and
@@ -60,5 +61,8 @@ func (r *receivingConnProvider) GetConnection() (net.Conn, error) {
 }
 
 func (r *receivingConnProvider) Close() {
-	r.listener.Close()
+	err := r.listener.Close()
+	if err != nil {
+		r.logger.Fatal("listener.Close failed", tag.Error(err))
+	}
 }

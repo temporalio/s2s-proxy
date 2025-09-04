@@ -6,9 +6,10 @@ import (
 	"sync"
 
 	"github.com/hashicorp/yamux"
-	"github.com/temporalio/s2s-proxy/metrics"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
+
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type (
@@ -29,7 +30,7 @@ type (
 	SetTransportCallback func(session *yamux.Session, conn net.Conn)
 	// connProvider represents a way to get connections, either as a client or a server. MuxProvider guarantees that
 	// Close is called when the provider exits
-	connProvider         interface {
+	connProvider interface {
 		GetConnection() (net.Conn, error)
 		Close()
 	}

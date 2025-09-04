@@ -9,10 +9,11 @@ import (
 	"sync/atomic"
 
 	"github.com/hashicorp/yamux"
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/transport/muxproviders"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
+
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/transport/muxproviders"
 )
 
 type (
@@ -31,9 +32,10 @@ type (
 )
 
 func (s *SessionWithConn) IsClosed() bool {
-	return s.IsClosed()
+	return s.session.IsClosed()
 }
 
+// nolint:unused
 func newMuxManager(cfg config.MuxTransportConfig, logger log.Logger, ctx context.Context) *muxManager {
 	return &muxManager{
 		config:        cfg,
