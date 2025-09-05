@@ -1,12 +1,11 @@
 package mux
 
 import (
-	"context"
-	"fmt"
 	"net"
 	"sync"
 
 	"github.com/hashicorp/yamux"
+	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
@@ -25,11 +24,10 @@ type (
 		setNewTransport SetTransportCallback
 		metricLabels    []string
 		logger          log.Logger
-		shutDown        context.Context
-		reportFatal     context.CancelCauseFunc
+		shutDown        channel.ShutdownOnce
 		startOnce       sync.Once
 	}
-	SetTransportCallback func(session *yamux.Session, conn net.Conn)
+	SetTransportCallback func(swc *SessionWithConn)
 	// connProvider represents a way to get connections, either as a client or a server. MuxProvider guarantees that
 	// Close is called when the provider exits
 	connProvider interface {
@@ -37,6 +35,29 @@ type (
 		CloseProvider()
 	}
 )
+
+// NewMuxProvider creates a new custom MuxProvider with the provided data.
+func NewMuxProvider(name string,
+	connProvider connProvider,
+	sessionFn func(net.Conn) (*yamux.Session, error),
+	onDisconnectFn func(),
+	setNewTransport SetTransportCallback,
+	metricLabels []string,
+	logger log.Logger,
+	shutDown channel.ShutdownOnce,
+) *MuxProvider {
+	return &MuxProvider{
+		name:            name,
+		connProvider:    connProvider,
+		sessionFn:       sessionFn,
+		onDisconnectFn:  onDisconnectFn,
+		setNewTransport: setNewTransport,
+		metricLabels:    metricLabels,
+		logger:          logger,
+		shutDown:        shutDown,
+		startOnce:       sync.Once{},
+	}
+}
 
 // Start starts the MuxProvider. MuxProvider can only be started once, and once they are started they will run until
 // the provided context is cancelled. The MuxProvider will cancel the context itself if it exits due to an unrecoverable
@@ -47,12 +68,13 @@ func (m *MuxProvider) Start() {
 		var err error
 		go func() {
 			defer func() {
-				m.reportFatal(fmt.Errorf("mux provider goroutine stopped! Latest error: %w", err))
+				m.shutDown.Shutdown()
 				m.connProvider.CloseProvider()
+				m.setNewTransport(nil)
 			}()
 		connect:
 			for {
-				if m.shutDown.Err() != nil {
+				if m.shutDown.IsShutdown() {
 					return
 				}
 				m.logger.Info("mux session watcher starting")
@@ -72,9 +94,13 @@ func (m *MuxProvider) Start() {
 					continue connect
 				}
 
-				m.setNewTransport(session, conn)
+				m.setNewTransport(&SessionWithConn{session: session, conn: conn})
 				metrics.MuxConnectionEstablish.WithLabelValues(m.metricLabels...).Inc()
-				<-session.CloseChan()
+				// Wait for shutdown or session reconnect
+				select {
+				case <-session.CloseChan():
+				case <-m.shutDown.Channel():
+				}
 				m.onDisconnectFn()
 			}
 		}()

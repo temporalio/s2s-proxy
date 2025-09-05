@@ -1,7 +1,6 @@
-package transport
+package mux
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -9,22 +8,21 @@ import (
 	"sync/atomic"
 
 	"github.com/hashicorp/yamux"
+	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/transport/mux"
 )
 
 type (
-	muxManager struct {
+	MuxManager struct {
 		config        config.MuxTransportConfig
 		muxConnection atomic.Pointer[SessionWithConn] // Underlying mux value. This starts as nil, and is set by the provider.
 		connAvailable sync.Cond                       // Condition lock for muxConnection. Used to notify threads waiting in WithConnection
-		init          sync.Once                       // Ensures a muxManager can only be started once
+		init          sync.Once                       // Ensures a MuxManager can only be started once
 		logger        log.Logger
-		ctx           context.Context         // when cancelled, the underlying transports will be stopped too
-		reportFatal   context.CancelCauseFunc // Used by the mux provider to report that it has died
+		shutDown      channel.ShutdownOnce // when cancelled, the underlying transports will be stopped too
 	}
 	SessionWithConn struct {
 		session *yamux.Session
@@ -37,30 +35,29 @@ func (s *SessionWithConn) IsClosed() bool {
 }
 
 // nolint:unused
-func newMuxManager(cfg config.MuxTransportConfig, logger log.Logger, ctx context.Context) (*muxManager, context.CancelCauseFunc) {
-	muxCtx, cancel := context.WithCancelCause(ctx)
-	muxMgr := &muxManager{
+func newMuxManager(cfg config.MuxTransportConfig, logger log.Logger) *MuxManager {
+	muxMgr := &MuxManager{
 		config:        cfg,
 		muxConnection: atomic.Pointer[SessionWithConn]{},
 		connAvailable: sync.Cond{L: &sync.Mutex{}},
 		init:          sync.Once{},
-		logger:        log.With(logger, tag.NewStringTag("component", "muxManager")),
-		ctx:           muxCtx,
+		logger:        log.With(logger, tag.NewStringTag("component", "MuxManager")),
+		shutDown:      channel.NewShutdownOnce(),
 	}
-	// Wrap the typical cancel function with one that ensures all blocked threads are freed
-	muxMgr.reportFatal = func(cause error) {
-		cancel(cause)
-		muxMgr.replaceConnection(nil)
-	}
-	return muxMgr, muxMgr.reportFatal
+	return muxMgr
+}
+
+func (m *MuxManager) ShutDown() {
+	m.shutDown.Shutdown()
+	m.ReplaceConnection(nil)
 }
 
 // WithConnection waits on connAvailable's condition until the pointer is non-null, then runs the provided function
 // with that pointer.
-func (m *muxManager) WithConnection(f func(*SessionWithConn) error) error {
+func (m *MuxManager) WithConnection(f func(*SessionWithConn) error) error {
 	m.connAvailable.L.Lock()
 	for {
-		if m.ctx.Err() != nil {
+		if m.shutDown.IsShutdown() {
 			m.connAvailable.L.Unlock()
 			return errors.New("the mux manager is shutting down")
 		}
@@ -79,7 +76,7 @@ func (m *muxManager) WithConnection(f func(*SessionWithConn) error) error {
 
 // TryConnectionOrElse grabs whatever connection is available and runs f on that connection.
 // The received SessionWithConn is guaranteed to be nil, a valid yamux session, or a closed yamux session
-func TryConnectionOrElse[T any](m *muxManager, f func(*SessionWithConn) T, other T) T {
+func TryConnectionOrElse[T any](m *MuxManager, f func(*SessionWithConn) T, other T) T {
 	conn := m.muxConnection.Load()
 	if conn == nil {
 		return other
@@ -87,8 +84,7 @@ func TryConnectionOrElse[T any](m *muxManager, f func(*SessionWithConn) T, other
 	return f(conn)
 }
 
-// Duplicated here so that we can swap in a nil pointer on close
-func (m *muxManager) replaceConnection(swc *SessionWithConn) {
+func (m *MuxManager) ReplaceConnection(swc *SessionWithConn) {
 	m.connAvailable.L.Lock()
 	defer m.connAvailable.L.Unlock()
 	// Make sure the existing conn is fully closed
@@ -103,14 +99,9 @@ func (m *muxManager) replaceConnection(swc *SessionWithConn) {
 	m.connAvailable.Broadcast()
 }
 
-func (m *muxManager) ReplaceConnection(session *yamux.Session, conn net.Conn) {
-	m.replaceConnection(&SessionWithConn{session: session, conn: conn})
-}
-
 // Start looks at the config, constructs the appropriate MuxProvider and Starts it. Once started, the provider will
-// run until the context provided to this muxManager is cancelled. If the provider panics for some reason, it will
-// call reportFatal, which should cancel the muxManager's context.
-func (m *muxManager) Start() error {
+// run until shutDown is closed. If the provider panics for some reason, it will close shutDown itself and terminate.
+func (m *MuxManager) Start() error {
 	var err error
 	m.init.Do(func() {
 		switch m.config.Mode {
@@ -120,8 +111,8 @@ func (m *muxManager) Start() error {
 				string(m.config.Mode),
 				m.config.Name,
 			}
-			var provider *mux.MuxProvider
-			provider, err = mux.NewMuxEstablisherProvider(m.config.Name, m.ReplaceConnection, m.config.Client, metricLabels, m.logger, m.ctx, m.reportFatal)
+			var provider *MuxProvider
+			provider, err = NewMuxEstablisherProvider(m.config.Name, m.ReplaceConnection, m.config.Client, metricLabels, m.logger, m.shutDown)
 			if err != nil {
 				return
 			}
@@ -132,8 +123,8 @@ func (m *muxManager) Start() error {
 				string(m.config.Mode),
 				m.config.Name,
 			}
-			var provider *mux.MuxProvider
-			provider, err = mux.NewMuxReceiverProvider(m.config.Name, m.ReplaceConnection, m.config.Server, metricLabels, m.logger, m.ctx, m.reportFatal)
+			var provider *MuxProvider
+			provider, err = NewMuxReceiverProvider(m.config.Name, m.ReplaceConnection, m.config.Server, metricLabels, m.logger)
 			if err != nil {
 				return
 			}

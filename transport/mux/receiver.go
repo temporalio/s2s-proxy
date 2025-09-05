@@ -1,13 +1,12 @@
 package mux
 
 import (
-	"context"
 	"crypto/tls"
 	"errors"
 	"net"
-	"sync"
 
 	"github.com/hashicorp/yamux"
+	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
@@ -18,7 +17,7 @@ import (
 
 // NewMuxReceiverProvider runs a TCP server and waits for a client to connect. Once a connection is established and
 // authenticated with the TLS config, it starts a yamux session and returns the details using transportFn
-func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setting config.TCPServerSetting, metricLabels []string, upstreamLog log.Logger, shutDown context.Context, reportFatal context.CancelCauseFunc) (*MuxProvider, error) {
+func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setting config.TCPServerSetting, metricLabels []string, upstreamLog log.Logger) (*MuxProvider, error) {
 	logger := log.With(upstreamLog, tag.NewStringTag("component", "receivingMux"), tag.NewStringTag("listenAddr", setting.ListenAddress))
 	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
@@ -35,29 +34,17 @@ func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setti
 	if err != nil {
 		return nil, err
 	}
-	connPv := &receivingConnProvider{listener, tlsWrapper, logger, func() bool { return shutDown.Err() != nil }, metricLabels}
+	connPv := &receivingConnProvider{listener, tlsWrapper, logger, metricLabels}
 	sessionFn := func(conn net.Conn) (*yamux.Session, error) { return yamux.Server(conn, nil) }
 	disconnectFn := func() {}
-	return &MuxProvider{
-		name:            name,
-		connProvider:    connPv,
-		sessionFn:       sessionFn,
-		onDisconnectFn:  disconnectFn,
-		setNewTransport: transportFn,
-		metricLabels:    metricLabels,
-		logger:          logger,
-		shutDown:        shutDown,
-		reportFatal:     reportFatal,
-		startOnce:       sync.Once{},
-	}, nil
+	return NewMuxProvider(name, connPv, sessionFn, disconnectFn, transportFn, metricLabels, logger, channel.NewShutdownOnce()), nil
 }
 
 type receivingConnProvider struct {
-	listener       net.Listener
-	tlsWrapper     func(net.Conn) net.Conn
-	logger         log.Logger
-	isShuttingDown func() bool
-	metricLabels   []string
+	listener     net.Listener
+	tlsWrapper   func(net.Conn) net.Conn
+	logger       log.Logger
+	metricLabels []string
 }
 
 func (r *receivingConnProvider) GetConnection() (net.Conn, error) {
