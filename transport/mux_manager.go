@@ -93,8 +93,10 @@ func (m *muxManager) replaceConnection(swc *SessionWithConn) {
 	defer m.connAvailable.L.Unlock()
 	// Make sure the existing conn is fully closed
 	existingConn := m.muxConnection.Load()
-	_ = existingConn.session.Close()
-	_ = existingConn.conn.Close()
+	if existingConn != nil {
+		_ = existingConn.session.Close()
+		_ = existingConn.conn.Close()
+	}
 	// Now add new conn
 	m.muxConnection.Store(swc)
 	// Now notify
