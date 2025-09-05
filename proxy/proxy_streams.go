@@ -168,8 +168,7 @@ func (b *proxyIDRingBuffer) Discard(count int) {
 // (another proxy or a target server) and receiving ACKs back.
 // This is scaffolding only – the concrete behavior will be wired in later.
 type proxyStreamSender struct {
-	logger log.Logger
-	// shardID        history.ClusterShardID
+	logger         log.Logger
 	shardManager   ShardManager
 	proxy          *Proxy
 	targetShardID  history.ClusterShardID
@@ -235,6 +234,9 @@ func (s *proxyStreamSender) Run(
 	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	shutdownChan channel.ShutdownOnce,
 ) {
+	s.logger = log.With(s.logger,
+		tag.NewStringTag("role", "sender"),
+	)
 
 	// Register this sender as the owner of the shard for the duration of the stream
 	if s.shardManager != nil {
@@ -532,8 +534,7 @@ func (s *proxyStreamSender) sendReplicationMessages(
 // proxyStreamReceiver receives replication messages from a local/remote server and
 // produces ACKs destined for the original sender.
 type proxyStreamReceiver struct {
-	logger log.Logger
-	// shardID         history.ClusterShardID
+	logger          log.Logger
 	shardManager    ShardManager
 	proxy           *Proxy
 	adminClient     adminservice.AdminServiceClient
@@ -573,6 +574,9 @@ func (r *proxyStreamReceiver) Run(
 	r.logger = log.With(r.logger,
 		tag.NewStringTag("client", ClusterShardIDtoString(r.targetShardID)),
 		tag.NewStringTag("server", ClusterShardIDtoString(r.sourceShardID)),
+		tag.NewStringTag("stream-source-shard", ClusterShardIDtoString(r.sourceShardID)),
+		tag.NewStringTag("stream-target-shard", ClusterShardIDtoString(r.targetShardID)),
+		tag.NewStringTag("role", "receiver"),
 	)
 
 	// Build metadata for local server stream
