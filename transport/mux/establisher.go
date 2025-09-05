@@ -66,8 +66,8 @@ func NewMuxEstablisherProvider(name string, transportFn SetTransportCallback, se
 	return NewMuxProvider(name, connPv, sessionFn, disconnectFn, transportFn, metricLabels, logger, shutDown), nil
 }
 
-// GetConnection makes a TCP call to establish a connection, then returns it. Retries with backoff over 30 seconds
-func (p *establishingConnProvider) GetConnection() (net.Conn, error) {
+// NewConnection makes a TCP call to establish a connection, then returns it. Retries with backoff over 30 seconds
+func (p *establishingConnProvider) NewConnection() (net.Conn, error) {
 	var client net.Conn
 
 	dialFn := func() error {

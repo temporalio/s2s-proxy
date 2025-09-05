@@ -31,7 +31,7 @@ type (
 	// connProvider represents a way to get connections, either as a client or a server. MuxProvider guarantees that
 	// Close is called when the provider exits
 	connProvider interface {
-		GetConnection() (net.Conn, error)
+		NewConnection() (net.Conn, error)
 		CloseProvider()
 	}
 )
@@ -80,7 +80,7 @@ func (m *MuxProvider) Start() {
 				m.logger.Info("mux session watcher starting")
 
 				var conn net.Conn
-				conn, err = m.connProvider.GetConnection()
+				conn, err = m.connProvider.NewConnection()
 				if err != nil {
 					continue connect
 				}

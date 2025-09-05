@@ -47,7 +47,8 @@ type receivingConnProvider struct {
 	metricLabels []string
 }
 
-func (r *receivingConnProvider) GetConnection() (net.Conn, error) {
+// NewConnection waits on the TCP server for a connection, then provides it
+func (r *receivingConnProvider) NewConnection() (net.Conn, error) {
 	conn, err := r.listener.Accept()
 	if err != nil {
 		r.logger.Fatal("listener.Accept failed", tag.Error(err))
