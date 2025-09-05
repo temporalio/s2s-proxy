@@ -15,7 +15,7 @@ import (
 type (
 	// MuxProvider manages the process of opening a connection with connProvider, setting up a yamux Session with sessionFn,
 	// and then reporting that session via setNewTransport. If the session closes, a new one will be created and notified
-	// using setNewTransport.
+	// using setNewTransport. The actual logic for the connection providers are in establisher.go and receiver.go.
 	MuxProvider struct {
 		name            string
 		connProvider    connProvider

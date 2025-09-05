@@ -16,6 +16,9 @@ import (
 )
 
 type (
+	// MuxManager is the interface between an asynchronous MuxProvider and some number of readers that need to
+	// access a yamux session. The underlying MuxProvider will continuously reestablish a usable yamux session, which
+	// can be retrieved by readers using WithConnection and TryConnectionOrElse.
 	MuxManager struct {
 		config        config.MuxTransportConfig
 		muxConnection atomic.Pointer[SessionWithConn] // Underlying mux value. This starts as nil, and is set by the provider.
@@ -34,8 +37,9 @@ func (s *SessionWithConn) IsClosed() bool {
 	return s.session.IsClosed()
 }
 
-// nolint:unused
-func newMuxManager(cfg config.MuxTransportConfig, logger log.Logger) *MuxManager {
+// NewMuxManager will wrap the provided logger with a tag identifying the logs, and handles initializing all the sync
+// primitives
+func NewMuxManager(cfg config.MuxTransportConfig, logger log.Logger) *MuxManager {
 	muxMgr := &MuxManager{
 		config:        cfg,
 		muxConnection: atomic.Pointer[SessionWithConn]{},
@@ -47,6 +51,8 @@ func newMuxManager(cfg config.MuxTransportConfig, logger log.Logger) *MuxManager
 	return muxMgr
 }
 
+// ShutDown closes the internal shutdown latch and sets the connection to nil. This will stop the connection provider:
+// if you want to reopen connections you'll need to create a new MuxManager instance.
 func (m *MuxManager) ShutDown() {
 	m.shutDown.Shutdown()
 	m.ReplaceConnection(nil)

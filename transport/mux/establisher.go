@@ -18,6 +18,10 @@ import (
 	"github.com/temporalio/s2s-proxy/metrics"
 )
 
+// This file contains implementation details for the "establishing" MuxProvider. It uses a TCP client to establish
+// a yamux session using provided TCP client settings.
+// This file contains logic only, goroutine and control flow is handled in provider.go
+
 type establishingConnProvider struct {
 	serverAddress string
 	tlsWrapper    func(net.Conn) net.Conn
