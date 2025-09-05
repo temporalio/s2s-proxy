@@ -14,6 +14,7 @@ import (
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/metrics"
 )
+
 // This file contains implementation details for the "receiving" MuxProvider. It uses a TCP server to establish
 // a yamux session in response to an inbound TCP call.
 // This file contains logic only, goroutine and control flow is handled in provider.go
