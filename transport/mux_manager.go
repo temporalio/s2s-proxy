@@ -19,11 +19,12 @@ import (
 type (
 	muxManager struct {
 		config        config.MuxTransportConfig
-		muxConnection atomic.Pointer[SessionWithConn]
-		connAvailable sync.Cond
-		init          sync.Once
+		muxConnection atomic.Pointer[SessionWithConn] // Underlying mux value. This starts as nil, and is set by the provider.
+		connAvailable sync.Cond                       // Condition lock for muxConnection. Used to notify threads waiting in WithConnection
+		init          sync.Once                       // Ensures a muxManager can only be started once
 		logger        log.Logger
-		ctx           context.Context
+		ctx           context.Context         // when cancelled, the underlying transports will be stopped too
+		reportFatal   context.CancelCauseFunc // Used by the mux provider to report that it has died
 	}
 	SessionWithConn struct {
 		session *yamux.Session
@@ -36,24 +37,25 @@ func (s *SessionWithConn) IsClosed() bool {
 }
 
 // nolint:unused
-func newMuxManager(cfg config.MuxTransportConfig, logger log.Logger, ctx context.Context) *muxManager {
-	return &muxManager{
+func newMuxManager(cfg config.MuxTransportConfig, logger log.Logger, ctx context.Context) (*muxManager, context.CancelCauseFunc) {
+	muxCtx, cancel := context.WithCancelCause(ctx)
+	muxMgr := &muxManager{
 		config:        cfg,
 		muxConnection: atomic.Pointer[SessionWithConn]{},
 		connAvailable: sync.Cond{L: &sync.Mutex{}},
 		init:          sync.Once{},
 		logger:        log.With(logger, tag.NewStringTag("component", "muxManager")),
-		ctx:           ctx,
+		ctx:           muxCtx,
 	}
-}
-
-func (m *muxManager) IsShuttingDown() bool {
-	select {
-	case <-m.ctx.Done():
-		return true
-	default:
-		return false
+	// Wrap the typical cancel function with one that ensures all blocked threads are freed
+	muxMgr.reportFatal = func(cause error) {
+		// We need context.cancel to "happen-before" all the threads on this condition are released. So we hold the lock
+		muxMgr.connAvailable.L.Lock()
+		cancel(cause)
+		muxMgr.connAvailable.Broadcast()
+		muxMgr.connAvailable.L.Unlock()
 	}
+	return muxMgr, muxMgr.reportFatal
 }
 
 // WithConnection waits on connAvailable's condition until the pointer is non-null, then runs the provided function
@@ -61,7 +63,7 @@ func (m *muxManager) IsShuttingDown() bool {
 func (m *muxManager) WithConnection(f func(*SessionWithConn) error) error {
 	m.connAvailable.L.Lock()
 	for {
-		if m.IsShuttingDown() {
+		if m.ctx.Err() != nil {
 			m.connAvailable.L.Unlock()
 			return errors.New("the mux manager is shutting down")
 		}
@@ -91,9 +93,19 @@ func TryConnectionOrElse[T any](m *muxManager, f func(*SessionWithConn) T, other
 func (m *muxManager) ReplaceConnection(session *yamux.Session, conn net.Conn) {
 	m.connAvailable.L.Lock()
 	defer m.connAvailable.L.Unlock()
+	// Make sure the existing conn is fully closed
+	existingConn := m.muxConnection.Load()
+	_ = existingConn.session.Close()
+	_ = existingConn.conn.Close()
+	// Now add new conn
 	m.muxConnection.Store(&SessionWithConn{session: session, conn: conn})
+	// Now notify
+	m.connAvailable.Broadcast()
 }
 
+// Start looks at the config, constructs the appropriate MuxProvider and Starts it. Once started, the provider will
+// run until the context provided to this muxManager is cancelled. If the provider panics for some reason, it will
+// call reportFatal, which should cancel the muxManager's context.
 func (m *muxManager) Start() error {
 	var err error
 	m.init.Do(func() {
@@ -105,7 +117,7 @@ func (m *muxManager) Start() error {
 				m.config.Name,
 			}
 			var provider *mux.MuxProvider
-			provider, err = mux.NewMuxEstablisherProvider(m.config.Name, m.ReplaceConnection, m.config.Client, metricLabels, m.logger, m.ctx)
+			provider, err = mux.NewMuxEstablisherProvider(m.config.Name, m.ReplaceConnection, m.config.Client, metricLabels, m.logger, m.ctx, m.reportFatal)
 			if err != nil {
 				return
 			}
@@ -117,7 +129,7 @@ func (m *muxManager) Start() error {
 				m.config.Name,
 			}
 			var provider *mux.MuxProvider
-			provider, err = mux.NewMuxReceiverProvider(m.config.Name, m.ReplaceConnection, m.config.Server, metricLabels, m.logger, m.ctx)
+			provider, err = mux.NewMuxReceiverProvider(m.config.Name, m.ReplaceConnection, m.config.Server, metricLabels, m.logger, m.ctx, m.reportFatal)
 			if err != nil {
 				return
 			}

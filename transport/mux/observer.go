@@ -8,6 +8,7 @@ import (
 	"github.com/temporalio/s2s-proxy/metrics"
 )
 
+// observerLabels is a convenience function that gives names to the string array supplied to the yamux observer
 func observerLabels(localAddress string, remoteAddress string, mode string, name string) []string {
 	return []string{localAddress, remoteAddress, mode, name}
 }

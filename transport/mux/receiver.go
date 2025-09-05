@@ -18,7 +18,7 @@ import (
 
 // NewMuxReceiverProvider runs a TCP server and waits for a client to connect. Once a connection is established and
 // authenticated with the TLS config, it starts a yamux session and returns the details using transportFn
-func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setting config.TCPServerSetting, metricLabels []string, upstreamLog log.Logger, shutDown context.Context) (*MuxProvider, error) {
+func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setting config.TCPServerSetting, metricLabels []string, upstreamLog log.Logger, shutDown context.Context, reportFatal context.CancelCauseFunc) (*MuxProvider, error) {
 	logger := log.With(upstreamLog, tag.NewStringTag("component", "receivingMux"), tag.NewStringTag("listenAddr", setting.ListenAddress))
 	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
@@ -38,7 +38,18 @@ func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setti
 	connPv := &receivingConnProvider{listener, tlsWrapper, logger, func() bool { return isDone(shutDown) }, metricLabels}
 	sessionFn := func(conn net.Conn) (*yamux.Session, error) { return yamux.Server(conn, nil) }
 	disconnectFn := func() {}
-	return &MuxProvider{name, connPv, sessionFn, disconnectFn, transportFn, metricLabels, logger, shutDown, sync.Once{}}, nil
+	return &MuxProvider{
+		name:            name,
+		connProvider:    connPv,
+		sessionFn:       sessionFn,
+		onDisconnectFn:  disconnectFn,
+		setNewTransport: transportFn,
+		metricLabels:    metricLabels,
+		logger:          logger,
+		shutDown:        shutDown,
+		reportFatal:     reportFatal,
+		startOnce:       sync.Once{},
+	}, nil
 }
 
 type receivingConnProvider struct {
@@ -60,7 +71,7 @@ func (r *receivingConnProvider) GetConnection() (net.Conn, error) {
 	return r.tlsWrapper(conn), nil
 }
 
-func (r *receivingConnProvider) Close() {
+func (r *receivingConnProvider) CloseProvider() {
 	err := r.listener.Close()
 	if err != nil {
 		r.logger.Fatal("listener.Close failed", tag.Error(err))

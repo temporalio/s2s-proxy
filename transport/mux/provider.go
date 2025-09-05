@@ -2,6 +2,7 @@ package mux
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 
@@ -25,6 +26,7 @@ type (
 		metricLabels    []string
 		logger          log.Logger
 		shutDown        context.Context
+		reportFatal     context.CancelCauseFunc
 		startOnce       sync.Once
 	}
 	SetTransportCallback func(session *yamux.Session, conn net.Conn)
@@ -32,7 +34,7 @@ type (
 	// Close is called when the provider exits
 	connProvider interface {
 		GetConnection() (net.Conn, error)
-		Close()
+		CloseProvider()
 	}
 )
 
@@ -48,8 +50,12 @@ func isDone(ctx context.Context) bool {
 
 func (m *MuxProvider) Start() {
 	m.startOnce.Do(func() {
+		var err error
 		go func() {
-			defer m.connProvider.Close()
+			defer func() {
+				m.reportFatal(fmt.Errorf("mux provider goroutine stopped! Latest error: %w", err))
+				m.connProvider.CloseProvider()
+			}()
 		connect:
 			for {
 				if isDone(m.shutDown) {
@@ -57,12 +63,14 @@ func (m *MuxProvider) Start() {
 				}
 				m.logger.Info("mux session watcher starting")
 
-				conn, err := m.connProvider.GetConnection()
+				var conn net.Conn
+				conn, err = m.connProvider.GetConnection()
 				if err != nil {
 					continue connect
 				}
 
-				session, err := m.sessionFn(conn)
+				var session *yamux.Session
+				session, err = m.sessionFn(conn)
 				go observeYamuxSession(session, observerLabels(session.LocalAddr().String(), session.RemoteAddr().String(), "conn", m.name))
 				if err != nil {
 					m.logger.Fatal("yamux session creation failed", tag.Error(err))

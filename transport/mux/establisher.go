@@ -27,10 +27,14 @@ type establishingConnProvider struct {
 	metricLabels   []string
 }
 
+var retryPolicy = backoff.NewExponentialRetryPolicy(time.Second).
+	WithBackoffCoefficient(1.5).
+	WithMaximumInterval(30 * time.Second)
+
 // NewMuxEstablisherProvider makes an outbound call using the provided TCP settings. This constructor handles unpacking
 // the TLS config, configures the connection provider with retry and exponential backoff, and sets a disconnect
 // sleep time of 1-2 seconds.
-func NewMuxEstablisherProvider(name string, transportFn SetTransportCallback, setting config.TCPClientSetting, metricLabels []string, logger log.Logger, shutDown context.Context) (*MuxProvider, error) {
+func NewMuxEstablisherProvider(name string, transportFn SetTransportCallback, setting config.TCPClientSetting, metricLabels []string, logger log.Logger, shutDown context.Context, reportFatal context.CancelCauseFunc) (*MuxProvider, error) {
 	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
 		tlsConfig, err := encryption.GetClientTLSConfig(tlsCfg)
@@ -48,7 +52,7 @@ func NewMuxEstablisherProvider(name string, transportFn SetTransportCallback, se
 		// If the server rapidly disconnects us, we don't want to get caught in a tight loop. Sleep 1-2 seconds before retry
 		time.Sleep(time.Second + time.Duration(rand.IntN(1000))*time.Millisecond)
 	}
-	return &MuxProvider{name, connPv, sessionFn, disconnectFn, transportFn, metricLabels, logger, shutDown, sync.Once{}}, nil
+	return &MuxProvider{name, connPv, sessionFn, disconnectFn, transportFn, metricLabels, logger, shutDown, reportFatal, sync.Once{}}, nil
 }
 
 // GetConnection makes a TCP call to establish a connection, then returns it. Retries with backoff over 30 seconds
@@ -65,9 +69,6 @@ func (p *establishingConnProvider) GetConnection() (net.Conn, error) {
 		return nil
 	}
 
-	retryPolicy := backoff.NewExponentialRetryPolicy(time.Second).
-		WithBackoffCoefficient(1.5).
-		WithMaximumInterval(30 * time.Second)
 	onError := func(err error) bool {
 		p.logger.Error("mux client failed to dial", tag.Error(err))
 		return !p.isShuttingDown()
@@ -80,6 +81,6 @@ func (p *establishingConnProvider) GetConnection() (net.Conn, error) {
 	return client, nil
 }
 
-func (p *establishingConnProvider) Close() {
+func (p *establishingConnProvider) CloseProvider() {
 	// Nothing to close on the client side, we're done.
 }
