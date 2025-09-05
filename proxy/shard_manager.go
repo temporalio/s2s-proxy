@@ -43,7 +43,7 @@ type (
 		// GetShardInfo returns debug information about shard distribution
 		GetShardInfo() ShardDebugInfo
 		// DeliverAckToShardOwner routes an ACK request to the appropriate shard owner (local or remote)
-		DeliverAckToShardOwner(srcShard history.ClusterShardID, routedAck *RoutedAck, proxy *Proxy, shutdownChan channel.ShutdownOnce, logger log.Logger)
+		DeliverAckToShardOwner(srcShard history.ClusterShardID, routedAck *RoutedAck, proxy *Proxy, shutdownChan channel.ShutdownOnce, logger log.Logger) bool
 	}
 
 	shardManagerImpl struct {
@@ -338,28 +338,18 @@ func (sm *shardManagerImpl) DeliverAckToShardOwner(
 	proxy *Proxy,
 	shutdownChan channel.ShutdownOnce,
 	logger log.Logger,
-) {
-	if sm.IsLocalShard(sourceShard) {
-		if proxy != nil {
-			if ackCh, ok := proxy.GetLocalAckChan(sourceShard); ok {
-				select {
-				case ackCh <- *routedAck:
-				case <-shutdownChan.Channel():
-					return
-				}
-			} else {
-				logger.Warn("No local ack channel for source shard", tag.NewStringTag("shard", ClusterShardIDtoString(sourceShard)))
-			}
+) bool {
+	if ackCh, ok := proxy.GetLocalAckChan(sourceShard); ok {
+		select {
+		case ackCh <- *routedAck:
+			return true
+		case <-shutdownChan.Channel():
+			return false
 		}
-		return
-	}
-
-	// TODO: forward to remote owner via inter-proxy transport.
-	if owner, ok := sm.GetShardOwner(sourceShard); ok {
-		logger.Info("ACK belongs to remote source shard owner", tag.NewStringTag("owner", owner), tag.NewStringTag("shard", ClusterShardIDtoString(sourceShard)))
 	} else {
-		logger.Warn("Unable to determine source shard owner for ACK", tag.NewStringTag("shard", ClusterShardIDtoString(sourceShard)))
+		logger.Warn("No local ack channel for source shard", tag.NewStringTag("shard", ClusterShardIDtoString(sourceShard)))
 	}
+	return false
 }
 
 func (sm *shardManagerImpl) broadcastShardChange(msgType string, shard history.ClusterShardID) {
@@ -544,14 +534,16 @@ func (nsm *noopShardManager) GetShardInfo() ShardDebugInfo {
 	}
 }
 
-func (nsm *noopShardManager) DeliverAckToShardOwner(srcShard history.ClusterShardID, routedAck *RoutedAck, proxy *Proxy, shutdownChan channel.ShutdownOnce, logger log.Logger) {
+func (nsm *noopShardManager) DeliverAckToShardOwner(srcShard history.ClusterShardID, routedAck *RoutedAck, proxy *Proxy, shutdownChan channel.ShutdownOnce, logger log.Logger) bool {
 	if proxy != nil {
 		if ackCh, ok := proxy.GetLocalAckChan(srcShard); ok {
 			select {
 			case ackCh <- *routedAck:
+				return true
 			case <-shutdownChan.Channel():
-				return
+				return false
 			}
 		}
 	}
+	return false
 }

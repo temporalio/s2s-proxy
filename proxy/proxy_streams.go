@@ -326,29 +326,56 @@ func (s *proxyStreamSender) recvAck(
 			s.mu.Unlock()
 
 			if len(shardToAck) > 0 {
-				for srcShard, originalAck := range shardToAck {
-					// If proxy watermark has passed an empty-batch proxy-high, translate it to original-high
-					s.mu.Lock()
-					// record last ack per source shard
-					s.prevAckBySource[srcShard] = originalAck
-					s.mu.Unlock()
-
-					routedAck := &RoutedAck{
-						TargetShard: s.targetShardID,
-						Req: &adminservice.StreamWorkflowReplicationMessagesRequest{
-							Attributes: &adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState{
-								SyncReplicationState: &replicationv1.SyncReplicationState{
-									InclusiveLowWatermark:     originalAck,
-									InclusiveLowWatermarkTime: attr.SyncReplicationState.InclusiveLowWatermarkTime,
+				sent := make(map[history.ClusterShardID]bool, len(shardToAck))
+				logged := make(map[history.ClusterShardID]bool, len(shardToAck))
+				numRemaining := len(shardToAck)
+				backoff := 10 * time.Millisecond
+				for numRemaining > 0 {
+					select {
+					case <-shutdownChan.Channel():
+						return nil
+					default:
+					}
+					progress := false
+					for srcShard, originalAck := range shardToAck {
+						if sent[srcShard] {
+							continue
+						}
+						routedAck := &RoutedAck{
+							TargetShard: s.targetShardID,
+							Req: &adminservice.StreamWorkflowReplicationMessagesRequest{
+								Attributes: &adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState{
+									SyncReplicationState: &replicationv1.SyncReplicationState{
+										InclusiveLowWatermark:     originalAck,
+										InclusiveLowWatermarkTime: attr.SyncReplicationState.InclusiveLowWatermarkTime,
+									},
 								},
 							},
-						},
+						}
+
+						s.logger.Info("Sender forwarding ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", originalAck))
+
+						if s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, s.proxy, shutdownChan, s.logger) {
+							sent[srcShard] = true
+							numRemaining--
+							progress = true
+							// record last ack per source shard after forwarding
+							s.mu.Lock()
+							s.prevAckBySource[srcShard] = originalAck
+							s.mu.Unlock()
+						} else if !logged[srcShard] {
+							s.logger.Warn("No local ack channel for source shard; retrying until available", tag.NewStringTag("shard", ClusterShardIDtoString(srcShard)))
+							logged[srcShard] = true
+						}
 					}
-
-					// Log outgoing ACK for this source shard
-					s.logger.Info("Sender forwarding ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", originalAck))
-
-					s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, s.proxy, shutdownChan, s.logger)
+					if !progress {
+						time.Sleep(backoff)
+						if backoff < time.Second {
+							backoff *= 2
+						}
+					} else if backoff > 10*time.Millisecond {
+						backoff = 10 * time.Millisecond
+					}
 				}
 
 				// TODO: ack to idle shards using prevAckBySource
@@ -356,23 +383,58 @@ func (s *proxyStreamSender) recvAck(
 			} else {
 				// No new shards to ACK: send previous ack levels per source shard (if known)
 				s.mu.Lock()
+				pendingPrev := make(map[history.ClusterShardID]int64, len(s.prevAckBySource))
 				for srcShard, prev := range s.prevAckBySource {
-					routedAck := &RoutedAck{
-						TargetShard: s.targetShardID,
-						Req: &adminservice.StreamWorkflowReplicationMessagesRequest{
-							Attributes: &adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState{
-								SyncReplicationState: &replicationv1.SyncReplicationState{
-									InclusiveLowWatermark:     prev,
-									InclusiveLowWatermarkTime: attr.SyncReplicationState.InclusiveLowWatermarkTime,
-								},
-							},
-						},
-					}
-					// Log fallback ACK for this source shard
-					s.logger.Info("Sender forwarding fallback ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", prev))
-					s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, s.proxy, shutdownChan, s.logger)
+					pendingPrev[srcShard] = prev
 				}
 				s.mu.Unlock()
+
+				sent := make(map[history.ClusterShardID]bool, len(pendingPrev))
+				logged := make(map[history.ClusterShardID]bool, len(pendingPrev))
+				numRemaining := len(pendingPrev)
+				backoff := 10 * time.Millisecond
+				for numRemaining > 0 {
+					select {
+					case <-shutdownChan.Channel():
+						return nil
+					default:
+					}
+					progress := false
+					for srcShard, prev := range pendingPrev {
+						if sent[srcShard] {
+							continue
+						}
+						routedAck := &RoutedAck{
+							TargetShard: s.targetShardID,
+							Req: &adminservice.StreamWorkflowReplicationMessagesRequest{
+								Attributes: &adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState{
+									SyncReplicationState: &replicationv1.SyncReplicationState{
+										InclusiveLowWatermark:     prev,
+										InclusiveLowWatermarkTime: attr.SyncReplicationState.InclusiveLowWatermarkTime,
+									},
+								},
+							},
+						}
+						// Log fallback ACK for this source shard
+						s.logger.Info("Sender forwarding fallback ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", prev))
+						if s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, s.proxy, shutdownChan, s.logger) {
+							sent[srcShard] = true
+							numRemaining--
+							progress = true
+						} else if !logged[srcShard] {
+							s.logger.Warn("No local ack channel for source shard; retrying until available", tag.NewStringTag("shard", ClusterShardIDtoString(srcShard)))
+							logged[srcShard] = true
+						}
+					}
+					if !progress {
+						time.Sleep(backoff)
+						if backoff < time.Second {
+							backoff *= 2
+						}
+					} else if backoff > 10*time.Millisecond {
+						backoff = 10 * time.Millisecond
+					}
+				}
 			}
 
 			// Only after forwarding ACKs, discard the entries from the ring buffer
@@ -648,36 +710,60 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 				continue
 			}
 
-			for targetShardID, tasks := range tasksByTargetShard {
-				forwardResp := &adminservice.StreamWorkflowReplicationMessagesResponse{
-					Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
-						Messages: &replicationv1.WorkflowReplicationMessages{
-							ReplicationTasks:       tasks,
-							ExclusiveHighWatermark: tasks[len(tasks)-1].RawTaskInfo.TaskId + 1,
-							Priority:               attr.Messages.Priority,
-						},
-					},
+			// Retry across the whole target set until all sends succeed (or shutdown)
+			sentByTarget := make(map[history.ClusterShardID]bool, len(tasksByTargetShard))
+			loggedByTarget := make(map[history.ClusterShardID]bool, len(tasksByTargetShard))
+			for targetShardID := range tasksByTargetShard {
+				sentByTarget[targetShardID] = false
+			}
+			numRemaining := len(tasksByTargetShard)
+			backoff := 10 * time.Millisecond
+			for numRemaining > 0 {
+				select {
+				case <-shutdownChan.Channel():
+					return nil
+				default:
 				}
-
-				if r.shardManager != nil && r.shardManager.IsLocalShard(targetShardID) {
-					if r.proxy != nil {
-						if sendCh, ok := r.proxy.GetRemoteSendChan(targetShardID); ok {
-							select {
-							case sendCh <- RoutedMessage{SourceShard: r.sourceShardID, Resp: forwardResp}:
-							case <-shutdownChan.Channel():
-								return nil
-							}
-						} else {
-							r.logger.Error("No send channel found for target shard", tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
+				progress := false
+				for targetShardID, tasks := range tasksByTargetShard {
+					if sentByTarget[targetShardID] {
+						continue
+					}
+					if ch, ok := r.proxy.GetRemoteSendChan(targetShardID); ok {
+						msg := RoutedMessage{
+							SourceShard: r.sourceShardID,
+							Resp: &adminservice.StreamWorkflowReplicationMessagesResponse{
+								Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
+									Messages: &replicationv1.WorkflowReplicationMessages{
+										ReplicationTasks:       tasks,
+										ExclusiveHighWatermark: tasks[len(tasks)-1].RawTaskInfo.TaskId + 1,
+										Priority:               attr.Messages.Priority,
+									},
+								},
+							},
+						}
+						select {
+						case ch <- msg:
+							sentByTarget[targetShardID] = true
+							numRemaining--
+							progress = true
+						case <-shutdownChan.Channel():
+							return nil
+						}
+					} else {
+						if !loggedByTarget[targetShardID] {
+							r.logger.Warn("No send channel found for target shard; retrying until available", tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
+							loggedByTarget[targetShardID] = true
 						}
 					}
-				} else if r.shardManager != nil {
-					if owner, ok := r.shardManager.GetShardOwner(targetShardID); ok {
-						r.logger.Info("Target shard owned by remote node", tag.NewStringTag("owner", owner), tag.NewStringTag("shard", ClusterShardIDtoString(targetShardID)))
-						// TODO: forward via inter-proxy transport
-					} else {
-						r.logger.Warn("Unable to determine owner for target shard", tag.NewStringTag("shard", ClusterShardIDtoString(targetShardID)))
+				}
+				if !progress {
+					time.Sleep(backoff)
+					if backoff < time.Second {
+						backoff *= 2
 					}
+				} else if backoff > 10*time.Millisecond {
+					backoff = 10 * time.Millisecond
 				}
 			}
 		}
