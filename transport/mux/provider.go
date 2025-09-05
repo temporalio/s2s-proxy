@@ -38,16 +38,10 @@ type (
 	}
 )
 
-// isDone checks whether a context is done without blocking. Convenience function.
-func isDone(ctx context.Context) bool {
-	select {
-	case <-ctx.Done():
-		return true
-	default:
-		return false
-	}
-}
-
+// Start starts the MuxProvider. MuxProvider can only be started once, and once they are started they will run until
+// the provided context is cancelled. The MuxProvider will cancel the context itself if it exits due to an unrecoverable
+// error or panic. Connection instability is not unrecoverable: the MuxProvider will detect yamux Session exit and open
+// a new session.
 func (m *MuxProvider) Start() {
 	m.startOnce.Do(func() {
 		var err error
@@ -58,7 +52,7 @@ func (m *MuxProvider) Start() {
 			}()
 		connect:
 			for {
-				if isDone(m.shutDown) {
+				if m.shutDown.Err() != nil {
 					return
 				}
 				m.logger.Info("mux session watcher starting")

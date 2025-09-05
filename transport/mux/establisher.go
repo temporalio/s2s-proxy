@@ -46,7 +46,7 @@ func NewMuxEstablisherProvider(name string, transportFn SetTransportCallback, se
 		}
 		tlsWrapper = func(conn net.Conn) net.Conn { return tls.Client(conn, tlsConfig) }
 	}
-	connPv := &establishingConnProvider{setting.ServerAddress, tlsWrapper, logger, func() bool { return isDone(shutDown) }, metricLabels}
+	connPv := &establishingConnProvider{setting.ServerAddress, tlsWrapper, logger, func() bool { return shutDown.Err() != nil }, metricLabels}
 	sessionFn := func(conn net.Conn) (*yamux.Session, error) { return yamux.Client(conn, nil) }
 	disconnectFn := func() {
 		// If the server rapidly disconnects us, we don't want to get caught in a tight loop. Sleep 1-2 seconds before retry

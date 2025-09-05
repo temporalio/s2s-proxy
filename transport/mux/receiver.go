@@ -35,7 +35,7 @@ func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setti
 	if err != nil {
 		return nil, err
 	}
-	connPv := &receivingConnProvider{listener, tlsWrapper, logger, func() bool { return isDone(shutDown) }, metricLabels}
+	connPv := &receivingConnProvider{listener, tlsWrapper, logger, func() bool { return shutDown.Err() != nil }, metricLabels}
 	sessionFn := func(conn net.Conn) (*yamux.Session, error) { return yamux.Server(conn, nil) }
 	disconnectFn := func() {}
 	return &MuxProvider{
