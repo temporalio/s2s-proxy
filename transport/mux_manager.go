@@ -49,11 +49,8 @@ func newMuxManager(cfg config.MuxTransportConfig, logger log.Logger, ctx context
 	}
 	// Wrap the typical cancel function with one that ensures all blocked threads are freed
 	muxMgr.reportFatal = func(cause error) {
-		// We need context.cancel to "happen-before" all the threads on this condition are released. So we hold the lock
-		muxMgr.connAvailable.L.Lock()
 		cancel(cause)
-		muxMgr.connAvailable.Broadcast()
-		muxMgr.connAvailable.L.Unlock()
+		muxMgr.replaceConnection(nil)
 	}
 	return muxMgr, muxMgr.reportFatal
 }
@@ -90,7 +87,8 @@ func TryConnectionOrElse[T any](m *muxManager, f func(*SessionWithConn) T, other
 	return f(conn)
 }
 
-func (m *muxManager) ReplaceConnection(session *yamux.Session, conn net.Conn) {
+// Duplicated here so that we can swap in a nil pointer on close
+func (m *muxManager) replaceConnection(swc *SessionWithConn) {
 	m.connAvailable.L.Lock()
 	defer m.connAvailable.L.Unlock()
 	// Make sure the existing conn is fully closed
@@ -98,9 +96,13 @@ func (m *muxManager) ReplaceConnection(session *yamux.Session, conn net.Conn) {
 	_ = existingConn.session.Close()
 	_ = existingConn.conn.Close()
 	// Now add new conn
-	m.muxConnection.Store(&SessionWithConn{session: session, conn: conn})
+	m.muxConnection.Store(swc)
 	// Now notify
 	m.connAvailable.Broadcast()
+}
+
+func (m *muxManager) ReplaceConnection(session *yamux.Session, conn net.Conn) {
+	m.replaceConnection(&SessionWithConn{session: session, conn: conn})
 }
 
 // Start looks at the config, constructs the appropriate MuxProvider and Starts it. Once started, the provider will
