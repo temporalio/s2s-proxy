@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/temporalio/s2s-proxy/transport/mux"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
@@ -47,7 +48,7 @@ func init() {
 	//_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "debug")
 	testLogger = log.NewTestLogger()
 	// Disable sleeping for tests
-	clientMuxDisconnectSleepFn = func() {}
+	mux.ClientDisconnectFn = func() {}
 }
 
 type service struct {
@@ -60,12 +61,14 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 	}, nil
 }
 
-func connect(t *testing.T, clientCM *muxConnectManager, serverCM *muxConnectManager) (MuxTransport, MuxTransport) {
-	clientTs, err := clientCM.open()
+func connect(t *testing.T, clientConfig config.MuxTransportConfig, serverConfig config.MuxTransportConfig) (mux.MuxManager, mux.MuxManager) {
+	clientMgr := mux.NewMuxManager(clientConfig, testLogger)
+	serverMgr := mux.NewMuxManager(serverConfig, testLogger)
+	err := clientMgr.Start()
 	require.NoError(t, err)
-	serverTs, err := serverCM.open()
+	err = serverMgr.Start()
 	require.NoError(t, err)
-	return clientTs, serverTs
+	return clientMgr, serverMgr
 }
 
 func startServer(t *testing.T, serverTs ServerTransport) *grpc.Server {
@@ -99,29 +102,18 @@ func testClient(t *testing.T, clientTs ClientTransport) {
 }
 
 func testMuxConnection(t *testing.T, muxClientCfg config.MuxTransportConfig, muxServerCfg config.MuxTransportConfig, repeat int) {
-	clientCM := newMuxConnectManager(muxClientCfg, testLogger)
-	serverCM := newMuxConnectManager(muxServerCfg, testLogger)
-
-	require.NoError(t, clientCM.start())
-	require.NoError(t, serverCM.start())
-
-	defer func() {
-		clientCM.stop()
-		serverCM.stop()
-	}()
-
 	for i := 0; i < repeat; i++ {
 		t.Log("Test connection", "repeat", i)
-		clientTs, serverTs := connect(t, clientCM, serverCM)
+		clientTs, serverTs := connect(t, muxClientCfg, muxServerCfg)
 
 		server := startServer(t, serverTs)
 		testClient(t, clientTs)
 
 		server.GracefulStop()
 
-		clientTs.(*muxTransportImpl).close()
+		clientTs.Close()
 		require.True(t, clientTs.IsClosed())
-		serverTs.(*muxTransportImpl).close()
+		serverTs.Close()
 		require.True(t, serverTs.IsClosed())
 	}
 }
@@ -179,58 +171,40 @@ func runTests(t *testing.T, f func(t *testing.T, closeCfg config.MuxTransportCon
 	})
 }
 
-func TestMuxTransporWaitForClose(t *testing.T) {
+func TestMuxTransportWaitForClose(t *testing.T) {
 	testClose := func(t *testing.T, closeCfg config.MuxTransportConfig, waitForCloseCfg config.MuxTransportConfig) {
-		closeCM := newMuxConnectManager(closeCfg, testLogger)
-		waitForCloseCM := newMuxConnectManager(waitForCloseCfg, testLogger)
-		require.NoError(t, closeCM.start())
-		require.NoError(t, waitForCloseCM.start())
-
-		defer func() {
-			closeCM.stop()
-			waitForCloseCM.stop()
-		}()
-
-		closeTs, waitForCloseTs := connect(t, closeCM, waitForCloseCM)
-		closeTs.(*muxTransportImpl).close()
+		closeTs, waitForCloseTs := connect(t, closeCfg, waitForCloseCfg)
+		closeTs.Close()
 		_, ok := <-closeTs.CloseChan()
 		require.False(t, ok)
 
 		// waitForClose transport should be closed.
 		_, ok = <-waitForCloseTs.CloseChan()
 		require.False(t, ok)
-
-		// Reconnect transport
-		_, _ = connect(t, closeCM, waitForCloseCM)
 	}
 
 	runTests(t, testClose)
 }
 
-func TestMuxTransporStopConnectionManager(t *testing.T) {
+func TestMuxTransportStopConnectionManager(t *testing.T) {
 	testReconnect := func(t *testing.T, clientCfg config.MuxTransportConfig, serverCfg config.MuxTransportConfig) {
-		clientCM := newMuxConnectManager(clientCfg, testLogger)
-		serverCM := newMuxConnectManager(serverCfg, testLogger)
-
-		require.NoError(t, clientCM.start())
-		require.NoError(t, serverCM.start())
 
 		// Connect first
-		clientTs, serverTs := connect(t, clientCM, serverCM)
+		clientTs, serverTs := connect(t, clientCfg, serverCfg)
 
 		// close underlying connection
-		clientCM.stop()
-		serverCM.stop()
+		clientTs.Close()
+		serverTs.Close()
 
 		// Wait for both transport to close
 		<-clientTs.CloseChan()
 		<-serverTs.CloseChan()
 
 		// restart CM should fail
-		err := clientCM.start()
+		err := clientTs.Start()
 		require.Error(t, err)
 
-		err = serverCM.start()
+		err = serverTs.Start()
 		require.Error(t, err)
 	}
 
@@ -239,13 +213,7 @@ func TestMuxTransporStopConnectionManager(t *testing.T) {
 
 func TestMuxTransportMultiServers(t *testing.T) {
 	testMulti := func(t *testing.T, clientCfg config.MuxTransportConfig, serverCfg config.MuxTransportConfig) {
-		clientCM := newMuxConnectManager(clientCfg, testLogger)
-		serverCM := newMuxConnectManager(serverCfg, testLogger)
-
-		require.NoError(t, clientCM.start())
-		require.NoError(t, serverCM.start())
-
-		clientTs, serverTs := connect(t, clientCM, serverCM)
+		clientTs, serverTs := connect(t, clientCfg, serverCfg)
 
 		// Start server on both sides
 		server1 := startServer(t, clientTs)
@@ -257,8 +225,8 @@ func TestMuxTransportMultiServers(t *testing.T) {
 		server1.GracefulStop()
 		server2.GracefulStop()
 
-		clientCM.stop()
-		serverCM.stop()
+		clientTs.Close()
+		serverTs.Close()
 	}
 
 	runTests(t, testMulti)
@@ -266,20 +234,20 @@ func TestMuxTransportMultiServers(t *testing.T) {
 
 func TestMuxTransportFailedToOpen(t *testing.T) {
 	testMulti := func(t *testing.T, clientCfg config.MuxTransportConfig, serverCfg config.MuxTransportConfig) {
-		clientCM := newMuxConnectManager(clientCfg, testLogger)
-		serverCM := newMuxConnectManager(serverCfg, testLogger)
+		clientCM := mux.NewMuxManager(clientCfg, testLogger)
+		serverCM := mux.NewMuxManager(serverCfg, testLogger)
 
-		require.NoError(t, clientCM.start())
-		require.NoError(t, serverCM.start())
+		require.NoError(t, clientCM.Start())
+		require.NoError(t, serverCM.Start())
 
-		clientCM.stop()
-		serverCM.stop()
+		clientCM.Close()
+		serverCM.Close()
 
 		var err error
-		_, err = clientCM.open()
+		err = clientCM.Start()
 		require.Error(t, err)
 
-		_, err = serverCM.open()
+		err = serverCM.Start()
 		require.Error(t, err)
 	}
 

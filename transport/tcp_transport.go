@@ -5,6 +5,7 @@ import (
 	"net"
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/config"
@@ -31,7 +32,7 @@ func (c *tcpClient) Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.Client
 		}
 	}
 
-	return dial(c.config.ServerAddress, tlsConfig, clientMetrics, nil)
+	return grpcutil.Dial(c.config.ServerAddress, tlsConfig, clientMetrics, nil)
 }
 
 func (s *tcpServer) Serve(server *grpc.Server) error {

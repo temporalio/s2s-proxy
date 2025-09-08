@@ -16,7 +16,7 @@ type (
 	// MuxProvider manages the process of opening a connection with connProvider, setting up a yamux Session with sessionFn,
 	// and then reporting that session via setNewTransport. If the session closes, a new one will be created and notified
 	// using setNewTransport. The actual logic for the connection providers are in establisher.go and receiver.go.
-	MuxProvider struct {
+	muxProvider struct {
 		name            string
 		connProvider    connProvider
 		sessionFn       func(net.Conn) (*yamux.Session, error)
@@ -34,6 +34,9 @@ type (
 		NewConnection() (net.Conn, error)
 		CloseProvider()
 	}
+	MuxProvider interface {
+		Start()
+	}
 )
 
 // NewMuxProvider creates a new custom MuxProvider with the provided data.
@@ -45,8 +48,8 @@ func NewMuxProvider(name string,
 	metricLabels []string,
 	logger log.Logger,
 	shutDown channel.ShutdownOnce,
-) *MuxProvider {
-	return &MuxProvider{
+) MuxProvider {
+	return &muxProvider{
 		name:            name,
 		connProvider:    connProvider,
 		sessionFn:       sessionFn,
@@ -63,7 +66,7 @@ func NewMuxProvider(name string,
 // the provided context is cancelled. The MuxProvider will cancel the context itself if it exits due to an unrecoverable
 // error or panic. Connection instability is not unrecoverable: the MuxProvider will detect yamux Session exit and open
 // a new session.
-func (m *MuxProvider) Start() {
+func (m *muxProvider) Start() {
 	m.startOnce.Do(func() {
 		var err error
 		go func() {

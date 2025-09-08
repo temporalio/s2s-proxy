@@ -21,7 +21,7 @@ import (
 
 // NewMuxReceiverProvider runs a TCP server and waits for a client to connect. Once a connection is established and
 // authenticated with the TLS config, it starts a yamux session and returns the details using transportFn
-func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setting config.TCPServerSetting, metricLabels []string, upstreamLog log.Logger) (*MuxProvider, error) {
+func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setting config.TCPServerSetting, metricLabels []string, upstreamLog log.Logger) (MuxProvider, error) {
 	logger := log.With(upstreamLog, tag.NewStringTag("component", "receivingMux"), tag.NewStringTag("listenAddr", setting.ListenAddress))
 	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {

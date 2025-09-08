@@ -1,9 +1,8 @@
 package transport
 
 import (
-	"fmt"
-
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+	"github.com/temporalio/s2s-proxy/transport/mux"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/grpc"
 
@@ -31,7 +30,7 @@ type (
 	}
 
 	TransportManager struct {
-		muxConnManagers map[string]*muxConnectManager
+		muxConnManagers map[string]mux.MuxManager
 		logger          log.Logger
 	}
 )
@@ -41,10 +40,10 @@ func NewTransportManager(
 	logger log.Logger,
 ) *TransportManager {
 
-	muxConnManagers := make(map[string]*muxConnectManager)
+	muxConnManagers := make(map[string]mux.MuxManager)
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	for _, cfg := range s2sConfig.MuxTransports {
-		muxConnManagers[cfg.Name] = newMuxConnectManager(cfg, logger)
+		muxConnManagers[cfg.Name] = mux.NewMuxManager(cfg, logger)
 	}
 
 	return &TransportManager{
@@ -52,22 +51,14 @@ func NewTransportManager(
 		logger:          logger,
 	}
 }
-
-func (tm *TransportManager) openMuxTransport(transportName string) (MuxTransport, error) {
-	mux := tm.muxConnManagers[transportName]
-	if mux == nil {
-		return nil, fmt.Errorf("multiplexed transport %s is not found", transportName)
-	}
-
-	return mux.open()
-}
 func (tm *TransportManager) IsMuxActive(name string) bool {
-	return tm.muxConnManagers[name].status.Load() == int32(statusStarted)
+	//return tm.muxConnManagers[name].Load() == int32(statusStarted)
+	return mux.TryConnectionOrElse(tm.muxConnManagers[name], func(*mux.SessionWithConn) bool { return true }, false)
 }
 
 func (tm *TransportManager) OpenClient(clientConfig config.ProxyClientConfig) (ClientTransport, error) {
 	if clientConfig.Type == config.MuxTransport {
-		return tm.openMuxTransport(clientConfig.MuxTransportName)
+		return tm.muxConnManagers[clientConfig.MuxTransportName], nil
 	}
 
 	return &tcpClient{
@@ -77,7 +68,7 @@ func (tm *TransportManager) OpenClient(clientConfig config.ProxyClientConfig) (C
 
 func (tm *TransportManager) OpenServer(serverConfig config.ProxyServerConfig) (ServerTransport, error) {
 	if serverConfig.Type == config.MuxTransport {
-		return tm.openMuxTransport(serverConfig.MuxTransportName)
+		return tm.muxConnManagers[serverConfig.MuxTransportName], nil
 	}
 
 	return &tcpServer{
@@ -87,7 +78,7 @@ func (tm *TransportManager) OpenServer(serverConfig config.ProxyServerConfig) (S
 
 func (tm *TransportManager) Start() error {
 	for _, cm := range tm.muxConnManagers {
-		if err := cm.start(); err != nil {
+		if err := cm.Start(); err != nil {
 			return err
 		}
 	}
@@ -97,6 +88,6 @@ func (tm *TransportManager) Start() error {
 
 func (tm *TransportManager) Stop() {
 	for _, cm := range tm.muxConnManagers {
-		cm.stop()
+		cm.Close()
 	}
 }

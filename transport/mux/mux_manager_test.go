@@ -1,6 +1,7 @@
 package mux
 
 import (
+	"context"
 	"io"
 	"net"
 	"sync"
@@ -32,44 +33,30 @@ func newSessionWithConn(t *testing.T) (swc *SessionWithConn, remote net.Conn, cl
 
 func TestWithConnection_SkipsClosedSessionsAndWaitsForNew(t *testing.T) {
 	logger := log.NewTestLogger()
-	mgr := NewMuxManager(config.MuxTransportConfig{Name: "test"}, logger)
+	// Grab the impl so we can set a superfast wake interval
+	mgr := NewMuxManager(config.MuxTransportConfig{Name: "test"}, logger).(*muxManager)
+	mgr.wakeInterval = 5 * time.Millisecond
 
 	// Wait for a connection
-	receivedConn := make(chan struct{})
-	var err error
-	go func() {
-		err = mgr.WithConnection(func(s *SessionWithConn) error {
-			close(receivedConn)
-			return nil
-		})
-	}()
-	assert.NoError(t, err, "unexpected error")
+	waiter := &connWaiter{shutDown: make(chan struct{}), connSeen: make(chan *SessionWithConn), mgr: mgr}
+	waiter.Start()
 
-	// Give goroutine time to enter wait
-	time.Sleep(20 * time.Millisecond)
+	expectNoCh(t, waiter.connSeen, 20*time.Millisecond, "Unexpected connection! No conn has been provided yet.")
 
 	// provide a closed connection
 	invalidSWC, _, cleanupClosed := newSessionWithConn(t)
 	cleanupClosed()
 	mgr.ReplaceConnection(invalidSWC)
 
-	select {
-	case <-receivedConn:
-		t.Fatal("WithConnection should not have proceeded with closed session")
-	default:
-	}
+	// Wait for a second so that we have many wake events from our 5ms broadcast
+	expectNoCh(t, waiter.connSeen, time.Second, "Unexpected connection! No conn has been provided yet.")
 
 	// Provide a valid connection
 	openSWC, _, cleanupOpen := newSessionWithConn(t)
 	defer cleanupOpen()
 	mgr.ReplaceConnection(openSWC)
 
-	select {
-	case <-receivedConn:
-		// success
-	case <-time.After(2 * time.Second):
-		t.Fatal("WithConnection did not proceed after open session was provided")
-	}
+	expectCh(t, waiter.connSeen, 50*time.Millisecond, "Should have seen new connection")
 }
 
 func TestWithConnection_ReleasesOnShutdown(t *testing.T) {
@@ -84,14 +71,15 @@ func TestWithConnection_ReleasesOnShutdown(t *testing.T) {
 	// Start a waiter; it should be waiting because WithConnection always waits before checking
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- mgr.WithConnection(func(s *SessionWithConn) error { return nil })
+		_, err := WithConnection(context.Background(), mgr, func(s *SessionWithConn) (struct{}, error) { return struct{}{}, nil })
+		errCh <- err
 	}()
 
 	// Give goroutine time to enter wait
 	time.Sleep(20 * time.Millisecond)
 
 	// Shutdown should close existing connection and wake waiter with an error
-	mgr.ShutDown()
+	mgr.Close()
 
 	// Verify the existing session is closed
 	assert.Eventually(t, func() bool { return swc.session.IsClosed() }, time.Second, 10*time.Millisecond)
@@ -124,7 +112,7 @@ func (p *passthroughConnProvider) CloseProvider() {
 type connWaiter struct {
 	shutDown chan struct{}
 	connSeen chan *SessionWithConn
-	mgr      *MuxManager
+	mgr      MuxManager
 }
 
 func (c connWaiter) Start() {
@@ -134,10 +122,10 @@ func (c connWaiter) Start() {
 			case <-c.shutDown:
 				return
 			default:
-				_ = c.mgr.WithConnection(func(s *SessionWithConn) error {
+				_, _ = WithConnection(context.Background(), c.mgr, func(s *SessionWithConn) (struct{}, error) {
 					c.connSeen <- s
 					<-s.session.CloseChan()
-					return nil
+					return struct{}{}, nil
 				})
 			}
 		}
@@ -185,10 +173,10 @@ func TestWithConnection_MuxProviderReconnect(t *testing.T) {
 	expectCh(t, serverConnWaiter.connSeen, 2*time.Second, "WithConnection should have seen a new connection from the clientProvider")
 }
 
-func buildMuxReader(name string, connProvider connProvider, yamuxFn func(io.ReadWriteCloser, *yamux.Config) (*yamux.Session, error), logger log.Logger) (*MuxManager, *connWaiter, chan struct{}, *MuxProvider) {
+func buildMuxReader(name string, connProvider connProvider, yamuxFn func(io.ReadWriteCloser, *yamux.Config) (*yamux.Session, error), logger log.Logger) (MuxManager, *connWaiter, chan struct{}, MuxProvider) {
 	mgr := NewMuxManager(config.MuxTransportConfig{Name: name}, logger)
 	connDisconnected := make(chan struct{}, 1)
-	provider := &MuxProvider{
+	provider := &muxProvider{
 		name:         name,
 		connProvider: connProvider,
 		sessionFn: func(conn net.Conn) (*yamux.Session, error) {
