@@ -61,12 +61,17 @@ func (m *MuxManager) ShutDown() {
 // WithConnection waits on connAvailable's condition until the pointer is non-null, then runs the provided function
 // with that pointer.
 func (m *MuxManager) WithConnection(f func(*SessionWithConn) error) error {
+	// Some reminders on condition variables: A condition variable is a multi-layered lock: First we lock this
+	// outer lock, which protects an internal semaphore/waitgroup. That semaphore/waitgroup represents a queue of waiting threads.
 	m.connAvailable.L.Lock()
 	for {
 		if m.shutDown.IsShutdown() {
 			m.connAvailable.L.Unlock()
 			return errors.New("the mux manager is shutting down")
 		}
+		// When we wait here, we add ourselves to the list of threads that should be restarted, let go of connAvailable.L,
+		// and then suspend indefinitely. We will only be woken by Broadcast (wakes up every thread) or Signal (wakes up one thread)
+		// As part of waking up from connAvailable.Wait, this thread will re-take connAvailable.L
 		m.connAvailable.Wait()
 		if ptr := m.muxConnection.Load(); ptr != nil && !ptr.IsClosed() {
 			// Don't keep lock held while running f so that other code can use the connection
@@ -90,7 +95,11 @@ func TryConnectionOrElse[T any](m *MuxManager, f func(*SessionWithConn) T, other
 	return f(conn)
 }
 
+// ReplaceConnection sets the new SessionWithConn object, and notifies all the waiting threads that there's new data
+// ReplaceConnection holds connAvailable.L to ensure there's no race conditions while threads prepare to wait.
 func (m *MuxManager) ReplaceConnection(swc *SessionWithConn) {
+	// Waiting on connAvailable.L here ensures no other threads are in the process of figuring out they should be notified
+	// when Broadcast runs.
 	m.connAvailable.L.Lock()
 	defer m.connAvailable.L.Unlock()
 	// Make sure the existing conn is fully closed
