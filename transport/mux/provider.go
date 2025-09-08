@@ -87,12 +87,15 @@ func (m *MuxProvider) Start() {
 
 				var session *yamux.Session
 				session, err = m.sessionFn(conn)
-				go observeYamuxSession(session, observerLabels(session.LocalAddr().String(), session.RemoteAddr().String(), "conn", m.name))
+				// Force Yamux to actually send something on the conn to make sure it's alive
+				_, err = session.Ping()
 				if err != nil {
-					m.logger.Fatal("yamux session creation failed", tag.Error(err))
+					m.setNewTransport(nil)
+					m.logger.Error("got an invalid connection from connProvider", tag.Error(err))
 					metrics.MuxErrors.WithLabelValues(m.metricLabels...).Inc()
 					continue connect
 				}
+				go observeYamuxSession(session, observerLabels(session.LocalAddr().String(), session.RemoteAddr().String(), "conn", m.name))
 
 				m.setNewTransport(&SessionWithConn{session: session, conn: conn})
 				metrics.MuxConnectionEstablish.WithLabelValues(m.metricLabels...).Inc()
