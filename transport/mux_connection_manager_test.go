@@ -182,14 +182,15 @@ func TestMuxTransportWaitForClose(t *testing.T) {
 		_, ok := <-closeTs.CloseChan()
 		require.False(t, ok)
 
-		require.Error(t, waitForCloseTs.PingSession(), "waitForClose should be disconnected")
+		timeoutCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+
+		require.Error(t, waitForCloseTs.PingSession(timeoutCtx), "waitForClose should be disconnected")
 		// Other side should have disconnected, but muxManager won't be closed!
-		timeoutCtx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-		connActive, _ := mux.WithConnection(timeoutCtx, waitForCloseTs, func(swc *mux.SessionWithConn) (bool, error) {
+		connActive, _ := waitForCloseTs.WithConnection(timeoutCtx, func(swc *mux.SessionWithConn) (any, error) {
 			return true, nil
 		})
-		// Should have gotten uninitialized bool, i.e. "false"
-		require.False(t, connActive)
+		// Should have gotten uninitialized value
+		require.Nil(t, connActive)
 
 		// clean up
 		waitForCloseTs.Close()

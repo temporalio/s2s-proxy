@@ -60,7 +60,7 @@ func NewTransportManager(
 }
 func (tm *TransportManager) IsMuxActive(name string) bool {
 	//return tm.muxConnManagers[name].Load() == int32(statusStarted)
-	return mux.TryConnectionOrElse(tm.muxConnManagers[name], func(*mux.SessionWithConn) bool { return true }, false)
+	return tm.muxConnManagers[name].TryConnectionOrElse(func(*mux.SessionWithConn) any { return true }, false).(bool)
 }
 
 func (tm *TransportManager) OpenClient(clientConfig config.ProxyClientConfig) (ClientTransport, error) {

@@ -65,15 +65,15 @@ func TestWithConnection_ReleasesOnShutdown(t *testing.T) {
 
 	// We're not testing the muxProvider in this test, so using a fake here
 	mgr.(*muxManager).muxProvider = &muxProvider{
-		startedCh:   make(chan struct{}),
-		cleanedUpCh: make(chan struct{}),
-		shutDown:    mgr.(*muxManager).shutDown,
+		hasCleanedUp:   channel.NewShutdownOnce(),
+		shouldShutDown: mgr.(*muxManager).shouldShutDown,
 	}
+	mgr.(*muxManager).muxProvider.(*muxProvider).hasCleanedUp.Shutdown()
 
 	// Start a waiter
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := WithConnection(context.Background(), mgr, func(s *SessionWithConn) (struct{}, error) { return struct{}{}, nil })
+		_, err := mgr.WithConnection(context.Background(), func(s *SessionWithConn) (any, error) { return struct{}{}, nil })
 		errCh <- err
 	}()
 
@@ -103,7 +103,7 @@ func (p *passthroughConnProvider) NewConnection() (net.Conn, error) {
 func (p *passthroughConnProvider) CloseProvider() {
 	_ = p.conn.Close()
 }
-func (p *passthroughConnProvider) CleanupCh() <-chan struct{} {
+func (p *passthroughConnProvider) CloseCh() <-chan struct{} {
 	ch := make(chan struct{})
 	close(ch)
 	return ch
@@ -123,7 +123,7 @@ func (c connWaiter) Start() {
 			case <-c.shutDown:
 				return
 			default:
-				_, _ = WithConnection(context.Background(), c.mgr, func(s *SessionWithConn) (struct{}, error) {
+				_, _ = c.mgr.WithConnection(context.Background(), func(s *SessionWithConn) (any, error) {
 					c.connSeen <- s
 					<-s.Session.CloseChan()
 					return struct{}{}, nil
@@ -191,10 +191,9 @@ func buildMuxReader(name string, connProvider connProvider, yamuxFn func(io.Read
 		setNewTransport: mgr.ReplaceConnection,
 		metricLabels:    []string{"a", "b", "c"},
 		logger:          logger,
-		shutDown:        channel.NewShutdownOnce(),
+		shouldShutDown:  channel.NewShutdownOnce(),
 		startOnce:       sync.Once{},
-		startedCh:       make(chan struct{}),
-		cleanedUpCh:     make(chan struct{}),
+		hasCleanedUp:    channel.NewShutdownOnce(),
 	}
 	connWaiter := &connWaiter{shutDown: make(chan struct{}), connSeen: make(chan *SessionWithConn), mgr: mgr}
 	connWaiter.Start()

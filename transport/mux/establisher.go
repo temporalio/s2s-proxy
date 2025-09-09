@@ -45,7 +45,13 @@ var (
 		// If the server rapidly disconnects us, we don't want to get caught in a tight loop. Sleep 1-2 seconds before retry
 		//time.Sleep(time.Second + time.Duration(rand.IntN(1000))*time.Millisecond)
 	}
+	// The establisher provider never has cleanup work, so we provide the same closed channel on CloseCh()
+	closedCh = make(chan struct{})
 )
+
+func init() {
+	close(closedCh)
+}
 
 // NewMuxEstablisherProvider makes an outbound call using the provided TCP settings. This constructor handles unpacking
 // the TLS config, configures the connection provider with retry and exponential backoff, and sets a disconnect
@@ -104,9 +110,7 @@ func (p *establishingConnProvider) NewConnection() (net.Conn, error) {
 	return client, nil
 }
 
-// CleanupCh for the establisher is a no-op, because only the Conn needs to be closed
-func (p *establishingConnProvider) CleanupCh() <-chan struct{} {
-	ch := make(chan struct{})
-	close(ch)
-	return ch
+// CloseCh for the establisher is a no-op, because only the Conn needs to be closed
+func (p *establishingConnProvider) CloseCh() <-chan struct{} {
+	return closedCh
 }

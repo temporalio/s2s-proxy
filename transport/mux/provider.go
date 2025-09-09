@@ -3,6 +3,7 @@ package mux
 import (
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/hashicorp/yamux"
 	"go.temporal.io/server/common/channel"
@@ -24,22 +25,23 @@ type (
 		setNewTransport SetTransportCallback
 		metricLabels    []string
 		logger          log.Logger
-		shutDown        channel.ShutdownOnce
 		startOnce       sync.Once
-		startedCh       chan struct{}
-		cleanedUpCh     chan struct{}
+		hasStarted      atomic.Bool
+		shouldShutDown  channel.ShutdownOnce
+		hasCleanedUp    channel.ShutdownOnce
 	}
 	SetTransportCallback func(swc *SessionWithConn)
 	// connProvider represents a way to get connections, either as a client or a server. MuxProvider guarantees that
 	// Close is called when the provider exits
 	connProvider interface {
 		NewConnection() (net.Conn, error)
-		CleanupCh() <-chan struct{}
+		CloseCh() <-chan struct{}
 	}
 	MuxProvider interface {
 		Start()
-		CleanupCh() <-chan struct{}
-		Stop()
+		Close()
+		CloseCh() <-chan struct{}
+		isClosed() bool
 	}
 )
 
@@ -61,15 +63,11 @@ func NewMuxProvider(name string,
 		setNewTransport: setNewTransport,
 		metricLabels:    metricLabels,
 		logger:          logger,
-		shutDown:        shutDown,
 		startOnce:       sync.Once{},
-		startedCh:       make(chan struct{}),
-		cleanedUpCh:     make(chan struct{}),
+		hasStarted:      atomic.Bool{},
+		shouldShutDown:  shutDown,
+		hasCleanedUp:    channel.NewShutdownOnce(),
 	}
-}
-
-func (m *muxProvider) CleanupCh() <-chan struct{} {
-	return m.cleanedUpCh
 }
 
 // Start starts the MuxProvider. MuxProvider can only be started once, and once they are started they will run until
@@ -78,24 +76,22 @@ func (m *muxProvider) CleanupCh() <-chan struct{} {
 // a new session.
 func (m *muxProvider) Start() {
 	m.startOnce.Do(func() {
-		close(m.startedCh)
+		m.hasStarted.Store(true)
 		var err error
 		go func() {
 			defer func() {
 				m.logger.Info("muxProvider shutting down", tag.NewErrorTag("lastError", err))
-				// It's not expected that this goroutine will panic, but if it does, make sure Shutdown runs
-				m.shutDown.Shutdown()
+				// If shouldShutDown wasn't already set, this goroutine exiting should force it
+				m.shouldShutDown.Shutdown()
 				m.setNewTransport(nil)
-				<-m.connProvider.CleanupCh()
-				select {
-				case <-m.cleanedUpCh:
-				default:
-					close(m.cleanedUpCh)
-				}
+				// Wait for connProvider to finish cleanup before notifying
+				<-m.connProvider.CloseCh()
+				// Notify all resources are cleaned up
+				m.hasCleanedUp.Shutdown()
 			}()
 		connect:
 			for {
-				if m.shutDown.IsShutdown() {
+				if m.shouldShutDown.IsShutdown() {
 					return
 				}
 				m.logger.Info("mux session watcher starting")
@@ -112,7 +108,7 @@ func (m *muxProvider) Start() {
 				_, err = session.Ping()
 				if err != nil {
 					m.setNewTransport(nil)
-					if !m.shutDown.IsShutdown() {
+					if !m.shouldShutDown.IsShutdown() {
 						m.logger.Error("got an invalid connection from connProvider", tag.Error(err))
 						metrics.MuxErrors.WithLabelValues(m.metricLabels...).Inc()
 					}
@@ -125,7 +121,7 @@ func (m *muxProvider) Start() {
 				// Wait for shutdown or session reconnect
 				select {
 				case <-session.CloseChan():
-				case <-m.shutDown.Channel():
+				case <-m.shouldShutDown.Channel():
 				}
 				m.onDisconnectFn()
 			}
@@ -133,16 +129,22 @@ func (m *muxProvider) Start() {
 	})
 }
 
-// Stop stops the MuxProvider and its associated connProvider permanently.
-func (m *muxProvider) Stop() {
-	m.shutDown.Shutdown()
-	select {
-	case <-m.startedCh:
-	default:
-		// If we were stopped before starting for some reason, close our state channels to unblock anything waiting
-		close(m.startedCh)
-		close(m.cleanedUpCh)
-		// Ensure Start() is blocked too
-		m.startOnce.Do(func() {})
+func (m *muxProvider) CloseCh() <-chan struct{} {
+	return m.hasCleanedUp.Channel()
+}
+
+// Close stops the MuxProvider and its associated connProvider permanently.
+func (m *muxProvider) Close() {
+	m.shouldShutDown.Shutdown()
+	// The connProvider has a thread that cleans up resources created by Start(), but if we never started that thread,
+	// we need to consume m.startOnce, and then mark everything as cleaned up
+	m.startOnce.Do(func() {})
+	if !m.hasStarted.Load() {
+		m.hasCleanedUp.Shutdown()
 	}
+	// Wait for connProvider to finish. This is closed from the goroutine started in Start()
+	<-m.hasCleanedUp.Channel()
+}
+func (m *muxProvider) isClosed() bool {
+	return m.hasCleanedUp.IsShutdown()
 }
