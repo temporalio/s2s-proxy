@@ -193,6 +193,8 @@ func buildMuxReader(name string, connProvider connProvider, yamuxFn func(io.Read
 		logger:          logger,
 		shutDown:        channel.NewShutdownOnce(),
 		startOnce:       sync.Once{},
+		startedCh:       make(chan struct{}),
+		cleanedUpCh:     make(chan struct{}),
 	}
 	connWaiter := &connWaiter{shutDown: make(chan struct{}), connSeen: make(chan *SessionWithConn), mgr: mgr}
 	connWaiter.Start()
