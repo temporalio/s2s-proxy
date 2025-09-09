@@ -213,11 +213,12 @@ func (m *muxManager) Start() {
 		go func() {
 			wakeThreads := time.NewTicker(m.wakeInterval)
 			defer wakeThreads.Stop()
-			for !m.shouldShutDown.IsShutdown() {
+			for {
 				select {
 				case <-wakeThreads.C:
 					m.connAvailable.Broadcast()
 				case <-m.shouldShutDown.Channel():
+					m.connAvailable.Broadcast()
 					return
 				}
 			}
