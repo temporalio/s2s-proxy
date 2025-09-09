@@ -64,8 +64,11 @@ func TestWithConnection_ReleasesOnShutdown(t *testing.T) {
 	mgr := NewMuxManager(config.MuxTransportConfig{Name: "test"}, logger)
 
 	// We're not testing the muxProvider in this test, so using a fake here
-	mgr.(*muxManager).muxProvider = &muxProvider{cleanedUpCh: make(chan struct{})}
-	close(mgr.(*muxManager).muxProvider.(*muxProvider).cleanedUpCh)
+	mgr.(*muxManager).muxProvider = &muxProvider{
+		startedCh:   make(chan struct{}),
+		cleanedUpCh: make(chan struct{}),
+		shutDown:    mgr.(*muxManager).shutDown,
+	}
 
 	// Start a waiter
 	errCh := make(chan error, 1)
