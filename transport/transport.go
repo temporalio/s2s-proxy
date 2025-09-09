@@ -2,11 +2,12 @@ package transport
 
 import (
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
-	"github.com/temporalio/s2s-proxy/transport/mux"
 	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/transport/mux"
 )
 
 type (
@@ -43,7 +44,13 @@ func NewTransportManager(
 	muxConnManagers := make(map[string]mux.MuxManager)
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	for _, cfg := range s2sConfig.MuxTransports {
-		muxConnManagers[cfg.Name] = mux.NewMuxManager(cfg, logger)
+		muxMgr := mux.NewMuxManager(cfg, logger)
+		err := muxMgr.ConfigureMuxManager()
+		if err != nil {
+			logger.Fatal("Failed to configure mux manager", tag.Error(err))
+			panic(err)
+		}
+		muxConnManagers[cfg.Name] = muxMgr
 	}
 
 	return &TransportManager{
@@ -78,9 +85,7 @@ func (tm *TransportManager) OpenServer(serverConfig config.ProxyServerConfig) (S
 
 func (tm *TransportManager) Start() error {
 	for _, cm := range tm.muxConnManagers {
-		if err := cm.Start(); err != nil {
-			return err
-		}
+		cm.Start()
 	}
 
 	return nil

@@ -5,11 +5,11 @@ import (
 	"net"
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
-	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
 type (

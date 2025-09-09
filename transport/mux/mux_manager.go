@@ -12,13 +12,13 @@ import (
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/hashicorp/yamux"
-	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
 type (
@@ -27,6 +27,7 @@ type (
 	// can be retrieved by readers using WithConnection and TryConnectionOrElse.
 	muxManager struct {
 		config        config.MuxTransportConfig
+		muxProvider   MuxProvider                     // A reference to the MuxProvider that provides myxConnection
 		muxConnection atomic.Pointer[SessionWithConn] // Underlying mux value. This starts as nil, and is set by the provider.
 		connAvailable sync.Cond                       // Condition lock for muxConnection. Used to notify threads waiting in WithConnection
 		init          sync.Once                       // Ensures a MuxManager can only be started once
@@ -36,22 +37,29 @@ type (
 		wakeInterval  time.Duration
 	}
 	SessionWithConn struct {
-		session *yamux.Session
-		conn    net.Conn
+		Session *yamux.Session
+		Conn    net.Conn
 	}
 	MuxManager interface {
 		IsClosed() bool
+		// Close closes the internal shutdown latch and sets the connection to nil. This will stop the connection provider:
+		// if you want to reopen connections you'll need to create a new MuxManager instance.
 		Close()
 		CloseChan() <-chan struct{}
+		// Connect is part of the ClientTransport interface. This is used to establish an outbound grpc client.
+		// It needs to create a dialer, dial the remote host using the provided mux, and then return the new connection.
+		// This will block until a session is available.
 		Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.ClientConn, error)
 		Serve(server *grpc.Server) error
-		Start() error
+		Start()
 		ReplaceConnection(swc *SessionWithConn)
+		ConfigureMuxManager() error
+		PingSession() error
 	}
 )
 
 func (s *SessionWithConn) IsClosed() bool {
-	return s.session.IsClosed()
+	return s.Session.IsClosed()
 }
 
 // NewMuxManager will wrap the provided logger with a tag identifying the logs, and handles initializing all the sync
@@ -70,11 +78,15 @@ func NewMuxManager(cfg config.MuxTransportConfig, logger log.Logger) MuxManager 
 	return muxMgr
 }
 
-// Close closes the internal shutdown latch and sets the connection to nil. This will stop the connection provider:
-// if you want to reopen connections you'll need to create a new MuxManager instance.
 func (m *muxManager) Close() {
 	m.shutDown.Shutdown()
+	m.muxProvider.Stop()
 	m.ReplaceConnection(nil)
+	select {
+	case <-m.muxProvider.CleanupCh():
+	case <-time.After(time.Second * 10):
+		m.logger.Fatal("timed out waiting for mux provider to close")
+	}
 	select {
 	case <-m.closeChan:
 	default:
@@ -82,7 +94,6 @@ func (m *muxManager) Close() {
 	}
 }
 
-// CloseChan is part of Closable
 func (m *muxManager) CloseChan() <-chan struct{} {
 	return m.closeChan
 }
@@ -96,12 +107,20 @@ func (m *muxManager) IsClosed() bool {
 	}
 }
 
-// Connect is part of the ClientTransport interface. This is used to establish an outbound grpc client.
-// It needs to create a dialer, dial the remote host using the provided mux, and then return the new connection.
-// This will block until a session is available.
+// PingSession is a convenience method that sends a ping at the active Yamux session, waiting for up to a second.
+// Useful for checking if the session is connected in health checks
+func (m *muxManager) PingSession() error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	_, err := WithConnection(ctx, m, func(swc *SessionWithConn) (time.Duration, error) {
+		return swc.Session.Ping()
+	})
+	cancel()
+	return err
+}
+
 func (m *muxManager) Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.ClientConn, error) {
 	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
-		return WithConnection(ctx, m, func(conn *SessionWithConn) (net.Conn, error) { return conn.session.Open() })
+		return WithConnection(ctx, m, func(conn *SessionWithConn) (net.Conn, error) { return conn.Session.Open() })
 	}
 
 	// Set hostname to unused since custom dialer is used.
@@ -112,22 +131,31 @@ func (m *muxManager) Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.Clien
 // This will block until a session is available.
 func (m *muxManager) Serve(server *grpc.Server) error {
 	_, err := WithConnection(context.Background(), m, func(s *SessionWithConn) (struct{}, error) {
-		return struct{}{}, server.Serve(s.session)
+		return struct{}{}, server.Serve(s.Session)
 	})
 	return err
 }
 
+// SetCustomWakeInterval sets the speed at which the MuxProvider wakes waiting threads. Must be set BEFORE starting
+func SetCustomWakeInterval(m MuxManager, wakeInterval time.Duration) {
+	if mm, ok := m.(*muxManager); ok {
+		mm.wakeInterval = wakeInterval
+	}
+}
+
 // WithConnection waits on connAvailable's condition until the pointer is non-null, then runs the provided function
-// with that pointer.
-// Warning: This function will panic if you try to pass it an alternative MuxManager struct
+// with that pointer. If a connection was not available, returns error and the empty value for your type
+// Warning: This function will panic if you try to pass it an alternative MuxManager implementation
 func WithConnection[T any](ctx context.Context, m MuxManager, f func(*SessionWithConn) (T, error)) (T, error) {
 	if mm, ok := m.(*muxManager); ok {
 		// Some reminders on condition variables: A condition variable is a multi-layered lock: First we lock this
 		// outer lock, which protects an internal semaphore/waitgroup. That semaphore/waitgroup represents a queue of waiting threads.
 		mm.connAvailable.L.Lock()
 		for {
+			// Check conditions first: If a valid connection is available, no need to wait
 			if ctx.Err() != nil {
 				var empty T
+				mm.connAvailable.L.Unlock()
 				return empty, ctx.Err()
 			}
 			if mm.shutDown.IsShutdown() {
@@ -135,20 +163,20 @@ func WithConnection[T any](ctx context.Context, m MuxManager, f func(*SessionWit
 				var empty T
 				return empty, errors.New("the mux manager is shutting down")
 			}
-			// When we wait here, we add ourselves to the list of threads that should be restarted, let go of connAvailable.L,
-			// and then suspend indefinitely. We will only be woken by Broadcast (wakes up every thread) or Signal (wakes up one thread)
-			// As part of waking up from connAvailable.Wait, this thread will re-take connAvailable.L
-			mm.connAvailable.Wait()
+			// We want to see muxConnection is available and non-nil
 			if ptr := mm.muxConnection.Load(); ptr != nil && !ptr.IsClosed() {
 				// Don't keep lock held while running f so that other code can use the connection
 				mm.connAvailable.L.Unlock()
 				ret, err := f(ptr)
 				if err != nil {
-					var empty T
-					return empty, fmt.Errorf("the provided function threw error %w", err)
+					return ret, fmt.Errorf("the provided function threw error %w", err)
 				}
 				return ret, nil
 			}
+			// When we wait here, we add ourselves to the list of threads that should be restarted, let go of connAvailable.L,
+			// and then suspend indefinitely. We will only be woken by Broadcast (wakes up every thread) or Signal (wakes up one thread)
+			// As part of waking up from connAvailable.Wait, this thread will re-take connAvailable.L
+			mm.connAvailable.Wait()
 		}
 	} else {
 		panic("invalid mux manager type " + reflect.TypeOf(m).String())
@@ -181,8 +209,8 @@ func (m *muxManager) ReplaceConnection(swc *SessionWithConn) {
 	// Make sure the existing conn is fully closed
 	existingConn := m.muxConnection.Load()
 	if existingConn != nil {
-		_ = existingConn.session.Close()
-		_ = existingConn.conn.Close()
+		_ = existingConn.Session.Close()
+		_ = existingConn.Conn.Close()
 	}
 	// Now add new conn
 	m.muxConnection.Store(swc)
@@ -192,8 +220,7 @@ func (m *muxManager) ReplaceConnection(swc *SessionWithConn) {
 
 // Start looks at the config, constructs the appropriate MuxProvider and Starts it. Once started, the provider will
 // run until shutDown is closed. If the provider panics for some reason, it will close shutDown itself and terminate.
-func (m *muxManager) Start() error {
-	var err error
+func (m *muxManager) Start() {
 	m.init.Do(func() {
 		// Wake up the threads waiting on connections every 5 seconds so that we can obey any context timeouts.
 		go func() {
@@ -207,34 +234,31 @@ func (m *muxManager) Start() error {
 				}
 			}
 		}()
-		switch m.config.Mode {
-		case config.ClientMode:
-			m.logger.Info(fmt.Sprintf("Start ConnectMananger with Config: %v", m.config.Client))
-			metricLabels := []string{m.config.Client.ServerAddress,
-				string(m.config.Mode),
-				m.config.Name,
-			}
-			var provider MuxProvider
-			provider, err = NewMuxEstablisherProvider(m.config.Name, m.ReplaceConnection, m.config.Client, metricLabels, m.logger, m.shutDown)
-			if err != nil {
-				return
-			}
-			provider.Start()
-		case config.ServerMode:
-			m.logger.Info(fmt.Sprintf("Start ConnectMananger with Config: %v", m.config.Server))
-			metricLabels := []string{m.config.Server.ListenAddress,
-				string(m.config.Mode),
-				m.config.Name,
-			}
-			var provider MuxProvider
-			provider, err = NewMuxReceiverProvider(m.config.Name, m.ReplaceConnection, m.config.Server, metricLabels, m.logger)
-			if err != nil {
-				return
-			}
-			provider.Start()
-		default:
-			err = fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s", m.config.Name, m.config.Mode)
-		}
+		m.muxProvider.Start()
 	})
+}
+
+// ConfigureMuxManager is kept separate from the constructor so that custom mux providers can be more easily
+// used in unit testing. This method parses the config, constructs an appropriate muxProvider and sets it on muxProvider
+func (m *muxManager) ConfigureMuxManager() error {
+	var err error
+	switch m.config.Mode {
+	case config.ClientMode:
+		m.logger.Info(fmt.Sprintf("Applying ClientMode mux provider from config: %v", m.config.Client))
+		metricLabels := []string{m.config.Client.ServerAddress,
+			string(m.config.Mode),
+			m.config.Name,
+		}
+		m.muxProvider, err = NewMuxEstablisherProvider(m.config.Name, m.ReplaceConnection, m.config.Client, metricLabels, m.logger, m.shutDown)
+	case config.ServerMode:
+		m.logger.Info(fmt.Sprintf("Applying ServerMode mux provider from config: %v", m.config.Server))
+		metricLabels := []string{m.config.Server.ListenAddress,
+			string(m.config.Mode),
+			m.config.Name,
+		}
+		m.muxProvider, err = NewMuxReceiverProvider(m.config.Name, m.ReplaceConnection, m.config.Server, metricLabels, m.logger, m.shutDown)
+	default:
+		return fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s", m.config.Name, m.config.Mode)
+	}
 	return err
 }

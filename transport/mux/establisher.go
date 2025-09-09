@@ -3,7 +3,6 @@ package mux
 import (
 	"crypto/tls"
 	"errors"
-	"math/rand/v2"
 	"net"
 	"time"
 
@@ -44,7 +43,7 @@ var (
 	// TODO: This should be safe to remove as of recent safety improvements to MuxManager.
 	ClientDisconnectFn = func() {
 		// If the server rapidly disconnects us, we don't want to get caught in a tight loop. Sleep 1-2 seconds before retry
-		time.Sleep(time.Second + time.Duration(rand.IntN(1000))*time.Millisecond)
+		//time.Sleep(time.Second + time.Duration(rand.IntN(1000))*time.Millisecond)
 	}
 )
 
@@ -90,17 +89,24 @@ func (p *establishingConnProvider) NewConnection() (net.Conn, error) {
 	}
 
 	onError := func(err error) bool {
-		p.logger.Error("mux client failed to dial", tag.Error(err))
+		if !p.shutdownCheck.IsShutdown() {
+			p.logger.Info("mux client failed to dial", tag.Error(err))
+		}
 		return !p.shutdownCheck.IsShutdown()
 	}
 	if err := backoff.ThrottleRetry(dialFn, retryPolicy, onError); err != nil {
-		p.logger.Error("mux client failed to dial with retry", tag.Error(err))
-		metrics.MuxErrors.WithLabelValues(p.metricLabels...).Inc()
+		if !p.shutdownCheck.IsShutdown() {
+			p.logger.Error("mux client failed to dial with retry", tag.Error(err))
+			metrics.MuxErrors.WithLabelValues(p.metricLabels...).Inc()
+		}
 		return nil, err
 	}
 	return client, nil
 }
 
-func (p *establishingConnProvider) CloseProvider() {
-	// Nothing to close on the client side, we're done.
+// CleanupCh for the establisher is a no-op, because only the Conn needs to be closed
+func (p *establishingConnProvider) CleanupCh() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
 }

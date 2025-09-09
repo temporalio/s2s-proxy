@@ -26,16 +26,20 @@ type (
 		logger          log.Logger
 		shutDown        channel.ShutdownOnce
 		startOnce       sync.Once
+		startedCh       chan struct{}
+		cleanedUpCh     chan struct{}
 	}
 	SetTransportCallback func(swc *SessionWithConn)
 	// connProvider represents a way to get connections, either as a client or a server. MuxProvider guarantees that
 	// Close is called when the provider exits
 	connProvider interface {
 		NewConnection() (net.Conn, error)
-		CloseProvider()
+		CleanupCh() <-chan struct{}
 	}
 	MuxProvider interface {
 		Start()
+		CleanupCh() <-chan struct{}
+		Stop()
 	}
 )
 
@@ -59,7 +63,13 @@ func NewMuxProvider(name string,
 		logger:          logger,
 		shutDown:        shutDown,
 		startOnce:       sync.Once{},
+		startedCh:       make(chan struct{}),
+		cleanedUpCh:     make(chan struct{}),
 	}
+}
+
+func (m *muxProvider) CleanupCh() <-chan struct{} {
+	return m.cleanedUpCh
 }
 
 // Start starts the MuxProvider. MuxProvider can only be started once, and once they are started they will run until
@@ -68,12 +78,20 @@ func NewMuxProvider(name string,
 // a new session.
 func (m *muxProvider) Start() {
 	m.startOnce.Do(func() {
+		close(m.startedCh)
 		var err error
 		go func() {
 			defer func() {
+				m.logger.Info("muxProvider shutting down", tag.NewErrorTag("lastError", err))
+				// It's not expected that this goroutine will panic, but if it does, make sure Shutdown runs
 				m.shutDown.Shutdown()
-				m.connProvider.CloseProvider()
 				m.setNewTransport(nil)
+				<-m.connProvider.CleanupCh()
+				select {
+				case <-m.cleanedUpCh:
+				default:
+					close(m.cleanedUpCh)
+				}
 			}()
 		connect:
 			for {
@@ -94,13 +112,15 @@ func (m *muxProvider) Start() {
 				_, err = session.Ping()
 				if err != nil {
 					m.setNewTransport(nil)
-					m.logger.Error("got an invalid connection from connProvider", tag.Error(err))
-					metrics.MuxErrors.WithLabelValues(m.metricLabels...).Inc()
+					if !m.shutDown.IsShutdown() {
+						m.logger.Error("got an invalid connection from connProvider", tag.Error(err))
+						metrics.MuxErrors.WithLabelValues(m.metricLabels...).Inc()
+					}
 					continue connect
 				}
 				go observeYamuxSession(session, observerLabels(session.LocalAddr().String(), session.RemoteAddr().String(), "conn", m.name))
 
-				m.setNewTransport(&SessionWithConn{session: session, conn: conn})
+				m.setNewTransport(&SessionWithConn{Session: session, Conn: conn})
 				metrics.MuxConnectionEstablish.WithLabelValues(m.metricLabels...).Inc()
 				// Wait for shutdown or session reconnect
 				select {
@@ -111,4 +131,18 @@ func (m *muxProvider) Start() {
 			}
 		}()
 	})
+}
+
+// Stop stops the MuxProvider and its associated connProvider permanently.
+func (m *muxProvider) Stop() {
+	m.shutDown.Shutdown()
+	select {
+	case <-m.startedCh:
+	default:
+		// If we were stopped before starting for some reason, close our state channels to unblock anything waiting
+		close(m.startedCh)
+		close(m.cleanedUpCh)
+		// Ensure Start() is blocked too
+		m.startOnce.Do(func() {})
+	}
 }

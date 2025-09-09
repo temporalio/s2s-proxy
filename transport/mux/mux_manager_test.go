@@ -22,7 +22,7 @@ func newSessionWithConn(t *testing.T) (swc *SessionWithConn, remote net.Conn, cl
 	c1, c2 := net.Pipe()
 	sess, err := yamux.Client(c1, nil)
 	assert.NoError(t, err)
-	swc = &SessionWithConn{session: sess, conn: c1}
+	swc = &SessionWithConn{Session: sess, Conn: c1}
 	cleanup = func() {
 		_ = sess.Close()
 		_ = c1.Close()
@@ -63,26 +63,19 @@ func TestWithConnection_ReleasesOnShutdown(t *testing.T) {
 	logger := log.NewTestLogger()
 	mgr := NewMuxManager(config.MuxTransportConfig{Name: "test"}, logger)
 
-	// Put an open connection in place
-	swc, _, cleanup := newSessionWithConn(t)
-	defer cleanup()
-	mgr.ReplaceConnection(swc)
+	// We're not testing the muxProvider in this test, so using a fake here
+	mgr.(*muxManager).muxProvider = &muxProvider{cleanedUpCh: make(chan struct{})}
+	close(mgr.(*muxManager).muxProvider.(*muxProvider).cleanedUpCh)
 
-	// Start a waiter; it should be waiting because WithConnection always waits before checking
+	// Start a waiter
 	errCh := make(chan error, 1)
 	go func() {
 		_, err := WithConnection(context.Background(), mgr, func(s *SessionWithConn) (struct{}, error) { return struct{}{}, nil })
 		errCh <- err
 	}()
 
-	// Give goroutine time to enter wait
-	time.Sleep(20 * time.Millisecond)
-
-	// Shutdown should close existing connection and wake waiter with an error
+	// Shutdown should notify the waiting thread and have it give up
 	mgr.Close()
-
-	// Verify the existing session is closed
-	assert.Eventually(t, func() bool { return swc.session.IsClosed() }, time.Second, 10*time.Millisecond)
 
 	// Waiter should return shutdown error
 	select {
@@ -107,6 +100,11 @@ func (p *passthroughConnProvider) NewConnection() (net.Conn, error) {
 func (p *passthroughConnProvider) CloseProvider() {
 	_ = p.conn.Close()
 }
+func (p *passthroughConnProvider) CleanupCh() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
 
 // connWaiter repeatedly waits on mgr.WithConnection, and then sends the session to connSeen. Stops when it sees shutDown
 type connWaiter struct {
@@ -124,7 +122,7 @@ func (c connWaiter) Start() {
 			default:
 				_, _ = WithConnection(context.Background(), c.mgr, func(s *SessionWithConn) (struct{}, error) {
 					c.connSeen <- s
-					<-s.session.CloseChan()
+					<-s.Session.CloseChan()
 					return struct{}{}, nil
 				})
 			}
