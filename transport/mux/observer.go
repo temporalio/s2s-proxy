@@ -20,6 +20,9 @@ func observeYamuxSession(session *yamux.Session, metricLabels []string) {
 		// If we got a null session, we can't even generate tags to report
 		return
 	}
+	metrics.MuxSessionPingError.WithLabelValues(metricLabels...)
+	metrics.MuxSessionPingLatency.WithLabelValues(metricLabels...)
+	metrics.MuxSessionPingCount.WithLabelValues(metricLabels...)
 	var sessionActive int8 = 1
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()

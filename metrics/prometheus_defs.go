@@ -66,6 +66,8 @@ var (
 	MuxConnectionEstablish = DefaultCounterVec("mux_connection_establish", "Number of times mux has established", muxManagerLabels...)
 	MuxWaitingConnections  = DefaultGaugeVec("mux_waiting_connections", "Number of threads waiting", muxManagerLabels...)
 	MuxConnectionProvided  = DefaultCounterVec("mux_connection_provided", "Number of connections provided from WithConnection", muxManagerLabels...)
+	MuxDialFailed          = DefaultCounterVec("mux_dial_failed", "Mux failed when dialing", muxManagerLabels...)
+	MuxDialSuccess         = DefaultCounterVec("mux_dial_success", "Mux succeeded on dial", muxManagerLabels...)
 
 	// Translation interceptor
 
@@ -120,6 +122,8 @@ func init() {
 	prometheus.MustRegister(MuxConnectionEstablish)
 	prometheus.MustRegister(MuxWaitingConnections)
 	prometheus.MustRegister(MuxConnectionProvided)
+	prometheus.MustRegister(MuxDialFailed)
+	prometheus.MustRegister(MuxDialSuccess)
 
 	prometheus.MustRegister(TranslationCount)
 	prometheus.MustRegister(TranslationErrors)

@@ -73,6 +73,8 @@ type (
 		// This will block until a session is available.
 		Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.ClientConn, error)
 		Serve(server *grpc.Server) error
+
+		//
 	}
 )
 
@@ -128,13 +130,16 @@ func (m *muxManager) Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.Clien
 		res, err := m.WithConnection(ctx, func(conn *SessionWithConn) (any, error) { return conn.Session.Open() })
 		conn, ok := res.(net.Conn)
 		if !ok {
+			metrics.MuxDialFailed.WithLabelValues(m.metricLabels...).Inc()
 			return nil, err
 		}
+		metrics.MuxDialSuccess.WithLabelValues(m.metricLabels...).Inc()
 		return conn, err
 	}
 
 	// Set hostname to unused since custom dialer is used.
-	return grpcutil.Dial("unused", nil, clientMetrics, dialer)
+	clientConn, err := grpcutil.Dial("unused", nil, clientMetrics, dialer)
+	return clientConn, err
 }
 
 func (m *muxManager) Serve(server *grpc.Server) error {
