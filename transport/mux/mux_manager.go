@@ -214,6 +214,9 @@ func (m *muxManager) ReplaceConnection(swc *SessionWithConn) {
 }
 
 func (m *muxManager) Start() {
+	if m.metricLabels == nil {
+		panic("metric labels are missing, did you forget to run ConfigureMuxManager?")
+	}
 	m.init.Do(func() {
 		// Start a monitor that will periodically Broadcast so that waiting threads can check their contexts
 		go func() {

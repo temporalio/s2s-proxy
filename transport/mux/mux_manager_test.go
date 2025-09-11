@@ -35,6 +35,7 @@ func TestWithConnection_SkipsClosedSessionsAndWaitsForNew(t *testing.T) {
 	logger := log.NewTestLogger()
 	// Grab the impl so we can set a superfast wake interval
 	mgr := NewMuxManager(config.MuxTransportConfig{Name: "test"}, logger).(*muxManager)
+	mgr.metricLabels = []string{"test", "mux", "manager"}
 	mgr.wakeInterval = 5 * time.Millisecond
 
 	// Wait for a connection
@@ -62,6 +63,7 @@ func TestWithConnection_SkipsClosedSessionsAndWaitsForNew(t *testing.T) {
 func TestWithConnection_ReleasesOnShutdown(t *testing.T) {
 	logger := log.NewTestLogger()
 	mgr := NewMuxManager(config.MuxTransportConfig{Name: "test"}, logger)
+	mgr.(*muxManager).metricLabels = []string{"test", "mux", "manager"}
 
 	// We're not testing the muxProvider in this test, so using a fake here
 	mgr.(*muxManager).muxProvider = &muxProvider{
@@ -176,6 +178,7 @@ func TestWithConnection_MuxProviderReconnect(t *testing.T) {
 
 func buildMuxReader(name string, connProvider connProvider, yamuxFn func(io.ReadWriteCloser, *yamux.Config) (*yamux.Session, error), logger log.Logger) (MuxManager, *connWaiter, chan struct{}, MuxProvider) {
 	mgr := NewMuxManager(config.MuxTransportConfig{Name: name}, logger)
+	mgr.(*muxManager).metricLabels = []string{"test", "mux", "manager"}
 	connDisconnected := make(chan struct{}, 1)
 	provider := &muxProvider{
 		name:         name,
@@ -189,7 +192,7 @@ func buildMuxReader(name string, connProvider connProvider, yamuxFn func(io.Read
 			connDisconnected <- struct{}{}
 		},
 		setNewTransport: mgr.ReplaceConnection,
-		metricLabels:    []string{"a", "b", "c"},
+		metricLabels:    mgr.(*muxManager).metricLabels,
 		logger:          logger,
 		shouldShutDown:  channel.NewShutdownOnce(),
 		startOnce:       sync.Once{},
