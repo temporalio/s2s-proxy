@@ -103,6 +103,8 @@ func init() {
 	prometheus.MustRegister(MuxObserverReportCount)
 	prometheus.MustRegister(MuxErrors)
 	prometheus.MustRegister(MuxConnectionEstablish)
+	prometheus.MustRegister(MuxWaitingConnections)
+	prometheus.MustRegister(MuxConnectionProvided)
 
 	prometheus.MustRegister(TranslationCount)
 	prometheus.MustRegister(TranslationErrors)

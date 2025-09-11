@@ -28,7 +28,7 @@ type (
 	muxManager struct {
 		config         config.MuxTransportConfig
 		metricLabels   []string                        // Derived from the config
-		muxProvider    MuxProvider                     // A reference to the MuxProvider that provides myxConnection
+		muxProvider    MuxProvider                     // A reference to the MuxProvider that provides muxConnection
 		muxConnection  atomic.Pointer[SessionWithConn] // Underlying mux value. This starts as nil, and is set by the provider.
 		connAvailable  sync.Cond                       // Condition lock for muxConnection. Used to notify threads waiting in WithConnection
 		init           sync.Once                       // Ensures a MuxManager can only be started once
@@ -243,6 +243,7 @@ func (m *muxManager) ConfigureMuxManager() error {
 			string(m.config.Mode),
 			m.config.Name,
 		}
+		m.metricLabels = metricLabels
 		m.muxProvider, err = NewMuxEstablisherProvider(m.config.Name, m.ReplaceConnection, m.config.Client, metricLabels, m.logger, m.shouldShutDown)
 	case config.ServerMode:
 		m.logger.Info(fmt.Sprintf("Applying ServerMode mux provider from config: %v", m.config.Server))
@@ -250,6 +251,7 @@ func (m *muxManager) ConfigureMuxManager() error {
 			string(m.config.Mode),
 			m.config.Name,
 		}
+		m.metricLabels = metricLabels
 		m.muxProvider, err = NewMuxReceiverProvider(m.config.Name, m.ReplaceConnection, m.config.Server, metricLabels, m.logger, m.shouldShutDown)
 	default:
 		return fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s", m.config.Name, m.config.Mode)
