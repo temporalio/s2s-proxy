@@ -42,7 +42,7 @@ var (
 	GRPCOutboundClientMetrics = GetStandardGRPCClientInterceptor("outbound")
 	GRPCInboundClientMetrics  = GetStandardGRPCClientInterceptor("inbound")
 
-	// /transport/mux_connection_manager.go
+	// /transport/mux
 
 	// Every yamux session has these available, so let's use them in the prometheus tags so we can clearly see each connection
 	muxSessionLabels = []string{"local_addr", "remote_addr", "mode", "config_name"}
@@ -55,6 +55,10 @@ var (
 	muxManagerLabels       = []string{"addr", "mode", "config_name"}
 	MuxErrors              = DefaultCounterVec("mux_errors", "Number of errors observed from mux", muxManagerLabels...)
 	MuxConnectionEstablish = DefaultCounterVec("mux_connection_establish", "Number of times mux has established", muxManagerLabels...)
+	MuxWaitingConnections  = DefaultGaugeVec("mux_waiting_connections", "Number of threads waiting", muxManagerLabels...)
+	MuxConnectionProvided  = DefaultCounterVec("mux_connection_provided", "Number of connections provided from WithConnection", muxManagerLabels...)
+
+	// Translation interceptor
 
 	translationLabels = []string{"kind", "message_type"}
 	TranslationCount  = DefaultCounterVec("translation_success", "Count of message translations", translationLabels...)

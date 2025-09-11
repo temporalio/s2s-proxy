@@ -11,6 +11,7 @@ import (
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/hashicorp/yamux"
+	"github.com/temporalio/s2s-proxy/metrics"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -26,6 +27,7 @@ type (
 	// can be retrieved by readers using WithConnection and TryConnectionOrElse.
 	muxManager struct {
 		config         config.MuxTransportConfig
+		metricLabels   []string                        // Derived from the config
 		muxProvider    MuxProvider                     // A reference to the MuxProvider that provides myxConnection
 		muxConnection  atomic.Pointer[SessionWithConn] // Underlying mux value. This starts as nil, and is set by the provider.
 		connAvailable  sync.Cond                       // Condition lock for muxConnection. Used to notify threads waiting in WithConnection
@@ -153,11 +155,14 @@ func SetCustomWakeInterval(m MuxManager, wakeInterval time.Duration) {
 func (m *muxManager) WithConnection(ctx context.Context, f func(*SessionWithConn) (any, error)) (result any, err error) {
 	// Some reminders on condition variables: A condition variable is a multi-layered lock: First we lock this
 	// outer lock, which protects an internal semaphore/waitgroup. That semaphore/waitgroup represents a queue of waiting threads.
+	metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...).Inc()
+	defer metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...).Dec()
 	m.connAvailable.L.Lock()
 	for {
 		// Check conditions first: If a valid connection is available, no need to wait
 		if ctx.Err() != nil {
 			m.connAvailable.L.Unlock()
+			m.logger.Warn("Context canceled while trying to get connection", tag.Error(ctx.Err()))
 			return result, ctx.Err()
 		}
 		if m.shouldShutDown.IsShutdown() {
@@ -172,6 +177,7 @@ func (m *muxManager) WithConnection(ctx context.Context, f func(*SessionWithConn
 			if err != nil {
 				return result, fmt.Errorf("the provided function threw error %w", err)
 			}
+			metrics.MuxConnectionProvided.WithLabelValues(m.metricLabels...).Inc()
 			return
 		}
 		// When we wait here, we add ourselves to the list of threads that should be restarted, let go of connAvailable.L,
