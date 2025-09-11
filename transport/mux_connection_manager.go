@@ -101,9 +101,9 @@ func (m *muxConnectManager) open() (MuxTransport, error) {
 	}
 	m.mu.Unlock()
 
-	if muxTransport.session.IsClosed() {
-		return nil, fmt.Errorf("session is closed")
-	}
+	//if muxTransport.session.IsClosed() {
+	//	return nil, fmt.Errorf("session is closed")
+	//}
 	return muxTransport, nil
 }
 
@@ -165,14 +165,7 @@ func (m *muxConnectManager) serverLoop(metricLabels []string, setting config.TCP
 
 				m.logger.Info("Accept new connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
 
-				session, err := yamux.Server(conn, nil)
-				go observeYamuxSession(session, m.config)
-				if err != nil {
-					m.logger.Fatal("yamux.Server failed", tag.Error(err))
-					metrics.MuxErrors.WithLabelValues(metricLabels...).Inc()
-				}
-
-				m.muxTransport = newMuxTransport(conn, session)
+				m.muxTransport = newMuxTransport(&connAsListener{Conn: conn})
 				metrics.MuxConnectionEstablish.WithLabelValues(metricLabels...).Inc()
 				m.waitForReconnect()
 			}
@@ -232,14 +225,7 @@ func (m *muxConnectManager) clientLoop(metricLabels []string, setting config.TCP
 					conn = client
 				}
 
-				session, err := yamux.Client(conn, nil)
-				go observeYamuxSession(session, m.config)
-				if err != nil {
-					m.logger.Fatal("yamux.Client failed", tag.Error(err))
-					metrics.MuxErrors.WithLabelValues(metricLabels...).Inc()
-				}
-
-				m.muxTransport = newMuxTransport(conn, session)
+				m.muxTransport = newMuxTransport(&connAsListener{Conn: conn})
 				metrics.MuxConnectionEstablish.WithLabelValues(metricLabels...).Inc()
 				m.waitForReconnect()
 
@@ -354,8 +340,8 @@ func (m *muxConnectManager) waitForReconnect() {
 	select {
 	case <-m.shutdownCh:
 		m.muxTransport.closeSession()
-	case <-m.muxTransport.session.CloseChan():
-		m.muxTransport.closeSession()
+	//case <-m.muxTransport.session.CloseChan():
+	//	m.muxTransport.closeSession()
 	}
 
 	m.logger.Debug("disconnected")
