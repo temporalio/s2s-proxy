@@ -156,33 +156,37 @@ func (m *muxManager) WithConnection(ctx context.Context, f func(*SessionWithConn
 	// Some reminders on condition variables: A condition variable is a multi-layered lock: First we lock this
 	// outer lock, which protects an internal semaphore/waitgroup. That semaphore/waitgroup represents a queue of waiting threads.
 	metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...).Inc()
-	defer metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...).Dec()
+
 	m.connAvailable.L.Lock()
 	for {
 		// Check conditions first: If a valid connection is available, no need to wait
 		if ctx.Err() != nil {
 			m.connAvailable.L.Unlock()
+			metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...).Dec()
 			m.logger.Warn("Context canceled while trying to get connection", tag.Error(ctx.Err()))
 			return result, ctx.Err()
 		}
 		if m.shouldShutDown.IsShutdown() {
 			m.connAvailable.L.Unlock()
+			metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...).Dec()
 			return result, errors.New("the mux manager is shutting down")
 		}
 		// We want to see muxConnection is available and non-nil
 		if ptr := m.muxConnection.Load(); ptr != nil && !ptr.IsClosed() {
 			// Don't keep lock held while running f so that other code can use the connection
 			m.connAvailable.L.Unlock()
+			metrics.MuxConnectionProvided.WithLabelValues(m.metricLabels...).Inc()
+			metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...).Dec()
 			result, err = f(ptr)
 			if err != nil {
 				return result, fmt.Errorf("the provided function threw error %w", err)
 			}
-			metrics.MuxConnectionProvided.WithLabelValues(m.metricLabels...).Inc()
 			return
 		}
 		// When we wait here, we add ourselves to the list of threads that should be restarted, let go of connAvailable.L,
 		// and then suspend indefinitely. We will only be woken by Broadcast (wakes up every thread) or Signal (wakes up one thread)
 		// As part of waking up from connAvailable.Wait, this thread will re-take connAvailable.L
+
 		m.connAvailable.Wait()
 	}
 
@@ -217,6 +221,11 @@ func (m *muxManager) Start() {
 	if m.metricLabels == nil {
 		panic("metric labels are missing, did you forget to run ConfigureMuxManager?")
 	}
+	// Initialize the counters so we get clear "0"s
+	metrics.MuxConnectionProvided.WithLabelValues(m.metricLabels...)
+	metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...)
+	metrics.MuxConnectionEstablish.WithLabelValues(m.metricLabels...)
+	metrics.MuxErrors.WithLabelValues(m.metricLabels...)
 	m.init.Do(func() {
 		// Start a monitor that will periodically Broadcast so that waiting threads can check their contexts
 		go func() {
