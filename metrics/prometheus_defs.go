@@ -42,7 +42,7 @@ var (
 	GRPCOutboundClientMetrics = GetStandardGRPCClientInterceptor("outbound")
 	GRPCInboundClientMetrics  = GetStandardGRPCClientInterceptor("inbound")
 
-	// /transport/mux
+	// Mux Session
 
 	// Every yamux session has these available, so let's use them in the prometheus tags so we can clearly see each connection
 	muxSessionLabels = []string{"local_addr", "remote_addr", "mode", "config_name"}
@@ -52,6 +52,15 @@ var (
 		muxSessionLabels...)
 	MuxObserverReportCount = DefaultCounterVec("mux_observer_report_count", "Number of observer executions",
 		muxSessionLabels...)
+	MuxSessionPingError = DefaultCounterVec("mux_observer_session_ping_error", "Failed ping count",
+		muxSessionLabels...)
+	MuxSessionPingLatency = DefaultCounterVec("mux_observer_session_ping_latency", "Ping latency for the active session",
+		muxSessionLabels...)
+	MuxSessionPingCount = DefaultCounterVec("mux_observer_session_ping_count", "Ping count for the active session",
+		muxSessionLabels...)
+
+	// Mux Manager
+
 	muxManagerLabels       = []string{"addr", "mode", "config_name"}
 	MuxErrors              = DefaultCounterVec("mux_errors", "Number of errors observed from mux", muxManagerLabels...)
 	MuxConnectionEstablish = DefaultCounterVec("mux_connection_establish", "Number of times mux has established", muxManagerLabels...)
@@ -98,9 +107,15 @@ func init() {
 	prometheus.MustRegister(GRPCOutboundClientMetrics)
 	prometheus.MustRegister(GRPCInboundClientMetrics)
 
+	// Mux Session
 	prometheus.MustRegister(MuxSessionOpen)
 	prometheus.MustRegister(MuxStreamsActive)
 	prometheus.MustRegister(MuxObserverReportCount)
+	prometheus.MustRegister(MuxSessionPingError)
+	prometheus.MustRegister(MuxSessionPingLatency)
+	prometheus.MustRegister(MuxSessionPingCount)
+
+	// Mux Manager
 	prometheus.MustRegister(MuxErrors)
 	prometheus.MustRegister(MuxConnectionEstablish)
 	prometheus.MustRegister(MuxWaitingConnections)

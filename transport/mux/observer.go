@@ -32,6 +32,13 @@ func observeYamuxSession(session *yamux.Session, metricLabels []string) {
 		case <-ticker.C:
 			// wake up so we can report NumStreams
 		}
+		dur, err := session.Ping()
+		if err != nil {
+			metrics.MuxSessionPingError.WithLabelValues(metricLabels...).Inc()
+		} else {
+			metrics.MuxSessionPingLatency.WithLabelValues(metricLabels...).Add(float64(dur))
+			metrics.MuxSessionPingCount.WithLabelValues(metricLabels...).Inc()
+		}
 		metrics.MuxSessionOpen.WithLabelValues(metricLabels...).Set(float64(sessionActive))
 		if sessionActive == 1 {
 			metrics.MuxStreamsActive.WithLabelValues(metricLabels...).Set(float64(session.NumStreams()))
