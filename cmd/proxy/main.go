@@ -7,17 +7,15 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/urfave/cli/v2"
-	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
-	"go.uber.org/fx"
-	"google.golang.org/grpc"
-
 	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/proto/compat"
 	"github.com/temporalio/s2s-proxy/proxy"
 	"github.com/temporalio/s2s-proxy/transport"
+	"github.com/urfave/cli/v2"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
+	"go.uber.org/fx"
 )
 
 const (
@@ -33,10 +31,6 @@ type ProxyParams struct {
 }
 
 func run(args []string) error {
-	// TODO: Do not deploy this to prod
-	grpc.EnableTracing = true
-	os.Setenv("GRPC_GO_LOG_VERBOSITY_LEVEL", "99")
-	os.Setenv("GRPC_GO_LOG_SEVERITY_LEVEL", "info")
 	app := buildCLIOptions()
 	return app.Run(args)
 }

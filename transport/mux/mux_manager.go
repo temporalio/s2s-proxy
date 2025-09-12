@@ -147,6 +147,8 @@ func (m *muxManager) Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.Clien
 
 func (m *muxManager) Serve(server *grpc.Server) error {
 	_, err := m.WithConnection(context.Background(), func(s *SessionWithConn) (any, error) {
+		m.logger.Info("Serving on connection", tag.NewStringTag("remote_address", s.Session.RemoteAddr().String()),
+			tag.NewStringTag("local_address", s.Session.LocalAddr().String()))
 		return struct{}{}, server.Serve(s.Session)
 	})
 	return err
@@ -216,6 +218,8 @@ func (m *muxManager) ReplaceConnection(swc *SessionWithConn) {
 	// Make sure the existing conn is fully closed
 	existingConn := m.muxConnection.Load()
 	if existingConn != nil {
+		m.logger.Info("Closing existing yamux session", tag.NewStringTag("remote_address", swc.Session.RemoteAddr().String()),
+			tag.NewStringTag("local_address", swc.Session.LocalAddr().String()))
 		_ = existingConn.Session.Close()
 		_ = existingConn.Conn.Close()
 	}

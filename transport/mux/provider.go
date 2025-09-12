@@ -117,7 +117,8 @@ func (m *muxProvider) Start() {
 					}
 					continue connect
 				}
-				m.logger.Info("mux session watcher starting")
+				m.logger.Info("mux session watcher starting", tag.NewStringTag("remote_addr", session.RemoteAddr().String()),
+					tag.NewStringTag("local_addr", session.LocalAddr().String()))
 				go observeYamuxSession(session, observerLabels(session.LocalAddr().String(), session.RemoteAddr().String(), "conn", m.name))
 
 				m.setNewTransport(&SessionWithConn{Session: session, Conn: conn})
