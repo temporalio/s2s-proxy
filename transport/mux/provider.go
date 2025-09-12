@@ -94,7 +94,7 @@ func (m *muxProvider) Start() {
 				if m.shouldShutDown.IsShutdown() {
 					return
 				}
-				m.logger.Info("mux session watcher starting")
+				m.logger.Info("Getting connection from connProvider")
 
 				var conn net.Conn
 				conn, err = m.connProvider.NewConnection()
@@ -117,6 +117,7 @@ func (m *muxProvider) Start() {
 					}
 					continue connect
 				}
+				m.logger.Info("mux session watcher starting")
 				go observeYamuxSession(session, observerLabels(session.LocalAddr().String(), session.RemoteAddr().String(), "conn", m.name))
 
 				m.setNewTransport(&SessionWithConn{Session: session, Conn: conn})
