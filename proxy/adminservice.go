@@ -271,11 +271,11 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	// The connection is separately managed, so we want to see how long it takes to establish that conn.
 	metrics.AdminServiceWaitingForClient.WithLabelValues(directionLabel).Inc()
 	sourceStreamClient, err := s.adminClient.StreamWorkflowReplicationMessages(outgoingContext)
+	metrics.AdminServiceWaitingForClient.WithLabelValues(directionLabel).Dec()
 	if err != nil {
 		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err
 	}
-	metrics.AdminServiceWaitingForClient.WithLabelValues(directionLabel).Dec()
 	// We succesfully got a stream connection, so mark the stream as active
 	streamsActiveGauge.Inc()
 	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(directionLabel).Inc()
