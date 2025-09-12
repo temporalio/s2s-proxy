@@ -80,6 +80,7 @@ func NewMuxEstablisherProvider(name string, transportFn SetTransportCallback, se
 		cfg := yamux.DefaultConfig()
 		cfg.Logger = wrapLoggerForYamux{logger: logger}
 		cfg.LogOutput = nil
+		cfg.StreamCloseTimeout = 30 * time.Second
 		return yamux.Client(conn, cfg)
 	}
 	return NewMuxProvider(name, connPv, sessionFn, ClientDisconnectFn, transportFn, metricLabels, logger, shutDown), nil
