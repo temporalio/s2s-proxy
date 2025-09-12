@@ -104,6 +104,9 @@ func (m *muxProvider) Start() {
 
 				var session *yamux.Session
 				session, err = m.sessionFn(conn)
+				if err != nil {
+					m.logger.Error("Failed to create mux session", tag.Error(err))
+				}
 				// Force Yamux to actually send something on the conn to make sure it's alive
 				_, err = session.Ping()
 				if err != nil {

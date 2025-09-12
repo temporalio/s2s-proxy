@@ -76,7 +76,12 @@ func NewMuxEstablisherProvider(name string, transportFn SetTransportCallback, se
 		shutdownCheck: shutDown,
 		metricLabels:  metricLabels,
 	}
-	sessionFn := func(conn net.Conn) (*yamux.Session, error) { return yamux.Client(conn, nil) }
+	sessionFn := func(conn net.Conn) (*yamux.Session, error) {
+		cfg := yamux.DefaultConfig()
+		cfg.Logger = wrapLoggerForYamux{logger: logger}
+		cfg.LogOutput = nil
+		return yamux.Client(conn, cfg)
+	}
 	return NewMuxProvider(name, connPv, sessionFn, ClientDisconnectFn, transportFn, metricLabels, logger, shutDown), nil
 }
 

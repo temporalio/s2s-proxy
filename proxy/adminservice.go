@@ -261,21 +261,26 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	}
 	logger.Info("AdminStreamReplicationMessages started.")
 	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
-	streamsActiveGauge.Inc()
-	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(directionLabel).Inc()
-	defer streamsActiveGauge.Dec()
-	defer logger.Info("AdminStreamReplicationMessages stopped.")
 
 	// simply forwarding target metadata
 	outgoingContext := metadata.NewOutgoingContext(targetStreamServer.Context(), targetMetadata)
 	outgoingContext, cancel := context.WithCancel(outgoingContext)
 	defer cancel()
 
+	// The underlying adminClient will try to grab a connection when we call StreamWorkflowReplicationMessages.
+	// The connection is separately managed, so we want to see how long it takes to establish that conn.
+	metrics.AdminServiceWaitingForClient.WithLabelValues(directionLabel).Inc()
 	sourceStreamClient, err := s.adminClient.StreamWorkflowReplicationMessages(outgoingContext)
 	if err != nil {
 		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err
 	}
+	metrics.AdminServiceWaitingForClient.WithLabelValues(directionLabel).Dec()
+	// We succesfully got a stream connection, so mark the stream as active
+	streamsActiveGauge.Inc()
+	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(directionLabel).Inc()
+	defer streamsActiveGauge.Dec()
+	defer logger.Info("AdminStreamReplicationMessages stopped.")
 	streamStartTime := time.Now()
 
 	// When one side of the stream dies, we want to tell the other side to hang up

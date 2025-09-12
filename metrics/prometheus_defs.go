@@ -13,6 +13,7 @@ var (
 
 	AdminServiceStreamsActive      = DefaultGaugeVec("admin_service_streams_active", "Number of admin service streams open", "direction")
 	AdminServiceStreamDuration     = DefaultHistogramVec("admin_service_stream_duration", "The length of time each stream was open", "direction")
+	AdminServiceWaitingForClient   = DefaultGaugeVec("admin_service_waiting_for_client", "Indicates the number of requests waiting on a client", "direction")
 	AdminServiceStreamsOpenedCount = DefaultCounterVec("admin_service_streams_opened_count", "Number of streams opened", "direction")
 	AdminServiceStreamsClosedCount = DefaultCounterVec("admin_service_streams_closed_count", "Number of streams closed", "direction")
 	AdminServiceStreamReqCount     = DefaultCounterVec("admin_service_stream_request_count", "Number of messages received", "direction")
@@ -88,6 +89,7 @@ func init() {
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
 		collectors.WithoutGoCollectorRuntimeMetrics(collectors.MetricsDebug.Matcher)))
 	prometheus.MustRegister(AdminServiceStreamsActive)
+	prometheus.MustRegister(AdminServiceWaitingForClient)
 	prometheus.MustRegister(AdminServiceStreamDuration)
 	prometheus.MustRegister(AdminServiceStreamsOpenedCount)
 	prometheus.MustRegister(AdminServiceStreamsClosedCount)

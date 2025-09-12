@@ -11,13 +11,13 @@ import (
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/hashicorp/yamux"
-	"github.com/temporalio/s2s-proxy/metrics"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
@@ -86,6 +86,9 @@ func (s *SessionWithConn) IsClosed() bool {
 // and a single point where many threads can access that yamux session. The underlying MuxProvider will continuously
 // reestablish a mux session, which is provided from MuxManager.WithConnection and MuxManager.TryConnectionOrElse
 func NewMuxManager(cfg config.MuxTransportConfig, logger log.Logger) MuxManager {
+	if logger == nil {
+		panic("logger is required")
+	}
 	muxMgr := &muxManager{
 		config:         cfg,
 		muxConnection:  atomic.Pointer[SessionWithConn]{}, // WaitableValue
