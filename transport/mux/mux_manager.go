@@ -218,8 +218,8 @@ func (m *muxManager) ReplaceConnection(swc *SessionWithConn) {
 	// Make sure the existing conn is fully closed
 	existingConn := m.muxConnection.Load()
 	if existingConn != nil {
-		m.logger.Info("Closing existing yamux session", tag.NewStringTag("remote_address", swc.Session.RemoteAddr().String()),
-			tag.NewStringTag("local_address", swc.Session.LocalAddr().String()))
+		m.logger.Info("Closing existing yamux session", tag.NewStringTag("remote_address", existingConn.Session.RemoteAddr().String()),
+			tag.NewStringTag("local_address", existingConn.Session.LocalAddr().String()))
 		_ = existingConn.Session.Close()
 		_ = existingConn.Conn.Close()
 	}
