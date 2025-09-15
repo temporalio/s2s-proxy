@@ -39,7 +39,7 @@ var (
 	// /proxy/temporal_api_server.go
 
 	GRPCServerStarted = DefaultCounterVec("grpc_server_started", "Emits when the grpc server is started", "service_name")
-	GRPCServerError   = DefaultCounterVec("grpc_server_eof", "Emits when the grpc server gets a connection EOF", "service_name", "error")
+	GRPCServerStopped  = DefaultCounterVec("grpc_server_stopped", "Emits when the grpc server is stopped", "service_name", "error")
 
 	// /transport/grpc.go
 	// Gratuitous hack: Until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783 is addressed,
