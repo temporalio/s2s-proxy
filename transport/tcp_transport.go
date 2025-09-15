@@ -43,3 +43,7 @@ func (s *tcpServer) Serve(server *grpc.Server) error {
 
 	return server.Serve(listener)
 }
+
+func (s *tcpServer) IsClosed() bool {
+	return false
+}

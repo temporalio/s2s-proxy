@@ -17,6 +17,7 @@ type (
 
 	ServerTransport interface {
 		Serve(server *grpc.Server) error
+		IsClosed() bool
 	}
 
 	Closable interface {

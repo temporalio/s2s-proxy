@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -188,6 +189,10 @@ func (m *muxManager) WithConnection(ctx context.Context, f func(*SessionWithConn
 			metrics.MuxConnectionProvided.WithLabelValues(m.metricLabels...).Inc()
 			metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...).Dec()
 			result, err = f(ptr)
+			if err == io.EOF {
+				// Don't wrap EOF, it has special handling
+				return result, err
+			}
 			if err != nil {
 				return result, fmt.Errorf("the provided function threw error %w", err)
 			}

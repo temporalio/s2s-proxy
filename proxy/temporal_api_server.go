@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/temporalio/s2s-proxy/metrics"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
@@ -36,6 +37,9 @@ func NewTemporalAPIServer(
 	logger log.Logger,
 ) *TemporalAPIServer {
 	server := grpc.NewServer(serverOptions...)
+	adminservice.RegisterAdminServiceServer(server, adminHandler)
+	workflowservice.RegisterWorkflowServiceServer(server, workflowserviceHandler)
+	metrics.GRPCServerStarted.WithLabelValues(serviceName)
 	return &TemporalAPIServer{
 		serviceName:            serviceName,
 		serverConfig:           serverConfig,
@@ -48,20 +52,22 @@ func NewTemporalAPIServer(
 }
 
 func (s *TemporalAPIServer) Start() {
-	adminservice.RegisterAdminServiceServer(s.server, s.adminHandler)
-	workflowservice.RegisterWorkflowServiceServer(s.server, s.workflowserviceHandler)
-
 	go func() {
-		if err := s.serverTransport.Serve(s.server); err != nil {
-			if err == io.EOF {
-				// grpc server can get EOF error if grpc server relies on client side of
-				// mux connection. Given a mux connection from node A (mux client) to node B (mux server),
-				// and start a grpc server on A using mux client. If node B (mux server) closed the connection,
-				// grpc server on A can get an EOF client connection error from underlying mux connection.
-				// It should not happen if grpc server is based on mux server or normal TCP connection.
-				s.logger.Warn("grpc server received EOF error")
-			} else {
-				s.logger.Error("grpc server fatal error ", tag.Error(err))
+		for !s.serverTransport.IsClosed() {
+			metrics.GRPCServerStarted.WithLabelValues(s.serviceName).Inc()
+			if err := s.serverTransport.Serve(s.server); err != nil {
+				if err == io.EOF {
+					// grpc server can get EOF error if grpc server relies on client side of
+					// mux connection. Given a mux connection from node A (mux client) to node B (mux server),
+					// and start a grpc server on A using mux client. If node B (mux server) closed the connection,
+					// grpc server on A can get an EOF client connection error from underlying mux connection.
+					// It should not happen if grpc server is based on mux server or normal TCP connection.
+					s.logger.Info("grpc server received EOF! Connection is closing")
+					metrics.GRPCServerError.WithLabelValues(s.serviceName, "eof").Inc()
+				} else {
+					s.logger.Error("grpc server fatal error ", tag.Error(err))
+					metrics.GRPCServerError.WithLabelValues(s.serviceName, "unknown").Inc()
+				}
 			}
 		}
 	}()
