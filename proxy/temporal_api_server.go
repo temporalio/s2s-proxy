@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/temporalio/s2s-proxy/metrics"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
@@ -12,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport"
 )
 
