@@ -49,8 +49,6 @@ func init() {
 	//_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "debug")
 	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
 	testLogger = log.NewTestLogger()
-	// Disable sleeping for tests
-	mux.ClientDisconnectFn = func() {}
 }
 
 type service struct {
@@ -64,13 +62,13 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 }
 
 func connect(t *testing.T, clientConfig config.MuxTransportConfig, serverConfig config.MuxTransportConfig) (mux.MuxManager, mux.MuxManager) {
-	clientMgr := mux.NewMuxManager(clientConfig, testLogger)
+	clientMgr, err := mux.NewMuxManager(clientConfig, testLogger)
 	mux.SetCustomWakeInterval(clientMgr, 5*time.Millisecond)
-	require.NoError(t, clientMgr.ConfigureMuxManager())
+	require.NoError(t, err)
 	clientMgr.Start()
-	serverMgr := mux.NewMuxManager(serverConfig, testLogger)
+	serverMgr, err := mux.NewMuxManager(serverConfig, testLogger)
 	mux.SetCustomWakeInterval(serverMgr, 5*time.Millisecond)
-	require.NoError(t, serverMgr.ConfigureMuxManager())
+	require.NoError(t, err)
 	serverMgr.Start()
 	return clientMgr, serverMgr
 }
@@ -244,11 +242,11 @@ func TestMuxTransportMultiServers(t *testing.T) {
 
 func TestMuxTransportFailedToOpen(t *testing.T) {
 	testMulti := func(t *testing.T, clientCfg config.MuxTransportConfig, serverCfg config.MuxTransportConfig) {
-		clientCM := mux.NewMuxManager(clientCfg, testLogger)
-		serverCM := mux.NewMuxManager(serverCfg, testLogger)
+		clientCM, clientErr := mux.NewMuxManager(clientCfg, testLogger)
+		serverCM, serverErr := mux.NewMuxManager(serverCfg, testLogger)
 
-		require.NoError(t, clientCM.ConfigureMuxManager())
-		require.NoError(t, serverCM.ConfigureMuxManager())
+		require.NoError(t, clientErr)
+		require.NoError(t, serverErr)
 
 		clientCM.Close()
 		serverCM.Close()

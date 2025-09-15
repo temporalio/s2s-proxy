@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 
@@ -34,7 +35,9 @@ func newSessionWithConn(t *testing.T) (swc *SessionWithConn, remote net.Conn, cl
 func TestWithConnection_SkipsClosedSessionsAndWaitsForNew(t *testing.T) {
 	logger := log.NewTestLogger()
 	// Grab the impl so we can set a superfast wake interval
-	mgr := NewMuxManager(config.MuxTransportConfig{Name: "test"}, logger).(*muxManager)
+	mgrIf, err := NewMuxManager(config.MuxTransportConfig{Name: "test", Mode: config.ServerMode}, logger)
+	require.NoError(t, err)
+	mgr := mgrIf.(*muxManager)
 	mgr.metricLabels = []string{"test", "mux", "manager"}
 	mgr.wakeInterval = 5 * time.Millisecond
 
@@ -62,15 +65,17 @@ func TestWithConnection_SkipsClosedSessionsAndWaitsForNew(t *testing.T) {
 
 func TestWithConnection_ReleasesOnShutdown(t *testing.T) {
 	logger := log.NewTestLogger()
-	mgr := NewMuxManager(config.MuxTransportConfig{Name: "test"}, logger)
-	mgr.(*muxManager).metricLabels = []string{"test", "mux", "manager"}
+	mgrIf, err := NewMuxManager(config.MuxTransportConfig{Name: "test", Mode: config.ServerMode}, logger)
+	require.NoError(t, err)
+	mgr := mgrIf.(*muxManager)
+	mgr.metricLabels = []string{"test", "mux", "manager"}
 
 	// We're not testing the muxProvider in this test, so using a fake here
-	mgr.(*muxManager).muxProvider = &muxProvider{
+	mgr.muxProvider = &muxProvider{
 		hasCleanedUp:   channel.NewShutdownOnce(),
-		shouldShutDown: mgr.(*muxManager).shouldShutDown,
+		shouldShutDown: mgr.shouldShutDown,
 	}
-	mgr.(*muxManager).muxProvider.(*muxProvider).hasCleanedUp.Shutdown()
+	mgr.muxProvider.(*muxProvider).hasCleanedUp.Shutdown()
 
 	// Start a waiter
 	errCh := make(chan error, 1)
@@ -144,8 +149,8 @@ func TestWithConnection_MuxProviderReconnect(t *testing.T) {
 	clientConnProvider.connAvailable <- struct{}{}
 	serverConnProvider.connAvailable <- struct{}{}
 
-	_, clientConnWaiter, clientConnDisconnected, clientProvider := buildMuxReader("clientMux", &clientConnProvider, yamux.Client, logger)
-	_, serverConnWaiter, serverConnDisconnected, serverProvider := buildMuxReader("serverMux", &serverConnProvider, yamux.Server, logger)
+	_, clientConnWaiter, clientConnDisconnected, clientProvider := buildMuxReader(t, "clientMux", &clientConnProvider, yamux.Client, config.ClientMode, logger)
+	_, serverConnWaiter, serverConnDisconnected, serverProvider := buildMuxReader(t, "serverMux", &serverConnProvider, yamux.Server, config.ServerMode, logger)
 
 	// Avoid the MuxManager's Start(), which assumes we're using TCP
 	serverProvider.Start()
@@ -176,8 +181,15 @@ func TestWithConnection_MuxProviderReconnect(t *testing.T) {
 	expectCh(t, serverConnWaiter.connSeen, 2*time.Second, "WithConnection should have seen a new connection from the clientProvider")
 }
 
-func buildMuxReader(name string, connProvider connProvider, yamuxFn func(io.ReadWriteCloser, *yamux.Config) (*yamux.Session, error), logger log.Logger) (MuxManager, *connWaiter, chan struct{}, MuxProvider) {
-	mgr := NewMuxManager(config.MuxTransportConfig{Name: name}, logger)
+func buildMuxReader(t *testing.T,
+	name string,
+	connProvider connProvider,
+	yamuxFn func(io.ReadWriteCloser, *yamux.Config) (*yamux.Session, error),
+	mode config.MuxMode,
+	logger log.Logger,
+) (MuxManager, *connWaiter, chan struct{}, MuxProvider) {
+	mgr, err := NewMuxManager(config.MuxTransportConfig{Name: name, Mode: mode}, logger)
+	require.NoError(t, err)
 	mgr.(*muxManager).metricLabels = []string{"test", "mux", "manager"}
 	connDisconnected := make(chan struct{}, 1)
 	provider := &muxProvider{

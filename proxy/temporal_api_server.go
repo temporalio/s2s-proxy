@@ -3,6 +3,7 @@ package proxy
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -55,20 +56,22 @@ func (s *TemporalAPIServer) Start() {
 	go func() {
 		for !s.serverTransport.IsClosed() {
 			metrics.GRPCServerStarted.WithLabelValues(s.serviceName).Inc()
-			if err := s.serverTransport.Serve(s.server); err != nil {
-				if err == io.EOF {
-					// grpc server can get EOF error if grpc server relies on client side of
-					// mux connection. Given a mux connection from node A (mux client) to node B (mux server),
-					// and start a grpc server on A using mux client. If node B (mux server) closed the connection,
-					// grpc server on A can get an EOF client connection error from underlying mux connection.
-					// It should not happen if grpc server is based on mux server or normal TCP connection.
-					s.logger.Info("grpc server received EOF! Connection is closing")
-					metrics.GRPCServerError.WithLabelValues(s.serviceName, "eof").Inc()
-				} else {
-					s.logger.Error("grpc server fatal error ", tag.Error(err))
-					metrics.GRPCServerError.WithLabelValues(s.serviceName, "unknown").Inc()
-				}
+			err := s.serverTransport.Serve(s.server)
+			if err == io.EOF {
+				// grpc server can get EOF error if grpc server relies on client side of
+				// mux connection. Given a mux connection from node A (mux client) to node B (mux server),
+				// and start a grpc server on A using mux client. If node B (mux server) closed the connection,
+				// grpc server on A can get an EOF client connection error from underlying mux connection.
+				// It should not happen if grpc server is based on mux server or normal TCP connection.
+				s.logger.Info("grpc server received EOF! Connection is closing")
+				metrics.GRPCServerStopped.WithLabelValues(s.serviceName, "eof").Inc()
+			} else if err != nil {
+				s.logger.Error("grpc server fatal error ", tag.Error(err))
+				metrics.GRPCServerStopped.WithLabelValues(s.serviceName, "unknown").Inc()
+			} else {
+				metrics.GRPCServerStopped.WithLabelValues(s.serviceName, "none").Inc()
 			}
+			time.Sleep(1 * time.Second)
 		}
 	}()
 }

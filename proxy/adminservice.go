@@ -269,9 +269,9 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	// The underlying adminClient will try to grab a connection when we call StreamWorkflowReplicationMessages.
 	// The connection is separately managed, so we want to see how long it takes to establish that conn.
-	metrics.AdminServiceWaitingForClient.WithLabelValues(directionLabel).Inc()
+	metrics.AdminServiceWaitingForConnection.WithLabelValues(directionLabel).Inc()
 	sourceStreamClient, err := s.adminClient.StreamWorkflowReplicationMessages(outgoingContext)
-	metrics.AdminServiceWaitingForClient.WithLabelValues(directionLabel).Dec()
+	metrics.AdminServiceWaitingForConnection.WithLabelValues(directionLabel).Dec()
 	if err != nil {
 		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err

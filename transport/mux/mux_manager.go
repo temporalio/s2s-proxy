@@ -45,7 +45,7 @@ type (
 	MuxManager interface {
 		// ConfigureMuxManager parses the provided MuxTransportConfig to set the appropriate MuxProvider.
 		// It will return error if the config was invalid, for example if the TLS settings were not set properly.
-		ConfigureMuxManager() error
+		//ConfigureMuxManager() error
 		// Start starts the underlying MuxProvider
 		Start()
 		// Close closes the internal shutdown latch and sets the connection to nil. This will also stop the connection provider.
@@ -86,10 +86,7 @@ func (s *SessionWithConn) IsClosed() bool {
 // NewMuxManager constructs a MuxManager: an interface that provides an asynchronous MuxProvider that sets a yamux session
 // and a single point where many threads can access that yamux session. The underlying MuxProvider will continuously
 // reestablish a mux session, which is provided from MuxManager.WithConnection and MuxManager.TryConnectionOrElse
-func NewMuxManager(cfg config.MuxTransportConfig, logger log.Logger) MuxManager {
-	if logger == nil {
-		panic("logger is required")
-	}
+func NewMuxManager(cfg config.MuxTransportConfig, logger log.Logger) (MuxManager, error) {
 	muxMgr := &muxManager{
 		config:         cfg,
 		muxConnection:  atomic.Pointer[SessionWithConn]{}, // WaitableValue
@@ -100,7 +97,28 @@ func NewMuxManager(cfg config.MuxTransportConfig, logger log.Logger) MuxManager 
 		hasShutDown:    channel.NewShutdownOnce(),
 		wakeInterval:   time.Second * 5,
 	}
-	return muxMgr
+	var err error
+	switch cfg.Mode {
+	case config.ClientMode:
+		logger.Info(fmt.Sprintf("Applying ClientMode mux provider from config: %v", cfg.Client))
+		metricLabels := []string{cfg.Client.ServerAddress,
+			string(cfg.Mode),
+			cfg.Name,
+		}
+		muxMgr.metricLabels = metricLabels
+		muxMgr.muxProvider, err = NewMuxEstablisherProvider(cfg.Name, muxMgr.ReplaceConnection, cfg.Client, metricLabels, logger, muxMgr.shouldShutDown)
+	case config.ServerMode:
+		logger.Info(fmt.Sprintf("Applying ServerMode mux provider from config: %v", cfg.Server))
+		metricLabels := []string{cfg.Server.ListenAddress,
+			string(cfg.Mode),
+			cfg.Name,
+		}
+		muxMgr.metricLabels = metricLabels
+		muxMgr.muxProvider, err = NewMuxReceiverProvider(cfg.Name, muxMgr.ReplaceConnection, cfg.Server, metricLabels, logger, muxMgr.shouldShutDown)
+	default:
+		return nil, fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s", cfg.Name, cfg.Mode)
+	}
+	return muxMgr, err
 }
 
 func (m *muxManager) Close() {
@@ -153,14 +171,6 @@ func (m *muxManager) Serve(server *grpc.Server) error {
 		return struct{}{}, server.Serve(s.Session)
 	})
 	return err
-}
-
-// SetCustomWakeInterval sets the speed at which the MuxProvider wakes waiting threads.
-// Must be set BEFORE starting, intended for unit tests.
-func SetCustomWakeInterval(m MuxManager, wakeInterval time.Duration) {
-	if mm, ok := m.(*muxManager); ok {
-		mm.wakeInterval = wakeInterval
-	}
 }
 
 func (m *muxManager) WithConnection(ctx context.Context, f func(*SessionWithConn) (any, error)) (result any, err error) {
@@ -268,27 +278,11 @@ func (m *muxManager) Start() {
 	})
 }
 
-func (m *muxManager) ConfigureMuxManager() error {
-	var err error
-	switch m.config.Mode {
-	case config.ClientMode:
-		m.logger.Info(fmt.Sprintf("Applying ClientMode mux provider from config: %v", m.config.Client))
-		metricLabels := []string{m.config.Client.ServerAddress,
-			string(m.config.Mode),
-			m.config.Name,
-		}
-		m.metricLabels = metricLabels
-		m.muxProvider, err = NewMuxEstablisherProvider(m.config.Name, m.ReplaceConnection, m.config.Client, metricLabels, m.logger, m.shouldShutDown)
-	case config.ServerMode:
-		m.logger.Info(fmt.Sprintf("Applying ServerMode mux provider from config: %v", m.config.Server))
-		metricLabels := []string{m.config.Server.ListenAddress,
-			string(m.config.Mode),
-			m.config.Name,
-		}
-		m.metricLabels = metricLabels
-		m.muxProvider, err = NewMuxReceiverProvider(m.config.Name, m.ReplaceConnection, m.config.Server, metricLabels, m.logger, m.shouldShutDown)
-	default:
-		return fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s", m.config.Name, m.config.Mode)
+
+// SetCustomWakeInterval sets the speed at which the MuxProvider wakes waiting threads.
+// Must be set BEFORE starting
+func SetCustomWakeInterval(m MuxManager, wakeInterval time.Duration) {
+	if mm, ok := m.(*muxManager); ok {
+		mm.wakeInterval = wakeInterval
 	}
-	return err
 }

@@ -77,6 +77,7 @@ func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setti
 // NewConnection waits on the TCP server for a connection, then provides it
 func (r *receivingConnProvider) NewConnection() (net.Conn, error) {
 	conn, err := r.listener.Accept()
+	// Log a nicer message when shutting down normally
 	if r.shouldShutDown() {
 		r.logger.Info("Listener cancelled due to shutdown")
 		return nil, fmt.Errorf("provider shutting down")

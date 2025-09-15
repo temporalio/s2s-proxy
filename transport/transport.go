@@ -45,8 +45,7 @@ func NewTransportManager(
 	muxConnManagers := make(map[string]mux.MuxManager)
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	for _, cfg := range s2sConfig.MuxTransports {
-		muxMgr := mux.NewMuxManager(cfg, logger)
-		err := muxMgr.ConfigureMuxManager()
+		muxMgr, err := mux.NewMuxManager(cfg, logger)
 		if err != nil {
 			logger.Fatal("Failed to configure mux manager", tag.Error(err))
 			panic(err)

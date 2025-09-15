@@ -39,18 +39,12 @@ var (
 			WithBackoffCoefficient(1.5).
 			WithMaximumInterval(30 * time.Second)
 
-	// ClientDisconnectFn is overridden by unit tests to remove the reconnect grace period.
-	// TODO: This should be safe to remove as of recent safety improvements to MuxManager.
-	ClientDisconnectFn = func() {
-		// If the server rapidly disconnects us, we don't want to get caught in a tight loop. Sleep 1-2 seconds before retry
-		//time.Sleep(time.Second + time.Duration(rand.IntN(1000))*time.Millisecond)
-	}
 	// The establisher provider never has cleanup work, so we provide the same closed channel on CloseCh()
-	closedCh = make(chan struct{})
+	alwaysClosedCh = make(chan struct{})
 )
 
 func init() {
-	close(closedCh)
+	close(alwaysClosedCh)
 }
 
 // NewMuxEstablisherProvider makes an outbound call using the provided TCP settings. This constructor handles unpacking
@@ -83,7 +77,7 @@ func NewMuxEstablisherProvider(name string, transportFn SetTransportCallback, se
 		cfg.StreamCloseTimeout = 30 * time.Second
 		return yamux.Client(conn, cfg)
 	}
-	return NewMuxProvider(name, connPv, sessionFn, ClientDisconnectFn, transportFn, metricLabels, logger, shutDown), nil
+	return NewMuxProvider(name, connPv, sessionFn, func(){}, transportFn, metricLabels, logger, shutDown), nil
 }
 
 // NewConnection makes a TCP call to establish a connection, then returns it. Retries with backoff over 30 seconds
@@ -119,5 +113,5 @@ func (p *establishingConnProvider) NewConnection() (net.Conn, error) {
 
 // CloseCh for the establisher is a no-op, because only the Conn needs to be closed
 func (p *establishingConnProvider) CloseCh() <-chan struct{} {
-	return closedCh
+	return alwaysClosedCh
 }
