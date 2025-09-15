@@ -9,6 +9,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
 type (
@@ -31,7 +32,7 @@ func (c *tcpClient) Connect(clientMetrics *grpcprom.ClientMetrics) (*grpc.Client
 		}
 	}
 
-	return dial(c.config.ServerAddress, tlsConfig, clientMetrics, nil)
+	return grpcutil.Dial(c.config.ServerAddress, tlsConfig, clientMetrics, nil)
 }
 
 func (s *tcpServer) Serve(server *grpc.Server) error {
@@ -41,4 +42,8 @@ func (s *tcpServer) Serve(server *grpc.Server) error {
 	}
 
 	return server.Serve(listener)
+}
+
+func (s *tcpServer) IsClosed() bool {
+	return false
 }

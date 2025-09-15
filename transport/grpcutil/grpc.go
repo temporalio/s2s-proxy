@@ -1,4 +1,4 @@
-package transport
+package grpcutil
 
 import (
 	"context"
@@ -36,7 +36,7 @@ const (
 // The hostName syntax is defined in
 // https://github.com/grpc/grpc/blob/master/doc/naming.md.
 // e.g. to use dns resolver, a "dns:///" prefix should be applied to the target.
-func dial(hostName string, tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics, dialer func(ctx context.Context, addr string) (net.Conn, error)) (*grpc.ClientConn, error) {
+func Dial(hostName string, tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics, dialer func(ctx context.Context, addr string) (net.Conn, error)) (*grpc.ClientConn, error) {
 	var grpcSecureOpt grpc.DialOption
 	if tlsConfig == nil {
 		grpcSecureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
