@@ -278,7 +278,6 @@ func (m *muxManager) Start() {
 	})
 }
 
-
 // SetCustomWakeInterval sets the speed at which the MuxProvider wakes waiting threads.
 // Must be set BEFORE starting
 func SetCustomWakeInterval(m MuxManager, wakeInterval time.Duration) {

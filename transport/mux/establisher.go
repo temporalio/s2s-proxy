@@ -77,7 +77,7 @@ func NewMuxEstablisherProvider(name string, transportFn SetTransportCallback, se
 		cfg.StreamCloseTimeout = 30 * time.Second
 		return yamux.Client(conn, cfg)
 	}
-	return NewMuxProvider(name, connPv, sessionFn, func(){}, transportFn, metricLabels, logger, shutDown), nil
+	return NewMuxProvider(name, connPv, sessionFn, func() {}, transportFn, metricLabels, logger, shutDown), nil
 }
 
 // NewConnection makes a TCP call to establish a connection, then returns it. Retries with backoff over 30 seconds
