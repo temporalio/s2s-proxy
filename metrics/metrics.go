@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strings"
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,6 +32,12 @@ func SanitizeForPrometheus(value string) string {
 		value = "_" + value[1:]
 	}
 	return prometheusReplacePattern.ReplaceAllLiteralString(value, "_")
+}
+
+func SanitizedTypeName(m any) string {
+	name := fmt.Sprintf("%T", m)
+	name = strings.ReplaceAll(name, "*", "")
+	return SanitizeForPrometheus(name)
 }
 
 // GetStandardGRPCInterceptor returns a ServerMetrics with our preferred standard config for monitoring gRPC servers.

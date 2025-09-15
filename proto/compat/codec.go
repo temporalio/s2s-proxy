@@ -1,7 +1,7 @@
 package compat
 
 import (
-	"fmt"
+	"time"
 
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -60,8 +60,13 @@ func (c *RepairUTF8Codec) Name() string {
 func (c *RepairUTF8Codec) Unmarshal(data mem.BufferSlice, v any) error {
 	err := c.delegate.Unmarshal(data, v)
 	if common.IsInvalidUTF8Error(err) {
-		msgType := fmt.Sprintf("%T", v)
-		if err := convertAndRepairInvalidUTF8(data.Materialize(), v); err != nil {
+		start := time.Now()
+		err := convertAndRepairInvalidUTF8(data.Materialize(), v)
+		duration := time.Since(start)
+
+		msgType := metrics.SanitizedTypeName(v)
+		metrics.TranslationLatency.WithLabelValues(metrics.UTF8RepairTranslationKind, msgType).Observe(duration.Seconds())
+		if err != nil {
 			c.Logger.Error("during UTF-8 repair", tag.Error(err))
 			metrics.TranslationErrors.WithLabelValues(metrics.UTF8RepairTranslationKind, msgType).Inc()
 		} else {

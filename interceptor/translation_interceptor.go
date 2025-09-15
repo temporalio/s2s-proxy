@@ -2,8 +2,8 @@ package interceptor
 
 import (
 	"context"
-	"fmt"
 	"strings"
+	"time"
 
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
@@ -47,8 +47,9 @@ func (i *TranslationInterceptor) Intercept(
 
 		for _, tr := range i.translators {
 			if tr.MatchMethod(info.FullMethod) {
+				start := time.Now()
 				changed, trErr := tr.TranslateRequest(req)
-				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Request", req)
+				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Request", req, time.Since(start))
 			}
 		}
 
@@ -56,8 +57,9 @@ func (i *TranslationInterceptor) Intercept(
 
 		for _, tr := range i.translators {
 			if tr.MatchMethod(info.FullMethod) {
+				start := time.Now()
 				changed, trErr := tr.TranslateResponse(resp)
-				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Response", resp)
+				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Response", resp, time.Since(start))
 			}
 		}
 
@@ -84,16 +86,18 @@ type streamTranslator struct {
 
 func (w *streamTranslator) RecvMsg(m any) error {
 	for _, tr := range w.translators {
+		start := time.Now()
 		changed, trErr := tr.TranslateRequest(m)
-		logTranslateResult(tr, w.logger, changed, trErr, "RecvMsg", m)
+		logTranslateResult(tr, w.logger, changed, trErr, "RecvMsg", m, time.Since(start))
 	}
 	return w.ServerStream.RecvMsg(m)
 }
 
 func (w *streamTranslator) SendMsg(m any) error {
 	for _, tr := range w.translators {
+		start := time.Now()
 		changed, trErr := tr.TranslateResponse(m)
-		logTranslateResult(tr, w.logger, changed, trErr, "SendMsg", m)
+		logTranslateResult(tr, w.logger, changed, trErr, "SendMsg", m, time.Since(start))
 	}
 	return w.ServerStream.SendMsg(m)
 }
@@ -110,14 +114,17 @@ func newStreamTranslator(
 	}
 }
 
-func logTranslateResult(tr Translator, logger log.Logger, changed bool, err error, methodName string, obj any) {
+func logTranslateResult(tr Translator, logger log.Logger, changed bool, err error, methodName string, obj any, duration time.Duration) {
+	msgType := metrics.SanitizedTypeName(obj)
+	metrics.TranslationLatency.WithLabelValues(tr.Kind(), msgType).Observe(duration.Seconds())
+
 	methodTag := tag.NewStringTag("method", methodName)
 	if err != nil {
-		logger.Error("translation error", methodTag, tag.Error(err), tag.NewStringTag("type", fmt.Sprintf("%T", obj)))
-		metrics.TranslationErrors.WithLabelValues(tr.Kind(), methodName).Inc()
+		logger.Error("translation error", methodTag, tag.Error(err), tag.NewStringTag("type", msgType))
+		metrics.TranslationErrors.WithLabelValues(tr.Kind(), msgType).Inc()
 	} else if changed {
 		logger.Debug("translation applied", methodTag, tag.NewAnyTag("obj", obj))
-		metrics.TranslationCount.WithLabelValues(tr.Kind(), methodName).Inc()
+		metrics.TranslationCount.WithLabelValues(tr.Kind(), msgType).Inc()
 	} else {
 		logger.Debug("translation not applied", methodTag, tag.NewAnyTag("obj", obj))
 	}

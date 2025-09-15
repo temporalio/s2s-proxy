@@ -77,9 +77,10 @@ var (
 
 	// Translation interceptor
 
-	translationLabels = []string{"kind", "message_type"}
-	TranslationCount  = DefaultCounterVec("translation_success", "Count of message translations", translationLabels...)
-	TranslationErrors = DefaultCounterVec("translation_error", "Count of message translation errors", translationLabels...)
+	translationLabels  = []string{"kind", "message_type"}
+	TranslationCount   = DefaultCounterVec("translation_success", "Count of message translations", translationLabels...)
+	TranslationErrors  = DefaultCounterVec("translation_error", "Count of message translation errors", translationLabels...)
+	TranslationLatency = DefaultHistogramVec("translation_latency", "Latency of message translations", translationLabels...)
 
 	UTF8RepairTranslationKind = "utf8repair"
 	NamespaceTranslationKind  = "namespace"
@@ -134,4 +135,5 @@ func init() {
 
 	prometheus.MustRegister(TranslationCount)
 	prometheus.MustRegister(TranslationErrors)
+	prometheus.MustRegister(TranslationLatency)
 }
