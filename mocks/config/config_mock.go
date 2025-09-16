@@ -12,15 +12,15 @@ package config
 import (
 	reflect "reflect"
 
-	gomock "go.uber.org/mock/gomock"
-
 	config "github.com/temporalio/s2s-proxy/config"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockConfigProvider is a mock of ConfigProvider interface.
 type MockConfigProvider struct {
 	ctrl     *gomock.Controller
 	recorder *MockConfigProviderMockRecorder
+	isgomock struct{}
 }
 
 // MockConfigProviderMockRecorder is the mock recorder for MockConfigProvider.

@@ -33,7 +33,8 @@ s2s-proxy: $(ALL_SRC)
 update-tools:
 # When changing the golangci-lint version, update the version in .github/workflows/pull-request.yml
 	$(GO_GET_TOOL) github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1
-	go mod tidy --modfile=$(TOOLS_MOD_FILE)
+	$(GO_GET_TOOL) go.uber.org/mock/mockgen@v0.5.0
+	-go mod tidy --modfile=$(TOOLS_MOD_FILE) 2>/dev/null
 
 # Refer to .golangci.yml for configuration options
 fmt:
@@ -48,7 +49,7 @@ bench:
 	@go test -run '^$$' -benchmem -bench=. ./... $(BENCH_ARG)
 
 .PHONY: genvisitor
-GENVISITOR_FLAGS ?= # -debug -dump-tree
+GENVISITOR_FLAGS ?= # -debug -dump-tre
 genvisitor:
 	go run ./cmd/tools/genvisitor/ $(GENVISITOR_FLAGS) > proto/compat/repair_utf8_gen.go
 	go fmt proto/compat/repair_utf8_gen.go
@@ -58,16 +59,9 @@ genvisitor:
 clean-mocks:
 	@find . -name '*_mock.go' -delete
 
-MOCKGEN_VER = v0.4.0
-mocks: clean-mocks
-	@if [ "$$(mockgen -version)" != "$(MOCKGEN_VER)" ]; then \
-		echo -e "ERROR: mockgen is not version $(MOCKGEN_VER)\n"; \
-		echo -e "  Run go install go.uber.org/mock/mockgen@$(MOCKGEN_VER)\n"; \
-		echo -e "  Or, bump MOCKGEN_VER in the Makefile\n"; \
-		exit 1; \
-	fi;
-	@mockgen -source config/config.go -destination mocks/config/config_mock.go -package config
-	@mockgen -source client/temporal_client.go -destination mocks/client/temporal_client_mock.go -package client
+mocks: clean-mocks update-tools
+	$(GO_TOOL) mockgen -source config/config.go -destination mocks/config/config_mock.go -package config
+	$(GO_TOOL) mockgen -source client/temporal_client.go -destination mocks/client/temporal_client_mock.go -package client
 
 # Tests
 clean-tests:

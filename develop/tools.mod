@@ -2,7 +2,10 @@ module tools
 
 go 1.24.4
 
-tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+tool (
+	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+	go.uber.org/mock/mockgen
+)
 
 require (
 	github.com/gogo/status v1.1.1
@@ -15,9 +18,9 @@ require (
 	github.com/temporalio/s2s-proxy v0.1.3
 	github.com/urfave/cli/v2 v2.27.7
 	go.temporal.io/api v1.50.0
-	go.temporal.io/server v1.27.2
+	go.temporal.io/server v1.27.0-127.2
 	go.uber.org/fx v1.24.0
-	go.uber.org/mock v0.5.2
+	go.uber.org/mock v0.5.0
 	golang.org/x/text v0.26.0
 	google.golang.org/grpc v1.71.0
 	google.golang.org/protobuf v1.36.6
