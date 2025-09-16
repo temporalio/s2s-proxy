@@ -8,6 +8,7 @@ import (
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"go.temporal.io/server/common/persistence/serialization"
@@ -50,6 +51,10 @@ var (
 		// - WorkflowExecutionInfo
 		"SearchAttributes": true,
 	}
+
+	namespaceTranslationSkippableTypes = []any{
+		&workflowservice.ListWorkflowExecutionsResponse{},
+	}
 )
 
 // stringMatcher returns 2 values:
@@ -65,6 +70,10 @@ type visitor func(logger log.Logger, obj any, match stringMatcher) (bool, error)
 // in the given object. When it finds namespace string fields, it invokes
 // the provided match function.
 func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, error) {
+	if isAnyType(namespaceTranslationSkippableTypes, obj) {
+		return false, nil
+	}
+
 	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
@@ -318,4 +327,13 @@ func validateAndRepairHistoryEvents(events []*history122.HistoryEvent) (bool, er
 		}
 	}
 	return changed, nil
+}
+
+func isAnyType(types []any, obj any) bool {
+	for _, typ := range types {
+		if reflect.TypeOf(typ) == reflect.TypeOf(obj) {
+			return true
+		}
+	}
+	return false
 }

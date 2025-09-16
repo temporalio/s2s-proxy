@@ -3,6 +3,8 @@ package interceptor
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/common/log"
 )
 
@@ -42,4 +44,14 @@ func BenchmarkVisitNamespace(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestIsAnyType(t *testing.T) {
+	require.False(t, isAnyType(namespaceTranslationSkippableTypes, nil))
+	// Response type
+	require.True(t, isAnyType(namespaceTranslationSkippableTypes, (*workflowservice.ListWorkflowExecutionsResponse)(nil)))
+	require.True(t, isAnyType(namespaceTranslationSkippableTypes, &workflowservice.ListWorkflowExecutionsResponse{}))
+	// Request type
+	require.False(t, isAnyType(namespaceTranslationSkippableTypes, (*workflowservice.ListWorkflowExecutionsRequest)(nil)))
+	require.False(t, isAnyType(namespaceTranslationSkippableTypes, &workflowservice.ListWorkflowExecutionsRequest{}))
 }
