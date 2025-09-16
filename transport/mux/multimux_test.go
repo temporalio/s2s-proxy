@@ -90,12 +90,14 @@ func TestMultiMux(t *testing.T) {
 }
 
 func dialForever() net.Conn {
-	for {
-		conn, err := net.Dial("tcp", "127.0.0.1:9001")
+	var conn net.Conn
+	var err error
+	for conn == nil {
+		conn, err = net.Dial("tcp", "127.0.0.1:9001")
 		if err != nil {
 			fmt.Println(err)
 			time.Sleep(100 * time.Millisecond)
 		}
-		return conn
 	}
+	return conn
 }
