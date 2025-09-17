@@ -1,7 +1,6 @@
 package mux
 
 import (
-	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -21,17 +20,17 @@ type muxClientServer struct {
 
 func (s *muxServer) Run(t *testing.T) {
 	for {
-		fmt.Println("Listening on yamux", s.session.Addr())
+		t.Log("Listening on yamux", s.session.Addr())
 		muxconn, err := s.session.Accept()
 		if err != nil {
-			fmt.Println(err)
+			t.Log(err)
 			return
 		}
-		fmt.Println("Got a new connection")
+		t.Log("Got a new connection")
 		num, err := muxconn.Read(s.buf)
-		fmt.Println("Read", num, "bytes:", string(s.buf[:num]))
+		t.Log("Read", num, "bytes:", string(s.buf[:num]))
 		if err != nil {
-			fmt.Println(err)
+			t.Log(err)
 			return
 		}
 		require.True(t, s.buf[0] == 'H')
@@ -39,24 +38,25 @@ func (s *muxServer) Run(t *testing.T) {
 }
 
 func TestMultiMux(t *testing.T) {
-	serverCh, shutDownMux := make(chan *muxServer), make(chan struct{})
+	serverCh, shutDownMux, muxListenerAddrCh := make(chan *muxServer), make(chan struct{}), make(chan string)
 	go func() {
-		listener, err := net.Listen("tcp", "127.0.0.1:9001")
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Error(err)
 			return
 		}
+		muxListenerAddrCh <- listener.Addr().String()
 		for {
-			fmt.Println("listening on", listener.Addr())
+			t.Log("listening on", listener.Addr())
 			conn, err := listener.Accept()
 			if err != nil {
-				fmt.Println(err)
+				t.Log(err)
 				return
 			}
-			fmt.Println("Got a new connection. Making mux")
+			t.Log("Got a new connection. Making mux")
 			mux, err := yamux.Server(conn, nil)
 			if err != nil {
-				fmt.Println(err)
+				t.Log(err)
 				return
 			}
 
@@ -67,9 +67,10 @@ func TestMultiMux(t *testing.T) {
 			}
 		}
 	}()
+	muxListenerAddr := <-muxListenerAddrCh
 	muxes := make([]*muxClientServer, 10)
 	for i := range 10 {
-		conn := dialForever()
+		conn := dialUntilSuccess(t, muxListenerAddr)
 		yamuxClient, err := yamux.Client(conn, nil)
 		require.NoError(t, err)
 		_, _ = yamuxClient.Ping()
@@ -89,13 +90,13 @@ func TestMultiMux(t *testing.T) {
 	}
 }
 
-func dialForever() net.Conn {
+func dialUntilSuccess(t *testing.T, addr string) net.Conn {
 	var conn net.Conn
 	var err error
 	for conn == nil {
-		conn, err = net.Dial("tcp", "127.0.0.1:9001")
+		conn, err = net.Dial("tcp", addr)
 		if err != nil {
-			fmt.Println(err)
+			t.Log(err)
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
