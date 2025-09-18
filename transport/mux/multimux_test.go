@@ -96,8 +96,8 @@ func TestMultiMux(t *testing.T) {
 	}
 	close(shutDownMux)
 	for _, mux := range muxes {
-		mux.muxClient.Close()
-		mux.muxServer.session.Close()
+		_ = mux.muxClient.Close()
+		_ = mux.muxServer.session.Close()
 	}
 	wg.Wait()
 }
