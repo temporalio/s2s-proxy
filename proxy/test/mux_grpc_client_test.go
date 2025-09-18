@@ -39,12 +39,12 @@ type muxSession struct {
 }
 
 func newMuxSession(t *testing.T, listener net.Listener) *muxSession {
-	var err error
 	s := &muxSession{}
 	s.addr = listener.Addr().String()
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	go func() {
+		var err error
 		s.serverConn, err = listener.Accept()
 		require.NoError(t, err)
 		s.serverMux, err = yamux.Server(s.serverConn, nil)
@@ -52,6 +52,7 @@ func newMuxSession(t *testing.T, listener net.Listener) *muxSession {
 		wg.Done()
 	}()
 	go func() {
+		var err error
 		s.clientConn, err = net.Dial("tcp", s.addr)
 		require.NoError(t, err)
 		s.clientMux, err = yamux.Client(s.clientConn, nil)
