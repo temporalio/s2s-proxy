@@ -2,6 +2,7 @@ package mux
 
 import (
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 type muxServer struct {
 	session *yamux.Session
 	buf     []byte
+	wg      *sync.WaitGroup
 }
 type muxClientServer struct {
 	muxServer *muxServer
@@ -19,6 +21,8 @@ type muxClientServer struct {
 }
 
 func (s *muxServer) Run(t *testing.T) {
+	s.wg.Add(1)
+	defer s.wg.Done()
 	for {
 		t.Log("Listening on yamux", s.session.Addr())
 		muxconn, err := s.session.Accept()
@@ -38,6 +42,7 @@ func (s *muxServer) Run(t *testing.T) {
 }
 
 func TestMultiMux(t *testing.T) {
+	wg := &sync.WaitGroup{}
 	serverCh, shutDownMux, muxListenerAddrCh := make(chan *muxServer), make(chan struct{}), make(chan string)
 	go func() {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -62,8 +67,9 @@ func TestMultiMux(t *testing.T) {
 
 			select {
 			case <-shutDownMux:
+				_ = mux.Close()
 				return
-			case serverCh <- &muxServer{mux, make([]byte, 128)}:
+			case serverCh <- &muxServer{mux, make([]byte, 128), wg}:
 			}
 		}
 	}()
@@ -88,6 +94,12 @@ func TestMultiMux(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, num, len("Hello, World!"))
 	}
+	close(shutDownMux)
+	for _, mux := range muxes {
+		_ = mux.muxClient.Close()
+		_ = mux.muxServer.session.Close()
+	}
+	wg.Wait()
 }
 
 func dialUntilSuccess(t *testing.T, addr string) net.Conn {
