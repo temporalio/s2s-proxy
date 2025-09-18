@@ -24,11 +24,6 @@ type muxedServer struct {
 	session *muxSession
 }
 
-func (s *muxedServer) serve(t *testing.T) {
-	err := s.server.Serve(s.session.serverMux)
-	require.NoError(t, err)
-}
-
 type muxedClient struct {
 	session    *muxSession
 	clientConn *grpc.ClientConn
@@ -41,6 +36,30 @@ type muxSession struct {
 	clientConn net.Conn
 	serverMux  *yamux.Session
 	clientMux  *yamux.Session
+}
+
+func newMuxSession(t *testing.T, listener net.Listener) *muxSession {
+	var err error
+	s := &muxSession{}
+	s.addr = listener.Addr().String()
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	go func() {
+		s.serverConn, err = listener.Accept()
+		require.NoError(t, err)
+		s.serverMux, err = yamux.Server(s.serverConn, nil)
+		require.NoError(t, err)
+		wg.Done()
+	}()
+	go func() {
+		s.clientConn, err = net.Dial("tcp", s.addr)
+		require.NoError(t, err)
+		s.clientMux, err = yamux.Client(s.clientConn, nil)
+		require.NoError(t, err)
+		wg.Done()
+	}()
+	wg.Wait()
+	return s
 }
 
 type testScenario struct {
@@ -57,7 +76,7 @@ func newTestScenario(t *testing.T) *testScenario {
 	clients := make([]*muxedClient, 10)
 	muxes := make([]*muxSession, 10)
 	for i := range 10 {
-		muxes[i] = newMuxServer(t, listener)
+		muxes[i] = newMuxSession(t, listener)
 		servers[i] = &muxedServer{
 			server:  grpc.NewServer(),
 			session: muxes[i],
@@ -95,30 +114,6 @@ func newTestScenario(t *testing.T) *testScenario {
 		clients:  clients,
 		listener: listener,
 	}
-}
-
-func newMuxServer(t *testing.T, listener net.Listener) *muxSession {
-	var err error
-	s := &muxSession{}
-	s.addr = listener.Addr().String()
-	wg := sync.WaitGroup{}
-	wg.Add(2)
-	go func() {
-		s.serverConn, err = listener.Accept()
-		require.NoError(t, err)
-		s.serverMux, err = yamux.Server(s.serverConn, nil)
-		require.NoError(t, err)
-		wg.Done()
-	}()
-	go func() {
-		s.clientConn, err = net.Dial("tcp", s.addr)
-		require.NoError(t, err)
-		s.clientMux, err = yamux.Client(s.clientConn, nil)
-		require.NoError(t, err)
-		wg.Done()
-	}()
-	wg.Wait()
-	return s
 }
 
 // Using separate ClientConn objects created using grpc.NewClientConn "just works", but the clients are completely
