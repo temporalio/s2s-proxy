@@ -17,7 +17,7 @@ BENCH_ARG ?= -benchtime=5000x
 ALL_SRC         := $(shell find . -name "*.go")
 ALL_SRC         += go.mod
 
-all: bins lint
+all: bins fmt lint
 bins: s2s-proxy
 clean:  clean-bins clean-tests
 
@@ -91,7 +91,7 @@ generate-rpcwrappers:
 	rm -rf ./cmd/tools/genrpcwrappers/*_gen.go
 	go fmt ./client/... ./proto/compat/...
 
-test: generate-test-certs
+test: fmt lint generate-test-certs
 	go test $(TEST_ARG) ./...
 
 cover:
