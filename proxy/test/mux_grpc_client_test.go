@@ -9,7 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/hashicorp/yamux"
 	"github.com/stretchr/testify/assert"
@@ -18,7 +17,6 @@ import (
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/attributes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
@@ -187,23 +185,23 @@ func TestSingleClientCustomResolverAndDialer(t *testing.T) {
 	//	//
 	//	// Soon, Addresses will be deprecated and replaced fully by Endpoints.
 	//addresses := []resolver.Address{
-	//	{Addr: "0", ServerName: "mux0", Attributes: attributes.New("mux", scenario.muxes[0].clientMux)},
-	//	{Addr: "1", ServerName: "mux1", Attributes: attributes.New("mux", scenario.muxes[1].clientMux)},
-	//	{Addr: "2", ServerName: "mux2", Attributes: attributes.New("mux", scenario.muxes[2].clientMux)},
-	//	{Addr: "3", ServerName: "mux3", Attributes: attributes.New("mux", scenario.muxes[3].clientMux)},
-	//	{Addr: "4", ServerName: "mux4", Attributes: attributes.New("mux", scenario.muxes[4].clientMux)},
+	//	{Addr: "0"},
+	//	{Addr: "1"},
+	//	{Addr: "2"},
+	//	{Addr: "3"},
+	//	{Addr: "4"},
 	//}
 	manualResolver.InitialState(resolver.State{
 		//Addresses: addresses,
 		Endpoints: []resolver.Endpoint{
-			{Addresses: []resolver.Address{{Addr: "0", ServerName: "mux0", Attributes: attributes.New("mux", scenario.muxes[0].clientMux)}}},
-			{Addresses: []resolver.Address{{Addr: "1", ServerName: "mux1", Attributes: attributes.New("mux", scenario.muxes[1].clientMux)}}},
-			{Addresses: []resolver.Address{{Addr: "2", ServerName: "mux2", Attributes: attributes.New("mux", scenario.muxes[2].clientMux)}}},
-			{Addresses: []resolver.Address{{Addr: "3", ServerName: "mux3", Attributes: attributes.New("mux", scenario.muxes[3].clientMux)}}},
-			{Addresses: []resolver.Address{{Addr: "4", ServerName: "mux4", Attributes: attributes.New("mux", scenario.muxes[4].clientMux)}}},
+			{Addresses: []resolver.Address{{Addr: "0"}}},
+			{Addresses: []resolver.Address{{Addr: "1"}}},
+			{Addresses: []resolver.Address{{Addr: "2"}}},
+			{Addresses: []resolver.Address{{Addr: "3"}}},
+			{Addresses: []resolver.Address{{Addr: "4"}}},
 		},
 	})
-	connSeen := []atomic.Bool{{}, {}, {}, {}, {}}
+	connSeen := make([]atomic.Bool, 10)
 	superClientConn, err := grpc.NewClient("multimux://unused",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithResolvers(manualResolver),
@@ -216,14 +214,46 @@ func TestSingleClientCustomResolverAndDialer(t *testing.T) {
 		}),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))
 	require.NoError(t, err)
+	t.Log("Checking clients 0-5")
 	for range 5 {
-		resp, err := adminservice.NewAdminServiceClient(superClientConn).DescribeCluster(context.Background(), &adminservice.DescribeClusterRequest{})
+		// Creating a new client is guaranteed to re-fetch the connection. Making multiple calls with one client
+		// is not.
+		client := adminservice.NewAdminServiceClient(superClientConn)
+		_, err := client.DescribeCluster(context.Background(), &adminservice.DescribeClusterRequest{})
 		require.NoError(t, err)
-		t.Log("Got cluster", resp.ClusterName)
+		//t.Log("Got cluster", resp.ClusterName)
 	}
 	for i := range 5 {
-		assert.Truef(t, connSeen[i].Load(), "Did not see connection on %d", i)
+		assert.Truef(t, connSeen[i].Load(), "Should have seen connection on %d", i)
 	}
-	time.Sleep(time.Second)
+	manualResolver.UpdateState(resolver.State{
+		Endpoints: []resolver.Endpoint{
+			{Addresses: []resolver.Address{{Addr: "0"}}},
+			{Addresses: []resolver.Address{{Addr: "1"}}},
+			{Addresses: []resolver.Address{{Addr: "2"}}},
+			{Addresses: []resolver.Address{{Addr: "3"}}},
+			{Addresses: []resolver.Address{{Addr: "4"}}},
+			{Addresses: []resolver.Address{{Addr: "5"}}},
+			{Addresses: []resolver.Address{{Addr: "6"}}},
+			{Addresses: []resolver.Address{{Addr: "7"}}},
+			{Addresses: []resolver.Address{{Addr: "8"}}},
+			{Addresses: []resolver.Address{{Addr: "9"}}},
+		},
+	})
+	// The connections for muxes 0-4 are cached!! Don't reset connSeen
+	//for i := range connSeen {
+	//	connSeen[i].Store(false)
+	//}
+
+	t.Log("Checking clients 0-10")
+	for range 10 {
+		client := adminservice.NewAdminServiceClient(superClientConn)
+		_, err := client.DescribeCluster(context.Background(), &adminservice.DescribeClusterRequest{})
+		require.NoError(t, err)
+		//t.Log("Got cluster", resp.ClusterName)
+	}
+	for i := range 10 {
+		assert.Truef(t, connSeen[i].Load(), "Should have seen connection on %d", i)
+	}
 	scenario.close()
 }
