@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/yamux"
 	"github.com/stretchr/testify/assert"
@@ -256,4 +257,59 @@ func TestSingleClientCustomResolverAndDialer(t *testing.T) {
 		assert.Truef(t, connSeen[i].Load(), "Should have seen connection on %d", i)
 	}
 	scenario.close()
+}
+
+func TestSingleClientCustomResolverUpdate(t *testing.T) {
+	scenario := newTestScenario(t)
+	connSeen := make([]atomic.Bool, 10)
+	manualResolver := manual.NewBuilderWithScheme("multimux")
+	manualResolver.InitialState(resolver.State{
+		Endpoints: []resolver.Endpoint{
+			{Addresses: []resolver.Address{{Addr: "0"}}},
+		},
+	})
+	superClientConn, err := grpc.NewClient("multimux://unused",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithResolvers(manualResolver),
+		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+			i, err := strconv.Atoi(addr)
+			//t.Log("Dialed addr", addr)
+			require.NoError(t, err)
+			connSeen[i].Store(true)
+			return scenario.muxes[i].clientMux.Open()
+		}),
+		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))
+	require.NoError(t, err)
+	stopClientThread := atomic.Bool{}
+	grpcClient := adminservice.NewAdminServiceClient(superClientConn)
+	go func() {
+		for !stopClientThread.Load() {
+			_, err := grpcClient.DescribeCluster(context.Background(), &adminservice.DescribeClusterRequest{})
+			require.NoError(t, err)
+		}
+	}()
+	require.Eventually(t, connSeen[0].Load, 1*time.Second, 10*time.Millisecond)
+	manualResolver.UpdateState(resolver.State{
+		Endpoints: []resolver.Endpoint{
+			{Addresses: []resolver.Address{{Addr: "0"}}},
+			{Addresses: []resolver.Address{{Addr: "1"}}},
+			{Addresses: []resolver.Address{{Addr: "2"}}},
+			{Addresses: []resolver.Address{{Addr: "3"}}},
+			{Addresses: []resolver.Address{{Addr: "4"}}},
+			{Addresses: []resolver.Address{{Addr: "5"}}},
+			{Addresses: []resolver.Address{{Addr: "6"}}},
+			{Addresses: []resolver.Address{{Addr: "7"}}},
+			{Addresses: []resolver.Address{{Addr: "8"}}},
+			{Addresses: []resolver.Address{{Addr: "9"}}},
+		},
+	})
+	allConnsSeen := func() bool {
+		for i := range connSeen {
+			if !connSeen[i].Load() {
+				return false
+			}
+		}
+		return true
+	}
+	require.Eventually(t, allConnsSeen, 1*time.Second, 10*time.Millisecond)
 }
