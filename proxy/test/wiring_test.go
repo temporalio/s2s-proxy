@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/testserver"
 )
 
 type (
@@ -35,10 +36,10 @@ type (
 
 var (
 	// Create some believable echo server configs
-	echoServerInfo = clusterInfo{
-		serverAddress:  echoServerAddress,
-		clusterShardID: serverClusterShard,
-		s2sProxyConfig: makeS2SConfig(s2sAddresses{
+	echoServerInfo = testserver.ClusterInfo{
+		ServerAddress:  echoServerAddress,
+		ClusterShardID: serverClusterShard,
+		S2sProxyConfig: makeS2SConfig(s2sAddresses{
 			echoServer:  "localhost:7266",
 			inbound:     "localhost:7366",
 			outbound:    "localhost:7466",
@@ -46,10 +47,10 @@ var (
 			healthCheck: "localhost:7479",
 		}),
 	}
-	echoClientInfo = clusterInfo{
-		serverAddress:  echoClientAddress,
-		clusterShardID: clientClusterShard,
-		s2sProxyConfig: makeS2SConfig(s2sAddresses{
+	echoClientInfo = testserver.ClusterInfo{
+		ServerAddress:  echoClientAddress,
+		ClusterShardID: clientClusterShard,
+		S2sProxyConfig: makeS2SConfig(s2sAddresses{
 			echoServer:  "localhost:8266",
 			inbound:     "localhost:8366",
 			outbound:    "localhost:8466",
@@ -122,33 +123,33 @@ func TestEOFFromServer(t *testing.T) {
 }
 
 func TestWiringWithEchoService(t *testing.T) {
-	echoServer := newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
-	echoClient := newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
-	echoServer.start()
-	echoClient.start()
+	echoServer := testserver.NewEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
+	echoClient := testserver.NewEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
+	echoServer.Start()
+	echoClient.Start()
 	defer func() {
-		echoClient.stop()
-		echoServer.stop()
+		echoClient.Stop()
+		echoServer.Stop()
 	}()
 	// Test s2s-proxy health check
 
 	// The server may take a few 10s of ms to start
 	var healthErr = fmt.Errorf("Not started")
 	for attempts := 0; healthErr != nil && attempts < 5; attempts++ {
-		_, healthErr = http.Get(fmt.Sprintf("http://%s/health", echoServerInfo.s2sProxyConfig.HealthCheck.ListenAddress))
+		_, healthErr = http.Get(fmt.Sprintf("http://%s/health", echoServerInfo.S2sProxyConfig.HealthCheck.ListenAddress))
 		time.Sleep(10 * time.Millisecond)
 	}
 	assert.NoError(t, healthErr)
 
 	// Confirm that Prometheus initialized and is reporting. We should see proxy_start_count
-	serverMetrics := scrapePrometheus(t, echoServerInfo.s2sProxyConfig.Metrics.Prometheus.ListenAddress)
+	serverMetrics := scrapePrometheus(t, echoServerInfo.S2sProxyConfig.Metrics.Prometheus.ListenAddress)
 	assert.Contains(t, serverMetrics, "proxy_start_count",
 		"metrics should contain proxy_start_count, but was \"%s\"", serverMetrics)
 	assert.Contains(t, serverMetrics, "proxy_health_check_success",
 		"metrics should contain proxy_health_check_success, but was \"%s\"", serverMetrics)
 
 	// Make some calls and check that the gRPC metrics are reporting
-	r, err := retry(func() (*adminservice.DescribeClusterResponse, error) {
+	r, err := testserver.Retry(func() (*adminservice.DescribeClusterResponse, error) {
 		return echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
 	}, 5, logger)
 	assert.NoError(t, err)
@@ -167,7 +168,7 @@ func TestWiringWithEchoService(t *testing.T) {
 	assert.NotNil(t, resp)
 	assert.Equal(t, "example-ns", resp.WorkflowNamespace)
 
-	clientMetrics := scrapePrometheus(t, echoClientInfo.s2sProxyConfig.Metrics.Prometheus.ListenAddress)
+	clientMetrics := scrapePrometheus(t, echoClientInfo.S2sProxyConfig.Metrics.Prometheus.ListenAddress)
 
 	assert.Contains(t, clientMetrics, "temporal_s2s_proxy_grpc_server_handled_total",
 		"grpc counter metrics are missing or not prefixed properly")
