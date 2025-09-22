@@ -9,15 +9,16 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/temporalio/s2s-proxy/proto/1_22/server/api/adminservice/v1"
-	"github.com/temporalio/s2s-proxy/testserver"
-	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"go.temporal.io/server/common/log"
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+
+	"github.com/temporalio/s2s-proxy/proto/1_22/server/api/adminservice/v1"
+	"github.com/temporalio/s2s-proxy/testserver"
+	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
 func TestMultiClientConn(t *testing.T) {
