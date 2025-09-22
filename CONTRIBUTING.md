@@ -1,5 +1,18 @@
 # Develop
 
+## Directories and contents
+
+| Package     | Purpose                                             | Start reading                            |
+|-------------|-----------------------------------------------------|------------------------------------------|
+| cmd         | Main+Tools                                          | cmd/proxy/main.go                        |
+| proxy       | Service top-level and service handlers              | proxy/proxy.go<br/>proxy/adminservice.go |
+| auth        | ACL implementation                                  | access_control.go                        |
+| interceptor | Translation and ACL<br/>interceptor implementations | interceptor/translation_interceptor.go   |
+| transport   | Mux and TCP implementation                          | transport/mux/mux_manager.go             |
+| testserver  | Local integration test fakes                        | testserver/echo_server.go                |
+| config      | Config YAML parsing and model                       | config/config.go                         |
+| metrics     | Prometheus metric defs+utils                        | metrics/prometheus_defs.go               |
+
 ## Prerequisites
 
 ### Supported platforms

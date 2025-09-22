@@ -1,4 +1,4 @@
-package proxy
+package testserver
 
 import (
 	"context"
@@ -25,25 +25,25 @@ import (
 )
 
 type (
-	clusterInfo struct {
-		serverAddress  string
-		clusterShardID history.ClusterShardID
-		s2sProxyConfig *config.S2SProxyConfig // if provided, used for setting up proxy
+	ClusterInfo struct {
+		ServerAddress  string
+		ClusterShardID history.ClusterShardID
+		S2sProxyConfig *config.S2SProxyConfig // if provided, used for setting up Proxy
 	}
 
-	echoServer struct {
-		serverConfig      config.ProxyServerConfig
-		clientConfig      config.ProxyClientConfig
-		server            *s2sproxy.TemporalAPIServer
-		proxy             *s2sproxy.Proxy
-		clusterInfo       clusterInfo
-		remoteClusterInfo clusterInfo
-		clientProvider    client.ClientProvider
-		logger            log.Logger
-		echoService       *echoAdminService
+	EchoServer struct {
+		ServerConfig      config.ProxyServerConfig
+		ClientConfig      config.ProxyClientConfig
+		Server            *s2sproxy.TemporalAPIServer
+		Proxy             *s2sproxy.Proxy
+		ClusterInfo       ClusterInfo
+		RemoteClusterInfo ClusterInfo
+		ClientProvider    client.ClientProvider
+		Logger            log.Logger
+		EchoService       *echoAdminService
 	}
 
-	watermarkInfo struct {
+	WatermarkInfo struct {
 		Watermark int64
 		Timestamp time.Time
 	}
@@ -53,43 +53,43 @@ const (
 	defaultPayloadSize = 1024
 )
 
-// Echo server for testing replication calls with or without proxies.
-// It consists of 1/ a server for handling replication requests from remote server and 2/ a client for
-// sending replication requests to remote server.
-func newEchoServer(
-	localClusterInfo clusterInfo,
-	remoteClusterInfo clusterInfo,
+// NewEchoServer creates an Echo Server for testing replication calls with or without proxies.
+// It consists of 1/ a Server for handling replication requests from remote Server and 2/ a client for
+// sending replication requests to remote Server.
+func NewEchoServer(
+	localClusterInfo ClusterInfo,
+	remoteClusterInfo ClusterInfo,
 	serviceName string,
 	logger log.Logger,
 	namespaces []string,
-) *echoServer {
+) *EchoServer {
 	ns := map[string]bool{}
 	for _, n := range namespaces {
 		ns[n] = true
 	}
-	// echoAdminService handles StreamWorkflowReplicationMessages call from remote server.
+	// echoAdminService handles StreamWorkflowReplicationMessages call from remote Server.
 	// It acts as stream sender by echoing back InclusiveLowWatermark in SyncReplicationState message.
 	senderAdminService := &echoAdminService{
 		serviceName: serviceName,
-		logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.serverAddress)),
+		logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.ServerAddress)),
 		namespaces:  ns,
 		payloadSize: defaultPayloadSize,
 	}
 
 	senderWorkflowService := &echoWorkflowService{
 		serviceName: serviceName,
-		logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.serverAddress)),
+		logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.ServerAddress)),
 	}
 
 	var proxy *s2sproxy.Proxy
 	var clientConfig config.ProxyClientConfig
 
-	localProxyCfg := localClusterInfo.s2sProxyConfig
-	remoteProxyCfg := remoteClusterInfo.s2sProxyConfig
+	localProxyCfg := localClusterInfo.S2sProxyConfig
+	remoteProxyCfg := remoteClusterInfo.S2sProxyConfig
 
 	if localProxyCfg != nil && remoteProxyCfg != nil {
 		if localProxyCfg.Outbound.Client.Type != remoteProxyCfg.Inbound.Server.Type {
-			panic(fmt.Sprintf("local proxy outbound client type: %s doesn't match with remote inbound server type: %s",
+			panic(fmt.Sprintf("local Proxy outbound client type: %s doesn't match with remote inbound Server type: %s",
 				localProxyCfg.Outbound.Client.Type,
 				remoteProxyCfg.Inbound.Server.Type,
 			))
@@ -98,16 +98,16 @@ func newEchoServer(
 
 	if localProxyCfg != nil {
 		if localProxyCfg.Outbound.Client.Type != config.MuxTransport {
-			// Setup local proxy forwarded server address explicitly if not using multiplex transport.
+			// Setup local Proxy forwarded Server address explicitly if not using multiplex transport.
 			// If use multiplex transport, then outbound -> inbound uses established multiplex connection.
 			if remoteProxyCfg != nil {
 				localProxyCfg.Outbound.Client.ServerAddress = remoteProxyCfg.Inbound.Server.ListenAddress
 			} else {
-				localProxyCfg.Outbound.Client.ServerAddress = remoteClusterInfo.serverAddress
+				localProxyCfg.Outbound.Client.ServerAddress = remoteClusterInfo.ServerAddress
 			}
 		}
 
-		configProvider := config.NewMockConfigProvider(*localClusterInfo.s2sProxyConfig)
+		configProvider := config.NewMockConfigProvider(*localClusterInfo.S2sProxyConfig)
 		proxy = s2sproxy.NewProxy(
 			configProvider,
 			transport.NewTransportManager(configProvider, logger),
@@ -120,7 +120,7 @@ func newEchoServer(
 			},
 		}
 	} else {
-		// No local proxy
+		// No local Proxy
 		if remoteProxyCfg != nil {
 			clientConfig = config.ProxyClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
@@ -130,7 +130,7 @@ func newEchoServer(
 		} else {
 			clientConfig = config.ProxyClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: remoteClusterInfo.serverAddress,
+					ServerAddress: remoteClusterInfo.ServerAddress,
 				},
 			}
 		}
@@ -138,14 +138,14 @@ func newEchoServer(
 
 	serverConfig := config.ProxyServerConfig{
 		TCPServerSetting: config.TCPServerSetting{
-			ListenAddress: localClusterInfo.serverAddress,
+			ListenAddress: localClusterInfo.ServerAddress,
 		},
 	}
 
 	tm := transport.NewTransportManager(&config.EmptyConfigProvider, logger)
 	serverTransport, err := tm.OpenServer(serverConfig)
 	if err != nil {
-		logger.Fatal("Failed to create server transport", tag.Error(err))
+		logger.Fatal("Failed to create Server transport", tag.Error(err))
 	}
 
 	clientTransport, err := tm.OpenClient(clientConfig)
@@ -154,10 +154,10 @@ func newEchoServer(
 	}
 
 	logger = log.With(logger, common.ServiceTag(serviceName))
-	return &echoServer{
-		serverConfig: serverConfig,
-		clientConfig: clientConfig,
-		server: s2sproxy.NewTemporalAPIServer(
+	return &EchoServer{
+		ServerConfig: serverConfig,
+		ClientConfig: clientConfig,
+		Server: s2sproxy.NewTemporalAPIServer(
 			serviceName,
 			serverConfig,
 			senderAdminService,
@@ -165,39 +165,39 @@ func newEchoServer(
 			nil,
 			serverTransport,
 			logger),
-		echoService:       senderAdminService,
-		proxy:             proxy,
-		clusterInfo:       localClusterInfo,
-		remoteClusterInfo: remoteClusterInfo,
-		clientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, metrics.GRPCOutboundClientMetrics, logger), logger),
-		logger:            logger,
+		EchoService:       senderAdminService,
+		Proxy:             proxy,
+		ClusterInfo:       localClusterInfo,
+		RemoteClusterInfo: remoteClusterInfo,
+		ClientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, metrics.GRPCOutboundClientMetrics, logger), logger),
+		Logger:            logger,
 	}
 }
 
-func (s *echoServer) setPayloadSize(size int) {
-	s.echoService.payloadSize = size
+func (s *EchoServer) SetPayloadSize(size int) {
+	s.EchoService.payloadSize = size
 }
 
-func (s *echoServer) start() {
-	s.logger.Info(fmt.Sprintf("Starting echoServer with ServerConfig: %v, ClientConfig: %v", s.serverConfig, s.clientConfig))
-	s.server.Start()
-	if s.proxy != nil {
-		_ = s.proxy.Start()
+func (s *EchoServer) Start() {
+	s.Logger.Info(fmt.Sprintf("Starting echoServer with ServerConfig: %v, ClientConfig: %v", s.ServerConfig, s.ClientConfig))
+	s.Server.Start()
+	if s.Proxy != nil {
+		_ = s.Proxy.Start()
 	}
 }
 
-func (s *echoServer) stop() {
-	if s.proxy != nil {
-		s.proxy.Stop()
+func (s *EchoServer) Stop() {
+	if s.Proxy != nil {
+		s.Proxy.Stop()
 	}
-	s.server.Stop()
+	s.Server.Stop()
 }
 
 const (
 	retryInterval = 1 * time.Second // Interval between retries
 )
 
-func retry[T interface{}](f func() (T, error), maxRetries int, logger log.Logger) (T, error) {
+func Retry[T interface{}](f func() (T, error), maxRetries int, logger log.Logger) (T, error) {
 	var err error
 	var output T
 	for i := 0; i < maxRetries; i++ {
@@ -219,8 +219,8 @@ func retry[T interface{}](f func() (T, error), maxRetries int, logger log.Logger
 	return output, fmt.Errorf("failed to call method after %d retries: %w", maxRetries, err)
 }
 
-func (s *echoServer) DescribeCluster(req *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
-	adminClient, err := s.clientProvider.GetAdminClient()
+func (s *EchoServer) DescribeCluster(req *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
+	adminClient, err := s.ClientProvider.GetAdminClient()
 	if err != nil {
 		return nil, err
 	}
@@ -228,8 +228,8 @@ func (s *echoServer) DescribeCluster(req *adminservice.DescribeClusterRequest) (
 	return adminClient.DescribeCluster(context.Background(), req)
 }
 
-func (s *echoServer) DescribeMutableState(req *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
-	adminClient, err := s.clientProvider.GetAdminClient()
+func (s *EchoServer) DescribeMutableState(req *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
+	adminClient, err := s.ClientProvider.GetAdminClient()
 	if err != nil {
 		return nil, err
 	}
@@ -237,25 +237,25 @@ func (s *echoServer) DescribeMutableState(req *adminservice.DescribeMutableState
 	return adminClient.DescribeMutableState(context.Background(), req)
 }
 
-func (s *echoServer) CreateStreamClient() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
-	metaData := history.EncodeClusterShardMD(s.clusterInfo.clusterShardID, s.remoteClusterInfo.clusterShardID)
+func (s *EchoServer) CreateStreamClient() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
+	metaData := history.EncodeClusterShardMD(s.ClusterInfo.ClusterShardID, s.RemoteClusterInfo.ClusterShardID)
 	targetContext := metadata.NewOutgoingContext(context.TODO(), metaData)
 
-	adminClient, err := s.clientProvider.GetAdminClient()
+	adminClient, err := s.ClientProvider.GetAdminClient()
 	if err != nil {
 		return nil, err
 	}
 
-	return retry(func() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
+	return Retry(func() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
 		return adminClient.StreamWorkflowReplicationMessages(targetContext)
-	}, 5, s.logger)
+	}, 5, s.Logger)
 }
 
-func sendRecv(stream adminservice.AdminService_StreamWorkflowReplicationMessagesClient, sequence []int64) (map[int64]bool, error) {
+func SendRecv(stream adminservice.AdminService_StreamWorkflowReplicationMessagesClient, sequence []int64) (map[int64]bool, error) {
 	echoed := make(map[int64]bool)
 	var err error
 	for _, waterMark := range sequence {
-		highWatermarkInfo := &watermarkInfo{
+		highWatermarkInfo := &WatermarkInfo{
 			Watermark: waterMark,
 		}
 
@@ -294,30 +294,30 @@ func sendRecv(stream adminservice.AdminService_StreamWorkflowReplicationMessages
 
 // Method for testing replication stream.
 //
-// It starts a bi-directional stream by connecting to remote server (which acts as stream sender).
-// It sends a sequence of numbers as SyncReplicationState message and then wait for remote server
+// It starts a bi-directional stream by connecting to remote Server (which acts as stream sender).
+// It sends a sequence of numbers as SyncReplicationState message and then wait for remote Server
 // to reply.
-func (s *echoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
+func (s *EchoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
 	echoed := make(map[int64]bool)
 	stream, err := s.CreateStreamClient()
 	if err != nil {
 		return echoed, err
 	}
 
-	s.logger.Info("==== SendAndRecv starting ====")
-	echoed, err = sendRecv(stream, sequence)
+	s.Logger.Info("==== SendAndRecv starting ====")
+	echoed, err = SendRecv(stream, sequence)
 	if err != nil {
-		s.logger.Error("sendRecv", tag.NewErrorTag("error", err))
+		s.Logger.Error("SendRecv", tag.NewErrorTag("error", err))
 	}
 	_ = stream.CloseSend()
-	s.logger.Info("==== SendAndRecv completed ====")
+	s.Logger.Info("==== SendAndRecv completed ====")
 	return echoed, err
 }
 
 // Test workflowservice by making some request.
-// Remote server echoes the Namespace field in the request as the WorkflowNamespace field in the response.
-func (r *echoServer) PollActivityTaskQueue(req *workflowservice.PollActivityTaskQueueRequest) (*workflowservice.PollActivityTaskQueueResponse, error) {
-	wfclient, err := r.clientProvider.GetWorkflowServiceClient()
+// Remote Server echoes the Namespace field in the request as the WorkflowNamespace field in the response.
+func (r *EchoServer) PollActivityTaskQueue(req *workflowservice.PollActivityTaskQueueRequest) (*workflowservice.PollActivityTaskQueueResponse, error) {
+	wfclient, err := r.ClientProvider.GetWorkflowServiceClient()
 	if err != nil {
 		return nil, err
 	}
