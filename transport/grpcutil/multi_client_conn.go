@@ -23,29 +23,24 @@ const (
 // when they are used, and they will break MultiClientConn.
 // Note: This is not ready for use in production yet, ClientConn.Connect() and ClientConn.UpdateState() cannot yet be called properly.
 type MultiClientConn struct {
+	// connMapLock is being used with connMap over a sync.Map for now. If using a MultiClientConn on large numbers of
+	// muxes, it's probably best to switch to sync.Map for the sharded read locks
 	connMapLock sync.RWMutex
-	connMap     map[string]func() (net.Conn, error)
-	resolver    manual.Resolver
-	clientConn  *grpc.ClientConn
+	// connMap contains the mapping of addresses to connections. We avoid storing the net.Conn directly to ensure
+	// yamux always sees new calls to Open and can open new streams properly
+	connMap map[string]func() (net.Conn, error)
+	// resolver generates map keys that will match to the Dialer's connection map
+	resolver *manual.Resolver
+	// clientConn handles the calls to our resolver and Dialer
+	clientConn *grpc.ClientConn
 }
 
-type ConnProvider func() (map[string]func() (net.Conn, error), error)
-
-func NewMultiClientConn(name string, connProvider ConnProvider, opts ...grpc.DialOption) (*MultiClientConn, error) {
+func NewMultiClientConn(name string, opts ...grpc.DialOption) (*MultiClientConn, error) {
 	mcc := &MultiClientConn{}
 	var err error
 	dialOpts := make([]grpc.DialOption, len(opts)+2)
-	manualResolver := manual.NewBuilderWithScheme(scheme)
-	manualResolver.BuildCallback = func(resolver.Target, resolver.ClientConn, resolver.BuildOptions) {
-		mcc.connMapLock.Lock()
-		defer mcc.connMapLock.Unlock()
-		mcc.connMap, err = connProvider()
-		manualResolver.InitialState(mcc.stateFromConns())
-		if err != nil {
-			panic(err)
-		}
-	}
-	dialOpts[0] = grpc.WithResolvers(manualResolver)
+	mcc.resolver = manual.NewBuilderWithScheme(scheme)
+	dialOpts[0] = grpc.WithResolvers(mcc.resolver)
 	dialOpts[1] = grpc.WithContextDialer(mcc.getMapDialer())
 	copy(dialOpts[2:], opts)
 	mcc.clientConn, err = grpc.NewClient(fmt.Sprintf("%s://%s", scheme, name),
@@ -53,39 +48,15 @@ func NewMultiClientConn(name string, connProvider ConnProvider, opts ...grpc.Dia
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create underlying grpc client")
 	}
+	mcc.clientConn.Connect()
 	return mcc, nil
 }
 
-func (mcc *MultiClientConn) getMapDialer() func(ctx context.Context, addr string) (net.Conn, error) {
-	return func(ctx context.Context, addr string) (net.Conn, error) {
-		mcc.connMapLock.RLock()
-		connFn, exists := mcc.connMap[addr]
-		mcc.connMapLock.RUnlock()
-		if exists {
-			return connFn()
-		}
-		return nil, fmt.Errorf("connection key %s didn't match a connection", addr)
-	}
-}
-
-func (mcc *MultiClientConn) stateFromConns() resolver.State {
-	newState := resolver.State{
-		Addresses: make([]resolver.Address, len(mcc.connMap)),
-	}
-	idx := 0
-	for addr := range mcc.connMap {
-		newState.Addresses[idx] = resolver.Address{Addr: addr}
-		idx++
-	}
-	return newState
-}
-
-func (mcc *MultiClientConn) UpdateConnections(conns map[string]func() (net.Conn, error)) error {
+func (mcc *MultiClientConn) UpdateState(conns map[string]func() (net.Conn, error)) {
 	mcc.connMapLock.Lock()
 	defer mcc.connMapLock.Unlock()
 	mcc.connMap = conns
-	mcc.resolver.UpdateState(mcc.stateFromConns())
-	return nil
+	mcc.resolver.UpdateState(mcc.deriveStateFromConns())
 }
 
 // grpc.ClientConnInterface
@@ -104,4 +75,30 @@ func (mcc *MultiClientConn) NewStream(ctx context.Context, desc *grpc.StreamDesc
 		return nil, errors.New("newStream called with uninitialized MultiClientConn")
 	}
 	return mcc.clientConn.NewStream(ctx, desc, method, opts...)
+}
+
+func (mcc *MultiClientConn) getMapDialer() func(ctx context.Context, addr string) (net.Conn, error) {
+	return func(ctx context.Context, addr string) (net.Conn, error) {
+		mcc.connMapLock.RLock()
+		connFn, exists := mcc.connMap[addr]
+		mcc.connMapLock.RUnlock()
+		if exists {
+			return connFn()
+		}
+		return nil, fmt.Errorf("connection key %s didn't match a connection", addr)
+	}
+}
+
+// deriveStateFromConns creates one endpoint for each registered connection in the connMap. Each endpoint only has
+// a single address.
+func (mcc *MultiClientConn) deriveStateFromConns() resolver.State {
+	newState := resolver.State{
+		Endpoints: make([]resolver.Endpoint, len(mcc.connMap)),
+	}
+	idx := 0
+	for addr := range mcc.connMap {
+		newState.Endpoints[idx] = resolver.Endpoint{Addresses: []resolver.Address{{Addr: addr}}}
+		idx++
+	}
+	return newState
 }
