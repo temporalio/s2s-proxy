@@ -3,6 +3,7 @@ package grpcutil
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"sync"
 
@@ -48,6 +49,7 @@ func NewMultiClientConn(name string, opts ...grpc.DialOption) (*MultiClientConn,
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create underlying grpc client")
 	}
+	// UpdateState will panic if this isn't called first, or a connection hasn't been attempted yet.
 	mcc.clientConn.Connect()
 	return mcc, nil
 }
@@ -55,7 +57,8 @@ func NewMultiClientConn(name string, opts ...grpc.DialOption) (*MultiClientConn,
 func (mcc *MultiClientConn) UpdateState(conns map[string]func() (net.Conn, error)) {
 	mcc.connMapLock.Lock()
 	defer mcc.connMapLock.Unlock()
-	mcc.connMap = conns
+	// Make sure we don't hold onto a mutable pointer to the original map
+	mcc.connMap = maps.Clone(conns)
 	mcc.resolver.UpdateState(mcc.deriveStateFromConns())
 }
 
