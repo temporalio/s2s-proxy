@@ -243,6 +243,10 @@ func ClusterShardIDtoString(sd history.ClusterShardID) string {
 	return fmt.Sprintf("(id: %d, shard: %d)", sd.ClusterID, sd.ShardID)
 }
 
+func ClusterShardIDtoShortString(sd history.ClusterShardID) string {
+	return fmt.Sprintf("%d:%d", sd.ClusterID, sd.ShardID)
+}
+
 // StreamWorkflowReplicationMessages establishes an HTTP/2 stream. gRPC passes us a stream that represents the initiating server,
 // and we can freely Send and Recv on that "server". Because this is a proxy, we also establish a bidirectional
 // stream using our configured adminClient. When we Recv on the initiator, we Send to the client.

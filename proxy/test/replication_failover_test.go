@@ -287,7 +287,7 @@ func (s *ReplicationTestSuite) createProxy(
 	}
 
 	configProvider := &simpleConfigProvider{cfg: *cfg}
-	proxy := s2sproxy.NewProxy(configProvider, nil, s.logger)
+	proxy := s2sproxy.NewProxy(configProvider, s.logger)
 	s.NotNil(proxy)
 
 	err := proxy.Start()

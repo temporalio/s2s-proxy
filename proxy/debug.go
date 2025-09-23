@@ -61,15 +61,14 @@ type (
 
 	// ShardDebugInfo contains debug information about shard distribution
 	ShardDebugInfo struct {
-		Enabled           bool                     `json:"enabled"`
-		ForwardingEnabled bool                     `json:"forwarding_enabled"`
-		NodeName          string                   `json:"node_name"`
-		LocalShards       []history.ClusterShardID `json:"local_shards"`
-		LocalShardCount   int                      `json:"local_shard_count"`
-		ClusterNodes      []string                 `json:"cluster_nodes"`
-		ClusterSize       int                      `json:"cluster_size"`
-		RemoteShards      map[string]string        `json:"remote_shards"`       // shard_id -> node_name
-		RemoteShardCounts map[string]int           `json:"remote_shard_counts"` // node_name -> shard_count
+		Enabled           bool                              `json:"enabled"`
+		NodeName          string                            `json:"node_name"`
+		LocalShards       map[string]history.ClusterShardID `json:"local_shards"` // key: "clusterID:shardID"
+		LocalShardCount   int                               `json:"local_shard_count"`
+		ClusterNodes      []string                          `json:"cluster_nodes"`
+		ClusterSize       int                               `json:"cluster_size"`
+		RemoteShards      map[string]string                 `json:"remote_shards"`       // shard_id -> node_name
+		RemoteShardCounts map[string]int                    `json:"remote_shard_counts"` // node_name -> shard_count
 	}
 
 	// ChannelDebugInfo holds debug information about channels
@@ -84,7 +83,7 @@ type (
 		Timestamp     time.Time        `json:"timestamp"`
 		ActiveStreams []StreamInfo     `json:"active_streams"`
 		StreamCount   int              `json:"stream_count"`
-		ShardInfo     ShardDebugInfo   `json:"shard_info"`
+		ShardInfos    []ShardDebugInfo `json:"shard_infos"`
 		ChannelInfo   ChannelDebugInfo `json:"channel_info"`
 	}
 )
@@ -94,21 +93,21 @@ func HandleDebugInfo(w http.ResponseWriter, r *http.Request, proxyInstance *Prox
 
 	var activeStreams []StreamInfo
 	var streamCount int
-	var shardInfo ShardDebugInfo
+	var shardInfos []ShardDebugInfo
 	var channelInfo ChannelDebugInfo
 
 	// Get active streams information
 	streamTracker := GetGlobalStreamTracker()
 	activeStreams = streamTracker.GetActiveStreams()
 	streamCount = streamTracker.GetStreamCount()
-	shardInfo = proxyInstance.GetShardInfo()
+	shardInfos = proxyInstance.GetShardInfos()
 	channelInfo = proxyInstance.GetChannelInfo()
 
 	response := DebugResponse{
 		Timestamp:     time.Now(),
 		ActiveStreams: activeStreams,
 		StreamCount:   streamCount,
-		ShardInfo:     shardInfo,
+		ShardInfos:    shardInfos,
 		ChannelInfo:   channelInfo,
 	}
 

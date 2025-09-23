@@ -115,7 +115,6 @@ func NewEchoServer(
 		configProvider := config.NewMockConfigProvider(*localClusterInfo.S2sProxyConfig)
 		proxy = s2sproxy.NewProxy(
 			configProvider,
-			nil,
 			logger,
 		)
 

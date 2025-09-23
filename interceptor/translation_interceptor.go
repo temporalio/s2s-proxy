@@ -10,6 +10,7 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/metrics"
 )
 
@@ -75,6 +76,16 @@ func (i *TranslationInterceptor) InterceptStream(
 	info *grpc.StreamServerInfo,
 	handler grpc.StreamHandler,
 ) error {
+
+	i.logger.Debug("InterceptStream", tag.NewAnyTag("method", info.FullMethod))
+	// Skip translation for intra-proxy streams
+	if common.IsIntraProxy(ss.Context()) {
+		err := handler(srv, ss)
+		if err != nil {
+			i.logger.Error("grpc handler with error: %v", tag.Error(err))
+		}
+		return err
+	}
 	return handler(srv, newStreamTranslator(ss, i.logger, i.translators))
 }
 

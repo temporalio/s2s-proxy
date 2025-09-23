@@ -224,8 +224,6 @@ type (
 	MemberlistConfig struct {
 		// Enable distributed shard management using memberlist
 		Enabled bool `yaml:"enabled"`
-		// Enable proxy-to-proxy forwarding (requires Enabled=true)
-		EnableForwarding bool `yaml:"enableForwarding"`
 		// Node name for this proxy instance in the cluster
 		NodeName string `yaml:"nodeName"`
 		// Bind address for memberlist cluster communication

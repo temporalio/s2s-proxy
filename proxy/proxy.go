@@ -46,8 +46,9 @@ type (
 		inboundHealthCheckServer  *http.Server
 		outboundHealthCheckServer *http.Server
 		metricsServer             *http.Server
-		shardManager              ShardManager
 		logger                    log.Logger
+		shardManagers             map[migrationId]ShardManager
+		intraMgrs                 map[migrationId]*intraProxyManager
 
 		// remoteSendChannels maps shard IDs to send channels for replication message routing
 		remoteSendChannels   map[history.ClusterShardID]chan RoutedMessage
@@ -63,14 +64,15 @@ type (
 	}
 )
 
-func NewProxy(configProvider config.ConfigProvider, shardManager ShardManager, logger log.Logger) *Proxy {
+func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 	s2sConfig := config.ToClusterConnConfig(configProvider.GetS2SProxyConfig())
 	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
 		lifetime:           ctx,
 		cancel:             cancel,
 		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.MuxTransports)),
-		shardManager:       shardManager,
+		intraMgrs:          make(map[migrationId]*intraProxyManager),
+		shardManagers:      make(map[migrationId]ShardManager),
 		logger: log.NewThrottledLogger(
 			logger,
 			func() float64 {
@@ -87,13 +89,52 @@ func NewProxy(configProvider config.ConfigProvider, shardManager ShardManager, l
 	if s2sConfig.Metrics != nil {
 		proxy.metricsConfig = s2sConfig.Metrics
 	}
+
+	// TODO: Wire intra-proxy manager callbacks
+	// // Wire memberlist peer-join callback to reconcile intra-proxy receivers for local/remote pairs
+	// shardManager.SetOnPeerJoin(func(nodeName string) {
+	// 	logger.Info("OnPeerJoin", tag.NewStringTag("nodeName", nodeName))
+	// 	defer logger.Info("OnPeerJoin done", tag.NewStringTag("nodeName", nodeName))
+	// 	proxy.intraMgr.ReconcilePeerStreams(proxy, nodeName)
+	// })
+
+	// // Wire peer-leave to cleanup intra-proxy resources for that peer
+	// shardManager.SetOnPeerLeave(func(nodeName string) {
+	// 	logger.Info("OnPeerLeave", tag.NewStringTag("nodeName", nodeName))
+	// 	defer logger.Info("OnPeerLeave done", tag.NewStringTag("nodeName", nodeName))
+	// 	proxy.intraMgr.ReconcilePeerStreams(proxy, nodeName)
+	// })
+
+	// // Wire local shard changes to reconcile intra-proxy receivers
+	// shardManager.SetOnLocalShardChange(func(shard history.ClusterShardID, added bool) {
+	// 	logger.Info("OnLocalShardChange", tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
+	// 	defer logger.Info("OnLocalShardChange done", tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
+	// 	proxy.intraMgr.ReconcilePeerStreams(proxy, "")
+	// })
+
+	// // Wire remote shard changes to reconcile intra-proxy receivers
+	// shardManager.SetOnRemoteShardChange(func(peer string, shard history.ClusterShardID, added bool) {
+	// 	logger.Info("OnRemoteShardChange", tag.NewStringTag("peer", peer), tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
+	// 	defer logger.Info("OnRemoteShardChange done", tag.NewStringTag("peer", peer), tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
+	// 	proxy.intraMgr.ReconcilePeerStreams(proxy, peer)
+	// })
+
 	for _, clusterCfg := range s2sConfig.ClusterConnections {
+		shardManager, err := NewShardManager(configProvider, logger)
+		if err != nil {
+			logger.Fatal("Failed to create shard manager", tag.Error(err))
+			continue
+		}
 		cc, err := NewClusterConnection(ctx, clusterCfg, shardManager, logger)
 		if err != nil {
 			logger.Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", clusterCfg.Name))
 			continue
 		}
-		proxy.clusterConnections[migrationId{clusterCfg.Name}] = cc
+		migrationId := migrationId{clusterCfg.Name}
+		proxy.clusterConnections[migrationId] = cc
+		proxy.intraMgrs[migrationId] = newIntraProxyManager(logger, shardManager, clusterCfg.ShardCountConfig)
+		proxy.shardManagers[migrationId] = shardManager
+		shardManager.SetIntraProxyManager(proxy.intraMgrs[migrationId])
 	}
 	// TODO: correctly host multiple health checks
 	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].InboundHealthCheck.ListenAddress != "" {
@@ -202,8 +243,8 @@ func (s *Proxy) Start() error {
 			` it needs at least the following path: metrics.prometheus.listenAddress`)
 	}
 
-	if s.shardManager != nil {
-		if err := s.shardManager.Start(s.lifetime); err != nil {
+	for _, shardManager := range s.shardManagers {
+		if err := shardManager.Start(s.lifetime); err != nil {
 			return err
 		}
 	}
@@ -240,8 +281,12 @@ func (s *Proxy) Describe() string {
 }
 
 // GetShardInfo returns debug information about shard distribution
-func (s *Proxy) GetShardInfo() ShardDebugInfo {
-	return s.shardManager.GetShardInfo()
+func (s *Proxy) GetShardInfos() []ShardDebugInfo {
+	var shardInfos []ShardDebugInfo
+	for _, shardManager := range s.shardManagers {
+		shardInfos = append(shardInfos, shardManager.GetShardInfo())
+	}
+	return shardInfos
 }
 
 // GetChannelInfo returns debug information about active channels
@@ -276,6 +321,11 @@ func (s *Proxy) GetChannelInfo() ChannelDebugInfo {
 		TotalSendChannels:  totalSendChannels,
 		TotalAckChannels:   totalAckChannels,
 	}
+}
+
+// GetIntraProxyManager returns the intra-proxy manager instance
+func (s *Proxy) GetIntraProxyManager(migrationId migrationId) *intraProxyManager {
+	return s.intraMgrs[migrationId]
 }
 
 // SetRemoteSendChan registers a send channel for a specific shard ID

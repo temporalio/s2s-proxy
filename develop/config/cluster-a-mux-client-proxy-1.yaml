@@ -29,19 +29,3 @@ mux:
 #   remoteShardCount: 3
 profiling:
   pprofAddress: "localhost:6060"
-memberlist:
-  enabled: true
-  enableForwarding: true
-  nodeName: "proxy-node-a-1"
-  bindAddr: "0.0.0.0"
-  bindPort: 6135
-  joinAddrs:
-    - "localhost:6235"
-  proxyAddresses:
-    "proxy-node-a-1": "localhost:6133"
-    "proxy-node-a-2": "localhost:6233"
-  # TCP-only configuration for restricted networks
-  tcpOnly: true           # Use TCP transport only, disable UDP
-  disableTCPPings: true   # Disable TCP pings for faster convergence
-  probeTimeoutMs: 1000    # Longer timeout for network latency
-  probeIntervalMs: 2000   # Less frequent probes to reduce network noise

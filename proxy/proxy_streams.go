@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationv1 "go.temporal.io/server/api/replication/v1"
@@ -246,10 +247,8 @@ func (s *proxyStreamSender) Run(
 
 	// Register local stream tracking for sender (short id, include role)
 	s.streamTracker = GetGlobalStreamTracker()
-	s.streamID = fmt.Sprintf("snd-%s-%s",
-		ClusterShardIDtoString(s.sourceShardID),
-		ClusterShardIDtoString(s.targetShardID),
-	)
+	s.streamID = BuildSenderStreamID(s.sourceShardID, s.targetShardID)
+	s.logger = log.With(s.logger, tag.NewStringTag("streamID", s.streamID))
 	s.streamTracker.RegisterStream(
 		s.streamID,
 		"StreamWorkflowReplicationMessages",
@@ -357,7 +356,7 @@ func (s *proxyStreamSender) recvAck(
 
 						s.logger.Info("Sender forwarding ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", originalAck))
 
-						if s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, s.proxy, shutdownChan, s.logger) {
+						if s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, s.proxy, shutdownChan, s.logger, originalAck, true) {
 							sent[srcShard] = true
 							numRemaining--
 							progress = true
@@ -419,7 +418,7 @@ func (s *proxyStreamSender) recvAck(
 						}
 						// Log fallback ACK for this source shard
 						s.logger.Info("Sender forwarding fallback ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", prev))
-						if s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, s.proxy, shutdownChan, s.logger) {
+						if s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, s.proxy, shutdownChan, s.logger, prev, true) {
 							sent[srcShard] = true
 							numRemaining--
 							progress = true
@@ -613,10 +612,8 @@ func (r *proxyStreamReceiver) Run(
 	r.lastSentMin = 0
 
 	// Register a new local stream for tracking (short id, include role)
-	r.streamID = fmt.Sprintf("rcv-%s-%s",
-		ClusterShardIDtoString(r.sourceShardID),
-		ClusterShardIDtoString(r.targetShardID),
-	)
+	r.streamID = BuildReceiverStreamID(r.sourceShardID, r.targetShardID)
+	r.logger = log.With(r.logger, tag.NewStringTag("streamID", r.streamID))
 	r.streamTracker = GetGlobalStreamTracker()
 	r.streamTracker.RegisterStream(
 		r.streamID,
@@ -733,27 +730,22 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 					if sentByTarget[targetShardID] {
 						continue
 					}
-					if ch, ok := r.proxy.GetRemoteSendChan(targetShardID); ok {
-						msg := RoutedMessage{
-							SourceShard: r.sourceShardID,
-							Resp: &adminservice.StreamWorkflowReplicationMessagesResponse{
-								Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
-									Messages: &replicationv1.WorkflowReplicationMessages{
-										ReplicationTasks:       tasks,
-										ExclusiveHighWatermark: tasks[len(tasks)-1].RawTaskInfo.TaskId + 1,
-										Priority:               attr.Messages.Priority,
-									},
+					msg := RoutedMessage{
+						SourceShard: r.sourceShardID,
+						Resp: &adminservice.StreamWorkflowReplicationMessagesResponse{
+							Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
+								Messages: &replicationv1.WorkflowReplicationMessages{
+									ReplicationTasks:       tasks,
+									ExclusiveHighWatermark: tasks[len(tasks)-1].RawTaskInfo.TaskId + 1,
+									Priority:               attr.Messages.Priority,
 								},
 							},
-						}
-						select {
-						case ch <- msg:
-							sentByTarget[targetShardID] = true
-							numRemaining--
-							progress = true
-						case <-shutdownChan.Channel():
-							return nil
-						}
+						},
+					}
+					if r.shardManager.DeliverMessagesToShardOwner(targetShardID, &msg, r.proxy, shutdownChan, r.logger) {
+						sentByTarget[targetShardID] = true
+						numRemaining--
+						progress = true
 					} else {
 						if !loggedByTarget[targetShardID] {
 							r.logger.Warn("No send channel found for target shard; retrying until available", tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
