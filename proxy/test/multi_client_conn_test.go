@@ -160,7 +160,8 @@ func TestMultiClientWithFailedMuxes(t *testing.T) {
 		}
 	}()
 	var successes, errors int
-	for i := range 3 {
+	// Close 3 out of 4 muxes. We should still see successful requests after each close.
+	for i := range 3 { 
 		t.Log("Closing mux", i)
 		scenario.CloseMux(i)
 		for range 10_000 {
