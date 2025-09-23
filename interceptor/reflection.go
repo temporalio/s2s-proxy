@@ -416,7 +416,7 @@ func isSkippableForNamespaceTranslation(vAny any) (result bool) {
 					return false
 				}
 			}
-			// Any events with a namespace fields should not skip translation.
+			// Events with a namespace field should not skip translation.
 			_, skippable := namespaceTranslationSkippableHistoryEvents[evt.GetEventType()]
 			if !skippable {
 				return false
@@ -431,7 +431,7 @@ func isSkippableForNamespaceTranslation(vAny any) (result bool) {
 				return false
 			}
 		}
-		// Any events with a namespace fields should not skip translation.
+		// Events with a namespace field should not skip translation.
 		_, skippable := namespaceTranslationSkippableHistoryEvents[v.GetEventType()]
 		return skippable
 	}
