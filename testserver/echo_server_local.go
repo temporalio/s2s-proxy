@@ -124,12 +124,16 @@ func NewTestScenario(t *testing.T, size int, temporalLogger log.Logger) *TestSce
 	}
 }
 
+func (s *TestScenario) CloseMux(i int) {
+	_ = s.Muxes[i].ServerMux.Close()
+	_ = s.Muxes[i].ClientMux.Close()
+	_ = s.Muxes[i].ServerConn.Close()
+	_ = s.Muxes[i].ClientConn.Close()
+}
+
 func (s *TestScenario) Close() {
 	_ = s.Listener.Close()
-	for _, mux := range s.Muxes {
-		_ = mux.ServerMux.Close()
-		_ = mux.ClientMux.Close()
-		_ = mux.ServerConn.Close()
-		_ = mux.ClientConn.Close()
+	for i := range s.Muxes {
+		s.CloseMux(i)
 	}
 }
