@@ -123,9 +123,18 @@ func logTranslateResult(tr Translator, logger log.Logger, changed bool, err erro
 		logger.Error("translation error", methodTag, tag.Error(err), tag.NewStringTag("type", msgType))
 		metrics.TranslationErrors.WithLabelValues(tr.Kind(), msgType).Inc()
 	} else if changed {
+		if !strings.Contains(msgType, "adminservice_StreamWorkflowReplicationMessages") &&
+			!strings.Contains(msgType, "adminservice_GetNamespaceReplication") {
+
+			logger.Info("translation applied", methodTag, tag.NewAnyTag("type", msgType), tag.NewDurationTag("duration", duration))
+		}
 		logger.Debug("translation applied", methodTag, tag.NewAnyTag("obj", obj))
 		metrics.TranslationCount.WithLabelValues(tr.Kind(), msgType).Inc()
 	} else {
+		if !strings.Contains(msgType, "adminservice_StreamWorkflowReplicationMessages") &&
+			!strings.Contains(msgType, "adminservice_GetNamespaceReplication") {
+			logger.Info("translation not applied", methodTag, tag.NewAnyTag("type", msgType), tag.NewDurationTag("duration", duration))
+		}
 		logger.Debug("translation not applied", methodTag, tag.NewAnyTag("obj", obj))
 	}
 }
