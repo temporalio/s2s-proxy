@@ -172,7 +172,7 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 					return visit.Stop, err
 				}
 			}
-			return visit.Continue, nil
+			return visit.Skip, nil
 		} else if dataBlobFieldNames[fieldType.Name] {
 			changed, err := visitDataBlobs(logger, vwp, match, visitNamespace)
 			matched = matched || changed

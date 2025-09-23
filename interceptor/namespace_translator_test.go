@@ -603,7 +603,7 @@ func makeHistoryEventsBlobWithNamespaceField(ns string) *common.DataBlob {
 	evts := []*history.HistoryEvent{
 		{
 			EventId:   1,
-			EventType: enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
+			EventType: enums.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 			Version:   1,
 			TaskId:    100,
 			Attributes: &history.HistoryEvent_SignalExternalWorkflowExecutionInitiatedEventAttributes{
@@ -614,7 +614,7 @@ func makeHistoryEventsBlobWithNamespaceField(ns string) *common.DataBlob {
 		},
 		{
 			EventId:   2,
-			EventType: enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
+			EventType: enums.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 			Version:   1,
 			TaskId:    101,
 			Attributes: &history.HistoryEvent_RequestCancelExternalWorkflowExecutionInitiatedEventAttributes{
