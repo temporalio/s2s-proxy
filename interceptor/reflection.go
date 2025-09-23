@@ -3,7 +3,6 @@ package interceptor
 import (
 	"fmt"
 	"reflect"
-	"time"
 
 	"github.com/keilerkonzept/visit"
 	"go.temporal.io/api/common/v1"
@@ -329,16 +328,7 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 		return blob, matched, changed, nil
 	}
 
-	start := time.Now()
 	events, err := serializer.DeserializeEvents(blob)
-	deserializeDuration := time.Since(start)
-
-	evtTypes := make([]string, 0, len(events))
-	for _, evt := range events {
-		evtTypes = append(evtTypes, evt.EventType.String())
-	}
-
-	logger.Info("deserialize time", tag.NewDurationTag("duration", deserializeDuration), tag.NewInt("event_count", len(events)), tag.NewAnyTag("events", evtTypes))
 	if err != nil {
 		if !s2scommon.IsInvalidUTF8Error(err) {
 			return blob, matched, changed, err
@@ -360,17 +350,12 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 		}
 	}
 
-	start = time.Now()
 	m, err := visitor(logger, events, match)
-	visitDuration := time.Since(start)
-	logger.Info("visit time", tag.NewDurationTag("duration", visitDuration), tag.NewInt("event_count", len(events)), tag.NewAnyTag("events", evtTypes))
-
 	matched = matched || m
 	if err != nil {
 		return blob, matched, changed, err
 	}
 	if matched || changed {
-		logger.Info("translateOneDataBlob matched", tag.NewBoolTag("matched", matched), tag.NewBoolTag("changed", changed), tag.NewAnyTag("events", evtTypes))
 		blob, err = serializer.SerializeEvents(events, blob.EncodingType)
 	}
 	return blob, matched, changed, err
