@@ -84,7 +84,7 @@ func TestMultiClientUpdateState(t *testing.T) {
 	cancel()
 }
 
-func TestMultiClientUpdateStateCachedClients(t *testing.T) {
+func TestMultiClientUpdateStateAsyncClient(t *testing.T) {
 	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
 	mcc, err := grpcutil.NewMultiClientConn("testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -124,9 +124,10 @@ func TestMultiClientUpdateStateCachedClients(t *testing.T) {
 	require.True(t, responses["adminService on mux 1"] > 240, responses)
 	require.Equal(t, responses["adminService on mux 2"], 0, responses)
 	require.True(t, responses["adminService on mux 3"] > 240, responses)
+	require.Equal(t, responses["adminService on mux 1"]+responses["adminService on mux 3"], 500, responses)
 }
 
-func TestMultiClientWithFailedMuxes(t *testing.T) {
+func TestMultiClientWithFailedMuxesAndAsyncUpdates(t *testing.T) {
 	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
 	mcc, err := grpcutil.NewMultiClientConn("testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -161,7 +162,7 @@ func TestMultiClientWithFailedMuxes(t *testing.T) {
 	}()
 	var successes, errors int
 	// Close 3 out of 4 muxes. We should still see successful requests after each close.
-	for i := range 3 { 
+	for i := range 3 {
 		t.Log("Closing mux", i)
 		scenario.CloseMux(i)
 		for range 10_000 {
