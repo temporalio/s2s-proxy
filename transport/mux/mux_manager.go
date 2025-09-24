@@ -8,7 +8,6 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/hashicorp/yamux"
@@ -19,7 +18,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/metrics"
-	"github.com/temporalio/s2s-proxy/transport/condchan"
+	"github.com/temporalio/s2s-proxy/transport/broadcaster"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
@@ -32,11 +31,10 @@ type (
 		metricLabels   []string                        // Derived from the config
 		muxProvider    MuxProvider                     // A reference to the MuxProvider that provides muxConnection
 		muxConnection  atomic.Pointer[SessionWithConn] // Underlying mux value. This starts as nil, and is set by the provider.
-		connAvailable  *condchan.CondChan              // Condition lock for muxConnection. Used to notify threads waiting in WithConnection
+		connAvailable  *broadcaster.Broadcaster        // Condition lock for muxConnection. Used to notify threads waiting in WithConnection
 		init           sync.Once                       // Ensures a MuxManager can only be started once
 		shouldShutDown channel.ShutdownOnce            // Notify that muxManager should shut down
 		hasShutDown    channel.ShutdownOnce            // Notify that muxManager has finished shutting down
-		wakeInterval   time.Duration                   // wakeInterval sets the rate at which threads waiting on WithConnection are woken to check for context timeout
 		logger         log.Logger
 	}
 	SessionWithConn struct {
@@ -90,12 +88,11 @@ func NewMuxManager(cfg config.MuxTransportConfig, logger log.Logger) (MuxManager
 	muxMgr := &muxManager{
 		config:         cfg,
 		muxConnection:  atomic.Pointer[SessionWithConn]{}, // WaitableValue
-		connAvailable:  condchan.New(&sync.Mutex{}),
+		connAvailable:  broadcaster.New(&sync.Mutex{}),
 		init:           sync.Once{},
 		logger:         log.With(logger, tag.NewStringTag("component", "MuxManager")),
 		shouldShutDown: channel.NewShutdownOnce(),
 		hasShutDown:    channel.NewShutdownOnce(),
-		wakeInterval:   time.Second * 5,
 	}
 	var err error
 	switch cfg.Mode {
@@ -198,10 +195,10 @@ func (m *muxManager) WithConnection(ctx context.Context, f func(*SessionWithConn
 			return
 		}
 		// When we wait here, we add ourselves to the list of threads that should be restarted, let go of connAvailable.L,
-		// and then suspend indefinitely. We will only be woken by Broadcast (wakes up every thread) or Signal (wakes up one thread)
+		// and then suspend until context is done.
 		// As part of waking up from connAvailable.Wait, this thread will re-take connAvailable.L
 		var exitReason string
-		m.connAvailable.WithSelectFn(func(condCh <-chan struct{}) {
+		m.connAvailable.WaitWithSelect(func(condCh <-chan struct{}) {
 			select {
 			case <-condCh:
 				return
@@ -270,12 +267,4 @@ func (m *muxManager) Start() {
 		// Start the mux provider
 		m.muxProvider.Start()
 	})
-}
-
-// SetCustomWakeInterval sets the speed at which the MuxProvider wakes waiting threads.
-// Must be set BEFORE starting
-func SetCustomWakeInterval(m MuxManager, wakeInterval time.Duration) {
-	if mm, ok := m.(*muxManager); ok {
-		mm.wakeInterval = wakeInterval
-	}
 }

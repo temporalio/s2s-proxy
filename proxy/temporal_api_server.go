@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -65,13 +66,16 @@ func (s *TemporalAPIServer) Start() {
 				// It should not happen if grpc server is based on mux server or normal TCP connection.
 				s.logger.Info("grpc server received EOF! Connection is closing")
 				metrics.GRPCServerStopped.WithLabelValues(s.serviceName, "eof").Inc()
+			} else if errors.Is(err, grpc.ErrServerStopped) {
+				s.logger.Info("grpc server closing", tag.Error(err))
+				metrics.GRPCServerStopped.WithLabelValues(s.serviceName, "shutdown").Inc()
 			} else if err != nil {
 				s.logger.Error("grpc server fatal error ", tag.Error(err))
 				metrics.GRPCServerStopped.WithLabelValues(s.serviceName, "unknown").Inc()
 			} else {
 				metrics.GRPCServerStopped.WithLabelValues(s.serviceName, "none").Inc()
 			}
-			time.Sleep(1 * time.Second)
+			time.Sleep(100 * time.Millisecond)
 		}
 	}()
 }

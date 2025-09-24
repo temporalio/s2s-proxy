@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -58,8 +59,13 @@ var (
 			healthCheck: "localhost:7478",
 		}),
 	}
-	logger = log.NewTestLogger()
+	logger log.Logger
 )
+
+func init() {
+	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+	logger = log.NewTestLogger()
+}
 
 type hangupAdminServer struct {
 	adminservice.UnimplementedAdminServiceServer

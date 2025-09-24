@@ -63,11 +63,9 @@ func (s *service) DescribeCluster(ctx context.Context, in0 *adminservice.Describ
 
 func connect(t *testing.T, clientConfig config.MuxTransportConfig, serverConfig config.MuxTransportConfig) (mux.MuxManager, mux.MuxManager) {
 	clientMgr, err := mux.NewMuxManager(clientConfig, testLogger)
-	mux.SetCustomWakeInterval(clientMgr, 5*time.Millisecond)
 	require.NoError(t, err)
 	clientMgr.Start()
 	serverMgr, err := mux.NewMuxManager(serverConfig, testLogger)
-	mux.SetCustomWakeInterval(serverMgr, 5*time.Millisecond)
 	require.NoError(t, err)
 	serverMgr.Start()
 	return clientMgr, serverMgr

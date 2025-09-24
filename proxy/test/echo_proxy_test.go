@@ -46,6 +46,10 @@ var (
 		}}
 )
 
+func init() {
+	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+}
+
 type (
 	proxyTestSuite struct {
 		suite.Suite
@@ -256,6 +260,7 @@ func (s *proxyTestSuite) SetupSubTest() {
 }
 
 func (s *proxyTestSuite) AfterTest(suiteName, testName string) {
+	time.Sleep(time.Millisecond * 100)
 }
 
 func verifyEcho(sequence []int64, echoed map[int64]bool) bool {
@@ -643,5 +648,6 @@ func (s *proxyTestSuite) Test_ForceStopSourceServer() {
 	s.ErrorContains(err, "EOF")
 
 	_ = stream.CloseSend()
+	echoServer.Stop()
 	echoClient.Stop()
 }

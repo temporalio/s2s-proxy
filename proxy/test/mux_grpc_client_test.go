@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -21,7 +22,12 @@ import (
 	"github.com/temporalio/s2s-proxy/testserver"
 )
 
-var testLogger = log.NewTestLogger()
+var testLogger log.Logger
+
+func init() {
+	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+	logger = log.NewTestLogger()
+}
 
 // Using separate ClientConn objects created using grpc.NewClientConn "just works", but the clients are completely
 // separate and do not load-balance. We have to do the work of swapping out the client objects in the calling code.

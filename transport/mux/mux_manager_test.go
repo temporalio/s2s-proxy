@@ -39,7 +39,6 @@ func TestWithConnection_SkipsClosedSessionsAndWaitsForNew(t *testing.T) {
 	require.NoError(t, err)
 	mgr := mgrIf.(*muxManager)
 	mgr.metricLabels = []string{"test", "mux", "manager"}
-	mgr.wakeInterval = 5 * time.Millisecond
 
 	// Wait for a connection
 	waiter := &connWaiter{shutDown: make(chan struct{}), connSeen: make(chan *SessionWithConn), mgr: mgr}

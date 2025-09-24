@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +21,10 @@ import (
 	"github.com/temporalio/s2s-proxy/testserver"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
+
+func init() {
+	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+}
 
 func TestMultiClientConn(t *testing.T) {
 	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())

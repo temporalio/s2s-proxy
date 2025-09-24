@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"os"
 	"testing"
 
 	"go.temporal.io/server/api/adminservice/v1"
@@ -11,6 +12,10 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/testserver"
 )
+
+func init() {
+	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+}
 
 func benchmarkStreamSendRecvWithoutProxy(b *testing.B, payloadSize int) {
 

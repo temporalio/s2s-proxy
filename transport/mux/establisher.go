@@ -35,8 +35,10 @@ type shutdownCheck interface {
 }
 
 var (
-	retryPolicy = backoff.NewExponentialRetryPolicy(time.Second).
-			WithBackoffCoefficient(1.5).
+	// 7 retries:
+	// 0s, 50ms, 150ms, 450ms, 1.35s, 4.05s, 12.150s, 30s...
+	retryPolicy = backoff.NewExponentialRetryPolicy(50 * time.Millisecond).
+			WithBackoffCoefficient(3).
 			WithMaximumInterval(30 * time.Second)
 
 	// The establisher provider never has cleanup work, so we provide the same closed channel on CloseCh()
