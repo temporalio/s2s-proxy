@@ -12,6 +12,7 @@ import (
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/hashicorp/yamux"
+	"github.com/temporalio/s2s-proxy/transport/condchan"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -31,7 +32,7 @@ type (
 		metricLabels   []string                        // Derived from the config
 		muxProvider    MuxProvider                     // A reference to the MuxProvider that provides muxConnection
 		muxConnection  atomic.Pointer[SessionWithConn] // Underlying mux value. This starts as nil, and is set by the provider.
-		connAvailable  sync.Cond                       // Condition lock for muxConnection. Used to notify threads waiting in WithConnection
+		connAvailable  *condchan.CondChan              // Condition lock for muxConnection. Used to notify threads waiting in WithConnection
 		init           sync.Once                       // Ensures a MuxManager can only be started once
 		shouldShutDown channel.ShutdownOnce            // Notify that muxManager should shut down
 		hasShutDown    channel.ShutdownOnce            // Notify that muxManager has finished shutting down
@@ -43,9 +44,6 @@ type (
 		Conn    net.Conn
 	}
 	MuxManager interface {
-		// ConfigureMuxManager parses the provided MuxTransportConfig to set the appropriate MuxProvider.
-		// It will return error if the config was invalid, for example if the TLS settings were not set properly.
-		//ConfigureMuxManager() error
 		// Start starts the underlying MuxProvider
 		Start()
 		// Close closes the internal shutdown latch and sets the connection to nil. This will also stop the connection provider.
@@ -79,6 +77,8 @@ type (
 	}
 )
 
+var ManagerShutdown = errors.New("the mux manager is shutting down")
+
 func (s *SessionWithConn) IsClosed() bool {
 	return s.Session.IsClosed()
 }
@@ -90,7 +90,7 @@ func NewMuxManager(cfg config.MuxTransportConfig, logger log.Logger) (MuxManager
 	muxMgr := &muxManager{
 		config:         cfg,
 		muxConnection:  atomic.Pointer[SessionWithConn]{}, // WaitableValue
-		connAvailable:  sync.Cond{L: &sync.Mutex{}},
+		connAvailable:  condchan.New(&sync.Mutex{}),
 		init:           sync.Once{},
 		logger:         log.With(logger, tag.NewStringTag("component", "MuxManager")),
 		shouldShutDown: channel.NewShutdownOnce(),
@@ -181,17 +181,6 @@ func (m *muxManager) WithConnection(ctx context.Context, f func(*SessionWithConn
 	m.connAvailable.L.Lock()
 	for {
 		// Check conditions first: If a valid connection is available, no need to wait
-		if ctx.Err() != nil {
-			m.connAvailable.L.Unlock()
-			metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...).Dec()
-			m.logger.Warn("Context canceled while trying to get connection", tag.Error(ctx.Err()))
-			return result, ctx.Err()
-		}
-		if m.shouldShutDown.IsShutdown() {
-			m.connAvailable.L.Unlock()
-			metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...).Dec()
-			return result, errors.New("the mux manager is shutting down")
-		}
 		// We want to see muxConnection is available and non-nil
 		if ptr := m.muxConnection.Load(); ptr != nil && !ptr.IsClosed() {
 			// Don't keep lock held while running f so that other code can use the connection
@@ -211,8 +200,27 @@ func (m *muxManager) WithConnection(ctx context.Context, f func(*SessionWithConn
 		// When we wait here, we add ourselves to the list of threads that should be restarted, let go of connAvailable.L,
 		// and then suspend indefinitely. We will only be woken by Broadcast (wakes up every thread) or Signal (wakes up one thread)
 		// As part of waking up from connAvailable.Wait, this thread will re-take connAvailable.L
-
-		m.connAvailable.Wait()
+		var exitReason string
+		m.connAvailable.WithSelectFn(func(condCh <-chan struct{}) {
+			select {
+			case <-condCh:
+				return
+			case <-ctx.Done():
+				exitReason = "Context canceled while trying to get connection"
+				err = ctx.Err()
+				return
+			case <-m.shouldShutDown.Channel():
+				err = ManagerShutdown
+				exitReason = "Mux Manager is shutting down"
+				return
+			}
+		})
+		if exitReason != "" {
+			m.connAvailable.L.Unlock()
+			metrics.MuxWaitingConnections.WithLabelValues(m.metricLabels...).Dec()
+			m.logger.Info(exitReason, tag.NewErrorTag("contextError", ctx.Err()), tag.NewBoolTag("shutdown", m.shouldShutDown.IsShutdown()))
+			return
+		}
 	}
 
 }
@@ -259,20 +267,6 @@ func (m *muxManager) Start() {
 	metrics.MuxConnectionEstablish.WithLabelValues(m.metricLabels...)
 	metrics.MuxErrors.WithLabelValues(m.metricLabels...)
 	m.init.Do(func() {
-		// Start a monitor that will periodically Broadcast so that waiting threads can check their contexts
-		go func() {
-			wakeThreads := time.NewTicker(m.wakeInterval)
-			defer wakeThreads.Stop()
-			for {
-				select {
-				case <-wakeThreads.C:
-					m.connAvailable.Broadcast()
-				case <-m.shouldShutDown.Channel():
-					m.connAvailable.Broadcast()
-					return
-				}
-			}
-		}()
 		// Start the mux provider
 		m.muxProvider.Start()
 	})
