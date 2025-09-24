@@ -12,7 +12,6 @@ import (
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/hashicorp/yamux"
-	"github.com/temporalio/s2s-proxy/transport/condchan"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/metrics"
+	"github.com/temporalio/s2s-proxy/transport/condchan"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
@@ -77,7 +77,7 @@ type (
 	}
 )
 
-var ManagerShutdown = errors.New("the mux manager is shutting down")
+var ErrManagerShutdown = errors.New("the mux manager is shutting down")
 
 func (s *SessionWithConn) IsClosed() bool {
 	return s.Session.IsClosed()
@@ -210,7 +210,7 @@ func (m *muxManager) WithConnection(ctx context.Context, f func(*SessionWithConn
 				err = ctx.Err()
 				return
 			case <-m.shouldShutDown.Channel():
-				err = ManagerShutdown
+				err = ErrManagerShutdown
 				exitReason = "Mux Manager is shutting down"
 				return
 			}
