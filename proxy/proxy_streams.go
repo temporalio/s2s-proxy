@@ -238,12 +238,12 @@ func (s *proxyStreamSender) Run(
 	s.logger = log.With(s.logger,
 		tag.NewStringTag("role", "sender"),
 	)
+	s.logger.Info("proxyStreamSender Run")
+	defer s.logger.Info("proxyStreamSender Run finished")
 
 	// Register this sender as the owner of the shard for the duration of the stream
-	if s.shardManager != nil {
-		s.shardManager.RegisterShard(s.targetShardID)
-		defer s.shardManager.UnregisterShard(s.targetShardID)
-	}
+	s.shardManager.RegisterShard(s.targetShardID)
+	defer s.shardManager.UnregisterShard(s.targetShardID)
 
 	// Register local stream tracking for sender (short id, include role)
 	s.streamTracker = GetGlobalStreamTracker()
@@ -577,6 +577,8 @@ func (r *proxyStreamReceiver) Run(
 		tag.NewStringTag("stream-target-shard", ClusterShardIDtoString(r.targetShardID)),
 		tag.NewStringTag("role", "receiver"),
 	)
+	r.logger.Info("proxyStreamReceiver Run")
+	defer r.logger.Info("proxyStreamReceiver Run finished")
 
 	// Build metadata for local server stream
 	md := metadata.New(map[string]string{})
@@ -694,21 +696,40 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 			// If replication tasks are empty, still log the empty batch and send watermark
 			if len(attr.Messages.ReplicationTasks) == 0 {
 				r.logger.Info("Receiver received empty replication batch", tag.NewInt64("exclusive_high", attr.Messages.ExclusiveHighWatermark))
-				for targetShardID, sendChan := range r.proxy.GetRemoteSendChansByCluster(r.targetShardID.ClusterID) {
-					r.logger.Info("Sending high watermark to target shard", tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)), tag.NewInt64("exclusive_high", attr.Messages.ExclusiveHighWatermark))
-					sendChan <- RoutedMessage{
-						SourceShard: r.sourceShardID,
-						Resp: &adminservice.StreamWorkflowReplicationMessagesResponse{
-							Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
-								Messages: &replicationv1.WorkflowReplicationMessages{
-									ExclusiveHighWatermark: attr.Messages.ExclusiveHighWatermark,
-									Priority:               attr.Messages.Priority,
-								},
+				msg := RoutedMessage{
+					SourceShard: r.sourceShardID,
+					Resp: &adminservice.StreamWorkflowReplicationMessagesResponse{
+						Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
+							Messages: &replicationv1.WorkflowReplicationMessages{
+								ExclusiveHighWatermark: attr.Messages.ExclusiveHighWatermark,
+								Priority:               attr.Messages.Priority,
 							},
 						},
+					},
+				}
+				localShardsToSend := r.proxy.GetRemoteSendChansByCluster(r.targetShardID.ClusterID)
+				r.logger.Info("Going to broadcast high watermark to local shards", tag.NewStringTag("localShardsToSend", fmt.Sprintf("%v", localShardsToSend)))
+				for targetShardID, sendChan := range localShardsToSend {
+					r.logger.Info("Sending high watermark to target shard", tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)), tag.NewInt64("exclusive_high", attr.Messages.ExclusiveHighWatermark))
+					sendChan <- msg
+				}
+				// send to all remote shards on other nodes as well
+				remoteShards, err := r.shardManager.GetRemoteShardsForPeer("")
+				if err != nil {
+					r.logger.Error("Failed to get remote shards", tag.Error(err))
+					return err
+				}
+				r.logger.Info("Going to broadcast high watermark to remote shards", tag.NewStringTag("remoteShards", fmt.Sprintf("%v", remoteShards)))
+				for _, shards := range remoteShards {
+					for _, shard := range shards.Shards {
+						if shard.ID.ClusterID != r.targetShardID.ClusterID {
+							continue
+						}
+						if !r.shardManager.DeliverMessagesToShardOwner(shard.ID, &msg, r.proxy, shutdownChan, r.logger) {
+							r.logger.Warn("Failed to send ReplicationTasks to remote shard", tag.NewStringTag("shard", ClusterShardIDtoString(shard.ID)))
+						}
 					}
 				}
-				continue
 			}
 
 			// Retry across the whole target set until all sends succeed (or shutdown)

@@ -247,6 +247,7 @@ func (sm *shardManagerImpl) Stop() {
 }
 
 func (sm *shardManagerImpl) RegisterShard(clientShardID history.ClusterShardID) {
+	sm.logger.Info("RegisterShard", tag.NewStringTag("shard", ClusterShardIDtoString(clientShardID)))
 	sm.addLocalShard(clientShardID)
 	sm.broadcastShardChange("register", clientShardID)
 
@@ -263,6 +264,7 @@ func (sm *shardManagerImpl) RegisterShard(clientShardID history.ClusterShardID) 
 }
 
 func (sm *shardManagerImpl) UnregisterShard(clientShardID history.ClusterShardID) {
+	sm.logger.Info("UnregisterShard", tag.NewStringTag("shard", ClusterShardIDtoString(clientShardID)))
 	sm.removeLocalShard(clientShardID)
 	sm.mutex.Lock()
 	delete(sm.localShards, ClusterShardIDtoShortString(clientShardID))
@@ -524,6 +526,38 @@ func (sm *shardManagerImpl) DeliverMessagesToShardOwner(
 
 func (sm *shardManagerImpl) SetIntraProxyManager(intraMgr *intraProxyManager) {
 	sm.intraMgr = intraMgr
+
+	// Wire memberlist peer-join callback to reconcile intra-proxy receivers for local/remote pairs
+	sm.SetOnPeerJoin(func(nodeName string) {
+		sm.logger.Info("OnPeerJoin", tag.NewStringTag("nodeName", nodeName))
+		defer sm.logger.Info("OnPeerJoin done", tag.NewStringTag("nodeName", nodeName))
+		sm.intraMgr.Notify()
+		// proxy.intraMgr.ReconcilePeerStreams(proxy, nodeName)
+	})
+
+	// Wire peer-leave to cleanup intra-proxy resources for that peer
+	sm.SetOnPeerLeave(func(nodeName string) {
+		sm.logger.Info("OnPeerLeave", tag.NewStringTag("nodeName", nodeName))
+		defer sm.logger.Info("OnPeerLeave done", tag.NewStringTag("nodeName", nodeName))
+		sm.intraMgr.Notify()
+		// proxy.intraMgr.ReconcilePeerStreams(proxy, nodeName)
+	})
+
+	// Wire local shard changes to reconcile intra-proxy receivers
+	sm.SetOnLocalShardChange(func(shard history.ClusterShardID, added bool) {
+		sm.logger.Info("OnLocalShardChange", tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
+		defer sm.logger.Info("OnLocalShardChange done", tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
+		sm.intraMgr.Notify()
+		// proxy.intraMgr.ReconcilePeerStreams(proxy, "")
+	})
+
+	// Wire remote shard changes to reconcile intra-proxy receivers
+	sm.SetOnRemoteShardChange(func(peer string, shard history.ClusterShardID, added bool) {
+		sm.logger.Info("OnRemoteShardChange", tag.NewStringTag("peer", peer), tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
+		defer sm.logger.Info("OnRemoteShardChange done", tag.NewStringTag("peer", peer), tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
+		sm.intraMgr.Notify()
+		// proxy.intraMgr.ReconcilePeerStreams(proxy, peer)
+	})
 }
 
 func (sm *shardManagerImpl) GetIntraProxyManager() *intraProxyManager {
