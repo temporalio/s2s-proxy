@@ -307,10 +307,10 @@ func (s *Proxy) GetIntraProxyManager(migrationId migrationId) *intraProxyManager
 
 // SetRemoteSendChan registers a send channel for a specific shard ID
 func (s *Proxy) SetRemoteSendChan(shardID history.ClusterShardID, sendChan chan RoutedMessage) {
+	s.logger.Info("Register remote send channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 	s.remoteSendChannelsMu.Lock()
 	defer s.remoteSendChannelsMu.Unlock()
 	s.remoteSendChannels[shardID] = sendChan
-	s.logger.Info("Registered remote send channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 }
 
 // GetRemoteSendChan retrieves the send channel for a specific shard ID
@@ -358,10 +358,10 @@ func (s *Proxy) RemoveRemoteSendChan(shardID history.ClusterShardID) {
 
 // SetLocalAckChan registers an ack channel for a specific shard ID
 func (s *Proxy) SetLocalAckChan(shardID history.ClusterShardID, ackChan chan RoutedAck) {
+	s.logger.Info("Register local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 	s.localAckChannelsMu.Lock()
 	defer s.localAckChannelsMu.Unlock()
 	s.localAckChannels[shardID] = ackChan
-	s.logger.Info("Registered local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 }
 
 // GetLocalAckChan retrieves the ack channel for a specific shard ID
@@ -374,18 +374,18 @@ func (s *Proxy) GetLocalAckChan(shardID history.ClusterShardID) (chan RoutedAck,
 
 // RemoveLocalAckChan removes the ack channel for a specific shard ID
 func (s *Proxy) RemoveLocalAckChan(shardID history.ClusterShardID) {
+	s.logger.Info("Remove local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 	s.localAckChannelsMu.Lock()
 	defer s.localAckChannelsMu.Unlock()
 	delete(s.localAckChannels, shardID)
-	s.logger.Info("Removed local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 }
 
 // SetLocalReceiverCancelFunc registers a cancel function for a local receiver for a specific shard ID
 func (s *Proxy) SetLocalReceiverCancelFunc(shardID history.ClusterShardID, cancelFunc context.CancelFunc) {
+	s.logger.Info("Register local receiver cancel function for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 	s.localReceiverCancelFuncsMu.Lock()
 	defer s.localReceiverCancelFuncsMu.Unlock()
 	s.localReceiverCancelFuncs[shardID] = cancelFunc
-	s.logger.Info("Registered local receiver cancel function for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 }
 
 // GetLocalReceiverCancelFunc retrieves the cancel function for a local receiver for a specific shard ID
@@ -398,10 +398,10 @@ func (s *Proxy) GetLocalReceiverCancelFunc(shardID history.ClusterShardID) (cont
 
 // RemoveLocalReceiverCancelFunc removes the cancel function for a local receiver for a specific shard ID
 func (s *Proxy) RemoveLocalReceiverCancelFunc(shardID history.ClusterShardID) {
+	s.logger.Info("Remove local receiver cancel function for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 	s.localReceiverCancelFuncsMu.Lock()
 	defer s.localReceiverCancelFuncsMu.Unlock()
 	delete(s.localReceiverCancelFuncs, shardID)
-	s.logger.Info("Removed local receiver cancel function for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 }
 
 // TerminatePreviousLocalReceiver checks if there is a previous local receiver for this shard and terminates it if needed

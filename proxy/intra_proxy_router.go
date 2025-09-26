@@ -290,15 +290,16 @@ func (r *intraProxyStreamReceiver) sendAck(req *adminservice.StreamWorkflowRepli
 
 func (m *intraProxyManager) RegisterSender(
 	peerNodeName string,
-	clientShard history.ClusterShardID,
-	serverShard history.ClusterShardID,
+	targetShard history.ClusterShardID,
+	sourceShard history.ClusterShardID,
 	sender *intraProxyStreamSender,
 ) {
 	// Cross-cluster only
-	if clientShard.ClusterID == serverShard.ClusterID {
+	if targetShard.ClusterID == sourceShard.ClusterID {
 		return
 	}
-	key := peerStreamKey{targetShard: clientShard, sourceShard: serverShard}
+	key := peerStreamKey{targetShard: targetShard, sourceShard: sourceShard}
+	m.logger.Info("RegisterSender", tag.NewStringTag("peerNodeName", peerNodeName), tag.NewStringTag("key", fmt.Sprintf("%v", key)), tag.NewStringTag("sender", sender.streamID))
 	m.streamsMu.Lock()
 	ps := m.peers[peerNodeName]
 	if ps == nil {
@@ -314,10 +315,11 @@ func (m *intraProxyManager) RegisterSender(
 
 func (m *intraProxyManager) UnregisterSender(
 	peerNodeName string,
-	clientShard history.ClusterShardID,
-	serverShard history.ClusterShardID,
+	targetShard history.ClusterShardID,
+	sourceShard history.ClusterShardID,
 ) {
-	key := peerStreamKey{targetShard: clientShard, sourceShard: serverShard}
+	key := peerStreamKey{targetShard: targetShard, sourceShard: sourceShard}
+	m.logger.Info("UnregisterSender", tag.NewStringTag("peerNodeName", peerNodeName), tag.NewStringTag("key", fmt.Sprintf("%v", key)))
 	m.streamsMu.Lock()
 	if ps := m.peers[peerNodeName]; ps != nil && ps.senders != nil {
 		delete(ps.senders, key)
@@ -476,6 +478,7 @@ func (m *intraProxyManager) ensureStream(
 	ps.receivers[key] = recv
 	ps.recvShutdown[key] = recv.shutdown
 	m.streamsMu.Unlock()
+	m.logger.Info("intraProxyStreamReceiver added", tag.NewStringTag("peerNodeName", peerNodeName), tag.NewStringTag("key", fmt.Sprintf("%v", key)), tag.NewStringTag("receiver", recv.streamID))
 
 	// Let the receiver open stream, register tracking, and start goroutines
 	go func() {
@@ -514,12 +517,15 @@ func (m *intraProxyManager) sendAck(
 func (m *intraProxyManager) sendReplicationMessages(
 	ctx context.Context,
 	peerNodeName string,
-	clientShard history.ClusterShardID,
-	serverShard history.ClusterShardID,
+	targetShard history.ClusterShardID,
+	sourceShard history.ClusterShardID,
 	p *Proxy,
 	resp *adminservice.StreamWorkflowReplicationMessagesResponse,
 ) error {
-	key := peerStreamKey{targetShard: clientShard, sourceShard: serverShard}
+	key := peerStreamKey{targetShard: targetShard, sourceShard: sourceShard}
+	logger := log.With(m.logger, tag.NewStringTag("task-target-shard", ClusterShardIDtoString(targetShard)), tag.NewStringTag("task-source-shard", ClusterShardIDtoString(sourceShard)))
+	logger.Info("sendReplicationMessages")
+	defer logger.Info("sendReplicationMessages finished")
 
 	// Try server stream first with short retry/backoff to await registration
 	deadline := time.Now().Add(2 * time.Second)
@@ -529,15 +535,17 @@ func (m *intraProxyManager) sendReplicationMessages(
 		m.streamsMu.RLock()
 		ps, ok := m.peers[peerNodeName]
 		if ok && ps != nil && ps.senders != nil {
+			logger.Info("sendReplicationMessages senders for node", tag.NewStringTag("node", peerNodeName), tag.NewStringTag("senders", fmt.Sprintf("%v", ps.senders)))
 			if s, ok2 := ps.senders[key]; ok2 && s != nil {
 				sender = s
 			}
 		}
 		m.streamsMu.RUnlock()
+		logger.Info("sendReplicationMessages sender", tag.NewStringTag("sender", fmt.Sprintf("%v", sender)))
 
 		if sender != nil {
 			if err := sender.sendReplicationMessages(resp); err != nil {
-				m.logger.Error("Failed to send intra-proxy replication messages via server stream", tag.Error(err))
+				logger.Error("Failed to send intra-proxy replication messages via server stream", tag.Error(err))
 				return err
 			}
 			return nil
@@ -552,7 +560,7 @@ func (m *intraProxyManager) sendReplicationMessages(
 		}
 	}
 
-	return fmt.Errorf("stream does not support SendMsg for responses")
+	return fmt.Errorf("failed to send replication messages")
 }
 
 // closePeerLocked shuts down and removes all resources for a peer. Caller must hold m.streamsMu.
@@ -569,6 +577,7 @@ func (m *intraProxyManager) closePeerLocked(peer string, ps *peerState) {
 	}
 	// Close client streams (receiver cleanup is handled by its own goroutine)
 	for key := range ps.receivers {
+		m.logger.Info("intraProxyStreamReceiver deleted", tag.NewStringTag("peerNodeName", peer), tag.NewStringTag("key", fmt.Sprintf("%v", key)), tag.NewStringTag("receiver", ps.receivers[key].streamID))
 		delete(ps.receivers, key)
 	}
 	// Unregister server-side tracker entries
@@ -603,6 +612,7 @@ func (m *intraProxyManager) closePeerShardLocked(peer string, ps *peerState, key
 		if r.streamClient != nil {
 			_ = r.streamClient.CloseSend()
 		}
+		m.logger.Info("intraProxyStreamReceiver deleted", tag.NewStringTag("peerNodeName", peer), tag.NewStringTag("key", fmt.Sprintf("%v", key)), tag.NewStringTag("receiver", r.streamID))
 		delete(ps.receivers, key)
 	}
 	st := GetGlobalStreamTracker()
@@ -627,33 +637,6 @@ func (m *intraProxyManager) ClosePeerShard(peer string, clientShard, serverShard
 	defer m.streamsMu.Unlock()
 	if ps, ok := m.peers[peer]; ok {
 		m.closePeerShardLocked(peer, ps, key)
-	}
-}
-
-// CloseShardAcrossPeers closes all sender/receiver streams for any peer that involve the specified shard
-// as either client or server shard. Useful when a local shard is unregistered.
-func (m *intraProxyManager) CloseShardAcrossPeers(shard history.ClusterShardID) {
-	m.streamsMu.Lock()
-	defer m.streamsMu.Unlock()
-	for peer, ps := range m.peers {
-		// Collect keys to avoid mutating map during iteration
-		toClose := make([]peerStreamKey, 0)
-		for key := range ps.receivers {
-			if (key.targetShard.ClusterID == shard.ClusterID && key.targetShard.ShardID == shard.ShardID) ||
-				(key.sourceShard.ClusterID == shard.ClusterID && key.sourceShard.ShardID == shard.ShardID) {
-				toClose = append(toClose, key)
-			}
-		}
-		for key := range ps.senders {
-			if (key.targetShard.ClusterID == shard.ClusterID && key.targetShard.ShardID == shard.ShardID) ||
-				(key.sourceShard.ClusterID == shard.ClusterID && key.sourceShard.ShardID == shard.ShardID) {
-				// ensure key is present in toClose for unified cleanup
-				toClose = append(toClose, key)
-			}
-		}
-		for _, key := range toClose {
-			m.closePeerShardLocked(peer, ps, key)
-		}
 	}
 }
 

@@ -492,10 +492,13 @@ func (sm *shardManagerImpl) DeliverMessagesToShardOwner(
 	shutdownChan channel.ShutdownOnce,
 	logger log.Logger,
 ) bool {
+	logger = log.With(logger, tag.NewStringTag("task-target-shard", ClusterShardIDtoString(targetShard)))
+
 	// Try local delivery first
 	if ch, ok := proxy.GetRemoteSendChan(targetShard); ok {
 		select {
 		case ch <- *routedMsg:
+			logger.Info("Delivered messages to local shard owner")
 			return true
 		case <-shutdownChan.Channel():
 			return false
