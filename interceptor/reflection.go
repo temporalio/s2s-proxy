@@ -6,8 +6,10 @@ import (
 
 	"github.com/keilerkonzept/visit"
 	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"go.temporal.io/server/common/persistence/serialization"
@@ -50,6 +52,74 @@ var (
 		// - WorkflowExecutionInfo
 		"SearchAttributes": true,
 	}
+
+	namespaceTranslationSkippableHistoryEvents = map[enums.EventType]struct{}{
+		//enums.EVENT_TYPE_UNSPECIFIED:                       {},
+		// Workflow Execution Started has a namespace field.
+		//enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:        {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:        {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:           {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:        {},
+		enums.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED:             {},
+		enums.EVENT_TYPE_WORKFLOW_TASK_STARTED:               {},
+		enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:             {},
+		enums.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:             {},
+		enums.EVENT_TYPE_WORKFLOW_TASK_FAILED:                {},
+		enums.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:             {},
+		enums.EVENT_TYPE_ACTIVITY_TASK_STARTED:               {},
+		enums.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:             {},
+		enums.EVENT_TYPE_ACTIVITY_TASK_FAILED:                {},
+		enums.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:             {},
+		enums.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED:      {},
+		enums.EVENT_TYPE_ACTIVITY_TASK_CANCELED:              {},
+		enums.EVENT_TYPE_TIMER_STARTED:                       {},
+		enums.EVENT_TYPE_TIMER_FIRED:                         {},
+		enums.EVENT_TYPE_TIMER_CANCELED:                      {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_CANCEL_REQUESTED: {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:         {},
+
+		// Not these. "External" events have namespace field.
+		//enums.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED: {},
+		//enums.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_FAILED:    {},
+		//enums.EVENT_TYPE_EXTERNAL_WORKFLOW_EXECUTION_CANCEL_REQUESTED:         {},
+
+		enums.EVENT_TYPE_MARKER_RECORDED:                     {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED:         {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:       {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW: {},
+
+		// Not these. "Child" events have namespace field.
+		//enums.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED: {},
+		//enums.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_FAILED:    {},
+		//enums.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED:         {},
+		//enums.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_COMPLETED:       {},
+		//enums.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_FAILED:          {},
+		//enums.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_CANCELED:        {},
+		//enums.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_TIMED_OUT:       {},
+		//enums.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_TERMINATED:      {},
+
+		// Not these. "External" events have namespace field.
+		//enums.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED: {},
+		//enums.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED:    {},
+		//enums.EVENT_TYPE_EXTERNAL_WORKFLOW_EXECUTION_SIGNALED:         {},
+
+		enums.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:       {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ADMITTED:      {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED:      {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED:      {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:     {},
+		enums.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED_EXTERNALLY: {},
+		enums.EVENT_TYPE_ACTIVITY_PROPERTIES_MODIFIED_EXTERNALLY: {},
+		enums.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:            {},
+		enums.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED:               {},
+		enums.EVENT_TYPE_NEXUS_OPERATION_STARTED:                 {},
+		enums.EVENT_TYPE_NEXUS_OPERATION_COMPLETED:               {},
+		enums.EVENT_TYPE_NEXUS_OPERATION_FAILED:                  {},
+		enums.EVENT_TYPE_NEXUS_OPERATION_CANCELED:                {},
+		enums.EVENT_TYPE_NEXUS_OPERATION_TIMED_OUT:               {},
+		enums.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED:        {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_OPTIONS_UPDATED:      {},
+	}
 )
 
 // stringMatcher returns 2 values:
@@ -65,6 +135,10 @@ type visitor func(logger log.Logger, obj any, match stringMatcher) (bool, error)
 // in the given object. When it finds namespace string fields, it invokes
 // the provided match function.
 func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, error) {
+	if isSkippableForNamespaceTranslation(obj) {
+		return false, nil
+	}
+
 	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
@@ -89,6 +163,16 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 				info.Name = newName
 			}
 			matched = matched || ok
+		} else if hist, ok := vwp.Interface().(*history.History); ok && hist != nil {
+			for _, evt := range hist.GetEvents() {
+				// Do the recursive call here so that we check `isSkippableForNamespaceTranslation`.
+				m, err := visitNamespace(logger, evt, match)
+				matched = matched || m
+				if err != nil {
+					return visit.Stop, err
+				}
+			}
+			return visit.Skip, nil
 		} else if dataBlobFieldNames[fieldType.Name] {
 			changed, err := visitDataBlobs(logger, vwp, match, visitNamespace)
 			matched = matched || changed
@@ -318,4 +402,39 @@ func validateAndRepairHistoryEvents(events []*history122.HistoryEvent) (bool, er
 		}
 	}
 	return changed, nil
+}
+
+func isSkippableForNamespaceTranslation(vAny any) (result bool) {
+	switch v := vAny.(type) {
+	case *workflowservice.ListWorkflowExecutionsResponse:
+		return true
+	case []*history.HistoryEvent:
+		for _, evt := range v {
+			// If this namespace field is set, do not skip translation.
+			for _, l := range evt.Links {
+				if len(l.GetWorkflowEvent().GetNamespace()) > 0 {
+					return false
+				}
+			}
+			// Events with a namespace field should not skip translation.
+			_, skippable := namespaceTranslationSkippableHistoryEvents[evt.GetEventType()]
+			if !skippable {
+				return false
+			}
+		}
+		// Only skippable if all events in the list are skippable
+		return true
+	case *history.HistoryEvent:
+		// If this namespace field is set, do not skip translation.
+		for _, l := range v.Links {
+			if len(l.GetWorkflowEvent().GetNamespace()) > 0 {
+				return false
+			}
+		}
+		// Events with a namespace field should not skip translation.
+		_, skippable := namespaceTranslationSkippableHistoryEvents[v.GetEventType()]
+		return skippable
+	}
+
+	return false
 }
