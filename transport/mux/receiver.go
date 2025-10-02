@@ -1,6 +1,7 @@
 package mux
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -21,17 +22,17 @@ import (
 // This file contains logic only, goroutine and control flow is handled in provider.go
 
 type receivingConnProvider struct {
-	listener       net.Listener
-	tlsWrapper     func(net.Conn) net.Conn
-	logger         log.Logger
-	metricLabels   []string
-	shouldShutDown func() bool
-	hasCleanedUp   channel.ShutdownOnce
+	listener     net.Listener
+	tlsWrapper   func(net.Conn) net.Conn
+	logger       log.Logger
+	metricLabels []string
+	lifetime     context.Context
+	hasCleanedUp channel.ShutdownOnce
 }
 
 // NewMuxReceiverProvider runs a TCP server and waits for a client to connect. Once a connection is established and
 // authenticated with the TLS config, it starts a yamux session and returns the details using transportFn
-func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setting config.TCPServerSetting, metricLabels []string, upstreamLog log.Logger, shouldShutDown channel.ShutdownOnce) (MuxProvider, error) {
+func NewMuxReceiverProvider(lifetime context.Context, name string, transportFn AddNewMux, connectionCapacity int64, setting config.TCPServerSetting, metricLabels []string, upstreamLog log.Logger) (MuxProvider, error) {
 	logger := log.With(upstreamLog, tag.NewStringTag("component", "receivingMux"), tag.NewStringTag("listenAddr", setting.ListenAddress))
 	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
 	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
@@ -49,15 +50,15 @@ func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setti
 		return nil, err
 	}
 	connPv := &receivingConnProvider{
-		listener:       listener,
-		tlsWrapper:     tlsWrapper,
-		logger:         logger,
-		metricLabels:   metricLabels,
-		shouldShutDown: func() bool { return shouldShutDown.IsShutdown() },
-		hasCleanedUp:   channel.NewShutdownOnce(),
+		listener:     listener,
+		tlsWrapper:   tlsWrapper,
+		logger:       logger,
+		metricLabels: metricLabels,
+		lifetime:     lifetime,
+		hasCleanedUp: channel.NewShutdownOnce(),
 	}
 	go func() {
-		<-shouldShutDown.Channel()
+		<-lifetime.Done()
 		err := listener.Close()
 		if err != nil {
 			logger.Fatal("listener.Close failed", tag.Error(err))
@@ -70,15 +71,14 @@ func NewMuxReceiverProvider(name string, transportFn SetTransportCallback, setti
 		cfg.LogOutput = nil
 		return yamux.Server(conn, cfg)
 	}
-	disconnectFn := func() {}
-	return NewMuxProvider(name, connPv, sessionFn, disconnectFn, transportFn, metricLabels, logger, shouldShutDown), nil
+	return NewMuxProvider(lifetime, name, connPv, sessionFn, connectionCapacity, transportFn, metricLabels, logger), nil
 }
 
 // NewConnection waits on the TCP server for a connection, then provides it
 func (r *receivingConnProvider) NewConnection() (net.Conn, error) {
 	conn, err := r.listener.Accept()
 	// Log a nicer message when shutting down normally
-	if r.shouldShutDown() {
+	if r.lifetime.Err() != nil {
 		r.logger.Info("Listener cancelled due to shutdown")
 		return nil, fmt.Errorf("provider shutting down")
 	}
@@ -93,4 +93,8 @@ func (r *receivingConnProvider) NewConnection() (net.Conn, error) {
 
 func (r *receivingConnProvider) CloseCh() <-chan struct{} {
 	return r.hasCleanedUp.Channel()
+}
+
+func (r *receivingConnProvider) Address() string {
+	return r.listener.Addr().String()
 }

@@ -25,7 +25,7 @@ import (
 type MuxedServer struct {
 	Server           *grpc.Server
 	Session          *MuxSession
-	EchoAdminService *echoAdminService
+	EchoAdminService *EchoAdminService
 }
 
 type MuxedClient struct {
@@ -87,11 +87,11 @@ func NewTestScenario(t *testing.T, size int, temporalLogger log.Logger) *TestSce
 			Session: muxes[i],
 		}
 		serviceName := fmt.Sprintf("adminService on mux %d", i)
-		eas := &echoAdminService{
-			serviceName: serviceName,
-			logger:      log.With(temporalLogger, common.ServiceTag(serviceName), tag.Address(muxes[i].Addr)),
-			namespaces:  map[string]bool{"hello": true, "world": true},
-			payloadSize: defaultPayloadSize,
+		eas := &EchoAdminService{
+			ServiceName: serviceName,
+			Logger:      log.With(temporalLogger, common.ServiceTag(serviceName), tag.Address(muxes[i].Addr)),
+			Namespaces:  map[string]bool{"hello": true, "world": true},
+			PayloadSize: defaultPayloadSize,
 		}
 		servers[i].EchoAdminService = eas
 		adminservice.RegisterAdminServiceServer(servers[i].Server, eas)

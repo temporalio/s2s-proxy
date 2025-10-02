@@ -15,8 +15,6 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/temporalio/s2s-proxy/client"
-	adminclient "github.com/temporalio/s2s-proxy/client/admin"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/metrics"
@@ -25,35 +23,41 @@ import (
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		adminClient adminservice.AdminServiceClient
-		logger      log.Logger
-		proxyOptions
+		adminClient             adminservice.AdminServiceClient
+		logger                  log.Logger
+		outboundAddressOverride string
+		apiOverrides            *config.APIOverridesConfig
+		metricLabelValues       []string
 	}
 )
 
+// NewAdminServiceProxyServer creates a proxy admin service. outboundAddressOverride replaces the
+// FrontendAddress in AddOrUpdateRemoteClusterRequest
 func NewAdminServiceProxyServer(
 	serviceName string,
-	clientConfig config.ProxyClientConfig,
-	clientFactory client.ClientFactory,
-	opts proxyOptions,
+	adminClient adminservice.AdminServiceClient,
+	outboundAddressOverride string,
+	apiOverrides *config.APIOverridesConfig,
+	metricLabelValues []string,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	logger = log.With(logger, common.ServiceTag(serviceName))
-	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
 	return &adminServiceProxyServer{
-		adminClient:  adminclient.NewLazyClient(clientProvider),
-		logger:       logger,
-		proxyOptions: opts,
+		adminClient:             adminClient,
+		logger:                  logger,
+		outboundAddressOverride: outboundAddressOverride,
+		apiOverrides:            apiOverrides,
+		metricLabelValues:       metricLabelValues,
 	}
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
 	if !common.IsRequestTranslationDisabled(ctx) {
-		if outbound := s.Config.Outbound; s.IsInbound && outbound != nil && len(outbound.Server.ExternalAddress) > 0 {
+		if len(s.outboundAddressOverride) > 0 {
 			// Override this address so that cross-cluster connections flow through the proxy.
 			// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
 			// from the local temporal server, or the proxy may be deployed behind a load balancer.
-			in0.FrontendAddress = outbound.Server.ExternalAddress
+			in0.FrontendAddress = s.outboundAddressOverride
 		}
 	}
 	return s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
@@ -85,19 +89,8 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 		return resp, err
 	}
 
-	var overrides *config.APIOverridesConfig
-	if s.IsInbound {
-		if s.Config.Inbound != nil {
-			overrides = s.Config.Inbound.APIOverrides
-		}
-	} else {
-		if s.Config.Outbound != nil {
-			overrides = s.Config.Outbound.APIOverrides
-		}
-	}
-
-	if overrides != nil && overrides.AdminSerivce.DescribeCluster != nil {
-		responseOverride := overrides.AdminSerivce.DescribeCluster.Response
+	if s.apiOverrides != nil && s.apiOverrides.AdminSerivce.DescribeCluster != nil {
+		responseOverride := s.apiOverrides.AdminSerivce.DescribeCluster.Response
 		if resp != nil && responseOverride.FailoverVersionIncrement != nil {
 			resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
 		}
@@ -255,12 +248,8 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
 
 	// Record streams active
-	directionLabel := "inbound"
-	if !s.IsInbound {
-		directionLabel = "outbound"
-	}
 	logger.Info("AdminStreamReplicationMessages started.")
-	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(directionLabel)
+	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(s.metricLabelValues...)
 
 	// simply forwarding target metadata
 	outgoingContext := metadata.NewOutgoingContext(targetStreamServer.Context(), targetMetadata)
@@ -269,16 +258,16 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	// The underlying adminClient will try to grab a connection when we call StreamWorkflowReplicationMessages.
 	// The connection is separately managed, so we want to see how long it takes to establish that conn.
-	metrics.AdminServiceWaitingForConnection.WithLabelValues(directionLabel).Inc()
+	metrics.AdminServiceWaitingForConnection.WithLabelValues(s.metricLabelValues...).Inc()
 	sourceStreamClient, err := s.adminClient.StreamWorkflowReplicationMessages(outgoingContext)
-	metrics.AdminServiceWaitingForConnection.WithLabelValues(directionLabel).Dec()
+	metrics.AdminServiceWaitingForConnection.WithLabelValues(s.metricLabelValues...).Dec()
 	if err != nil {
 		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err
 	}
 	// We succesfully got a stream connection, so mark the stream as active
 	streamsActiveGauge.Inc()
-	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(directionLabel).Inc()
+	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(s.metricLabelValues...).Inc()
 	defer streamsActiveGauge.Dec()
 	defer logger.Info("AdminStreamReplicationMessages stopped.")
 	streamStartTime := time.Now()
@@ -304,13 +293,13 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	shutdownChan := channel.NewShutdownOnce()
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go transferTargetToSource(sourceStreamClient, targetStreamServer, &wg, shutdownChan, directionLabel, logger)
-	go transferSourceToTarget(sourceStreamClient, targetStreamServer, &wg, shutdownChan, directionLabel, logger)
+	go transferTargetToSource(sourceStreamClient, targetStreamServer, &wg, shutdownChan, s.metricLabelValues, logger)
+	go transferSourceToTarget(sourceStreamClient, targetStreamServer, &wg, shutdownChan, s.metricLabelValues, logger)
 	wg.Wait()
 
 	streamDuration := time.Since(streamStartTime)
-	metrics.AdminServiceStreamDuration.WithLabelValues(directionLabel).Observe(streamDuration.Seconds())
-	metrics.AdminServiceStreamsClosedCount.WithLabelValues(directionLabel).Inc()
+	metrics.AdminServiceStreamDuration.WithLabelValues(s.metricLabelValues...).Observe(streamDuration.Seconds())
+	metrics.AdminServiceStreamsClosedCount.WithLabelValues(s.metricLabelValues...).Inc()
 	// Do not try to transfer EOF from the source here. Just returning "nil" is sufficient to terminate the stream
 	// to the client.
 	return nil

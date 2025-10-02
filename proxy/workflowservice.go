@@ -8,10 +8,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/temporalio/s2s-proxy/auth"
-	"github.com/temporalio/s2s-proxy/client"
-	feclient "github.com/temporalio/s2s-proxy/client/frontend"
 	"github.com/temporalio/s2s-proxy/common"
-	"github.com/temporalio/s2s-proxy/config"
 )
 
 const DCRedirectionContextHeaderName = "xdc-redirection" // https://github.com/temporalio/temporal/blob/9a1060c4162ff62576cb899d7e5b1bae179af814/common/rpc/interceptor/redirection.go#L27
@@ -30,16 +27,14 @@ type (
 // requests and responses.
 func NewWorkflowServiceProxyServer(
 	serviceName string,
-	clientConfig config.ProxyClientConfig,
-	clientFactory client.ClientFactory,
+	workflowServiceClient workflowservice.WorkflowServiceClient,
 	namespaceAccess *auth.AccessControl,
 	logger log.Logger,
 ) workflowservice.WorkflowServiceServer {
 	logger = log.With(logger, common.ServiceTag(serviceName))
-	clientProvider := client.NewClientProvider(clientConfig, clientFactory, logger)
 	return &workflowServiceProxyServer{
-		workflowServiceClient: feclient.NewLazyClient(clientProvider),
-		namespaceAccess:       namespaceAccess,
+		workflowServiceClient: workflowServiceClient,
+		namespaceAccess:        namespaceAccess,
 		logger:                logger,
 	}
 }

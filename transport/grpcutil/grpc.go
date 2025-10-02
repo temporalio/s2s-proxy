@@ -37,6 +37,20 @@ const (
 // https://github.com/grpc/grpc/blob/master/doc/naming.md.
 // e.g. to use dns resolver, a "dns:///" prefix should be applied to the target.
 func Dial(hostName string, tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics, dialer func(ctx context.Context, addr string) (net.Conn, error)) (*grpc.ClientConn, error) {
+	dialOptions := MakeDialOptions(tlsConfig, clientMetrics)
+	if dialer != nil {
+		dialOptions = append(dialOptions,
+			grpc.WithContextDialer(dialer))
+	}
+
+	// nolint:staticcheck // SA1019 grpc.Dial is deprecated. Need to figure out how to use grpc.NewClient.
+	return grpc.Dial(
+		hostName,
+		dialOptions...,
+	)
+}
+
+func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics) []grpc.DialOption {
 	var grpcSecureOpt grpc.DialOption
 	if tlsConfig == nil {
 		grpcSecureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
@@ -67,15 +81,5 @@ func Dial(hostName string, tlsConfig *tls.Config, clientMetrics *grpcprom.Client
 		grpc.WithUnaryInterceptor(clientMetrics.UnaryClientInterceptor()),
 		grpc.WithStreamInterceptor(clientMetrics.StreamClientInterceptor()),
 	}
-
-	if dialer != nil {
-		dialOptions = append(dialOptions,
-			grpc.WithContextDialer(dialer))
-	}
-
-	// nolint:staticcheck // SA1019 grpc.Dial is deprecated. Need to figure out how to use grpc.NewClient.
-	return grpc.Dial(
-		hostName,
-		dialOptions...,
-	)
+	return dialOptions
 }

@@ -3,7 +3,6 @@ package grpcutil
 import (
 	"context"
 	"fmt"
-	"maps"
 	"net"
 	"sync"
 
@@ -11,6 +10,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
+
+	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
 const (
@@ -54,12 +55,30 @@ func NewMultiClientConn(name string, opts ...grpc.DialOption) (*MultiClientConn,
 	return mcc, nil
 }
 
+// UpdateState holds a pointer to the original map. It is the caller's responsibility to clone the passed pointer
 func (mcc *MultiClientConn) UpdateState(conns map[string]func() (net.Conn, error)) {
 	mcc.connMapLock.Lock()
 	defer mcc.connMapLock.Unlock()
-	// Make sure we don't hold onto a mutable pointer to the original map
-	mcc.connMap = maps.Clone(conns)
+	mcc.connMap = conns
 	mcc.resolver.UpdateState(mcc.deriveStateFromConns())
+}
+
+// Close forwards grpc.ClientConn's Close
+func (mcc *MultiClientConn) Close() error {
+	return mcc.clientConn.Close()
+}
+
+// OnConnectionListUpdate satisfies mux.OnConnectionListUpdate
+func (mcc *MultiClientConn) OnConnectionListUpdate(muxes map[string]session.ManagedMuxSession) {
+	if len(muxes) == 0 {
+		mcc.UpdateState(nil)
+		return
+	}
+	connMap := make(map[string]func() (net.Conn, error), len(muxes))
+	for k, v := range muxes {
+		connMap[k] = v.Open
+	}
+	mcc.UpdateState(connMap)
 }
 
 // grpc.ClientConnInterface

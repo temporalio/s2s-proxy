@@ -6,261 +6,39 @@ import (
 	"fmt"
 	"net/http"
 
-	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
-	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 
-	"github.com/temporalio/s2s-proxy/auth"
-	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
-	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/metrics"
-	"github.com/temporalio/s2s-proxy/transport"
 )
 
 type (
-	ProxyServer struct {
-		config       config.ProxyConfig
-		opts         proxyOptions
-		logger       log.Logger
-		server       *TemporalAPIServer
-		transManager *transport.TransportManager
-		metricLabels prometheus.Labels
-		shutDownCh   chan struct{}
+	migrationId struct {
+		name string
+		// Needs some config revision before uncommenting:
+		//accountId string
 	}
-
 	Proxy struct {
+		lifetime                  context.Context
+		cancel                    context.CancelFunc
 		config                    config.S2SProxyConfig
-		transManager              *transport.TransportManager
-		outboundServer            *ProxyServer
-		inboundServer             *ProxyServer
-		healthCheckServer         *http.Server
+		clusterConnections        map[migrationId]*ClusterConnection
+		inboundHealthCheckServer  *http.Server
 		outboundHealthCheckServer *http.Server
 		metricsServer             *http.Server
 		logger                    log.Logger
 	}
-
-	proxyOptions struct {
-		IsInbound bool
-		Config    config.S2SProxyConfig
-	}
 )
 
-func makeServerOptions(
-	logger log.Logger,
-	cfg config.ProxyConfig,
-	proxyOpts proxyOptions,
-) ([]grpc.ServerOption, error) {
-	unaryInterceptors := []grpc.UnaryServerInterceptor{}
-	streamInterceptors := []grpc.StreamServerInterceptor{}
-
-	labelGenerator := grpcprom.WithLabelsFromContext(func(_ context.Context) (labels prometheus.Labels) {
-		return prometheus.Labels{"direction": proxyOpts.directionLabel()}
-	})
-
-	// Ordering matters! These metrics happen BEFORE the translations/acl
-	unaryInterceptors = append(unaryInterceptors, metrics.GRPCServerMetrics.UnaryServerInterceptor(labelGenerator))
-	streamInterceptors = append(streamInterceptors, metrics.GRPCServerMetrics.StreamServerInterceptor(labelGenerator))
-
-	var translators []interceptor.Translator
-	if tln := proxyOpts.Config.NamespaceNameTranslation; tln.IsEnabled() {
-		// NamespaceNameTranslator needs to be called before namespace access control so that
-		// local name can be used in namespace allowed list.
-		reqMap, respMap := tln.ToMaps(proxyOpts.IsInbound)
-		translators = append(translators, interceptor.NewNamespaceNameTranslator(logger, reqMap, respMap))
-	}
-
-	if tln := proxyOpts.Config.SearchAttributeTranslation; tln.IsEnabled() {
-		logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", tln.NamespaceMappings))
-		if len(tln.NamespaceMappings) > 1 {
-			panic("multiple namespace search attribute mappings are not supported")
-		}
-		reqMap, respMap := tln.ToMaps(proxyOpts.IsInbound)
-		translators = append(translators, interceptor.NewSearchAttributeTranslator(logger, reqMap, respMap))
-	}
-
-	if len(translators) > 0 {
-		tr := interceptor.NewTranslationInterceptor(logger, translators)
-		unaryInterceptors = append(unaryInterceptors, tr.Intercept)
-		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
-	}
-
-	if proxyOpts.IsInbound && cfg.ACLPolicy != nil {
-		aclInterceptor := interceptor.NewAccessControlInterceptor(logger, cfg.ACLPolicy)
-		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
-		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
-	}
-
-	opts := []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(unaryInterceptors...),
-		grpc.ChainStreamInterceptor(streamInterceptors...),
-	}
-
-	if cfg.Server.TLS.IsEnabled() {
-		tlsConfig, err := encryption.GetServerTLSConfig(cfg.Server.TLS, logger)
-		if err != nil {
-			return opts, err
-		}
-		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
-	}
-
-	return opts, nil
-}
-
-func (ps *ProxyServer) makeNamespaceACL() *auth.AccessControl {
-	if ps.opts.IsInbound && ps.config.ACLPolicy != nil {
-		return auth.NewAccesControl(ps.config.ACLPolicy.AllowedNamespaces)
-	}
-	return nil
-}
-
-func (ps *ProxyServer) startServer(
-	serverTransport transport.ServerTransport,
-	clientTransport transport.ClientTransport,
-) error {
-	cfg := ps.config
-	opts := ps.opts
-	logger := ps.logger
-
-	serverOpts, err := makeServerOptions(logger, cfg, opts)
-	if err != nil {
-		return err
-	}
-
-	clientMetrics := metrics.GRPCOutboundClientMetrics
-	if ps.opts.IsInbound {
-		clientMetrics = metrics.GRPCInboundClientMetrics
-	}
-
-	clientFactory := client.NewClientFactory(clientTransport, clientMetrics, logger)
-	ps.server = NewTemporalAPIServer(
-		cfg.Name,
-		cfg.Server,
-		NewAdminServiceProxyServer(cfg.Name, cfg.Client, clientFactory, opts, logger),
-		NewWorkflowServiceProxyServer(cfg.Name, cfg.Client, clientFactory, ps.makeNamespaceACL(), logger),
-		serverOpts,
-		serverTransport,
-		logger,
-	)
-
-	ps.logger.Info(fmt.Sprintf("Starting ProxyServer %s with ServerConfig: %v, ClientConfig: %v", cfg.Name, cfg.Server, cfg.Client))
-	ps.server.Start()
-	return nil
-}
-
-func (ps *ProxyServer) stopServer() {
-	if ps.server != nil {
-		ps.server.Stop()
-	}
-}
-
-func monitorClosable(closable transport.Closable, retryCh chan struct{}, shutDownCh <-chan struct{}) {
-	select {
-	case <-shutDownCh:
-		return
-	// Stop monitor if retryCh is already closed
-	case <-retryCh:
-		return
-	case <-closable.CloseChan():
-		// TODO: avoid retryCh to be closed twice.
-		close(retryCh)
-	}
-}
-
-func (opts *proxyOptions) directionLabel() string {
-	directionValue := "outbound"
-	if opts.IsInbound {
-		directionValue = "inbound"
-	}
-	return directionValue
-}
-
-func (ps *ProxyServer) start() error {
-	serverConfig := ps.config.Server
-	clientConfig := ps.config.Client
-
-	go func() {
-		for {
-			metrics.ProxyServiceCreated.With(ps.metricLabels).Inc()
-			// If using mux transport underneath, Open call will be blocked until
-			// underlying connection is established.
-			// Also note: GRPC requires the client interceptors (like metrics) to be defined on the transport, not on the client.
-			clientTransport, err := ps.transManager.OpenClient(clientConfig)
-			if err != nil {
-				ps.logger.Error("Open client transport is failed", tag.Error(err))
-				return
-			}
-
-			serverTransport, err := ps.transManager.OpenServer(serverConfig)
-			if err != nil {
-				ps.logger.Error("Open server transport is failed", tag.Error(err))
-				return
-			}
-
-			if err := ps.startServer(serverTransport, clientTransport); err != nil {
-				ps.logger.Error("Failed to start server", tag.Error(err))
-				return
-			}
-
-			retryCh := make(chan struct{})
-			if closable, ok := clientTransport.(transport.Closable); ok {
-				go monitorClosable(closable, retryCh, ps.shutDownCh)
-			}
-
-			if closable, ok := serverTransport.(transport.Closable); ok {
-				go monitorClosable(closable, retryCh, ps.shutDownCh)
-			}
-
-			select {
-			case <-ps.shutDownCh:
-				metrics.ProxyServiceStopped.With(ps.metricLabels).Inc()
-				ps.stopServer()
-				return
-			case <-retryCh:
-				// If any closable transport is closed, try to restart the proxy server.
-				metrics.ProxyServiceRestarted.With(ps.metricLabels).Inc()
-				ps.stopServer()
-			}
-		}
-	}()
-
-	return nil
-}
-
-func (ps *ProxyServer) stop() {
-	ps.logger.Info("Stop ProxyServer")
-	close(ps.shutDownCh)
-}
-
-func newProxyServer(
-	cfg config.ProxyConfig,
-	opts proxyOptions,
-	transManager *transport.TransportManager,
-	logger log.Logger,
-) *ProxyServer {
-	return &ProxyServer{
-		config:       cfg,
-		opts:         opts,
-		transManager: transManager,
-		logger:       logger,
-		metricLabels: prometheus.Labels{"direction": opts.directionLabel()},
-		shutDownCh:   make(chan struct{}),
-	}
-}
-
-func NewProxy(
-	configProvider config.ConfigProvider,
-	transManager *transport.TransportManager,
-	logger log.Logger,
-) *Proxy {
+func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 	s2sConfig := configProvider.GetS2SProxyConfig()
+	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
-		config:       s2sConfig,
-		transManager: transManager,
+		lifetime:           ctx,
+		cancel:             cancel,
+		config:             s2sConfig,
+		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.MuxTransports)+1),
 		logger: log.NewThrottledLogger(
 			logger,
 			func() float64 {
@@ -268,70 +46,57 @@ func NewProxy(
 			},
 		),
 	}
-
-	// Proxy consists of two grpc servers: inbound and outbound. The flow looks like the following:
-	//    local server -> proxy(outbound) -> remote server
-	//    local server <- proxy(inbound) <- remote server
-	//
-	// Here a remote server can be another proxy as well.
-	//    server-a <-> proxy-a <-> proxy-b <-> server-b
-	if s2sConfig.Outbound != nil {
-		proxy.outboundServer = newProxyServer(
-			*s2sConfig.Outbound,
-			proxyOptions{
-				IsInbound: false,
-				Config:    s2sConfig,
-			},
-			transManager,
-			proxy.logger,
-		)
+	// TODO: This is effectively 1 right now. We need to rewrite the config a bit to support multiple clusters
+	for _, muxCfg := range s2sConfig.MuxTransports {
+		cc, err := NewMuxClusterConnection(ctx, muxCfg, *s2sConfig.Inbound, *s2sConfig.Outbound,
+			s2sConfig.NamespaceNameTranslation, s2sConfig.SearchAttributeTranslation, logger)
+		if err != nil {
+			logger.Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", muxCfg.Name))
+			continue
+		}
+		proxy.clusterConnections[migrationId{muxCfg.Name}] = cc
+	}
+	if len(s2sConfig.MuxTransports) == 0 {
+		cc, err := NewTCPClusterConnection(ctx, *s2sConfig.Inbound, *s2sConfig.Outbound,
+			s2sConfig.NamespaceNameTranslation, s2sConfig.SearchAttributeTranslation, logger)
+		if err != nil {
+			logger.Fatal("Incorrectly configured TCP cluster connection", tag.Error(err))
+			panic(err)
+		}
+		proxy.clusterConnections[migrationId{"default"}] = cc
 	}
 
-	if s2sConfig.Inbound != nil {
-		proxy.inboundServer = newProxyServer(
-			*s2sConfig.Inbound,
-			proxyOptions{
-				IsInbound: true,
-				Config:    s2sConfig,
-			},
-			transManager,
-			proxy.logger,
-		)
-	}
-
-	metrics.ProxyStartCount.Inc()
-
+	metrics.NewProxyCount.Inc()
 	return proxy
 }
 
-// startHealthCheckHandler has some fancier arguments: healthChecker is the health check to register. storeReference will
-// receive the http.Server and put it somewhere so we can shut it down later.
-func (s *Proxy) startHealthCheckHandler(healthChecker HealthChecker, storeReference func(*http.Server), cfg config.HealthCheckConfig) error {
+func (s *Proxy) startHealthCheckHandler(lifetime context.Context, healthChecker HealthChecker, cfg config.HealthCheckConfig) (*http.Server, error) {
 	if cfg.Protocol != config.HTTP {
-		return fmt.Errorf("unsupported health check protocol %s", cfg.Protocol)
+		return nil, fmt.Errorf("unsupported health check protocol %s", cfg.Protocol)
 	}
 
 	// Set up the handler. Avoid the global ServeMux so that we can create N of these in unit test suites
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthChecker.createHandler())
+	serveMux := http.NewServeMux()
+	serveMux.HandleFunc("/health", healthChecker.createHandler())
 	// Define the server and its settings
 	healthCheckServer := &http.Server{
 		Addr:    cfg.ListenAddress,
-		Handler: mux,
+		Handler: serveMux,
 	}
-	storeReference(healthCheckServer)
 
 	go func() {
 		s.logger.Info("Starting health check server", tag.Address(cfg.ListenAddress))
-		if err := s.healthCheckServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := healthCheckServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.logger.Error("Error starting server", tag.Error(err))
 		}
 	}()
-
-	return nil
+	context.AfterFunc(lifetime, func() {
+		_ = healthCheckServer.Close()
+	})
+	return healthCheckServer, nil
 }
 
-func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
+func (s *Proxy) startMetricsHandler(lifetime context.Context, cfg config.MetricsConfig) error {
 	// Why not use the global ServeMux? So that it can be used in unit tests
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", metrics.NewMetricsHandler(s.logger))
@@ -346,13 +111,16 @@ func (s *Proxy) startMetricsHandler(cfg config.MetricsConfig) error {
 			s.logger.Error("Error starting server", tag.Error(err))
 		}
 	}()
+	context.AfterFunc(lifetime, func() {
+		_ = s.metricsServer.Close()
+	})
 	return nil
 }
 
 func (s *Proxy) Start() error {
 	if s.config.HealthCheck != nil {
-		setHealthFn := func(server *http.Server) { s.healthCheckServer = server }
-		if err := s.startHealthCheckHandler(newInboundHealthCheck(s.logger), setHealthFn, *s.config.HealthCheck); err != nil {
+		var err error
+		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(s.logger), *s.config.HealthCheck); err != nil {
 			return err
 		}
 	} else {
@@ -362,11 +130,17 @@ func (s *Proxy) Start() error {
 
 	if s.config.OutboundHealthCheck != nil {
 		healthFn := func() bool {
-			// s.config.Outbound.Server.MuxTransportName: There's one mux per outbound server right now.
-			return s.transManager.IsMuxActive(s.config.Outbound.Server.MuxTransportName)
+			// TODO: assumes only one mux right now. When there are multiple outbounds, some of them may be healthy
+			//       and others not
+			for _, cc := range s.clusterConnections {
+				if !cc.RemoteUsable() {
+					return false
+				}
+			}
+			return true
 		}
-		setHealthFn := func(server *http.Server) { s.outboundHealthCheckServer = server }
-		if err := s.startHealthCheckHandler(newOutboundHealthCheck(healthFn, s.logger), setHealthFn, *s.config.OutboundHealthCheck); err != nil {
+		var err error
+		if s.outboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newOutboundHealthCheck(healthFn, s.logger), *s.config.OutboundHealthCheck); err != nil {
 			return err
 		}
 	} else {
@@ -375,7 +149,7 @@ func (s *Proxy) Start() error {
 	}
 
 	if s.config.Metrics != nil {
-		if err := s.startMetricsHandler(*s.config.Metrics); err != nil {
+		if err := s.startMetricsHandler(s.lifetime, *s.config.Metrics); err != nil {
 			return err
 		}
 	} else {
@@ -383,40 +157,19 @@ func (s *Proxy) Start() error {
 			` it needs at least the following path: metrics.prometheus.listenAddress`)
 	}
 
-	if err := s.transManager.Start(); err != nil {
-		return err
-	}
-
-	if s.outboundServer != nil {
-		if err := s.outboundServer.start(); err != nil {
-			return err
-		}
-	}
-
-	if s.inboundServer != nil {
-		if err := s.inboundServer.start(); err != nil {
-			return err
-		}
+	for _, v := range s.clusterConnections {
+		v.Start()
 	}
 
 	return nil
 }
 
 func (s *Proxy) Stop() {
-	if s.healthCheckServer != nil {
-		// Close without waiting for in-flight requests to complete.
-		_ = s.healthCheckServer.Close()
-	}
+	// All parts of the Proxy watch the "lifetime" context. Cancelling it will close all components
+	// where necessary
+	s.cancel()
+}
 
-	if s.metricsServer != nil {
-		_ = s.metricsServer.Close()
-	}
-
-	if s.inboundServer != nil {
-		s.inboundServer.stop()
-	}
-	if s.outboundServer != nil {
-		s.outboundServer.stop()
-	}
-	s.transManager.Stop()
+func (s *Proxy) Done() <-chan struct{} {
+	return s.lifetime.Done()
 }

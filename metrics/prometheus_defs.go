@@ -31,7 +31,7 @@ var (
 	// /proxy/proxy.go
 
 	GRPCServerMetrics     = GetStandardGRPCInterceptor("direction")
-	ProxyStartCount       = DefaultCounter("proxy_start_count", "Emitted once on Go process start")
+	NewProxyCount         = DefaultCounter("proxy_start_count", "Emitted once on Go process start")
 	ProxyServiceCreated   = DefaultCounterVec("proxy_service_created", "Emitted once per service start", "direction")
 	ProxyServiceStopped   = DefaultCounterVec("proxy_service_stopped", "Emitted on service shutdown", "direction")
 	ProxyServiceRestarted = DefaultCounterVec("proxy_service_restarted", "Emitted on service shutdown", "direction")
@@ -74,6 +74,7 @@ var (
 	MuxConnectionProvided  = DefaultCounterVec("mux_connection_provided", "Number of times a connection was provided from WithConnection", muxManagerLabels...)
 	MuxDialFailed          = DefaultCounterVec("mux_dial_failed", "Mux failed when dialing", muxManagerLabels...)
 	MuxDialSuccess         = DefaultCounterVec("mux_dial_success", "Mux succeeded on dial", muxManagerLabels...)
+	MuxServerDisconnected  = DefaultCounterVec("mux_server_disconnected", "Mux server disconnected", muxManagerLabels...)
 
 	// Translation interceptor
 
@@ -109,7 +110,7 @@ func init() {
 	prometheus.MustRegister(OutboundHealthCheckCount)
 
 	prometheus.MustRegister(GRPCServerMetrics)
-	prometheus.MustRegister(ProxyStartCount)
+	prometheus.MustRegister(NewProxyCount)
 	prometheus.MustRegister(ProxyServiceCreated)
 	prometheus.MustRegister(ProxyServiceStopped)
 	prometheus.MustRegister(ProxyServiceRestarted)

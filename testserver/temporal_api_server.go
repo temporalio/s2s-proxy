@@ -1,8 +1,9 @@
-package proxy
+package testserver
 
 import (
 	"fmt"
 	"io"
+	"net"
 	"time"
 
 	"go.temporal.io/api/workflowservice/v1"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/metrics"
-	"github.com/temporalio/s2s-proxy/transport"
 )
 
 type (
@@ -23,7 +23,7 @@ type (
 		server                 *grpc.Server
 		adminHandler           adminservice.AdminServiceServer
 		workflowserviceHandler workflowservice.WorkflowServiceServer
-		serverTransport        transport.ServerTransport
+		listener               net.Listener
 		logger                 log.Logger
 	}
 )
@@ -34,7 +34,7 @@ func NewTemporalAPIServer(
 	adminHandler adminservice.AdminServiceServer,
 	workflowserviceHandler workflowservice.WorkflowServiceServer,
 	serverOptions []grpc.ServerOption,
-	serverTransport transport.ServerTransport,
+	listener net.Listener,
 	logger log.Logger,
 ) *TemporalAPIServer {
 	server := grpc.NewServer(serverOptions...)
@@ -47,16 +47,16 @@ func NewTemporalAPIServer(
 		server:                 server,
 		adminHandler:           adminHandler,
 		workflowserviceHandler: workflowserviceHandler,
-		serverTransport:        serverTransport,
+		listener:               listener,
 		logger:                 logger,
 	}
 }
 
 func (s *TemporalAPIServer) Start() {
 	go func() {
-		for !s.serverTransport.IsClosed() {
+		for {
 			metrics.GRPCServerStarted.WithLabelValues(s.serviceName).Inc()
-			err := s.serverTransport.Serve(s.server)
+			err := s.server.Serve(s.listener)
 			if err == io.EOF {
 				// grpc server can get EOF error if grpc server relies on client side of
 				// mux connection. Given a mux connection from node A (mux client) to node B (mux server),

@@ -1,0 +1,154 @@
+package mux
+
+import (
+	"maps"
+	"net"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/temporalio/s2s-proxy/transport/mux/session"
+	"go.temporal.io/server/common/log"
+)
+
+// passthroughConnProvider stores a connection and provides it repeatedly. Blocks on connAvailable so the test can control when it fires
+type passthroughConnProvider struct {
+	conn          net.Conn
+	connAvailable chan struct{}
+}
+
+func (p *passthroughConnProvider) NewConnection() (net.Conn, error) {
+	<-p.connAvailable
+	return p.conn, nil
+}
+func (p *passthroughConnProvider) CloseProvider() {
+	_ = p.conn.Close()
+}
+func (p *passthroughConnProvider) CloseCh() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+
+func TestMultiMuxManager(t *testing.T) {
+	logger := log.NewTestLogger()
+
+	serverConns := &atomic.Pointer[map[string]session.ManagedMuxSession]{}
+	clientConns := &atomic.Pointer[map[string]session.ManagedMuxSession]{}
+	muxesOnPipes := buildMuxesOnPipes(t, logger, 1,
+		func(sessions map[string]session.ManagedMuxSession) {
+			clone := maps.Clone(sessions)
+			serverConns.Store(&clone)
+		}, func(sessions map[string]session.ManagedMuxSession) {
+			clone := maps.Clone(sessions)
+			clientConns.Store(&clone)
+		})
+
+	// Avoid the MuxManager's Start(), which assumes we're using TCP
+	muxesOnPipes.serverMM.Start()
+	muxesOnPipes.clientMM.Start()
+
+	clientEvent := requireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "should have seen a connection from the clientProvider")
+	require.Equal(t, "opened", clientEvent.eventType)
+	clientSession := clientEvent.session
+	serverEvent := requireCh(t, muxesOnPipes.serverEvents, 2*time.Second, "should have seen a connection from the serverProvider")
+	require.Equal(t, "opened", clientEvent.eventType)
+	serverSession := serverEvent.session
+
+	// Close connections. We should see both sides fire disconnectFn
+	for _, v := range *clientConns.Load() {
+		v.Close()
+	}
+	clientEvent = requireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "Client connection failed to disconnect")
+	require.Equal(t, "closed", clientEvent.eventType)
+	require.Same(t, clientSession, clientEvent.session)
+	for _, v := range *serverConns.Load() {
+		v.Close()
+	}
+	serverEvent = requireCh(t, muxesOnPipes.serverEvents, 2*time.Second, "Server connection failed to disconnect")
+	require.Equal(t, "closed", serverEvent.eventType)
+	require.Same(t, serverSession, serverEvent.session)
+
+	assert.True(t, clientSession.IsClosed(), "clientSession should be closed")
+	assert.True(t, serverSession.IsClosed(), "serverSession should be closed")
+
+	clientConn, serverConn := net.Pipe()
+	muxesOnPipes.clientConnCh <- clientConn
+	muxesOnPipes.serverConnCh <- serverConn
+
+	clientReconn := requireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "should have seen a new connection from the clientProvider")
+	serverReconn := requireCh(t, muxesOnPipes.serverEvents, 2*time.Second, "should have seen a new connection from the clientProvider")
+	require.NotSame(t, clientSession, clientReconn.session, "Should be a new client session")
+	require.NotSame(t, serverSession, serverReconn.session, "Should be a new server session")
+	muxesOnPipes.clientMM.Close()
+	muxesOnPipes.serverMM.Close()
+}
+
+func TestMultiMuxManager_ManyConnections(t *testing.T) {
+	logger := log.NewTestLogger()
+	expectedServerConns := &atomic.Uint32{}
+	expectedServerConns.Store(1)
+	expectedClientConns := &atomic.Uint32{}
+	expectedClientConns.Store(1)
+	muxesOnPipes := buildMuxesOnPipes(t, logger, 10,
+		func(sessions map[string]session.ManagedMuxSession) {
+			if expectedServerConns.Load() == 0 {
+				return // disable check
+			}
+			assert.Equalf(t, expectedServerConns.Load(), uint32(len(sessions)), "Wrong number of sessions %v", sessions)
+			expectedServerConns.Add(1)
+		}, func(sessions map[string]session.ManagedMuxSession) {
+			if expectedClientConns.Load() == 0 {
+				return // disable check
+			}
+			assert.Equalf(t, expectedClientConns.Load(), uint32(len(sessions)), "Wrong number of sessions %v", sessions)
+			expectedClientConns.Add(1)
+		})
+	requireNoCh(t, muxesOnPipes.serverEvents, 20*time.Millisecond, "Nothing should happen yet, no MuxMgrs have started")
+	requireNoCh(t, muxesOnPipes.clientEvents, 20*time.Millisecond, "Nothing should happen yet, no MuxMgrs have started")
+	muxesOnPipes.serverMM.Start()
+	requireNoCh(t, muxesOnPipes.serverEvents, 20*time.Millisecond, "Nothing should happen yet, client MuxMgr hasn't started")
+	requireNoCh(t, muxesOnPipes.clientEvents, 20*time.Millisecond, "Nothing should happen yet, client MuxMgr hasn't started")
+	muxesOnPipes.clientMM.Start()
+	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsOpened, "Connections should be opened")
+	expectedServerConns.Store(0)
+	expectedClientConns.Store(0)
+	muxesOnPipes.clientMM.Close()
+	muxesOnPipes.serverMM.Close()
+	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsClosed, "Connections should be opened")
+}
+
+func TestMultiMuxManager_ShutDown(t *testing.T) {
+	logger := log.NewTestLogger()
+	muxesOnPipes := buildMuxesOnPipes(t, logger, 10, onConnectionNoOp, onConnectionNoOp)
+	muxesOnPipes.serverMM.Start()
+	muxesOnPipes.clientMM.Start()
+	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsOpened, "Should see opening events")
+
+	muxesOnPipes.assertNoConnectionEvents(t, "In steady state, no connections should happen")
+
+	muxesOnPipes.clientMM.Close()
+	muxesOnPipes.serverMM.Close()
+	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsClosed, "Should see closed events")
+}
+
+func TestMultiMuxManager_Reconnection(t *testing.T) {
+	logger := log.NewTestLogger()
+	muxesOnPipes := buildMuxesOnPipes(t, logger, 10, onConnectionNoOp, onConnectionNoOp)
+	muxesOnPipes.serverMM.Start()
+	muxesOnPipes.clientMM.Start()
+	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsOpened, "Should see opened events")
+	for range 10 {
+		serverConn, clientConn := net.Pipe()
+		muxesOnPipes.serverConnCh <- serverConn
+		muxesOnPipes.clientConnCh <- clientConn
+	}
+	muxesOnPipes.assertNoConnectionEvents(t, "Existing connections should be saturated, no additional connections should happen")
+
+	muxesOnPipes.clientMM.Close()
+	muxesOnPipes.serverMM.Close()
+	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsClosed, "Should see closed events")
+	muxesOnPipes.assertNoConnectionEvents(t, "Existing connections should be saturated, no additional connections should happen")
+}

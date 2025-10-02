@@ -96,10 +96,11 @@ type (
 	}
 
 	MuxTransportConfig struct {
-		Name   string           `yaml:"name"`
-		Mode   MuxMode          `yaml:"mode"`
-		Client TCPClientSetting `yaml:"client"`
-		Server TCPServerSetting `yaml:"server"`
+		Name           string           `yaml:"name"`
+		Mode           MuxMode          `yaml:"mode"`
+		Client         TCPClientSetting `yaml:"client"`
+		Server         TCPServerSetting `yaml:"server"`
+		NumConnections int              `yaml:"num_connections"`
 	}
 
 	HealthCheckConfig struct {
@@ -266,6 +267,16 @@ func marshalWithoutError(v any) string {
 	}
 
 	return string(data)
+}
+
+func (o MuxTransportConfig) GetLabelValues() []string {
+	switch o.Mode {
+	case ServerMode:
+		return []string{o.Server.ListenAddress, string(o.Mode), o.Name}
+	case ClientMode:
+		return []string{o.Client.ServerAddress, string(o.Mode), o.Name}
+	}
+	return []string{"unknown", "unknown", o.Name}
 }
 
 func (o ProxyClientConfig) String() string {

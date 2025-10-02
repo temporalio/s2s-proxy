@@ -112,7 +112,10 @@ func startProxy(c *cli.Context) error {
 	}
 
 	// Waits until interrupt signal from OS arrives
-	<-interruptCh()
+	select {
+	case <-proxyParams.Proxy.Done():
+	case <-interruptCh():
+	}
 
 	proxyParams.Proxy.Stop()
 	return nil

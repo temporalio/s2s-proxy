@@ -13,7 +13,6 @@ import (
 
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
 	clientmock "github.com/temporalio/s2s-proxy/mocks/client"
 )
 
@@ -39,15 +38,14 @@ func (s *adminserviceSuite) AfterTest() {
 	s.ctrl.Finish()
 }
 
-func (s *adminserviceSuite) newAdminServiceProxyServer(opts proxyOptions) adminservice.AdminServiceServer {
-	cfg := config.ProxyClientConfig{
-		TCPClientSetting: config.TCPClientSetting{
-			ServerAddress: "fake-forward-address",
-			TLS:           encryption.ClientTLSConfig{},
-		},
-	}
-	s.clientFactoryMock.EXPECT().NewRemoteAdminClient(cfg).Return(s.adminClientMock, nil).Times(1)
-	return NewAdminServiceProxyServer("test-service-name", cfg, s.clientFactoryMock, opts, log.NewTestLogger())
+type adminProxyServerInput struct {
+	outboundAddressOverride string
+	apiOverrides            *config.APIOverridesConfig
+	metricLabels            []string
+}
+
+func (s *adminserviceSuite) newAdminServiceProxyServer(in adminProxyServerInput) adminservice.AdminServiceServer {
+	return NewAdminServiceProxyServer("test-service-name", s.adminClientMock, in.outboundAddressOverride, in.apiOverrides, in.metricLabels, log.NewTestLogger())
 }
 
 func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
@@ -69,41 +67,24 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 	)
 
 	cases := []struct {
-		name string
-
-		opts        proxyOptions
-		reqMetadata map[string]string
-		expectedReq *adminservice.AddOrUpdateRemoteClusterRequest
+		name                  string
+		reqMetadata           map[string]string
+		expectedReq           *adminservice.AddOrUpdateRemoteClusterRequest
+		adminProxyServerInput adminProxyServerInput
 	}{
 		{
 			name: "no override on outbound request",
-			opts: proxyOptions{
-				IsInbound: false,
-				Config: config.S2SProxyConfig{
-					Outbound: &config.ProxyConfig{
-						Server: config.ProxyServerConfig{
-							TCPServerSetting: config.TCPServerSetting{
-								ExternalAddress: fakeExternalAddr,
-							},
-						},
-					},
-				},
+			adminProxyServerInput: adminProxyServerInput{
+				outboundAddressOverride: "",
+				metricLabels:            []string{"outbound"},
 			},
 			expectedReq: makeOriginalReq(),
 		},
 		{
 			name: "override on inbound request",
-			opts: proxyOptions{
-				IsInbound: true,
-				Config: config.S2SProxyConfig{
-					Outbound: &config.ProxyConfig{
-						Server: config.ProxyServerConfig{
-							TCPServerSetting: config.TCPServerSetting{
-								ExternalAddress: fakeExternalAddr,
-							},
-						},
-					},
-				},
+			adminProxyServerInput: adminProxyServerInput{
+				outboundAddressOverride: fakeExternalAddr,
+				metricLabels:            []string{"inbound"},
 			},
 			expectedReq: makeModifiedReq(), // request is modified
 		},
@@ -112,43 +93,25 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 			reqMetadata: map[string]string{
 				common.RequestTranslationHeaderName: "false",
 			},
-			opts: proxyOptions{
-				IsInbound: true,
-				Config: config.S2SProxyConfig{
-					Outbound: &config.ProxyConfig{
-						Server: config.ProxyServerConfig{
-							TCPServerSetting: config.TCPServerSetting{
-								ExternalAddress: fakeExternalAddr,
-							},
-						},
-					},
-				},
+			adminProxyServerInput: adminProxyServerInput{
+				outboundAddressOverride: fakeExternalAddr,
+				metricLabels:            []string{"inbound"},
 			},
 			expectedReq: makeOriginalReq(), // request is not modified
 		},
 		{
 			name: "no override on empty config",
-			opts: proxyOptions{
-				IsInbound: true,
-				Config: config.S2SProxyConfig{
-					Outbound: &config.ProxyConfig{
-						Server: config.ProxyServerConfig{
-							TCPServerSetting: config.TCPServerSetting{
-								ExternalAddress: "", // empty
-							},
-						},
-					},
-				},
+			adminProxyServerInput: adminProxyServerInput{
+				outboundAddressOverride: "",
+				metricLabels:            []string{"inbound"},
 			},
 			expectedReq: makeOriginalReq(),
 		},
 		{
 			name: "nil outbound config",
-			opts: proxyOptions{
-				IsInbound: true,
-				Config: config.S2SProxyConfig{
-					Outbound: nil,
-				},
+			adminProxyServerInput: adminProxyServerInput{
+				outboundAddressOverride: "",
+				metricLabels:            []string{"outbound"},
 			},
 			expectedReq: makeOriginalReq(),
 		},
@@ -157,7 +120,7 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 	for _, c := range cases {
 		s.Run(c.name, func() {
 			ctx := metadata.NewIncomingContext(context.Background(), metadata.New(c.reqMetadata))
-			server := s.newAdminServiceProxyServer(c.opts)
+			server := s.newAdminServiceProxyServer(c.adminProxyServerInput)
 			s.adminClientMock.EXPECT().AddOrUpdateRemoteCluster(ctx, c.expectedReq).Return(expResp, nil)
 			resp, err := server.AddOrUpdateRemoteCluster(ctx, makeOriginalReq())
 			s.NoError(err)
@@ -182,14 +145,12 @@ func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
 		}
 	}
 
-	createOverrideConfig := func() *config.ProxyConfig {
-		return &config.ProxyConfig{
-			APIOverrides: &config.APIOverridesConfig{
-				AdminSerivce: config.AdminServiceOverrides{
-					DescribeCluster: &config.DescribeClusterOverride{
-						Response: config.DescribeClusterResponseOverrides{
-							FailoverVersionIncrement: &overrideValue,
-						},
+	createOverrideConfig := func() *config.APIOverridesConfig {
+		return &config.APIOverridesConfig{
+			AdminSerivce: config.AdminServiceOverrides{
+				DescribeCluster: &config.DescribeClusterOverride{
+					Response: config.DescribeClusterResponseOverrides{
+						FailoverVersionIncrement: &overrideValue,
 					},
 				},
 			},
@@ -197,49 +158,44 @@ func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
 	}
 
 	cases := []struct {
-		name        string
-		opts        proxyOptions
-		reqMetadata map[string]string
-		mockResp    *adminservice.DescribeClusterResponse
-		expResp     *adminservice.DescribeClusterResponse
+		name                  string
+		reqMetadata           map[string]string
+		adminProxyServerInput adminProxyServerInput
+		mockResp              *adminservice.DescribeClusterResponse
+		expResp               *adminservice.DescribeClusterResponse
 	}{
 		{
 			name: "nil override config",
-			opts: proxyOptions{
-				IsInbound: true,
+			adminProxyServerInput: adminProxyServerInput{
+				outboundAddressOverride: "",
+				metricLabels:            []string{"outbound"},
 			},
 			mockResp: makeResp(),
 			expResp:  makeResp(),
 		},
 		{
 			name: "override inbound",
-			opts: proxyOptions{
-				IsInbound: true,
-				Config: config.S2SProxyConfig{
-					Inbound: createOverrideConfig(),
-				},
+			adminProxyServerInput: adminProxyServerInput{
+				metricLabels: []string{"inbound"},
+				apiOverrides: createOverrideConfig(),
 			},
 			mockResp: makeResp(),
 			expResp:  makeOverrideResp(),
 		},
 		{
 			name: "override outbound",
-			opts: proxyOptions{
-				IsInbound: false,
-				Config: config.S2SProxyConfig{
-					Outbound: createOverrideConfig(),
-				},
+			adminProxyServerInput: adminProxyServerInput{
+				metricLabels: []string{"outbound"},
+				apiOverrides: createOverrideConfig(),
 			},
 			mockResp: makeResp(),
 			expResp:  makeOverrideResp(),
 		},
 		{
 			name: "override inbound with request translation disabled",
-			opts: proxyOptions{
-				IsInbound: true,
-				Config: config.S2SProxyConfig{
-					Inbound: createOverrideConfig(),
-				},
+			adminProxyServerInput: adminProxyServerInput{
+				metricLabels: []string{"inbound"},
+				apiOverrides: createOverrideConfig(),
 			},
 			reqMetadata: map[string]string{
 				common.RequestTranslationHeaderName: "false",
@@ -249,11 +205,9 @@ func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
 		},
 		{
 			name: "override outbound with request translation disabled",
-			opts: proxyOptions{
-				IsInbound: false,
-				Config: config.S2SProxyConfig{
-					Outbound: createOverrideConfig(),
-				},
+			adminProxyServerInput: adminProxyServerInput{
+				metricLabels: []string{"outbound"},
+				apiOverrides: createOverrideConfig(),
 			},
 			reqMetadata: map[string]string{
 				common.RequestTranslationHeaderName: "false",
@@ -266,7 +220,7 @@ func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
 	for _, c := range cases {
 		s.Run(c.name, func() {
 			ctx := metadata.NewIncomingContext(context.Background(), metadata.New(c.reqMetadata))
-			server := s.newAdminServiceProxyServer(c.opts)
+			server := s.newAdminServiceProxyServer(c.adminProxyServerInput)
 			s.adminClientMock.EXPECT().DescribeCluster(ctx, gomock.Any()).Return(c.mockResp, nil)
 			resp, err := server.DescribeCluster(ctx, req)
 			s.NoError(err)
