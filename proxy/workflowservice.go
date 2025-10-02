@@ -34,7 +34,7 @@ func NewWorkflowServiceProxyServer(
 	logger = log.With(logger, common.ServiceTag(serviceName))
 	return &workflowServiceProxyServer{
 		workflowServiceClient: workflowServiceClient,
-		namespaceAccess:        namespaceAccess,
+		namespaceAccess:       namespaceAccess,
 		logger:                logger,
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/testserver/services"
 )
 
 // This file sets up N echo servers listening on a local pipe. You have access to both the Server and the client
@@ -25,7 +26,7 @@ import (
 type MuxedServer struct {
 	Server           *grpc.Server
 	Session          *MuxSession
-	EchoAdminService *EchoAdminService
+	EchoAdminService *services.EchoAdminService
 }
 
 type MuxedClient struct {
@@ -87,7 +88,7 @@ func NewTestScenario(t *testing.T, size int, temporalLogger log.Logger) *TestSce
 			Session: muxes[i],
 		}
 		serviceName := fmt.Sprintf("adminService on mux %d", i)
-		eas := &EchoAdminService{
+		eas := &services.EchoAdminService{
 			ServiceName: serviceName,
 			Logger:      log.With(temporalLogger, common.ServiceTag(serviceName), tag.Address(muxes[i].Addr)),
 			Namespaces:  map[string]bool{"hello": true, "world": true},

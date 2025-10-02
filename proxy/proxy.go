@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -22,7 +23,9 @@ type (
 	Proxy struct {
 		lifetime                  context.Context
 		cancel                    context.CancelFunc
-		config                    config.S2SProxyConfig
+		inboundHealthCheckConfig  *config.HealthCheckConfig
+		outboundHealthCheckConfig *config.HealthCheckConfig
+		metricsConfig             *config.MetricsConfig
 		clusterConnections        map[migrationId]*ClusterConnection
 		inboundHealthCheckServer  *http.Server
 		outboundHealthCheckServer *http.Server
@@ -35,9 +38,9 @@ func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
-		lifetime:           ctx,
-		cancel:             cancel,
-		config:             s2sConfig,
+		lifetime: ctx,
+		cancel:   cancel,
+		//config:             s2sConfig,
 		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.MuxTransports)+1),
 		logger: log.NewThrottledLogger(
 			logger,
@@ -45,6 +48,18 @@ func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 				return s2sConfig.Logging.GetThrottleMaxRPS()
 			},
 		),
+	}
+	if s2sConfig.Inbound == nil || s2sConfig.Outbound == nil {
+		panic(errors.New("cannot create proxy without inbound and outbound config"))
+	}
+	if s2sConfig.HealthCheck != nil {
+		proxy.inboundHealthCheckConfig = s2sConfig.HealthCheck
+	}
+	if s2sConfig.Metrics != nil {
+		proxy.metricsConfig = s2sConfig.Metrics
+	}
+	if s2sConfig.OutboundHealthCheck != nil {
+		proxy.outboundHealthCheckConfig = s2sConfig.OutboundHealthCheck
 	}
 	// TODO: This is effectively 1 right now. We need to rewrite the config a bit to support multiple clusters
 	for _, muxCfg := range s2sConfig.MuxTransports {
@@ -118,9 +133,9 @@ func (s *Proxy) startMetricsHandler(lifetime context.Context, cfg config.Metrics
 }
 
 func (s *Proxy) Start() error {
-	if s.config.HealthCheck != nil {
+	if s.inboundHealthCheckConfig != nil {
 		var err error
-		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(s.logger), *s.config.HealthCheck); err != nil {
+		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(s.logger), *s.inboundHealthCheckConfig); err != nil {
 			return err
 		}
 	} else {
@@ -128,7 +143,7 @@ func (s *Proxy) Start() error {
 			" it needs at least the following path: healthCheck.listenAddress")
 	}
 
-	if s.config.OutboundHealthCheck != nil {
+	if s.outboundHealthCheckConfig != nil {
 		healthFn := func() bool {
 			// TODO: assumes only one mux right now. When there are multiple outbounds, some of them may be healthy
 			//       and others not
@@ -140,7 +155,7 @@ func (s *Proxy) Start() error {
 			return true
 		}
 		var err error
-		if s.outboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newOutboundHealthCheck(healthFn, s.logger), *s.config.OutboundHealthCheck); err != nil {
+		if s.outboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newOutboundHealthCheck(healthFn, s.logger), *s.outboundHealthCheckConfig); err != nil {
 			return err
 		}
 	} else {
@@ -148,8 +163,8 @@ func (s *Proxy) Start() error {
 			" it needs at least the following path: outboundHealthCheck.listenAddress")
 	}
 
-	if s.config.Metrics != nil {
-		if err := s.startMetricsHandler(s.lifetime, *s.config.Metrics); err != nil {
+	if s.metricsConfig != nil {
+		if err := s.startMetricsHandler(s.lifetime, *s.metricsConfig); err != nil {
 			return err
 		}
 	} else {
@@ -172,4 +187,16 @@ func (s *Proxy) Stop() {
 
 func (s *Proxy) Done() <-chan struct{} {
 	return s.lifetime.Done()
+}
+
+func (s *Proxy) Describe() string {
+	sb := strings.Builder{}
+	sb.WriteString("[proxy.Proxy with cluster connections:\n\t")
+	for k, v := range s.clusterConnections {
+		sb.WriteString(fmt.Sprintf("%s:", k.name))
+		sb.WriteString(v.Describe())
+		sb.WriteString("\n\t")
+	}
+	sb.WriteString("]")
+	return sb.String()
 }

@@ -5,14 +5,15 @@ import (
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
-	"github.com/temporalio/s2s-proxy/interceptor"
-	"github.com/temporalio/s2s-proxy/metrics"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/interceptor"
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 const Inbound string = "inbound"

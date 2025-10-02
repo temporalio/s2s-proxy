@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/yamux"
-	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
@@ -44,7 +43,7 @@ func NewGRPCMuxManager(ctx context.Context, cfg config.MuxTransportConfig, mcc *
 		cfg.Name,
 		muxProviderBuilder,
 		[]session.StartManagedComponentFn{
-			registerYamuxObserver(cfg.Name, logger),
+			registerYamuxObserverBuilder(cfg.Name, logger),
 			registerGRPCServer(string(cfg.Mode), serverDefinition, metricLabels, logger),
 		},
 		[]OnConnectionListUpdate{mcc.OnConnectionListUpdate},
@@ -53,11 +52,11 @@ func NewGRPCMuxManager(ctx context.Context, cfg config.MuxTransportConfig, mcc *
 }
 
 func registerGRPCServer(mode string, serverConfig *grpc.Server, metricLabels []string, logger log.Logger) session.StartManagedComponentFn {
-	return func(id string, session *yamux.Session, shutdown channel.ShutdownOnce) {
+	return func(lifetime context.Context, id string, session *yamux.Session) {
 		go func() {
 			logger.Info("Starting inbound server for mux", tag.NewStringTag("remote_addr", session.RemoteAddr().String()),
 				tag.NewStringTag("mode", mode), tag.NewStringTag("mux_id", id))
-			for !shutdown.IsShutdown() {
+			for lifetime.Err() == nil {
 				_ = serverConfig.Serve(session)
 				metrics.MuxServerDisconnected.WithLabelValues(metricLabels...).Inc()
 			}

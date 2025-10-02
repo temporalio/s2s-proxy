@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -386,14 +387,13 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 	sequence := genSequence(1, 100)
 	logger := log.NewTestLogger()
 	for _, ts := range tests {
-		echoServer := testserver.NewEchoServer(ts.echoServerInfo, ts.echoClientInfo, "EchoServer", logger, nil)
-		echoClient := testserver.NewEchoServer(ts.echoClientInfo, ts.echoServerInfo, "EchoClient", logger, nil)
-		echoServer.Start()
-		echoClient.Start()
-
 		s.Run(
 			ts.name,
 			func() {
+				echoServer := testserver.NewEchoServer(ts.echoServerInfo, ts.echoClientInfo, "EchoServer", logger, nil)
+				echoClient := testserver.NewEchoServer(ts.echoClientInfo, ts.echoServerInfo, "EchoClient", logger, nil)
+				echoServer.Start()
+				echoClient.Start()
 				defer func() {
 					echoClient.Stop()
 					echoServer.Stop()
@@ -402,7 +402,7 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 				r, err := testserver.Retry(func() (*adminservice.DescribeClusterResponse, error) {
 					return echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
 				}, 5, logger)
-				s.NoError(err)
+				require.NoErrorf(s.T(), err, "Couldn't describeCluster!\nserver:%s\nclient:%s", echoServer.Describe(), echoClient.Describe())
 				s.Equal("EchoServer", r.ClusterName)
 
 				// Test adminservice stream method
@@ -600,7 +600,7 @@ func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
 		return echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
 	}, 5, logger)
 
-	s.NoError(err)
+	require.NoErrorf(s.T(), err, "Should have received a response from echo server!\nserver:%s\nclient:%s", echoServer.Describe(), echoClient.Describe())
 	s.Equal("EchoServer", r.ClusterName)
 }
 
@@ -629,7 +629,7 @@ func (s *proxyTestSuite) Test_ForceStopSourceServer() {
 	_, err = testserver.SendRecv(stream, []int64{1})
 	s.NoError(err)
 
-	echoServer.Server.ForceStop()
+	echoServer.Temporal.ForceStop()
 
 	// ForceStop cause sourceStreamClient.Recv in Upstream loop within
 	// StreamWorkflowReplicationMessages handler to fail. Wait for

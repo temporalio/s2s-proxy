@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -25,6 +26,7 @@ const (
 // when they are used, and they will break MultiClientConn.
 // Note: This is not ready for use in production yet, ClientConn.Connect() and ClientConn.UpdateState() cannot yet be called properly.
 type MultiClientConn struct {
+	name string
 	// connMapLock is being used with connMap over a sync.Map for now. If using a MultiClientConn on large numbers of
 	// muxes, it's probably best to switch to sync.Map for the sharded read locks
 	connMapLock sync.RWMutex
@@ -38,7 +40,7 @@ type MultiClientConn struct {
 }
 
 func NewMultiClientConn(name string, opts ...grpc.DialOption) (*MultiClientConn, error) {
-	mcc := &MultiClientConn{}
+	mcc := &MultiClientConn{name: name}
 	var err error
 	dialOpts := make([]grpc.DialOption, len(opts)+2)
 	mcc.resolver = manual.NewBuilderWithScheme(scheme)
@@ -123,4 +125,20 @@ func (mcc *MultiClientConn) deriveStateFromConns() resolver.State {
 		idx++
 	}
 	return newState
+}
+func (mcc *MultiClientConn) Describe() string {
+	mcc.connMapLock.RLock()
+	defer mcc.connMapLock.RUnlock()
+	sb := strings.Builder{}
+	sb.WriteString("[MultiClientConn ")
+	sb.WriteString(mcc.name)
+	sb.WriteString(", scheme=")
+	sb.WriteString(mcc.resolver.Scheme())
+	sb.WriteString(", conns={")
+	for k := range mcc.connMap {
+		sb.WriteString(k)
+		sb.WriteString("=[connFn]")
+	}
+	sb.WriteString("}")
+	return sb.String()
 }

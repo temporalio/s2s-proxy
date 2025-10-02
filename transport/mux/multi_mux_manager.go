@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/hashicorp/yamux"
@@ -45,6 +47,7 @@ type (
 		// Address is used by unit tests for dynamic port allocation
 		Address() string
 		IsUsable() bool
+		Describe() string
 	}
 	MuxProviderBuilder func(AddNewMux, context.Context) (MuxProvider, error)
 )
@@ -104,7 +107,8 @@ func (m *multiMuxManager) AddConnection(yamuxSession *yamux.Session, conn net.Co
 	// ClientConn uses a map of string addresses to connections. So we need to generate unique strings for the map cheaply
 	newId := fmt.Sprintf("%d", m.muxIdSequencer)
 	m.muxIdSequencer++
-	m.muxes[newId] = session.NewSession(newId, yamuxSession, conn, m.perSessionFactories, func() {
+	ctx, cancel := context.WithCancel(m.lifetime)
+	m.muxes[newId] = session.NewSession(ctx, cancel, newId, yamuxSession, conn, m.perSessionFactories, func() {
 		m.unregisterMux(newId)
 		// Recycle the transport when it closes
 		m.muxProvider.AllowMoreConns(1)
@@ -113,22 +117,22 @@ func (m *multiMuxManager) AddConnection(yamuxSession *yamux.Session, conn net.Co
 }
 
 // unregisterMuxIfClosed drops the described mux from the map of active muxes if it's closed. Returns true if it removed a mux
-func (m *multiMuxManager) unregisterMuxIfClosed(id string) bool {
-	m.muxesLock.RLock()
-	mux, exists := m.muxes[id]
-	if !exists {
-		return false
-	}
-	if mux.IsClosed() {
-		m.muxesLock.RUnlock()
-		// Anything could happen here, but IDs are guaranteed not to be re-used and muxes cannot reopen once closed,
-		// so it's always ok to delete this mux at this point.
-		m.unregisterMux(id)
-		return true
-	}
-	m.muxesLock.RUnlock()
-	return false
-}
+//func (m *multiMuxManager) unregisterMuxIfClosed(id string) bool {
+//	m.muxesLock.RLock()
+//	mux, exists := m.muxes[id]
+//	if !exists {
+//		return false
+//	}
+//	if !mux.IsClosed() {
+//		m.muxesLock.RUnlock()
+//		return false
+//	}
+//	m.muxesLock.RUnlock()
+//	// Anything could happen here, but IDs are guaranteed not to be re-used and muxes cannot reopen once closed,
+//	// so it's always ok to delete this mux at this point.
+//	m.unregisterMux(id)
+//	return true
+//}
 
 // unregisterMux deletes a mux from the map, no questions asked.
 func (m *multiMuxManager) unregisterMux(id string) {
@@ -165,4 +169,29 @@ func (m *multiMuxManager) Start() {
 		// Start the mux provider
 		m.muxProvider.Start()
 	})
+}
+func (m *multiMuxManager) Describe() string {
+	m.muxesLock.RLock()
+	defer m.muxesLock.RUnlock()
+	sb := strings.Builder{}
+	sb.WriteString("[MuxManager ")
+	sb.WriteString(m.name)
+	sb.WriteString(", lifetime.Err=")
+	if m.lifetime.Err() != nil {
+		sb.WriteString(m.lifetime.Err().Error())
+	} else {
+		sb.WriteString("nil")
+	}
+	sb.WriteString(", activeMuxes{")
+	for k, v := range m.muxes {
+		sb.WriteString(k)
+		sb.WriteString("=")
+		sb.WriteString(v.Describe())
+		sb.WriteString(",")
+	}
+	sb.WriteString("}")
+	sb.WriteString(", cleanedUp=")
+	sb.WriteString(strconv.FormatBool(m.hasShutDown.IsShutdown()))
+	sb.WriteString("]")
+	return sb.String()
 }

@@ -9,28 +9,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/temporalio/s2s-proxy/transport/mux/session"
 	"go.temporal.io/server/common/log"
+
+	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
-
-// passthroughConnProvider stores a connection and provides it repeatedly. Blocks on connAvailable so the test can control when it fires
-type passthroughConnProvider struct {
-	conn          net.Conn
-	connAvailable chan struct{}
-}
-
-func (p *passthroughConnProvider) NewConnection() (net.Conn, error) {
-	<-p.connAvailable
-	return p.conn, nil
-}
-func (p *passthroughConnProvider) CloseProvider() {
-	_ = p.conn.Close()
-}
-func (p *passthroughConnProvider) CloseCh() <-chan struct{} {
-	ch := make(chan struct{})
-	close(ch)
-	return ch
-}
 
 func TestMultiMuxManager(t *testing.T) {
 	logger := log.NewTestLogger()
@@ -61,7 +43,7 @@ func TestMultiMuxManager(t *testing.T) {
 	for _, v := range *clientConns.Load() {
 		v.Close()
 	}
-	clientEvent = requireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "Client connection failed to disconnect")
+	clientEvent = requireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "Client connection failed to disconnect!\nclientMux:%s", muxesOnPipes.clientMM.Describe())
 	require.Equal(t, "closed", clientEvent.eventType)
 	require.Same(t, clientSession, clientEvent.session)
 	for _, v := range *serverConns.Load() {
@@ -82,8 +64,8 @@ func TestMultiMuxManager(t *testing.T) {
 	serverReconn := requireCh(t, muxesOnPipes.serverEvents, 2*time.Second, "should have seen a new connection from the clientProvider")
 	require.NotSame(t, clientSession, clientReconn.session, "Should be a new client session")
 	require.NotSame(t, serverSession, serverReconn.session, "Should be a new server session")
-	muxesOnPipes.clientMM.Close()
-	muxesOnPipes.serverMM.Close()
+	muxesOnPipes.clientCancel()
+	muxesOnPipes.serverCancel()
 }
 
 func TestMultiMuxManager_ManyConnections(t *testing.T) {
@@ -115,8 +97,8 @@ func TestMultiMuxManager_ManyConnections(t *testing.T) {
 	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsOpened, "Connections should be opened")
 	expectedServerConns.Store(0)
 	expectedClientConns.Store(0)
-	muxesOnPipes.clientMM.Close()
-	muxesOnPipes.serverMM.Close()
+	muxesOnPipes.clientCancel()
+	muxesOnPipes.serverCancel()
 	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsClosed, "Connections should be opened")
 }
 
@@ -129,8 +111,8 @@ func TestMultiMuxManager_ShutDown(t *testing.T) {
 
 	muxesOnPipes.assertNoConnectionEvents(t, "In steady state, no connections should happen")
 
-	muxesOnPipes.clientMM.Close()
-	muxesOnPipes.serverMM.Close()
+	muxesOnPipes.clientCancel()
+	muxesOnPipes.serverCancel()
 	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsClosed, "Should see closed events")
 }
 
@@ -147,8 +129,8 @@ func TestMultiMuxManager_Reconnection(t *testing.T) {
 	}
 	muxesOnPipes.assertNoConnectionEvents(t, "Existing connections should be saturated, no additional connections should happen")
 
-	muxesOnPipes.clientMM.Close()
-	muxesOnPipes.serverMM.Close()
+	muxesOnPipes.clientCancel()
+	muxesOnPipes.serverCancel()
 	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsClosed, "Should see closed events")
 	muxesOnPipes.assertNoConnectionEvents(t, "Existing connections should be saturated, no additional connections should happen")
 }

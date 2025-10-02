@@ -8,6 +8,7 @@ import (
 
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
+	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
@@ -24,6 +25,7 @@ type (
 		adminHandler           adminservice.AdminServiceServer
 		workflowserviceHandler workflowservice.WorkflowServiceServer
 		listener               net.Listener
+		serverStopped          channel.ShutdownOnce
 		logger                 log.Logger
 	}
 )
@@ -42,6 +44,7 @@ func NewTemporalAPIServer(
 	workflowservice.RegisterWorkflowServiceServer(server, workflowserviceHandler)
 	metrics.GRPCServerStarted.WithLabelValues(serviceName)
 	return &TemporalAPIServer{
+		serverStopped:          channel.NewShutdownOnce(),
 		serviceName:            serviceName,
 		serverConfig:           serverConfig,
 		server:                 server,
@@ -54,7 +57,7 @@ func NewTemporalAPIServer(
 
 func (s *TemporalAPIServer) Start() {
 	go func() {
-		for {
+		for !s.serverStopped.IsShutdown() {
 			metrics.GRPCServerStarted.WithLabelValues(s.serviceName).Inc()
 			err := s.server.Serve(s.listener)
 			if err == io.EOF {
@@ -78,11 +81,13 @@ func (s *TemporalAPIServer) Start() {
 
 func (s *TemporalAPIServer) Stop() {
 	s.logger.Info(fmt.Sprintf("Stopping %s", s.serviceName))
+	s.serverStopped.Shutdown()
 	s.server.GracefulStop()
 	s.logger.Info(fmt.Sprintf("Stopped %s", s.serviceName))
 }
 
 func (s *TemporalAPIServer) ForceStop() {
 	s.logger.Info(fmt.Sprintf("Stopping %s forcefully", s.serviceName))
+	s.serverStopped.Shutdown()
 	s.server.Stop()
 }

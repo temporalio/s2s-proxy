@@ -93,7 +93,7 @@ func (p *establishingConnProvider) NewConnection() (net.Conn, error) {
 		if p.lifetime.Err() != nil {
 			p.logger.Info("mux client failed to dial", tag.Error(err))
 		}
-		return p.lifetime.Err() != nil
+		return p.lifetime.Err() == nil
 	}
 	if err := backoff.ThrottleRetry(dialFn, retryPolicy, onError); err != nil {
 		if p.lifetime.Err() != nil {

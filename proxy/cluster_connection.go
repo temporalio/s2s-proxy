@@ -9,17 +9,18 @@ import (
 	"net"
 	"time"
 
+	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/server/api/adminservice/v1"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
+	"google.golang.org/grpc"
+
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"github.com/temporalio/s2s-proxy/transport/mux"
-	"go.temporal.io/api/workflowservice/v1"
-	"go.temporal.io/server/api/adminservice/v1"
-	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
-	"google.golang.org/grpc"
 )
 
 type (
@@ -29,6 +30,10 @@ type (
 		listener net.Listener
 		server   *grpc.Server
 		logger   log.Logger
+	}
+
+	describableClientConn struct {
+		*grpc.ClientConn
 	}
 
 	// ClusterConnection contains a bidirectional connection between a local Temporal server and a remote.
@@ -46,10 +51,12 @@ type (
 	contextAwareServer interface {
 		Start()
 		IsUsable() bool
+		Describe() string
 	}
 	closableClientConn interface {
 		grpc.ClientConnInterface
 		Close() error
+		Describe() string
 	}
 )
 
@@ -94,6 +101,7 @@ func buildSimpleServerArc(lifetime context.Context, isInbound bool, overrideExte
 		return nil, nil, fmt.Errorf("failed to create inbound server: %w", err)
 	}
 	server := &simpleGRPCServer{
+		name:     proxyCfg.Name,
 		lifetime: lifetime,
 		listener: listener,
 		server:   serverCfg,
@@ -119,7 +127,7 @@ func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg en
 		// clientConns must be closed, but they are not context-aware
 		_ = client.Close()
 	})
-	return client, nil
+	return describableClientConn{client}, nil
 }
 
 func NewMuxClusterConnection(lifetime context.Context,
@@ -134,7 +142,7 @@ func NewMuxClusterConnection(lifetime context.Context,
 		logger:   logger,
 	}
 	var err error
-	cc.outboundClient, err = grpcutil.NewMultiClientConn(fmt.Sprintf("client-conn-%s", muxConfig.Name))
+	cc.outboundClient, err = grpcutil.NewMultiClientConn(fmt.Sprintf("client-conn-%s", muxConfig.Name), grpcutil.MakeDialOptions(nil, metrics.GetStandardGRPCClientInterceptor("outbound"))...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create multi client connection for mux: %w", err)
 	}
@@ -188,6 +196,11 @@ func (c *ClusterConnection) RemoteUsable() bool {
 func (c *ClusterConnection) LocalUsable() bool {
 	return c.outboundServer.IsUsable()
 }
+func (c *ClusterConnection) Describe() string {
+	return fmt.Sprintf("[ClusterConnection connects outbound server %s to outbound client %s, inbound server %s to inbound client %s]",
+		c.outboundServer.Describe(), c.outboundClient.Describe(), c.inboundServer.Describe(), c.inboundClient.Describe())
+}
+
 func buildProxyServer(client grpc.ClientConnInterface, isInbound bool, serverCfg config.ProxyConfig, overrideExternalAddress string,
 	namespaceTranslation config.NameTranslationConfig, searchAttrTranslation config.SATranslationConfig, logger log.Logger) (*grpc.Server, error) {
 	directionLabel := "inbound"
@@ -201,8 +214,12 @@ func buildProxyServer(client grpc.ClientConnInterface, isInbound bool, serverCfg
 	server := grpc.NewServer(serverOpts...)
 	adminServiceImpl := NewAdminServiceProxyServer(fmt.Sprintf("%sAdminService", directionLabel), adminservice.NewAdminServiceClient(client),
 		overrideExternalAddress, serverCfg.APIOverrides, []string{directionLabel}, logger)
+	var accessControl *auth.AccessControl
+	if serverCfg.ACLPolicy != nil {
+		accessControl = auth.NewAccesControl(serverCfg.ACLPolicy.AllowedNamespaces)
+	}
 	workflowServiceImpl := NewWorkflowServiceProxyServer("inboundWorkflowService", workflowservice.NewWorkflowServiceClient(client),
-		auth.NewAccesControl(serverCfg.ACLPolicy.AllowedNamespaces), logger)
+		accessControl, logger)
 	adminservice.RegisterAdminServiceServer(server, adminServiceImpl)
 	workflowservice.RegisterWorkflowServiceServer(server, workflowServiceImpl)
 	return server, nil
@@ -210,7 +227,7 @@ func buildProxyServer(client grpc.ClientConnInterface, isInbound bool, serverCfg
 func (s *simpleGRPCServer) Start() {
 	metrics.GRPCServerStarted.WithLabelValues(s.name).Inc()
 	go func() {
-		for s.lifetime.Err() != nil {
+		for s.lifetime.Err() == nil {
 			err := s.server.Serve(s.listener)
 			if err != nil {
 				s.logger.Warn("GRPC server failed", tag.NewStringTag("direction", "outbound"), tag.Address(s.listener.Addr().String()), tag.Error(err))
@@ -232,4 +249,11 @@ func (s *simpleGRPCServer) Start() {
 }
 func (s *simpleGRPCServer) IsUsable() bool {
 	return true
+}
+func (s *simpleGRPCServer) Describe() string {
+	return fmt.Sprintf("[simpleGRPCServer %s listening on %s. lifetime.Err: %e]", s.name, s.listener.Addr(), s.lifetime.Err())
+}
+
+func (d describableClientConn) Describe() string {
+	return fmt.Sprintf("[grpc.ClientConn %s, state=%s]", d.Target(), d.GetState().String())
 }

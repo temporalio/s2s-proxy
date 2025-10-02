@@ -6,15 +6,16 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/temporalio/s2s-proxy/common"
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/metrics"
-	"github.com/temporalio/s2s-proxy/testserver"
-	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/metrics"
+	"github.com/temporalio/s2s-proxy/testserver/services"
+	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
 func TestGRPCMux(t *testing.T) {
@@ -32,7 +33,7 @@ func TestGRPCMux(t *testing.T) {
 	}
 	receivingClient, err := grpcutil.NewMultiClientConn("receivingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
 	receivingServerDefn := grpc.NewServer()
-	receivingEas := &testserver.EchoAdminService{
+	receivingEas := &services.EchoAdminService{
 		ServiceName: "receivingServerDefn",
 		Logger:      log.With(logger, common.ServiceTag("receivingServerDefn"), tag.Address("127.0.0.1:0")),
 		Namespaces:  map[string]bool{"hello": true, "world": true},
@@ -46,7 +47,7 @@ func TestGRPCMux(t *testing.T) {
 	receivingAdminServiceClient := adminservice.NewAdminServiceClient(receivingClient)
 	reqSuccess := make(chan struct{}, 1)
 	go func() {
-		receivingAdminServiceClient.DescribeCluster(context.Background(), &adminservice.DescribeClusterRequest{})
+		_, _ = receivingAdminServiceClient.DescribeCluster(context.Background(), &adminservice.DescribeClusterRequest{})
 		<-reqSuccess
 	}()
 	requireNoCh(t, reqSuccess, time.Millisecond*20, "Should not have completed request")
@@ -64,7 +65,7 @@ func TestGRPCMux(t *testing.T) {
 	establishingClient, err := grpcutil.NewMultiClientConn("establishingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
 	require.NoError(t, err)
 	establishingServer := grpc.NewServer()
-	establishingEas := &testserver.EchoAdminService{
+	establishingEas := &services.EchoAdminService{
 		ServiceName: "establishingServer",
 		Logger:      log.With(logger, common.ServiceTag("receivingServerDefn"), tag.Address("127.0.0.1:0")),
 		Namespaces:  map[string]bool{"hello": true, "world": true},

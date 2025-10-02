@@ -12,10 +12,11 @@ import (
 
 	"github.com/hashicorp/yamux"
 	"github.com/stretchr/testify/require"
-	"github.com/temporalio/s2s-proxy/transport/mux/session"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"golang.org/x/sync/semaphore"
+
+	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
 var onConnectionNoOp = func(map[string]session.ManagedMuxSession) {}
@@ -33,9 +34,9 @@ type pipedMuxManagers struct {
 
 func (p *pipedMuxManagers) assertClientAndServerEvents(t *testing.T, n int, fn func(*testing.T, connectionEvent), msg string) {
 	for range n {
-		serverEvent := requireCh(t, p.serverEvents, 100*time.Millisecond, msg)
+		serverEvent := requireCh(t, p.serverEvents, 100*time.Millisecond, "%s", msg)
 		fn(t, serverEvent)
-		clientEvent := requireCh(t, p.clientEvents, 100*time.Millisecond, msg)
+		clientEvent := requireCh(t, p.clientEvents, 100*time.Millisecond, "%s", msg)
 		fn(t, clientEvent)
 	}
 }
@@ -148,17 +149,11 @@ func buildMuxManager(t *testing.T,
 }
 
 func eventsComponent(eventsCh chan connectionEvent) session.StartManagedComponentFn {
-	return func(id string, session *yamux.Session, shutdown channel.ShutdownOnce) {
-		// Deliberately not just closing the channels so that they can be reused by multiple threads
+	return func(lifetime context.Context, id string, session *yamux.Session) {
 		go func() {
 			eventsCh <- connectionEvent{id, session, "opened"}
-			for {
-				select {
-				case <-shutdown.Channel():
-					eventsCh <- connectionEvent{id, session, "closed"}
-					return
-				}
-			}
+			<-lifetime.Done()
+			eventsCh <- connectionEvent{id, session, "closed"}
 		}()
 	}
 }
@@ -172,13 +167,13 @@ func requireNoCh[T any](t *testing.T, ch <-chan T, timeout time.Duration, messag
 	}
 }
 
-func requireCh[T any](t *testing.T, ch chan T, timeout time.Duration, message string) T {
+func requireCh[T any](t *testing.T, ch chan T, timeout time.Duration, message string, args ...any) T {
 	t.Helper()
 	select {
 	case item := <-ch:
 		return item
 	case <-time.After(timeout):
-		t.Fatal(message)
+		t.Fatalf(message, args...)
 		// Never returned, but Go needs this
 		var empty T
 		return empty

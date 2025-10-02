@@ -1,19 +1,20 @@
 package session
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net"
 	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"go.temporal.io/server/common/channel"
 )
 
 type (
 	// StartManagedComponentFn describes a function that can start a GoRoutine with the provided Session. The component
 	// is expected to monitor shutdown and exit when requested.
-	StartManagedComponentFn func(sessionId string, session *yamux.Session, shutdown channel.ShutdownOnce)
+	StartManagedComponentFn func(lifetime context.Context, sessionId string, session *yamux.Session)
 
 	MuxSessionState int
 	MuxSessionInfo  struct {
@@ -22,11 +23,12 @@ type (
 	}
 
 	muxSession struct {
+		lifetime context.Context
+		cancel   context.CancelFunc
 		id       string
 		state    atomic.Pointer[MuxSessionInfo]
 		session  *yamux.Session
 		conn     net.Conn
-		shutDown channel.ShutdownOnce
 	}
 	ManagedMuxSession interface {
 		IsClosed() bool
@@ -35,6 +37,7 @@ type (
 		CloseChan() <-chan struct{}
 		Open() (net.Conn, error)
 		State() *MuxSessionInfo
+		Describe() string
 	}
 )
 
@@ -46,26 +49,35 @@ const (
 
 var ErrClosedSession = errors.New("session closed")
 
-func NewSession(id string, session *yamux.Session, conn net.Conn, builders []StartManagedComponentFn, afterShutdown func()) ManagedMuxSession {
+func NewSession(lifetime context.Context, cancel context.CancelFunc, id string, session *yamux.Session, conn net.Conn, builders []StartManagedComponentFn, afterShutdown func()) ManagedMuxSession {
 	s := &muxSession{
+		lifetime: lifetime,
+		cancel:   cancel,
 		id:       id,
 		session:  session,
 		state:    atomic.Pointer[MuxSessionInfo]{},
 		conn:     conn,
-		shutDown: channel.NewShutdownOnce(),
 	}
 	s.state.Store(&MuxSessionInfo{State: Connected})
 	go healthCheck(s)
 	for i := range builders {
-		builders[i](s.id, s.session, s.shutDown)
+		builders[i](s.lifetime, s.id, s.session)
 	}
-	// Close the ManagedMuxSession when the underlying transport closes
-	go func() {
-		<-s.session.CloseChan()
-		s.Close()
-		afterShutdown()
-	}()
+	// The provided context can close, or the underlying mux can die. If either of these happen, make sure everything
+	// closes together
+	go waitAndCleanup(s, afterShutdown)
 	return s
+}
+func waitAndCleanup(s *muxSession, afterShutdown func()) {
+	select {
+	case <-s.session.CloseChan():
+		s.cancel()
+	case <-s.lifetime.Done():
+		_ = s.session.Close()
+		_ = s.conn.Close()
+		s.state.Store(&MuxSessionInfo{State: Closed})
+	}
+	afterShutdown()
 }
 func healthCheck(s *muxSession) {
 	for !s.session.IsClosed() {
@@ -85,22 +97,19 @@ func healthCheck(s *muxSession) {
 }
 
 func (s *muxSession) IsClosed() bool {
-	return s.shutDown.IsShutdown()
+	return s.lifetime.Err() != nil
 }
 
 func (s *muxSession) Close() {
-	s.state.Store(&MuxSessionInfo{State: Closed})
-	s.shutDown.Shutdown()
-	_ = s.session.Close()
-	_ = s.conn.Close()
+	s.cancel()
 }
 
 func (s *muxSession) CloseChan() <-chan struct{} {
-	return s.shutDown.Channel()
+	return s.lifetime.Done()
 }
 
 func (s *muxSession) Open() (net.Conn, error) {
-	if s.shutDown.IsShutdown() {
+	if s.lifetime.Err() != nil {
 		return nil, ErrClosedSession
 	}
 	return s.session.Open()
@@ -113,8 +122,14 @@ func (s *muxSession) State() *MuxSessionInfo {
 // net.Listener
 
 func (s *muxSession) Accept() (net.Conn, error) {
+	if s.lifetime.Err() != nil {
+		return nil, ErrClosedSession
+	}
 	return s.session.Accept()
 }
 func (s *muxSession) Addr() net.Addr {
 	return s.session.Addr()
+}
+func (s *muxSession) Describe() string {
+	return fmt.Sprintf("[muxSession %s, state=%v, address=%s]", s.id, s.state.Load(), s.conn.RemoteAddr().String())
 }
