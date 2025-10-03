@@ -107,8 +107,7 @@ func (m *multiMuxManager) AddConnection(yamuxSession *yamux.Session, conn net.Co
 	// ClientConn uses a map of string addresses to connections. So we need to generate unique strings for the map cheaply
 	newId := fmt.Sprintf("%d", m.muxIdSequencer)
 	m.muxIdSequencer++
-	ctx, cancel := context.WithCancel(m.lifetime)
-	m.muxes[newId] = session.NewSession(ctx, cancel, newId, yamuxSession, conn, m.perSessionFactories, func() {
+	m.muxes[newId] = session.NewManagedMuxSession(m.lifetime, newId, yamuxSession, conn, m.perSessionFactories, func() {
 		m.unregisterMux(newId)
 		// Recycle the transport when it closes
 		m.muxProvider.AllowMoreConns(1)

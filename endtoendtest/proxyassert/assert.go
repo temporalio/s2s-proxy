@@ -14,7 +14,7 @@ func RequireNoCh[T any](t *testing.T, ch <-chan T, timeout time.Duration, messag
 	}
 }
 
-func RequireCh[T any](t *testing.T, ch chan T, timeout time.Duration, message string, args ...any) T {
+func RequireCh[T any](t *testing.T, ch <-chan T, timeout time.Duration, message string, args ...any) T {
 	t.Helper()
 	select {
 	case item := <-ch:

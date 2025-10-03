@@ -14,7 +14,7 @@ import (
 type (
 	// StartManagedComponentFn describes a function that can start a GoRoutine with the provided Session. The component
 	// is expected to monitor shutdown and exit when requested.
-	StartManagedComponentFn func(lifetime context.Context, sessionId string, session *yamux.Session)
+	StartManagedComponentFn func(context.Context, string, *yamux.Session)
 
 	MuxSessionState int
 	MuxSessionInfo  struct {
@@ -49,7 +49,11 @@ const (
 
 var ErrClosedSession = errors.New("session closed")
 
-func NewSession(lifetime context.Context, cancel context.CancelFunc, id string, session *yamux.Session, conn net.Conn, builders []StartManagedComponentFn, afterShutdown func()) ManagedMuxSession {
+// NewManagedMuxSession creates a new ManagedMuxSession. When parentLifetime closes, the underlying yamux session and
+// all components built by builders will also close. The id will be passed to every component builder, and afterFunc
+// will be executed when the ManagedMuxSession exits, either from the underlying transport closing or from context cancellation.
+func NewManagedMuxSession(parentLifetime context.Context, id string, session *yamux.Session, conn net.Conn, builders []StartManagedComponentFn, afterShutdown func()) ManagedMuxSession {
+	lifetime, cancel := context.WithCancel(parentLifetime)
 	s := &muxSession{
 		lifetime: lifetime,
 		cancel:   cancel,
@@ -68,6 +72,9 @@ func NewSession(lifetime context.Context, cancel context.CancelFunc, id string, 
 	go waitAndCleanup(s, afterShutdown)
 	return s
 }
+
+// waitAndCleanup ensures that the context lifetime and the session close state are in sync. If one closes, the other
+// must cancel as well. After closing, the session state is permanently marked as Closed.
 func waitAndCleanup(s *muxSession, afterShutdown func()) {
 	select {
 	case <-s.session.CloseChan():
@@ -79,6 +86,8 @@ func waitAndCleanup(s *muxSession, afterShutdown func()) {
 	s.state.Store(&MuxSessionInfo{State: Closed})
 	afterShutdown()
 }
+
+// healthCheck periodically pings the underlying yamux session and checks if it's still healthy and connected.
 func healthCheck(s *muxSession) {
 	for !s.session.IsClosed() {
 		old := s.state.Load()
