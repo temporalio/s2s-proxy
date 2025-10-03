@@ -138,7 +138,7 @@ func buildMuxManager(t *testing.T,
 	connectionListObservers ...OnConnectionListUpdate,
 ) (MultiMuxManager, chan connectionEvent, context.CancelFunc) {
 	eventsCh := make(chan connectionEvent, 100)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	mgr, err := NewCustomMultiMuxManager(ctx,
 		name,
 		muxProviderBuilder,
