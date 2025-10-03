@@ -136,6 +136,8 @@ func (m *multiMuxManager) AddConnection(yamuxSession *yamux.Session, conn net.Co
 // unregisterMux deletes a mux from the map, no questions asked.
 func (m *multiMuxManager) unregisterMux(id string) {
 	m.muxesLock.Lock()
+	mux := m.muxes[id]
+	m.logger.Info("Deregistered mux connection", tag.NewStringTag("id", id), tag.Error(mux.State().Err), tag.NewInt("state", int(mux.State().State)))
 	delete(m.muxes, id)
 	m.notifyChange()
 	m.muxesLock.Unlock()
