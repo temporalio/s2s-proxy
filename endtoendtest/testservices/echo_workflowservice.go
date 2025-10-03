@@ -1,13 +1,16 @@
-package services
+package testservices
 
 import (
 	"context"
+	"fmt"
 
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+
+	"github.com/temporalio/s2s-proxy/common"
 )
 
 type (
@@ -17,6 +20,14 @@ type (
 		Logger      log.Logger
 	}
 )
+
+func NewEchoWorkflowService(name string, logger log.Logger) workflowservice.WorkflowServiceServer {
+	serviceName := fmt.Sprintf("%s-EchoAdminService", name)
+	return &EchoWorkflowService{
+		ServiceName: serviceName,
+		Logger:      log.With(logger, common.ServiceTag(serviceName)),
+	}
+}
 
 func (s *EchoWorkflowService) CountWorkflowExecutions(ctx context.Context, in0 *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error) {
 	return nil, status.Errorf(codes.PermissionDenied, "Calling method CountWorkflowExecutions is not allowed.")

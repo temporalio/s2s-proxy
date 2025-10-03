@@ -83,6 +83,7 @@ func NewTCPClusterConnection(lifetime context.Context,
 	}
 	return cc, nil
 }
+
 func buildSimpleServerArc(lifetime context.Context, isInbound bool, overrideExternalAddress string,
 	proxyCfg config.ProxyConfig, directionLabel string, namespaceNameTranslation config.NameTranslationConfig,
 	searchAttributeTranslation config.SATranslationConfig, logger log.Logger) (closableClientConn, contextAwareServer, error) {
@@ -177,6 +178,7 @@ func NewMuxClusterConnection(lifetime context.Context,
 		return nil, fmt.Errorf("failed to create outbound server for config %s: %w", outbound.Name, err)
 	}
 	cc.outboundServer = &simpleGRPCServer{
+		name:     outbound.Name,
 		lifetime: lifetime,
 		listener: outboundListener,
 		server:   outboundServerCfg,
@@ -207,7 +209,7 @@ func buildProxyServer(client grpc.ClientConnInterface, isInbound bool, serverCfg
 	if isInbound {
 		directionLabel = "outbound"
 	}
-	serverOpts, err := makeServerOptions(logger, isInbound, serverCfg.Server.TLS, serverCfg.ACLPolicy, namespaceTranslation, searchAttrTranslation)
+	serverOpts, err := MakeServerOptions(logger, isInbound, serverCfg.Server.TLS, serverCfg.ACLPolicy, namespaceTranslation, searchAttrTranslation)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse server options: %w", err)
 	}
@@ -227,6 +229,7 @@ func buildProxyServer(client grpc.ClientConnInterface, isInbound bool, serverCfg
 func (s *simpleGRPCServer) Start() {
 	metrics.GRPCServerStarted.WithLabelValues(s.name).Inc()
 	go func() {
+		s.logger.Info("Starting TCP-TLS gRPC server", tag.Name(s.name), tag.Address(s.listener.Addr().String()))
 		for s.lifetime.Err() == nil {
 			err := s.server.Serve(s.listener)
 			if err != nil {

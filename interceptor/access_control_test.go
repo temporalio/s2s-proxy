@@ -10,39 +10,26 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/auth"
-	"github.com/temporalio/s2s-proxy/config"
 )
 
 func TestMethodAccessControlInterceptor(t *testing.T) {
 	cases := []struct {
-		name       string
-		policy     *config.ACLPolicy
-		notAllowed bool
+		name                       string
+		adminServiceAllowedMethods []string
+		allowedNamespaces          []string
+		notAllowed                 bool
 	}{
 		{
 			name: "no AccessControl",
 		},
 		{
-			name: "With AccessControl Allowed",
-			policy: &config.ACLPolicy{
-				AllowedMethods: config.AllowedMethods{
-					AdminService: []string{
-						"UnaryAllowedMethod",
-						"StreamAllowedMethod",
-					},
-				},
-			},
+			name:                       "With AccessControl Allowed",
+			adminServiceAllowedMethods: []string{"UnaryAllowedMethod", "StreamAllowedMethod"},
 		},
 		{
-			name: "With AccessControl Not Allowed",
-			policy: &config.ACLPolicy{
-				AllowedMethods: config.AllowedMethods{
-					AdminService: []string{
-						"NotAllowedMethod",
-					},
-				},
-			},
-			notAllowed: true,
+			name:                       "With AccessControl Not Allowed",
+			adminServiceAllowedMethods: []string{"NotAllowedMethod"},
+			notAllowed:                 true,
 		},
 	}
 
@@ -65,7 +52,7 @@ func TestMethodAccessControlInterceptor(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			i := NewAccessControlInterceptor(logger, c.policy)
+			i := NewAccessControlInterceptor(logger, c.adminServiceAllowedMethods, c.allowedNamespaces)
 			_, err := i.Intercept(context.Background(), nil, unaryInfo, unaryHandler)
 			if c.notAllowed {
 				require.ErrorContains(t, err, "PermissionDenied")
@@ -103,7 +90,7 @@ func TestAllowedWorkflowMigrationAPIs(t *testing.T) {
 	}
 
 	logger := log.NewTestLogger()
-	i := NewAccessControlInterceptor(logger, nil)
+	i := NewAccessControlInterceptor(logger, nil, nil)
 
 	unaryHandler := func(ctx context.Context, req any) (any, error) {
 		return nil, nil

@@ -38,9 +38,8 @@ func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
-		lifetime: ctx,
-		cancel:   cancel,
-		//config:             s2sConfig,
+		lifetime:           ctx,
+		cancel:             cancel,
 		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.MuxTransports)+1),
 		logger: log.NewThrottledLogger(
 			logger,
@@ -72,6 +71,7 @@ func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 		proxy.clusterConnections[migrationId{muxCfg.Name}] = cc
 	}
 	if len(s2sConfig.MuxTransports) == 0 {
+		logger.Info("No mux transports configured, falling back to TCP+TLS")
 		cc, err := NewTCPClusterConnection(ctx, *s2sConfig.Inbound, *s2sConfig.Outbound,
 			s2sConfig.NamespaceNameTranslation, s2sConfig.SearchAttributeTranslation, logger)
 		if err != nil {

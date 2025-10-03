@@ -12,7 +12,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/temporalio/s2s-proxy/auth"
-	"github.com/temporalio/s2s-proxy/config"
 )
 
 type (
@@ -21,18 +20,21 @@ type (
 		adminServiceAccess *auth.AccessControl
 		namespaceAccess    *auth.AccessControl
 	}
+	ACLConfig interface {
+		AllowedNamespaces() []string
+		AdminServiceAllowedMethods() []string
+	}
 )
 
 func NewAccessControlInterceptor(
 	logger log.Logger,
-	aclPolicy *config.ACLPolicy,
+	adminServiceAllowedMethods []string,
+	allowedNamespaces []string,
 ) *AccessControlInterceptor {
 	var adminServiceAccess *auth.AccessControl
 	var namespaceAccess *auth.AccessControl
-	if aclPolicy != nil {
-		adminServiceAccess = auth.NewAccesControl(aclPolicy.AllowedMethods.AdminService)
-		namespaceAccess = auth.NewAccesControl(aclPolicy.AllowedNamespaces)
-	}
+	adminServiceAccess = auth.NewAccesControl(adminServiceAllowedMethods)
+	namespaceAccess = auth.NewAccesControl(allowedNamespaces)
 
 	return &AccessControlInterceptor{
 		logger:             logger,

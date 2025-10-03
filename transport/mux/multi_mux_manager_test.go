@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/server/common/log"
 
+	"github.com/temporalio/s2s-proxy/endtoendtest/proxyassert"
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
@@ -32,10 +33,10 @@ func TestMultiMuxManager(t *testing.T) {
 	muxesOnPipes.serverMM.Start()
 	muxesOnPipes.clientMM.Start()
 
-	clientEvent := requireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "should have seen a connection from the clientProvider")
+	clientEvent := proxyassert.RequireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "should have seen a connection from the clientProvider")
 	require.Equal(t, "opened", clientEvent.eventType)
 	clientSession := clientEvent.session
-	serverEvent := requireCh(t, muxesOnPipes.serverEvents, 2*time.Second, "should have seen a connection from the serverProvider")
+	serverEvent := proxyassert.RequireCh(t, muxesOnPipes.serverEvents, 2*time.Second, "should have seen a connection from the serverProvider")
 	require.Equal(t, "opened", clientEvent.eventType)
 	serverSession := serverEvent.session
 
@@ -43,13 +44,13 @@ func TestMultiMuxManager(t *testing.T) {
 	for _, v := range *clientConns.Load() {
 		v.Close()
 	}
-	clientEvent = requireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "Client connection failed to disconnect!\nclientMux:%s", muxesOnPipes.clientMM.Describe())
+	clientEvent = proxyassert.RequireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "Client connection failed to disconnect!\nclientMux:%s", muxesOnPipes.clientMM.Describe())
 	require.Equal(t, "closed", clientEvent.eventType)
 	require.Same(t, clientSession, clientEvent.session)
 	for _, v := range *serverConns.Load() {
 		v.Close()
 	}
-	serverEvent = requireCh(t, muxesOnPipes.serverEvents, 2*time.Second, "Server connection failed to disconnect")
+	serverEvent = proxyassert.RequireCh(t, muxesOnPipes.serverEvents, 2*time.Second, "Server connection failed to disconnect")
 	require.Equal(t, "closed", serverEvent.eventType)
 	require.Same(t, serverSession, serverEvent.session)
 
@@ -60,8 +61,8 @@ func TestMultiMuxManager(t *testing.T) {
 	muxesOnPipes.clientConnCh <- clientConn
 	muxesOnPipes.serverConnCh <- serverConn
 
-	clientReconn := requireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "should have seen a new connection from the clientProvider")
-	serverReconn := requireCh(t, muxesOnPipes.serverEvents, 2*time.Second, "should have seen a new connection from the clientProvider")
+	clientReconn := proxyassert.RequireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "should have seen a new connection from the clientProvider")
+	serverReconn := proxyassert.RequireCh(t, muxesOnPipes.serverEvents, 2*time.Second, "should have seen a new connection from the clientProvider")
 	require.NotSame(t, clientSession, clientReconn.session, "Should be a new client session")
 	require.NotSame(t, serverSession, serverReconn.session, "Should be a new server session")
 	muxesOnPipes.clientCancel()
@@ -88,11 +89,11 @@ func TestMultiMuxManager_ManyConnections(t *testing.T) {
 			assert.Equalf(t, expectedClientConns.Load(), uint32(len(sessions)), "Wrong number of sessions %v", sessions)
 			expectedClientConns.Add(1)
 		})
-	requireNoCh(t, muxesOnPipes.serverEvents, 20*time.Millisecond, "Nothing should happen yet, no MuxMgrs have started")
-	requireNoCh(t, muxesOnPipes.clientEvents, 20*time.Millisecond, "Nothing should happen yet, no MuxMgrs have started")
+	proxyassert.RequireNoCh(t, muxesOnPipes.serverEvents, 20*time.Millisecond, "Nothing should happen yet, no MuxMgrs have started")
+	proxyassert.RequireNoCh(t, muxesOnPipes.clientEvents, 20*time.Millisecond, "Nothing should happen yet, no MuxMgrs have started")
 	muxesOnPipes.serverMM.Start()
-	requireNoCh(t, muxesOnPipes.serverEvents, 20*time.Millisecond, "Nothing should happen yet, client MuxMgr hasn't started")
-	requireNoCh(t, muxesOnPipes.clientEvents, 20*time.Millisecond, "Nothing should happen yet, client MuxMgr hasn't started")
+	proxyassert.RequireNoCh(t, muxesOnPipes.serverEvents, 20*time.Millisecond, "Nothing should happen yet, client MuxMgr hasn't started")
+	proxyassert.RequireNoCh(t, muxesOnPipes.clientEvents, 20*time.Millisecond, "Nothing should happen yet, client MuxMgr hasn't started")
 	muxesOnPipes.clientMM.Start()
 	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsOpened, "Connections should be opened")
 	expectedServerConns.Store(0)

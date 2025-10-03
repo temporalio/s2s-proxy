@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/testserver"
+	"github.com/temporalio/s2s-proxy/endtoendtest"
 )
 
 type (
@@ -36,7 +36,7 @@ type (
 
 var (
 	// Create some believable echo server configs
-	echoServerInfo = testserver.ClusterInfo{
+	echoServerInfo = endtoendtest.ClusterInfo{
 		ServerAddress:  echoServerAddress,
 		ClusterShardID: serverClusterShard,
 		S2sProxyConfig: makeS2SConfig(s2sAddresses{
@@ -47,7 +47,7 @@ var (
 			healthCheck: "localhost:7479",
 		}),
 	}
-	echoClientInfo = testserver.ClusterInfo{
+	echoClientInfo = endtoendtest.ClusterInfo{
 		ServerAddress:  echoClientAddress,
 		ClusterShardID: clientClusterShard,
 		S2sProxyConfig: makeS2SConfig(s2sAddresses{
@@ -123,8 +123,8 @@ func TestEOFFromServer(t *testing.T) {
 }
 
 func TestWiringWithEchoService(t *testing.T) {
-	echoServer := testserver.NewEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
-	echoClient := testserver.NewEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
+	echoServer := endtoendtest.NewEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
+	echoClient := endtoendtest.NewEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
 	echoServer.Start()
 	echoClient.Start()
 	defer func() {
@@ -149,7 +149,7 @@ func TestWiringWithEchoService(t *testing.T) {
 		"metrics should contain proxy_health_check_success, but was \"%s\"", serverMetrics)
 
 	// Make some calls and check that the gRPC metrics are reporting
-	r, err := testserver.Retry(func() (*adminservice.DescribeClusterResponse, error) {
+	r, err := endtoendtest.Retry(func() (*adminservice.DescribeClusterResponse, error) {
 		return echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
 	}, 5, logger)
 	assert.NoError(t, err)

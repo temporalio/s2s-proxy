@@ -16,10 +16,7 @@ import (
 	"github.com/temporalio/s2s-proxy/metrics"
 )
 
-const Inbound string = "inbound"
-const Outbound string = "outbound"
-
-func makeServerOptions(
+func MakeServerOptions(
 	logger log.Logger,
 	isInbound bool,
 	tlsConfig encryption.ServerTLSConfig,
@@ -66,7 +63,7 @@ func makeServerOptions(
 	}
 
 	if isInbound && aclPolicy != nil {
-		aclInterceptor := interceptor.NewAccessControlInterceptor(logger, aclPolicy)
+		aclInterceptor := interceptor.NewAccessControlInterceptor(logger, aclPolicy.AllowedMethods.AdminService, aclPolicy.AllowedNamespaces)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
 		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
 	}

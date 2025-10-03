@@ -9,17 +9,17 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/testserver"
+	"github.com/temporalio/s2s-proxy/endtoendtest"
 )
 
 func benchmarkStreamSendRecvWithoutProxy(b *testing.B, payloadSize int) {
 
-	echoServerInfo := testserver.ClusterInfo{
+	echoServerInfo := endtoendtest.ClusterInfo{
 		ServerAddress:  echoServerAddress,
 		ClusterShardID: serverClusterShard,
 	}
 
-	echoClientInfo := testserver.ClusterInfo{
+	echoClientInfo := endtoendtest.ClusterInfo{
 		ServerAddress:  echoClientAddress,
 		ClusterShardID: clientClusterShard,
 	}
@@ -77,12 +77,12 @@ func benchmarkStreamSendRecvWithMuxProxy(b *testing.B, payloadSize int) {
 			}, false),
 	)
 
-	echoServerInfo := testserver.ClusterInfo{
+	echoServerInfo := endtoendtest.ClusterInfo{
 		ServerAddress:  echoServerAddress,
 		ClusterShardID: serverClusterShard,
 		S2sProxyConfig: echoServerConfig,
 	}
-	echoClientInfo := testserver.ClusterInfo{
+	echoClientInfo := endtoendtest.ClusterInfo{
 		ServerAddress:  echoClientAddress,
 		ClusterShardID: clientClusterShard,
 		S2sProxyConfig: echoClientConfig,
@@ -91,10 +91,10 @@ func benchmarkStreamSendRecvWithMuxProxy(b *testing.B, payloadSize int) {
 	runSendRecvBench(b, echoServerInfo, echoClientInfo, payloadSize)
 }
 
-func runSendRecvBench(b *testing.B, echoServerInfo testserver.ClusterInfo, echoClientInfo testserver.ClusterInfo, payloadSize int) {
+func runSendRecvBench(b *testing.B, echoServerInfo endtoendtest.ClusterInfo, echoClientInfo endtoendtest.ClusterInfo, payloadSize int) {
 	logger := log.NewTestLogger()
-	echoServer := testserver.NewEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
-	echoClient := testserver.NewEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
+	echoServer := endtoendtest.NewEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
+	echoClient := endtoendtest.NewEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
 
 	echoServer.SetPayloadSize(payloadSize)
 
@@ -121,7 +121,7 @@ func runSendRecvBench(b *testing.B, echoServerInfo testserver.ClusterInfo, echoC
 	errCh := make(chan error, 1)
 	go func() {
 		for i := 0; i < b.N; i++ {
-			highWatermarkInfo := &testserver.WatermarkInfo{
+			highWatermarkInfo := &endtoendtest.WatermarkInfo{
 				Watermark: int64(i),
 			}
 

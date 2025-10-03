@@ -16,6 +16,7 @@ import (
 	"go.temporal.io/server/common/log"
 	"golang.org/x/sync/semaphore"
 
+	"github.com/temporalio/s2s-proxy/endtoendtest/proxyassert"
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
@@ -34,15 +35,15 @@ type pipedMuxManagers struct {
 
 func (p *pipedMuxManagers) assertClientAndServerEvents(t *testing.T, n int, fn func(*testing.T, connectionEvent), msg string) {
 	for range n {
-		serverEvent := requireCh(t, p.serverEvents, 100*time.Millisecond, "%s", msg)
+		serverEvent := proxyassert.RequireCh(t, p.serverEvents, 100*time.Millisecond, "%s", msg)
 		fn(t, serverEvent)
-		clientEvent := requireCh(t, p.clientEvents, 100*time.Millisecond, "%s", msg)
+		clientEvent := proxyassert.RequireCh(t, p.clientEvents, 100*time.Millisecond, "%s", msg)
 		fn(t, clientEvent)
 	}
 }
 func (p *pipedMuxManagers) assertNoConnectionEvents(t *testing.T, msg string) {
-	requireNoCh(t, p.clientEvents, 100*time.Millisecond, msg)
-	requireNoCh(t, p.serverEvents, 100*time.Millisecond, msg)
+	proxyassert.RequireNoCh(t, p.clientEvents, 100*time.Millisecond, msg)
+	proxyassert.RequireNoCh(t, p.serverEvents, 100*time.Millisecond, msg)
 }
 
 func eventIsOpened(t *testing.T, e connectionEvent) {
@@ -155,27 +156,5 @@ func eventsComponent(eventsCh chan connectionEvent) session.StartManagedComponen
 			<-lifetime.Done()
 			eventsCh <- connectionEvent{id, session, "closed"}
 		}()
-	}
-}
-
-func requireNoCh[T any](t *testing.T, ch <-chan T, timeout time.Duration, message string) {
-	t.Helper()
-	select {
-	case <-ch:
-		t.Fatal(message)
-	case <-time.After(timeout):
-	}
-}
-
-func requireCh[T any](t *testing.T, ch chan T, timeout time.Duration, message string, args ...any) T {
-	t.Helper()
-	select {
-	case item := <-ch:
-		return item
-	case <-time.After(timeout):
-		t.Fatalf(message, args...)
-		// Never returned, but Go needs this
-		var empty T
-		return empty
 	}
 }

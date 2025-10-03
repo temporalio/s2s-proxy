@@ -1,10 +1,9 @@
-package testserver
+package endtoendtest
 
 import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/gogo/status"
@@ -22,9 +21,9 @@ import (
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/endtoendtest/testservices"
 	"github.com/temporalio/s2s-proxy/metrics"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
-	"github.com/temporalio/s2s-proxy/testserver/services"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
@@ -39,14 +38,14 @@ type (
 		ServerConfig config.ProxyServerConfig
 		ClientConfig config.ProxyClientConfig
 		// provides EchoService directly
-		Temporal *TemporalAPIServer
+		Temporal *testservices.TemporalAPIServer
 		// connects to Temporal directly
 		RemoteClient      *grpc.ClientConn
 		Proxy             *s2sproxy.Proxy
 		ClusterInfo       ClusterInfo
 		RemoteClusterInfo ClusterInfo
 		Logger            log.Logger
-		EchoService       *services.EchoAdminService
+		EchoService       *testservices.EchoAdminService
 	}
 
 	WatermarkInfo struct {
@@ -75,14 +74,14 @@ func NewEchoServer(
 	}
 	// EchoAdminService handles StreamWorkflowReplicationMessages call from remote Server.
 	// It acts as stream sender by echoing back InclusiveLowWatermark in SyncReplicationState message.
-	senderAdminService := &services.EchoAdminService{
+	senderAdminService := &testservices.EchoAdminService{
 		ServiceName: serviceName,
 		Logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.ServerAddress)),
 		Namespaces:  ns,
 		PayloadSize: defaultPayloadSize,
 	}
 
-	senderWorkflowService := &services.EchoWorkflowService{
+	senderWorkflowService := &testservices.EchoWorkflowService{
 		ServiceName: serviceName,
 		Logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.ServerAddress)),
 	}
@@ -148,10 +147,6 @@ func NewEchoServer(
 	}
 
 	logger = log.With(logger, common.ServiceTag(serviceName))
-	listener, err := net.Listen("tcp", localClusterInfo.ServerAddress)
-	if err != nil {
-		panic(err)
-	}
 	var parsedTLSCfg *tls.Config
 	if clientConfig.TLS.IsEnabled() {
 		var err error
@@ -168,13 +163,12 @@ func NewEchoServer(
 	return &EchoServer{
 		ServerConfig: serverConfig,
 		ClientConfig: clientConfig,
-		Temporal: NewTemporalAPIServer(
+		Temporal: testservices.NewTemporalAPIServer(
 			serviceName,
-			serverConfig,
 			senderAdminService,
 			senderWorkflowService,
 			nil,
-			listener,
+			localClusterInfo.ServerAddress,
 			logger),
 		RemoteClient:      client,
 		EchoService:       senderAdminService,

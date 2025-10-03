@@ -16,13 +16,13 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
+	"github.com/temporalio/s2s-proxy/endtoendtest"
 	"github.com/temporalio/s2s-proxy/proto/1_22/server/api/adminservice/v1"
-	"github.com/temporalio/s2s-proxy/testserver"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
 func TestMultiClientConn(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, log.NewTestLogger())
 	mcc, err := grpcutil.NewMultiClientConn("testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
@@ -34,7 +34,7 @@ func TestMultiClientConn(t *testing.T) {
 }
 
 func TestMultiClientWaitsForResolve(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, log.NewTestLogger())
 	mcc, err := grpcutil.NewMultiClientConn("testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))
@@ -60,7 +60,7 @@ func TestMultiClientWaitsForResolve(t *testing.T) {
 }
 
 func TestMultiClientUpdateState(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, log.NewTestLogger())
 	mcc, err := grpcutil.NewMultiClientConn("testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))
@@ -85,7 +85,7 @@ func TestMultiClientUpdateState(t *testing.T) {
 }
 
 func TestMultiClientUpdateStateAsyncClient(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, log.NewTestLogger())
 	mcc, err := grpcutil.NewMultiClientConn("testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))
@@ -128,7 +128,7 @@ func TestMultiClientUpdateStateAsyncClient(t *testing.T) {
 }
 
 func TestMultiClientWithFailedMuxesAndAsyncUpdates(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, log.NewTestLogger())
 	mcc, err := grpcutil.NewMultiClientConn("testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))

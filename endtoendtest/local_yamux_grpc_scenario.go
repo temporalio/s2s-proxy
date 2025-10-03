@@ -1,4 +1,4 @@
-package testserver
+package endtoendtest
 
 import (
 	"context"
@@ -17,16 +17,16 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/temporalio/s2s-proxy/common"
-	"github.com/temporalio/s2s-proxy/testserver/services"
+	"github.com/temporalio/s2s-proxy/endtoendtest/testservices"
 )
 
 // This file sets up N echo servers listening on a local pipe. You have access to both the Server and the client
-// side of the pipe, and NewTestScenario will start echoadminservices for each MuxSession.
+// side of the pipe, and NewYamuxGRPCScenario will start echoadminservices for each MuxSession.
 
 type MuxedServer struct {
 	Server           *grpc.Server
 	Session          *MuxSession
-	EchoAdminService *services.EchoAdminService
+	EchoAdminService *testservices.EchoAdminService
 }
 
 type MuxedClient struct {
@@ -75,7 +75,7 @@ type TestScenario struct {
 	Listener net.Listener
 }
 
-func NewTestScenario(t *testing.T, size int, temporalLogger log.Logger) *TestScenario {
+func NewYamuxGRPCScenario(t *testing.T, size int, temporalLogger log.Logger) *TestScenario {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	servers := make([]*MuxedServer, size)
@@ -88,7 +88,7 @@ func NewTestScenario(t *testing.T, size int, temporalLogger log.Logger) *TestSce
 			Session: muxes[i],
 		}
 		serviceName := fmt.Sprintf("adminService on mux %d", i)
-		eas := &services.EchoAdminService{
+		eas := &testservices.EchoAdminService{
 			ServiceName: serviceName,
 			Logger:      log.With(temporalLogger, common.ServiceTag(serviceName), tag.Address(muxes[i].Addr)),
 			Namespaces:  map[string]bool{"hello": true, "world": true},

@@ -1,4 +1,4 @@
-package services
+package testservices
 
 import (
 	"context"
@@ -16,6 +16,8 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+
+	"github.com/temporalio/s2s-proxy/common"
 )
 
 type (
@@ -27,6 +29,16 @@ type (
 		PayloadSize int
 	}
 )
+
+func NewEchoAdminService(namePrefix string, allowedNamespaces map[string]bool, logger log.Logger) adminservice.AdminServiceServer {
+	serviceName := fmt.Sprintf("%s-EchoAdminService", namePrefix)
+	return &EchoAdminService{
+		ServiceName: serviceName,
+		Logger:      log.With(logger, common.ServiceTag(serviceName)),
+		Namespaces:  allowedNamespaces,
+		PayloadSize: 1024,
+	}
+}
 
 func (s *EchoAdminService) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
 	return nil, status.Errorf(codes.PermissionDenied, "Calling method AddOrUpdateRemoteCluster is not allowed.")

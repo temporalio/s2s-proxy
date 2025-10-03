@@ -1,4 +1,4 @@
-package testserver
+package testservices
 
 import (
 	"fmt"
@@ -13,30 +13,25 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 
-	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type (
 	TemporalAPIServer struct {
-		serviceName            string
-		serverConfig           config.ProxyServerConfig
-		server                 *grpc.Server
-		adminHandler           adminservice.AdminServiceServer
-		workflowserviceHandler workflowservice.WorkflowServiceServer
-		listener               net.Listener
-		serverStopped          channel.ShutdownOnce
-		logger                 log.Logger
+		serviceName   string
+		server        *grpc.Server
+		listenAddr    string
+		serverStopped channel.ShutdownOnce
+		logger        log.Logger
 	}
 )
 
 func NewTemporalAPIServer(
 	serviceName string,
-	serverConfig config.ProxyServerConfig,
 	adminHandler adminservice.AdminServiceServer,
 	workflowserviceHandler workflowservice.WorkflowServiceServer,
 	serverOptions []grpc.ServerOption,
-	listener net.Listener,
+	listenAddr string,
 	logger log.Logger,
 ) *TemporalAPIServer {
 	server := grpc.NewServer(serverOptions...)
@@ -44,22 +39,23 @@ func NewTemporalAPIServer(
 	workflowservice.RegisterWorkflowServiceServer(server, workflowserviceHandler)
 	metrics.GRPCServerStarted.WithLabelValues(serviceName)
 	return &TemporalAPIServer{
-		serverStopped:          channel.NewShutdownOnce(),
-		serviceName:            serviceName,
-		serverConfig:           serverConfig,
-		server:                 server,
-		adminHandler:           adminHandler,
-		workflowserviceHandler: workflowserviceHandler,
-		listener:               listener,
-		logger:                 logger,
+		serverStopped: channel.NewShutdownOnce(),
+		serviceName:   serviceName,
+		server:        server,
+		listenAddr:    listenAddr,
+		logger:        logger,
 	}
 }
 
 func (s *TemporalAPIServer) Start() {
+	listener, err := net.Listen("tcp", s.listenAddr)
+	if err != nil {
+		panic(err)
+	}
 	go func() {
 		for !s.serverStopped.IsShutdown() {
 			metrics.GRPCServerStarted.WithLabelValues(s.serviceName).Inc()
-			err := s.server.Serve(s.listener)
+			err := s.server.Serve(listener)
 			if err == io.EOF {
 				// grpc server can get EOF error if grpc server relies on client side of
 				// mux connection. Given a mux connection from node A (mux client) to node B (mux server),
@@ -76,6 +72,7 @@ func (s *TemporalAPIServer) Start() {
 			}
 			time.Sleep(1 * time.Second)
 		}
+		_ = listener.Close()
 	}()
 }
 
