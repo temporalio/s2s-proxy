@@ -71,23 +71,12 @@ func TestMultiMuxManager(t *testing.T) {
 
 func TestMultiMuxManager_ManyConnections(t *testing.T) {
 	logger := log.NewTestLogger()
-	expectedServerConns := &atomic.Uint32{}
-	expectedServerConns.Store(1)
-	expectedClientConns := &atomic.Uint32{}
-	expectedClientConns.Store(1)
+	serverConnsObservations, clientConnsObservations := make(chan int, 100), make(chan int, 100)
 	muxesOnPipes := buildMuxesOnPipes(t, logger, 10,
 		func(sessions map[string]session.ManagedMuxSession) {
-			if expectedServerConns.Load() == 0 {
-				return // disable check
-			}
-			assert.Equalf(t, expectedServerConns.Load(), uint32(len(sessions)), "Wrong number of sessions %v", sessions)
-			expectedServerConns.Add(1)
+			serverConnsObservations <- len(sessions)
 		}, func(sessions map[string]session.ManagedMuxSession) {
-			if expectedClientConns.Load() == 0 {
-				return // disable check
-			}
-			assert.Equalf(t, expectedClientConns.Load(), uint32(len(sessions)), "Wrong number of sessions %v", sessions)
-			expectedClientConns.Add(1)
+			clientConnsObservations <- len(sessions)
 		})
 	proxyassert.RequireNoCh(t, muxesOnPipes.serverEvents, 20*time.Millisecond, "Nothing should happen yet, no MuxMgrs have started")
 	proxyassert.RequireNoCh(t, muxesOnPipes.clientEvents, 20*time.Millisecond, "Nothing should happen yet, no MuxMgrs have started")
@@ -96,11 +85,21 @@ func TestMultiMuxManager_ManyConnections(t *testing.T) {
 	proxyassert.RequireNoCh(t, muxesOnPipes.clientEvents, 20*time.Millisecond, "Nothing should happen yet, client MuxMgr hasn't started")
 	muxesOnPipes.clientMM.Start()
 	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsOpened, "Connections should be opened")
-	expectedServerConns.Store(0)
-	expectedClientConns.Store(0)
+	for i := range 10 {
+		n := proxyassert.RequireCh(t, serverConnsObservations, 5*time.Millisecond, "Should see a serverConn observation for every connection")
+		require.Equal(t, 1+i, n)
+		n = proxyassert.RequireCh(t, clientConnsObservations, 5*time.Millisecond, "Should see a clientConn observation for every connection")
+		require.Equal(t, 1+i, n)
+	}
 	muxesOnPipes.clientCancel()
 	muxesOnPipes.serverCancel()
 	muxesOnPipes.assertClientAndServerEvents(t, 10, eventIsClosed, "Connections should be opened")
+	for i := range 10 {
+		n := proxyassert.RequireCh(t, serverConnsObservations, 5*time.Millisecond, "Should see a serverConn observation for every connection")
+		require.Equal(t, 9-i, n)
+		n = proxyassert.RequireCh(t, clientConnsObservations, 5*time.Millisecond, "Should see a clientConn observation for every connection")
+		require.Equal(t, 9-i, n)
+	}
 }
 
 func TestMultiMuxManager_ShutDown(t *testing.T) {
