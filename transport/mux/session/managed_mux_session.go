@@ -71,12 +71,12 @@ func NewSession(lifetime context.Context, cancel context.CancelFunc, id string, 
 func waitAndCleanup(s *muxSession, afterShutdown func()) {
 	select {
 	case <-s.session.CloseChan():
-		s.cancel()
 	case <-s.lifetime.Done():
-		_ = s.session.Close()
-		_ = s.conn.Close()
-		s.state.Store(&MuxSessionInfo{State: Closed})
 	}
+	s.cancel()
+	_ = s.session.Close()
+	_ = s.conn.Close()
+	s.state.Store(&MuxSessionInfo{State: Closed})
 	afterShutdown()
 }
 func healthCheck(s *muxSession) {
