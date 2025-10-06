@@ -48,6 +48,7 @@ type (
 		AllowMoreConns(amt int64)
 		DrainConns(ctx context.Context, amt int64) error
 		Address() string
+		MetricLabels() []string
 	}
 )
 
@@ -148,6 +149,10 @@ func (m *muxProvider) Start() {
 
 func (m *muxProvider) Address() string {
 	return m.connProvider.Address()
+}
+
+func (m *muxProvider) MetricLabels() []string {
+	return m.metricLabels
 }
 
 func (m *muxProvider) AllowMoreConns(amt int64) {

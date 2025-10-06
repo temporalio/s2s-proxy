@@ -13,6 +13,7 @@ import (
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
+	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
@@ -79,7 +80,9 @@ func NewCustomMultiMuxManager(ctx context.Context,
 	return muxMgr, nil
 }
 
+// notifyChange is called *inside* of the global muxes lock, which ensures
 func (m *multiMuxManager) notifyChange() {
+	metrics.NumMuxesActive.WithLabelValues(m.muxProvider.MetricLabels()...).Set(float64(len(m.muxes)))
 	for _, fn := range m.connectionListeners {
 		fn(m.muxes)
 	}
@@ -114,24 +117,6 @@ func (m *multiMuxManager) AddConnection(yamuxSession *yamux.Session, conn net.Co
 	})
 	m.notifyChange()
 }
-
-// unregisterMuxIfClosed drops the described mux from the map of active muxes if it's closed. Returns true if it removed a mux
-//func (m *multiMuxManager) unregisterMuxIfClosed(id string) bool {
-//	m.muxesLock.RLock()
-//	mux, exists := m.muxes[id]
-//	if !exists {
-//		return false
-//	}
-//	if !mux.IsClosed() {
-//		m.muxesLock.RUnlock()
-//		return false
-//	}
-//	m.muxesLock.RUnlock()
-//	// Anything could happen here, but IDs are guaranteed not to be re-used and muxes cannot reopen once closed,
-//	// so it's always ok to delete this mux at this point.
-//	m.unregisterMux(id)
-//	return true
-//}
 
 // unregisterMux deletes a mux from the map, no questions asked.
 func (m *multiMuxManager) unregisterMux(id string) {

@@ -3,6 +3,7 @@ package mux
 import (
 	"maps"
 	"net"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +15,10 @@ import (
 	"github.com/temporalio/s2s-proxy/endtoendtest/proxyassert"
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
+
+func init() {
+	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+}
 
 func TestMultiMuxManager(t *testing.T) {
 	logger := log.NewTestLogger()

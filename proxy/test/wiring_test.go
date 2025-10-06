@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +24,11 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/endtoendtest"
 )
+
+func init() {
+	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+	logger = log.NewTestLogger()
+}
 
 type (
 	s2sAddresses struct {
@@ -58,7 +64,7 @@ var (
 			healthCheck: "localhost:7478",
 		}),
 	}
-	logger = log.NewTestLogger()
+	logger log.Logger
 )
 
 type hangupAdminServer struct {

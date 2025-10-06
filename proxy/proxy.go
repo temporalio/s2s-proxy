@@ -176,6 +176,8 @@ func (s *Proxy) Start() error {
 		v.Start()
 	}
 
+	s.logger.Info(fmt.Sprintf("Started Proxy with the following config:\n%s", s.Describe()))
+
 	return nil
 }
 

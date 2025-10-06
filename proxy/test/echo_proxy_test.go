@@ -19,6 +19,11 @@ import (
 	"github.com/temporalio/s2s-proxy/endtoendtest"
 )
 
+func init() {
+	// silence info log spam
+	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+}
+
 const (
 	echoServerAddress          = "localhost:7266"
 	serverProxyInboundAddress  = "localhost:7366"

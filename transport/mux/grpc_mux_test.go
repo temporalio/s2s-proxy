@@ -32,7 +32,7 @@ func TestGRPCMux(t *testing.T) {
 			// No external address
 		},
 	}
-	receivingClient, err := grpcutil.NewMultiClientConn("receivingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
+	receivingClient, err := grpcutil.NewMultiClientConn(t.Context(), "receivingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
 	receivingServerDefn := grpc.NewServer()
 	receivingEas := &testservices.EchoAdminService{
 		ServiceName: "receivingServerDefn",
@@ -63,7 +63,7 @@ func TestGRPCMux(t *testing.T) {
 			// No TLS
 		},
 	}
-	establishingClient, err := grpcutil.NewMultiClientConn("establishingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
+	establishingClient, err := grpcutil.NewMultiClientConn(t.Context(), "establishingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
 	require.NoError(t, err)
 	establishingServer := grpc.NewServer()
 	establishingEas := &testservices.EchoAdminService{

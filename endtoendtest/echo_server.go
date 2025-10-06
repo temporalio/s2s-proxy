@@ -38,7 +38,7 @@ type (
 		ServerConfig config.ProxyServerConfig
 		ClientConfig config.ProxyClientConfig
 		// provides EchoService directly
-		Temporal *testservices.TemporalAPIServer
+		Temporal *testservices.TemporalServerWithListen
 		// connects to Temporal directly
 		RemoteClient      *grpc.ClientConn
 		Proxy             *s2sproxy.Proxy

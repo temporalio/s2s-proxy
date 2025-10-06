@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
+	"io"
 	"net"
 
 	"github.com/hashicorp/yamux"
@@ -80,15 +80,24 @@ func (r *receivingConnProvider) NewConnection() (net.Conn, error) {
 	// Log a nicer message when shutting down normally
 	if r.lifetime.Err() != nil {
 		r.logger.Info("Listener cancelled due to shutdown")
-		return nil, fmt.Errorf("provider shutting down")
+		return nil, r.lifetime.Err()
 	}
 	if err != nil {
 		r.logger.Fatal("listener.Accept failed", tag.Error(err))
-		metrics.MuxErrors.WithLabelValues(r.metricLabels...).Inc()
+		metrics.MuxErrors.WithLabelValues(append(r.metricLabels, classifyError(err))...).Inc()
 		return nil, err
 	}
 	r.logger.Info("Accept new connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
 	return r.tlsWrapper(conn), nil
+}
+
+// classifyError reduces the cardinality of errors thrown from listener.Accept so that our metrics don't grow unbounded
+func classifyError(err error) string {
+	if err == io.EOF {
+		return "eof"
+	} else {
+		return "unclassified error"
+	}
 }
 
 func (r *receivingConnProvider) CloseCh() <-chan struct{} {

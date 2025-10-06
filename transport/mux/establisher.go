@@ -72,6 +72,9 @@ func NewMuxEstablisherProvider(lifetime context.Context, name string, transportF
 		cfg.StreamCloseTimeout = 30 * time.Second
 		return yamux.Client(conn, cfg)
 	}
+	// pre-initialize the MuxDial metrics
+	metrics.MuxDialFailed.WithLabelValues(metricLabels...)
+	metrics.MuxDialSuccess.WithLabelValues(metricLabels...)
 	return NewMuxProvider(lifetime, name, connPv, sessionFn, connectionsCapacity, transportFn, metricLabels, logger), nil
 }
 
@@ -89,19 +92,24 @@ func (p *establishingConnProvider) NewConnection() (net.Conn, error) {
 		return nil
 	}
 
-	onError := func(err error) bool {
+	retryable := func(err error) bool {
 		if p.lifetime.Err() != nil {
-			p.logger.Info("mux client failed to dial", tag.Error(err))
+			// Shutting down, just exit
+			return false
 		}
-		return p.lifetime.Err() == nil
+		p.logger.Info("mux client failed to dial", tag.Error(err))
+		return true
 	}
-	if err := backoff.ThrottleRetry(dialFn, retryPolicy, onError); err != nil {
+	if err := backoff.ThrottleRetry(dialFn, retryPolicy, retryable); err != nil {
 		if p.lifetime.Err() != nil {
-			p.logger.Error("mux client failed to dial with retry", tag.Error(err))
-			metrics.MuxErrors.WithLabelValues(p.metricLabels...).Inc()
+			// shutting down, just exit
+			return nil, p.lifetime.Err()
 		}
+		p.logger.Error("mux client failed to dial with retry", tag.Error(err))
+		metrics.MuxDialFailed.WithLabelValues(p.metricLabels...).Inc()
 		return nil, err
 	}
+	metrics.MuxDialSuccess.WithLabelValues(p.metricLabels...).Inc()
 	metrics.MuxConnectionEstablish.WithLabelValues(p.metricLabels...).Inc()
 	return client, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -18,6 +19,10 @@ import (
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
+
+func init() {
+	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+}
 
 func getDynamicPorts(t *testing.T, num int) []string {
 	listeners := make([]net.Listener, num)
@@ -37,9 +42,9 @@ func getDynamicPorts(t *testing.T, num int) []string {
 }
 
 type pairedLocalClusterConnection struct {
-	localTemporal        *testservices.TemporalAPIServer
+	localTemporal        *testservices.TemporalServerWithListen
 	cancelLocalTemporal  context.CancelFunc
-	remoteTemporal       *testservices.TemporalAPIServer
+	remoteTemporal       *testservices.TemporalServerWithListen
 	cancelRemoteTemporal context.CancelFunc
 	localCC              *ClusterConnection
 	cancelLocalCC        context.CancelFunc
@@ -104,7 +109,7 @@ func makeTCPProxyConfig(name string, serverAddress string, clientAddress string)
 	}
 }
 
-func makeEchoServer(name string, listenAddress string, logger log.Logger) *testservices.TemporalAPIServer {
+func makeEchoServer(name string, listenAddress string, logger log.Logger) *testservices.TemporalServerWithListen {
 	logger.Info("Starting echo server", tag.NewStringTag("name", name), tag.Address(listenAddress))
 	return testservices.NewTemporalAPIServer(name,
 		testservices.NewEchoAdminService(name, nil, logger),

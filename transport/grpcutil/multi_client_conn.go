@@ -26,7 +26,8 @@ const (
 // when they are used, and they will break MultiClientConn.
 // Note: This is not ready for use in production yet, ClientConn.Connect() and ClientConn.UpdateState() cannot yet be called properly.
 type MultiClientConn struct {
-	name string
+	lifetime context.Context
+	name     string
 	// connMapLock is being used with connMap over a sync.Map for now. If using a MultiClientConn on large numbers of
 	// muxes, it's probably best to switch to sync.Map for the sharded read locks
 	connMapLock sync.RWMutex
@@ -39,8 +40,8 @@ type MultiClientConn struct {
 	clientConn *grpc.ClientConn
 }
 
-func NewMultiClientConn(name string, opts ...grpc.DialOption) (*MultiClientConn, error) {
-	mcc := &MultiClientConn{name: name}
+func NewMultiClientConn(lifetime context.Context, name string, opts ...grpc.DialOption) (*MultiClientConn, error) {
+	mcc := &MultiClientConn{lifetime: lifetime, name: name}
 	var err error
 	dialOpts := make([]grpc.DialOption, len(opts)+2)
 	mcc.resolver = manual.NewBuilderWithScheme(scheme)
@@ -54,6 +55,9 @@ func NewMultiClientConn(name string, opts ...grpc.DialOption) (*MultiClientConn,
 	}
 	// UpdateState will panic if this isn't called first, or a connection hasn't been attempted yet.
 	mcc.clientConn.Connect()
+	context.AfterFunc(lifetime, func() {
+		_ = mcc.Close()
+	})
 	return mcc, nil
 }
 

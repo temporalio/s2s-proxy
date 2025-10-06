@@ -10,6 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Note: This was an exploratory test demonstrating that a single listener can spawn many mux connections off the same
+// port.
+
 type muxServer struct {
 	session *yamux.Session
 	buf     []byte
@@ -24,17 +27,17 @@ func (s *muxServer) Run(t *testing.T) {
 	s.wg.Add(1)
 	defer s.wg.Done()
 	for {
-		t.Log("Listening on yamux", s.session.Addr())
+		//t.Log("Listening on yamux", s.session.Addr())
 		muxconn, err := s.session.Accept()
 		if err != nil {
-			t.Log(err)
+			//t.Log(err)
 			return
 		}
-		t.Log("Got a new connection")
-		num, err := muxconn.Read(s.buf)
-		t.Log("Read", num, "bytes:", string(s.buf[:num]))
+		//t.Log("Got a new connection")
+		_, err = muxconn.Read(s.buf)
+		//t.Log("Read", num, "bytes:", string(s.buf[:num]))
 		if err != nil {
-			t.Log(err)
+			//t.Log(err)
 			return
 		}
 		require.True(t, s.buf[0] == 'H')
@@ -52,16 +55,16 @@ func TestMultiMux(t *testing.T) {
 		}
 		muxListenerAddrCh <- listener.Addr().String()
 		for {
-			t.Log("listening on", listener.Addr())
+			//t.Log("listening on", listener.Addr())
 			conn, err := listener.Accept()
 			if err != nil {
-				t.Log(err)
+				//t.Log(err)
 				return
 			}
-			t.Log("Got a new connection. Making mux")
+			//t.Log("Got a new connection. Making mux")
 			mux, err := yamux.Server(conn, nil)
 			if err != nil {
-				t.Log(err)
+				//t.Log(err)
 				return
 			}
 
@@ -108,7 +111,7 @@ func dialUntilSuccess(t *testing.T, addr string) net.Conn {
 	for conn == nil {
 		conn, err = net.Dial("tcp", addr)
 		if err != nil {
-			t.Log(err)
+			//t.Log(err)
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
