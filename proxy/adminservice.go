@@ -28,6 +28,7 @@ type (
 		outboundAddressOverride string
 		apiOverrides            *config.APIOverridesConfig
 		metricLabelValues       []string
+		reportStreamValue       func(idx int32, value int32)
 	}
 )
 
@@ -39,6 +40,7 @@ func NewAdminServiceProxyServer(
 	outboundAddressOverride string,
 	apiOverrides *config.APIOverridesConfig,
 	metricLabelValues []string,
+	reportStreamValue func(idx int32, value int32),
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	logger = log.With(logger, common.ServiceTag(serviceName))
@@ -48,6 +50,7 @@ func NewAdminServiceProxyServer(
 		outboundAddressOverride: outboundAddressOverride,
 		apiOverrides:            apiOverrides,
 		metricLabelValues:       metricLabelValues,
+		reportStreamValue:       reportStreamValue,
 	}
 }
 
@@ -247,9 +250,12 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
 		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
 
-	// Record streams active
-	logger.Info("AdminStreamReplicationMessages started.")
+	// Record streams active: the observer will report which exact streams are active, the gauge tells us the count
+	s.reportStreamValue(sourceClusterShardID.ShardID, 1)
+	defer s.reportStreamValue(sourceClusterShardID.ShardID, -1)
 	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(s.metricLabelValues...)
+	streamsActiveGauge.Inc()
+	defer streamsActiveGauge.Dec()
 
 	// simply forwarding target metadata
 	outgoingContext := metadata.NewOutgoingContext(targetStreamServer.Context(), targetMetadata)
@@ -258,18 +264,14 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	// The underlying adminClient will try to grab a connection when we call StreamWorkflowReplicationMessages.
 	// The connection is separately managed, so we want to see how long it takes to establish that conn.
-	metrics.AdminServiceWaitingForConnection.WithLabelValues(s.metricLabelValues...).Inc()
 	sourceStreamClient, err := s.adminClient.StreamWorkflowReplicationMessages(outgoingContext)
-	metrics.AdminServiceWaitingForConnection.WithLabelValues(s.metricLabelValues...).Dec()
 	if err != nil {
 		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err
 	}
 	// We succesfully got a stream connection, so mark the stream as active
-	streamsActiveGauge.Inc()
 	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(s.metricLabelValues...).Inc()
-	defer streamsActiveGauge.Dec()
-	defer logger.Info("AdminStreamReplicationMessages stopped.")
+	defer metrics.AdminServiceStreamsClosedCount.WithLabelValues(s.metricLabelValues...).Inc()
 	streamStartTime := time.Now()
 
 	// When one side of the stream dies, we want to tell the other side to hang up
@@ -299,7 +301,6 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	streamDuration := time.Since(streamStartTime)
 	metrics.AdminServiceStreamDuration.WithLabelValues(s.metricLabelValues...).Observe(streamDuration.Seconds())
-	metrics.AdminServiceStreamsClosedCount.WithLabelValues(s.metricLabelValues...).Inc()
 	// Do not try to transfer EOF from the source here. Just returning "nil" is sufficient to terminate the stream
 	// to the client.
 	return nil

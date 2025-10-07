@@ -44,8 +44,9 @@ type adminProxyServerInput struct {
 	metricLabels            []string
 }
 
-func (s *adminserviceSuite) newAdminServiceProxyServer(in adminProxyServerInput) adminservice.AdminServiceServer {
-	return NewAdminServiceProxyServer("test-service-name", s.adminClientMock, in.outboundAddressOverride, in.apiOverrides, in.metricLabels, log.NewTestLogger())
+func (s *adminserviceSuite) newAdminServiceProxyServer(in adminProxyServerInput, observer *ReplicationStreamObserver) adminservice.AdminServiceServer {
+	return NewAdminServiceProxyServer("test-service-name", s.adminClientMock, in.outboundAddressOverride,
+		in.apiOverrides, in.metricLabels, observer.ReportStreamValue, log.NewTestLogger())
 }
 
 func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
@@ -120,12 +121,13 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 	for _, c := range cases {
 		s.Run(c.name, func() {
 			ctx := metadata.NewIncomingContext(context.Background(), metadata.New(c.reqMetadata))
-			server := s.newAdminServiceProxyServer(c.adminProxyServerInput)
+			observer := NewReplicationStreamObserver(log.NewTestLogger())
+			server := s.newAdminServiceProxyServer(c.adminProxyServerInput, observer)
 			s.adminClientMock.EXPECT().AddOrUpdateRemoteCluster(ctx, c.expectedReq).Return(expResp, nil)
 			resp, err := server.AddOrUpdateRemoteCluster(ctx, makeOriginalReq())
 			s.NoError(err)
 			s.Equal(expResp, resp)
-
+			s.Equal("[]", observer.PrintActiveStreams())
 		})
 	}
 }
@@ -220,11 +222,13 @@ func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
 	for _, c := range cases {
 		s.Run(c.name, func() {
 			ctx := metadata.NewIncomingContext(context.Background(), metadata.New(c.reqMetadata))
-			server := s.newAdminServiceProxyServer(c.adminProxyServerInput)
+			observer := NewReplicationStreamObserver(log.NewTestLogger())
+			server := s.newAdminServiceProxyServer(c.adminProxyServerInput, observer)
 			s.adminClientMock.EXPECT().DescribeCluster(ctx, gomock.Any()).Return(c.mockResp, nil)
 			resp, err := server.DescribeCluster(ctx, req)
 			s.NoError(err)
 			s.Equal(c.expResp, resp)
+			s.Equal("[]", observer.PrintActiveStreams())
 		})
 	}
 }

@@ -50,8 +50,10 @@ type (
 		// inboundServer receives connections from a remote Temporal server and calls using the inboundClient.
 		inboundServer contextAwareServer
 		// inboundClient talks to the local Temporal frontend.
-		inboundClient closableClientConn
-		logger        log.Logger
+		inboundClient    closableClientConn
+		inboundObserver  *ReplicationStreamObserver
+		outboundObserver *ReplicationStreamObserver
+		logger           log.Logger
 	}
 	// contextAwareServer represents a startable gRPC server used to provide the Temporal interface on some connection.
 	// IsUsable and Describe allow the caller to know and log the current state of the server.
@@ -59,6 +61,7 @@ type (
 		Start()
 		IsUsable() bool
 		Describe() string
+		Name() string
 	}
 	// closableClientConn represents a ClientConnInterface with a Close and a Describe. It's implemented by
 	// grpcutil.MultiClientConn and describableClientConn.
@@ -83,13 +86,15 @@ func NewTCPClusterConnection(lifetime context.Context,
 		logger:   logger,
 	}
 	var err error
+	cc.inboundObserver = NewReplicationStreamObserver(logger)
 	cc.inboundClient, cc.inboundServer, err = buildSimpleServerArc(lifetime, true, outbound.Server.ExternalAddress,
-		inbound, "inbound", namespaceNameTranslation, searchAttributeTranslation, logger)
+		inbound, "inbound", namespaceNameTranslation, searchAttributeTranslation, cc.inboundObserver, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build inbound config %s: %w", inbound.Name, err)
 	}
+	cc.outboundObserver = NewReplicationStreamObserver(logger)
 	cc.outboundClient, cc.outboundServer, err = buildSimpleServerArc(lifetime, false, "",
-		outbound, "outbound", namespaceNameTranslation, searchAttributeTranslation, logger)
+		outbound, "outbound", namespaceNameTranslation, searchAttributeTranslation, cc.outboundObserver, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build outbound config %s: %w", outbound.Name, err)
 	}
@@ -100,7 +105,7 @@ func NewTCPClusterConnection(lifetime context.Context,
 // TCP-based ClusterConnection.
 func buildSimpleServerArc(lifetime context.Context, isInbound bool, overrideExternalAddress string,
 	proxyCfg config.ProxyConfig, directionLabel string, namespaceNameTranslation config.NameTranslationConfig,
-	searchAttributeTranslation config.SATranslationConfig, logger log.Logger) (closableClientConn, contextAwareServer, error) {
+	searchAttributeTranslation config.SATranslationConfig, observer *ReplicationStreamObserver, logger log.Logger) (closableClientConn, contextAwareServer, error) {
 	client, err := buildTLSTCPClient(lifetime, proxyCfg.Client.ServerAddress, proxyCfg.Client.TLS, directionLabel)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create %s tls client: %w", directionLabel, err)
@@ -111,7 +116,7 @@ func buildSimpleServerArc(lifetime context.Context, isInbound bool, overrideExte
 		return nil, nil, fmt.Errorf("invalid configuration for inbound server: %w", err)
 	}
 	serverCfg, err := buildProxyServer(client, isInbound, proxyCfg, overrideExternalAddress,
-		namespaceNameTranslation, searchAttributeTranslation, logger)
+		namespaceNameTranslation, searchAttributeTranslation, observer, logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create inbound server: %w", err)
 	}
@@ -170,7 +175,7 @@ func NewMuxClusterConnection(lifetime context.Context,
 	// The outbound "client" is actually one ClientConn on top of many Mux connections, implemented by MultiClientConn.
 	// Check grpcutil.MultiClientConn for more info
 	cc.outboundClient, err = grpcutil.NewMultiClientConn(lifetime, fmt.Sprintf("client-conn-%s", muxConfig.Name),
-		grpcutil.MakeDialOptions(nil, metrics.GetStandardGRPCClientInterceptor("outbound"))...)
+		grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics("outbound"))...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create multi client connection for mux: %w", err)
 	}
@@ -180,10 +185,11 @@ func NewMuxClusterConnection(lifetime context.Context,
 		return nil, fmt.Errorf("failed to create inbound client: %w", err)
 	}
 
+	cc.inboundObserver = NewReplicationStreamObserver(logger)
 	// Servers are built second because they require the clients to operate (since all they do is delegate to the matched client).
 	//The inbound "server" is a config shared across N listeners on N different mux connections by the MultiMuxManager.
 	inboundServerCfg, err := buildProxyServer(cc.inboundClient, true, inbound, outbound.Server.ExternalAddress,
-		namespaceNameTranslation, searchAttributeTranslation, logger)
+		namespaceNameTranslation, searchAttributeTranslation, cc.inboundObserver, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create inbound server for config %s: %w", inbound.Name, err)
 	}
@@ -193,12 +199,14 @@ func NewMuxClusterConnection(lifetime context.Context,
 		return nil, fmt.Errorf("failed to create GRPC mux manager for config named %s: %w", muxConfig.Name, err)
 	}
 
+	cc.outboundObserver = NewReplicationStreamObserver(logger)
 	// The outbound server is a plain old TCP listener for the local Temporal cluster
 	outboundListener, err := net.Listen("tcp", outbound.Server.ListenAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on outbound server address %s: %w", outbound.Server.ListenAddress, err)
 	}
-	outboundServerCfg, err := buildProxyServer(cc.outboundClient, false, outbound, "", namespaceNameTranslation, searchAttributeTranslation, logger)
+	outboundServerCfg, err := buildProxyServer(cc.outboundClient, false, outbound, "",
+		namespaceNameTranslation, searchAttributeTranslation, cc.outboundObserver, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create outbound server for config %s: %w", outbound.Name, err)
 	}
@@ -215,7 +223,9 @@ func NewMuxClusterConnection(lifetime context.Context,
 
 func (c *ClusterConnection) Start() {
 	c.inboundServer.Start()
+	c.inboundObserver.Start(c.lifetime, c.inboundServer.Name(), "inbound")
 	c.outboundServer.Start()
+	c.outboundObserver.Start(c.lifetime, c.outboundServer.Name(), "outbound")
 }
 func (c *ClusterConnection) RemoteUsable() bool {
 	return c.inboundServer.IsUsable()
@@ -228,8 +238,10 @@ func (c *ClusterConnection) Describe() string {
 		c.outboundServer.Describe(), c.outboundClient.Describe(), c.inboundServer.Describe(), c.inboundClient.Describe())
 }
 
+// buildProxyServer uses the provided grpc.ClientConnInterface and config.ProxyConfig to create a grpc.Server that proxies
+// the Temporal API across the ClientConnInterface.
 func buildProxyServer(client grpc.ClientConnInterface, isInbound bool, serverCfg config.ProxyConfig, overrideExternalAddress string,
-	namespaceTranslation config.NameTranslationConfig, searchAttrTranslation config.SATranslationConfig, logger log.Logger) (*grpc.Server, error) {
+	namespaceTranslation config.NameTranslationConfig, searchAttrTranslation config.SATranslationConfig, observer *ReplicationStreamObserver, logger log.Logger) (*grpc.Server, error) {
 	directionLabel := "inbound"
 	if isInbound {
 		directionLabel = "outbound"
@@ -240,7 +252,7 @@ func buildProxyServer(client grpc.ClientConnInterface, isInbound bool, serverCfg
 	}
 	server := grpc.NewServer(serverOpts...)
 	adminServiceImpl := NewAdminServiceProxyServer(fmt.Sprintf("%sAdminService", directionLabel), adminservice.NewAdminServiceClient(client),
-		overrideExternalAddress, serverCfg.APIOverrides, []string{directionLabel}, logger)
+		overrideExternalAddress, serverCfg.APIOverrides, []string{directionLabel}, observer.ReportStreamValue, logger)
 	var accessControl *auth.AccessControl
 	if serverCfg.ACLPolicy != nil {
 		accessControl = auth.NewAccesControl(serverCfg.ACLPolicy.AllowedNamespaces)
@@ -285,7 +297,9 @@ func (s *simpleGRPCServer) IsUsable() bool {
 func (s *simpleGRPCServer) Describe() string {
 	return fmt.Sprintf("[simpleGRPCServer %s listening on %s. lifetime.Err: %e]", s.name, s.listener.Addr(), s.lifetime.Err())
 }
-
+func (s *simpleGRPCServer) Name() string {
+	return s.name
+}
 func (d describableClientConn) Describe() string {
 	return fmt.Sprintf("[grpc.ClientConn %s, state=%s]", d.Target(), d.GetState().String())
 }
