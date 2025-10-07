@@ -15,14 +15,14 @@ type HealthChecker interface {
 // outboundHealthChecker contains references required to report whether the local Temporal server
 // can make requests of the remote Temporal server
 type outboundHealthChecker struct {
-	muxReady func() bool
-	logger   log.Logger
+	isHealthy func() bool
+	logger    log.Logger
 }
 
 func (h *outboundHealthChecker) createHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		metrics.OutboundHealthCheckCount.Inc()
-		if h.muxReady() {
+		if h.isHealthy() {
 			metrics.OutboundIsHealthy.Set(1)
 			w.Header().Set("Content-Type", "text/plain")
 			w.WriteHeader(http.StatusOK)
@@ -36,10 +36,10 @@ func (h *outboundHealthChecker) createHandler() func(w http.ResponseWriter, r *h
 	}
 }
 
-func newOutboundHealthCheck(muxReady func() bool, logger log.Logger) HealthChecker {
+func newOutboundHealthCheck(isHealthy func() bool, logger log.Logger) HealthChecker {
 	return &outboundHealthChecker{
-		muxReady: muxReady,
-		logger:   logger,
+		isHealthy: isHealthy,
+		logger:    logger,
 	}
 }
 

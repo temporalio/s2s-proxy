@@ -3,14 +3,16 @@ package grpcutil
 import (
 	"context"
 	"fmt"
-	"maps"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
+
+	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
 const (
@@ -24,6 +26,8 @@ const (
 // when they are used, and they will break MultiClientConn.
 // Note: This is not ready for use in production yet, ClientConn.Connect() and ClientConn.UpdateState() cannot yet be called properly.
 type MultiClientConn struct {
+	lifetime context.Context
+	name     string
 	// connMapLock is being used with connMap over a sync.Map for now. If using a MultiClientConn on large numbers of
 	// muxes, it's probably best to switch to sync.Map for the sharded read locks
 	connMapLock sync.RWMutex
@@ -36,8 +40,8 @@ type MultiClientConn struct {
 	clientConn *grpc.ClientConn
 }
 
-func NewMultiClientConn(name string, opts ...grpc.DialOption) (*MultiClientConn, error) {
-	mcc := &MultiClientConn{}
+func NewMultiClientConn(lifetime context.Context, name string, opts ...grpc.DialOption) (*MultiClientConn, error) {
+	mcc := &MultiClientConn{lifetime: lifetime, name: name}
 	var err error
 	dialOpts := make([]grpc.DialOption, len(opts)+2)
 	mcc.resolver = manual.NewBuilderWithScheme(scheme)
@@ -51,15 +55,36 @@ func NewMultiClientConn(name string, opts ...grpc.DialOption) (*MultiClientConn,
 	}
 	// UpdateState will panic if this isn't called first, or a connection hasn't been attempted yet.
 	mcc.clientConn.Connect()
+	context.AfterFunc(lifetime, func() {
+		_ = mcc.Close()
+	})
 	return mcc, nil
 }
 
+// UpdateState holds a pointer to the original map. It is the caller's responsibility to clone the passed pointer
 func (mcc *MultiClientConn) UpdateState(conns map[string]func() (net.Conn, error)) {
 	mcc.connMapLock.Lock()
 	defer mcc.connMapLock.Unlock()
-	// Make sure we don't hold onto a mutable pointer to the original map
-	mcc.connMap = maps.Clone(conns)
+	mcc.connMap = conns
 	mcc.resolver.UpdateState(mcc.deriveStateFromConns())
+}
+
+// Close forwards grpc.ClientConn's Close
+func (mcc *MultiClientConn) Close() error {
+	return mcc.clientConn.Close()
+}
+
+// OnConnectionListUpdate satisfies mux.OnConnectionListUpdate
+func (mcc *MultiClientConn) OnConnectionListUpdate(muxes map[string]session.ManagedMuxSession) {
+	if len(muxes) == 0 {
+		mcc.UpdateState(nil)
+		return
+	}
+	connMap := make(map[string]func() (net.Conn, error), len(muxes))
+	for k, v := range muxes {
+		connMap[k] = v.Open
+	}
+	mcc.UpdateState(connMap)
 }
 
 // grpc.ClientConnInterface
@@ -104,4 +129,20 @@ func (mcc *MultiClientConn) deriveStateFromConns() resolver.State {
 		idx++
 	}
 	return newState
+}
+func (mcc *MultiClientConn) Describe() string {
+	mcc.connMapLock.RLock()
+	defer mcc.connMapLock.RUnlock()
+	sb := strings.Builder{}
+	sb.WriteString("[MultiClientConn ")
+	sb.WriteString(mcc.name)
+	sb.WriteString(", scheme=")
+	sb.WriteString(mcc.resolver.Scheme())
+	sb.WriteString(", conns={")
+	for k := range mcc.connMap {
+		sb.WriteString(k)
+		sb.WriteString("=[connFn]")
+	}
+	sb.WriteString("}")
+	return sb.String()
 }

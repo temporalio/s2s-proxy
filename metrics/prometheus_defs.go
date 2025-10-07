@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
@@ -18,7 +19,7 @@ var (
 	AdminServiceStreamsClosedCount   = DefaultCounterVec("admin_service_streams_closed_count", "Number of streams closed", "direction")
 	AdminServiceStreamReqCount       = DefaultCounterVec("admin_service_stream_request_count", "Number of messages received", "direction")
 	AdminServiceStreamRespCount      = DefaultCounterVec("admin_service_stream_response_count", "Number of messages received", "direction")
-	// AdminServiceStreamTerminatedCount's labels are direction (inbound/outbound) and terminated_by (source/target)
+	// AdminServiceStreamTerminatedCount labels are direction (inbound/outbound) and terminated_by (source/target)
 	AdminServiceStreamTerminatedCount = DefaultCounterVec("admin_service_stream_terminated_count", "Stream was terminated by remote server", "direction", "terminated_by")
 
 	// /proxy/health_check.go
@@ -30,25 +31,18 @@ var (
 
 	// /proxy/proxy.go
 
-	GRPCServerMetrics     = GetStandardGRPCInterceptor("direction")
-	ProxyStartCount       = DefaultCounter("proxy_start_count", "Emitted once on Go process start")
-	ProxyServiceCreated   = DefaultCounterVec("proxy_service_created", "Emitted once per service start", "direction")
-	ProxyServiceStopped   = DefaultCounterVec("proxy_service_stopped", "Emitted on service shutdown", "direction")
-	ProxyServiceRestarted = DefaultCounterVec("proxy_service_restarted", "Emitted on service shutdown", "direction")
+	GRPCServerMetrics = GetStandardGRPCInterceptor("direction")
+	NewProxyCount     = DefaultCounter("proxy_start_count", "Emitted once on Go process start")
 
-	// /proxy/temporal_api_server.go
+	// /proxy/cluster_connection.go
 
 	GRPCServerStarted = DefaultCounterVec("grpc_server_started", "Emits when the grpc server is started", "service_name")
 	GRPCServerStopped = DefaultCounterVec("grpc_server_stopped", "Emits when the grpc server is stopped", "service_name", "error")
 
-	// /transport/grpc.go
-	// Gratuitous hack: Until https://github.com/grpc-ecosystem/go-grpc-middleware/issues/783 is addressed,
-	// we need to register a dependent registry with constant labels applied.
-
 	GRPCOutboundClientMetrics = GetStandardGRPCClientInterceptor("outbound")
 	GRPCInboundClientMetrics  = GetStandardGRPCClientInterceptor("inbound")
 
-	// Mux Session
+	// /transport/mux
 
 	// Every yamux session has these available, so let's use them in the prometheus tags so we can clearly see each connection
 	muxSessionLabels = []string{"local_addr", "remote_addr", "mode", "config_name"}
@@ -70,10 +64,10 @@ var (
 	muxManagerLabels       = []string{"addr", "mode", "config_name"}
 	MuxErrors              = DefaultCounterVec("mux_errors", "Number of errors observed from mux", muxManagerLabels...)
 	MuxConnectionEstablish = DefaultCounterVec("mux_connection_establish", "Number of times mux has established", muxManagerLabels...)
-	MuxWaitingConnections  = DefaultGaugeVec("mux_waiting_connections", "Number of goroutines waiting for a mux connection", muxManagerLabels...)
-	MuxConnectionProvided  = DefaultCounterVec("mux_connection_provided", "Number of times a connection was provided from WithConnection", muxManagerLabels...)
 	MuxDialFailed          = DefaultCounterVec("mux_dial_failed", "Mux failed when dialing", muxManagerLabels...)
 	MuxDialSuccess         = DefaultCounterVec("mux_dial_success", "Mux succeeded on dial", muxManagerLabels...)
+	MuxServerDisconnected  = DefaultCounterVec("mux_server_disconnected", "Mux server disconnected", muxManagerLabels...)
+	NumMuxesActive         = DefaultGaugeVec("num_muxes_active", "Host-local number of active muxes for config", muxManagerLabels...)
 
 	// Translation interceptor
 
@@ -87,6 +81,17 @@ var (
 	SearchAttrTranslationKind = "search-attribute"
 	HistoryBlobMessageType    = "HistoryEventBlob"
 )
+
+// GetGRPCClientMetrics helps the GRPC client metrics objects feel more like the server one
+func GetGRPCClientMetrics(directionLabel string) *grpcprom.ClientMetrics {
+	switch directionLabel {
+	case "outbound":
+		return GRPCOutboundClientMetrics
+	case "inbound":
+		return GRPCInboundClientMetrics
+	}
+	panic("unknown direction label: " + directionLabel)
+}
 
 func init() {
 	// Deregister the existing NewGoCollector https://pkg.go.dev/github.com/prometheus/client_golang@v1.22.0/prometheus/collectors#NewGoCollector
@@ -109,10 +114,7 @@ func init() {
 	prometheus.MustRegister(OutboundHealthCheckCount)
 
 	prometheus.MustRegister(GRPCServerMetrics)
-	prometheus.MustRegister(ProxyStartCount)
-	prometheus.MustRegister(ProxyServiceCreated)
-	prometheus.MustRegister(ProxyServiceStopped)
-	prometheus.MustRegister(ProxyServiceRestarted)
+	prometheus.MustRegister(NewProxyCount)
 	prometheus.MustRegister(GRPCServerStarted)
 	prometheus.MustRegister(GRPCServerStopped)
 
@@ -130,8 +132,6 @@ func init() {
 	// Mux Manager
 	prometheus.MustRegister(MuxErrors)
 	prometheus.MustRegister(MuxConnectionEstablish)
-	prometheus.MustRegister(MuxWaitingConnections)
-	prometheus.MustRegister(MuxConnectionProvided)
 	prometheus.MustRegister(MuxDialFailed)
 	prometheus.MustRegister(MuxDialSuccess)
 

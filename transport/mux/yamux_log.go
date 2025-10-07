@@ -16,7 +16,8 @@ type wrapLoggerForYamux struct {
 // Yamux logs have the format "[<level>] yamux: <message>". At time of writing, only ERR and WARN are logged
 func (l wrapLoggerForYamux) parseLogLevel(s string) {
 	if strings.HasPrefix(s, "[ERR]") {
-		l.logger.Error(s)
+		// It's ok for an individual mux to have issues, we have multiple
+		l.logger.Warn(s)
 	} else if strings.HasPrefix(s, "[WARN]") {
 		l.logger.Warn(s)
 	} else {

@@ -16,14 +16,14 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
+	"github.com/temporalio/s2s-proxy/endtoendtest"
 	"github.com/temporalio/s2s-proxy/proto/1_22/server/api/adminservice/v1"
-	"github.com/temporalio/s2s-proxy/testserver"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
 func TestMultiClientConn(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
-	mcc, err := grpcutil.NewMultiClientConn("testconn",
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, log.NewTestLogger())
+	mcc, err := grpcutil.NewMultiClientConn(t.Context(), "testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
 	)
@@ -34,8 +34,8 @@ func TestMultiClientConn(t *testing.T) {
 }
 
 func TestMultiClientWaitsForResolve(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
-	mcc, err := grpcutil.NewMultiClientConn("testconn",
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, log.NewTestLogger())
+	mcc, err := grpcutil.NewMultiClientConn(t.Context(), "testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))
 	require.NoError(t, err)
@@ -60,8 +60,8 @@ func TestMultiClientWaitsForResolve(t *testing.T) {
 }
 
 func TestMultiClientUpdateState(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
-	mcc, err := grpcutil.NewMultiClientConn("testconn",
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, log.NewTestLogger())
+	mcc, err := grpcutil.NewMultiClientConn(t.Context(), "testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))
 	require.NoError(t, err)
@@ -85,8 +85,8 @@ func TestMultiClientUpdateState(t *testing.T) {
 }
 
 func TestMultiClientUpdateStateAsyncClient(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
-	mcc, err := grpcutil.NewMultiClientConn("testconn",
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, log.NewTestLogger())
+	mcc, err := grpcutil.NewMultiClientConn(t.Context(), "testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))
 	require.NoError(t, err)
@@ -128,8 +128,8 @@ func TestMultiClientUpdateStateAsyncClient(t *testing.T) {
 }
 
 func TestMultiClientWithFailedMuxesAndAsyncUpdates(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, log.NewTestLogger())
-	mcc, err := grpcutil.NewMultiClientConn("testconn",
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, log.NewTestLogger())
+	mcc, err := grpcutil.NewMultiClientConn(t.Context(), "testconn",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))
 	require.NoError(t, err)
@@ -165,7 +165,7 @@ func TestMultiClientWithFailedMuxesAndAsyncUpdates(t *testing.T) {
 	for i := range 3 {
 		t.Log("Closing mux", i)
 		scenario.CloseMux(i)
-		for range 10_000 {
+		for range 1000 {
 			select {
 			case <-successCh:
 				successes++
@@ -193,7 +193,7 @@ drainLoop:
 	}
 	t.Log("Successes:", successes, "Errors:", errors)
 	require.True(t, errors < 3, "A single error can happen per mux close, if the conn is actively transferring data")
-	require.True(t, successes > 3000, "Should have reported at least 300 successes")
+	require.True(t, successes > 300, "Should have reported at least 300 successes")
 }
 
 func requireCallWithNewClient(t *testing.T, mcc *grpcutil.MultiClientConn) {

@@ -52,7 +52,7 @@ func transferSourceToTarget(
 	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	wg *sync.WaitGroup,
 	shutdownChan channel.ShutdownOnce,
-	directionLabel string,
+	metricLabelValues []string,
 	logger log.Logger,
 ) {
 	defer func() {
@@ -75,7 +75,7 @@ func transferSourceToTarget(
 		}
 		if err == io.EOF {
 			logger.Debug("sourceStreamClient.Recv encountered EOF", tag.Error(err))
-			metrics.AdminServiceStreamTerminatedCount.WithLabelValues(directionLabel, "source").Inc()
+			metrics.AdminServiceStreamTerminatedCount.WithLabelValues(append(metricLabelValues, "source")...).Inc()
 			return
 		}
 
@@ -92,11 +92,11 @@ func transferSourceToTarget(
 					logger.Error("targetStreamServer.Send encountered error", tag.Error(err))
 				} else {
 					logger.Debug("targetStreamServer.Send encountered EOF", tag.Error(err))
-					metrics.AdminServiceStreamTerminatedCount.WithLabelValues(directionLabel, "target").Inc()
+					metrics.AdminServiceStreamTerminatedCount.WithLabelValues(append(metricLabelValues, "target")...).Inc()
 				}
 				return
 			}
-			metrics.AdminServiceStreamReqCount.WithLabelValues(directionLabel).Inc()
+			metrics.AdminServiceStreamReqCount.WithLabelValues(metricLabelValues...).Inc()
 		default:
 			logger.Error("sourceStreamClient.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
 				"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
@@ -111,7 +111,7 @@ func transferTargetToSource(
 	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	wg *sync.WaitGroup,
 	shutdownChan channel.ShutdownOnce,
-	directionLabel string,
+	metricLabelValues []string,
 	logger log.Logger,
 ) {
 	defer func() {
@@ -151,7 +151,7 @@ func transferTargetToSource(
 		}
 		if err == io.EOF {
 			logger.Debug("targetStreamServer.Recv encountered EOF", tag.Error(err))
-			metrics.AdminServiceStreamTerminatedCount.WithLabelValues(directionLabel, "target").Inc()
+			metrics.AdminServiceStreamTerminatedCount.WithLabelValues(append(metricLabelValues, "target")...).Inc()
 			return
 		}
 
@@ -168,11 +168,11 @@ func transferTargetToSource(
 					logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
 				} else {
 					logger.Debug("sourceStreamClient.Send encountered EOF", tag.Error(err))
-					metrics.AdminServiceStreamTerminatedCount.WithLabelValues(directionLabel, "source").Inc()
+					metrics.AdminServiceStreamTerminatedCount.WithLabelValues(append(metricLabelValues, "source")...).Inc()
 				}
 				return
 			}
-			metrics.AdminServiceStreamRespCount.WithLabelValues(directionLabel).Inc()
+			metrics.AdminServiceStreamRespCount.WithLabelValues(metricLabelValues...).Inc()
 		default:
 			logger.Error("targetStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
 				"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,

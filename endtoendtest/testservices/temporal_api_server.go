@@ -1,62 +1,57 @@
-package proxy
+package testservices
 
 import (
 	"fmt"
 	"io"
+	"net"
 	"time"
 
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
+	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
-
-	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/metrics"
-	"github.com/temporalio/s2s-proxy/transport"
 )
 
 type (
-	TemporalAPIServer struct {
-		serviceName            string
-		serverConfig           config.ProxyServerConfig
-		server                 *grpc.Server
-		adminHandler           adminservice.AdminServiceServer
-		workflowserviceHandler workflowservice.WorkflowServiceServer
-		serverTransport        transport.ServerTransport
-		logger                 log.Logger
+	TemporalServerWithListen struct {
+		serviceName   string
+		server        *grpc.Server
+		listenAddr    string
+		serverStopped channel.ShutdownOnce
+		logger        log.Logger
 	}
 )
 
 func NewTemporalAPIServer(
 	serviceName string,
-	serverConfig config.ProxyServerConfig,
 	adminHandler adminservice.AdminServiceServer,
 	workflowserviceHandler workflowservice.WorkflowServiceServer,
 	serverOptions []grpc.ServerOption,
-	serverTransport transport.ServerTransport,
+	listenAddr string,
 	logger log.Logger,
-) *TemporalAPIServer {
+) *TemporalServerWithListen {
 	server := grpc.NewServer(serverOptions...)
 	adminservice.RegisterAdminServiceServer(server, adminHandler)
 	workflowservice.RegisterWorkflowServiceServer(server, workflowserviceHandler)
-	metrics.GRPCServerStarted.WithLabelValues(serviceName)
-	return &TemporalAPIServer{
-		serviceName:            serviceName,
-		serverConfig:           serverConfig,
-		server:                 server,
-		adminHandler:           adminHandler,
-		workflowserviceHandler: workflowserviceHandler,
-		serverTransport:        serverTransport,
-		logger:                 logger,
+	return &TemporalServerWithListen{
+		serverStopped: channel.NewShutdownOnce(),
+		serviceName:   serviceName,
+		server:        server,
+		listenAddr:    listenAddr,
+		logger:        logger,
 	}
 }
 
-func (s *TemporalAPIServer) Start() {
+func (s *TemporalServerWithListen) Start() {
+	listener, err := net.Listen("tcp", s.listenAddr)
+	if err != nil {
+		panic(err)
+	}
 	go func() {
-		for !s.serverTransport.IsClosed() {
-			metrics.GRPCServerStarted.WithLabelValues(s.serviceName).Inc()
-			err := s.serverTransport.Serve(s.server)
+		for !s.serverStopped.IsShutdown() {
+			err := s.server.Serve(listener)
 			if err == io.EOF {
 				// grpc server can get EOF error if grpc server relies on client side of
 				// mux connection. Given a mux connection from node A (mux client) to node B (mux server),
@@ -64,25 +59,24 @@ func (s *TemporalAPIServer) Start() {
 				// grpc server on A can get an EOF client connection error from underlying mux connection.
 				// It should not happen if grpc server is based on mux server or normal TCP connection.
 				s.logger.Info("grpc server received EOF! Connection is closing")
-				metrics.GRPCServerStopped.WithLabelValues(s.serviceName, "eof").Inc()
 			} else if err != nil {
 				s.logger.Error("grpc server fatal error ", tag.Error(err))
-				metrics.GRPCServerStopped.WithLabelValues(s.serviceName, "unknown").Inc()
-			} else {
-				metrics.GRPCServerStopped.WithLabelValues(s.serviceName, "none").Inc()
 			}
 			time.Sleep(1 * time.Second)
 		}
+		_ = listener.Close()
 	}()
 }
 
-func (s *TemporalAPIServer) Stop() {
+func (s *TemporalServerWithListen) Stop() {
 	s.logger.Info(fmt.Sprintf("Stopping %s", s.serviceName))
+	s.serverStopped.Shutdown()
 	s.server.GracefulStop()
 	s.logger.Info(fmt.Sprintf("Stopped %s", s.serviceName))
 }
 
-func (s *TemporalAPIServer) ForceStop() {
+func (s *TemporalServerWithListen) ForceStop() {
 	s.logger.Info(fmt.Sprintf("Stopping %s forcefully", s.serviceName))
+	s.serverStopped.Shutdown()
 	s.server.Stop()
 }

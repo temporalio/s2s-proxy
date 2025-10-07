@@ -12,11 +12,9 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"go.uber.org/fx"
 
-	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/proto/compat"
 	"github.com/temporalio/s2s-proxy/proxy"
-	"github.com/temporalio/s2s-proxy/transport"
 )
 
 const (
@@ -93,8 +91,6 @@ func startProxy(c *cli.Context) error {
 			return log.NewZapLogger(log.BuildZapLogger(logCfg))
 		}),
 		config.Module,
-		transport.Module,
-		client.Module,
 		proxy.Module,
 		fx.Populate(&proxyParams),
 		fx.Populate(compat.GetCodec().CodecParams),
@@ -112,7 +108,10 @@ func startProxy(c *cli.Context) error {
 	}
 
 	// Waits until interrupt signal from OS arrives
-	<-interruptCh()
+	select {
+	case <-proxyParams.Proxy.Done():
+	case <-interruptCh():
+	}
 
 	proxyParams.Proxy.Stop()
 	return nil

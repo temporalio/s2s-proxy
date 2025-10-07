@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
 
-	"github.com/temporalio/s2s-proxy/testserver"
+	"github.com/temporalio/s2s-proxy/endtoendtest"
 )
 
 var testLogger = log.NewTestLogger()
@@ -26,7 +26,7 @@ var testLogger = log.NewTestLogger()
 // Using separate ClientConn objects created using grpc.NewClientConn "just works", but the clients are completely
 // separate and do not load-balance. We have to do the work of swapping out the client objects in the calling code.
 func TestMultiClientMultiServer(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, testLogger)
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, testLogger)
 	for i, muxClient := range scenario.Clients {
 		resp, err := muxClient.Client.DescribeCluster(context.Background(), &adminservice.DescribeClusterRequest{})
 		require.NoError(t, err)
@@ -38,7 +38,7 @@ func TestMultiClientMultiServer(t *testing.T) {
 // Using a single ClientConn object and naively swapping in a round-robin Dialer does not work, because
 // the connection is cached.
 func TestSingleClientCustomDialer(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, testLogger)
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, testLogger)
 	counter := &atomic.Uint32{}
 	counter.Store(0)
 	superClientConn, err := grpc.NewClient("passthrough:unused",
@@ -63,7 +63,7 @@ func TestSingleClientCustomDialer(t *testing.T) {
 // the Dialer was constructed in, which means we can use a map from address -> mux-conn. The manual resolver will be
 // notified with one endpoint per mux map key, and those map keys will arrive at the dialer.
 func TestSingleClientCustomResolverAndDialer(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, testLogger)
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, testLogger)
 	manualResolver := manual.NewBuilderWithScheme("multimux")
 	// There is a note in resolver.State that mentions how Addresses and Endpoints work:
 	//  //If a resolver sets Addresses but does not set Endpoints, one Endpoint
@@ -148,7 +148,7 @@ func TestSingleClientCustomResolverAndDialer(t *testing.T) {
 }
 
 func TestSingleClientCustomResolverUpdate(t *testing.T) {
-	scenario := testserver.NewTestScenario(t, 10, testLogger)
+	scenario := endtoendtest.NewYamuxGRPCScenario(t, 10, testLogger)
 	connSeen := make([]atomic.Bool, 10)
 	manualResolver := manual.NewBuilderWithScheme("multimux")
 	manualResolver.InitialState(resolver.State{

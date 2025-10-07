@@ -1,6 +1,8 @@
 package mux
 
 import (
+	"context"
+	"errors"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -9,6 +11,7 @@ import (
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/temporalio/s2s-proxy/metrics"
 )
@@ -18,56 +21,64 @@ type (
 	// and then reporting that session via setNewTransport. If the session closes, a new one will be created and notified
 	// using setNewTransport. The actual logic for the connection providers are in establisher.go and receiver.go.
 	muxProvider struct {
-		name            string
-		connProvider    connProvider
-		sessionFn       func(net.Conn) (*yamux.Session, error)
-		onDisconnectFn  func()
-		setNewTransport SetTransportCallback
-		metricLabels    []string
-		logger          log.Logger
-		startOnce       sync.Once
-		hasStarted      atomic.Bool
-		shouldShutDown  channel.ShutdownOnce
-		hasCleanedUp    channel.ShutdownOnce
+		name         string
+		connProvider connProvider
+		sessionFn    func(net.Conn) (*yamux.Session, error)
+		addNewMux    AddNewMux
+		muxPermits   *semaphore.Weighted
+		metricLabels []string
+		logger       log.Logger
+		startOnce    sync.Once
+		hasStarted   atomic.Bool
+		lifetime     context.Context
+		hasCleanedUp channel.ShutdownOnce
 	}
-	SetTransportCallback func(swc *SessionWithConn)
-	// connProvider represents a way to get connections, either as a client or a server. MuxProvider guarantees that
-	// Close is called when the provider exits
+	AddNewMux func(*yamux.Session, net.Conn)
+	// connProvider represents a way to get connections, either as a client or a server.
 	connProvider interface {
 		NewConnection() (net.Conn, error)
 		CloseCh() <-chan struct{}
+		Address() string
 	}
 	MuxProvider interface {
 		Start()
-		Close()
+		WaitForClose()
 		CloseCh() <-chan struct{}
 		isClosed() bool
+		AllowMoreConns(amt int64)
+		DrainConns(ctx context.Context, amt int64) error
+		Address() string
+		MetricLabels() []string
 	}
 )
 
 // NewMuxProvider creates a new custom MuxProvider with the provided data.
-func NewMuxProvider(name string,
+func NewMuxProvider(ctx context.Context,
+	name string,
 	connProvider connProvider,
 	sessionFn func(net.Conn) (*yamux.Session, error),
-	onDisconnectFn func(),
-	setNewTransport SetTransportCallback,
+	muxCount int64,
+	addNewMux AddNewMux,
 	metricLabels []string,
 	logger log.Logger,
-	shutDown channel.ShutdownOnce,
 ) MuxProvider {
-	return &muxProvider{
-		name:            name,
-		connProvider:    connProvider,
-		sessionFn:       sessionFn,
-		onDisconnectFn:  onDisconnectFn,
-		setNewTransport: setNewTransport,
-		metricLabels:    metricLabels,
-		logger:          logger,
-		startOnce:       sync.Once{},
-		hasStarted:      atomic.Bool{},
-		shouldShutDown:  shutDown,
-		hasCleanedUp:    channel.NewShutdownOnce(),
+	// Initialize the counters so we get clear "0"s
+	metrics.MuxConnectionEstablish.WithLabelValues(metricLabels...)
+	metrics.MuxErrors.WithLabelValues(metricLabels...)
+	provider := &muxProvider{
+		name:         name,
+		lifetime:     ctx,
+		connProvider: connProvider,
+		sessionFn:    sessionFn,
+		muxPermits:   semaphore.NewWeighted(muxCount),
+		addNewMux:    addNewMux,
+		metricLabels: metricLabels,
+		logger:       logger,
+		startOnce:    sync.Once{},
+		hasStarted:   atomic.Bool{},
+		hasCleanedUp: channel.NewShutdownOnce(),
 	}
+	return provider
 }
 
 // Start starts the MuxProvider. MuxProvider can only be started once, and once they are started they will run until
@@ -80,10 +91,7 @@ func (m *muxProvider) Start() {
 		var err error
 		go func() {
 			defer func() {
-				m.logger.Info("muxProvider shutting down", tag.NewErrorTag("lastError", err))
-				// If shouldShutDown wasn't already set, this goroutine exiting should force it
-				m.shouldShutDown.Shutdown()
-				m.setNewTransport(nil)
+				m.logger.Info("muxProvider shutting down", tag.NewErrorTag("lastError", err), tag.NewStringTag("name", m.name))
 				// Wait for connProvider to finish cleanup before notifying
 				<-m.connProvider.CloseCh()
 				// Notify all resources are cleaned up
@@ -91,56 +99,78 @@ func (m *muxProvider) Start() {
 			}()
 		connect:
 			for {
-				if m.shouldShutDown.IsShutdown() {
+				// Wait for shutdown or session needed
+				err = m.muxPermits.Acquire(m.lifetime, 1)
+				if err != nil {
+					// context cancelled, no need to add a permit
 					return
 				}
-				m.logger.Info("Getting connection from connProvider")
+				m.logger.Info("Getting new connection from connProvider")
 
 				var conn net.Conn
 				conn, err = m.connProvider.NewConnection()
 				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					m.muxPermits.Release(1)
+					m.logger.Info("Error getting connection from connProvider", tag.Error(err))
 					continue connect
 				}
 
 				var session *yamux.Session
 				session, err = m.sessionFn(conn)
 				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					m.muxPermits.Release(1)
 					m.logger.Error("Failed to create mux session", tag.Error(err))
+					continue connect
 				}
 				// Force Yamux to actually send something on the conn to make sure it's alive
 				_, err = session.Ping()
 				if err != nil {
-					m.setNewTransport(nil)
-					if !m.shouldShutDown.IsShutdown() {
-						m.logger.Error("got an invalid connection from connProvider", tag.Error(err))
-						metrics.MuxErrors.WithLabelValues(m.metricLabels...).Inc()
+					if errors.Is(err, context.Canceled) {
+						return
 					}
+					m.logger.Error("got an invalid connection from connProvider", tag.Error(err))
+					metrics.MuxErrors.WithLabelValues(m.metricLabels...).Inc()
+					m.muxPermits.Release(1)
 					continue connect
 				}
-				m.logger.Info("mux session watcher starting", tag.NewStringTag("remote_addr", session.RemoteAddr().String()),
-					tag.NewStringTag("local_addr", session.LocalAddr().String()))
-				go observeYamuxSession(session, observerLabels(session.LocalAddr().String(), session.RemoteAddr().String(), "conn", m.name))
 
-				m.setNewTransport(&SessionWithConn{Session: session, Conn: conn})
+				m.addNewMux(session, conn)
 				metrics.MuxConnectionEstablish.WithLabelValues(m.metricLabels...).Inc()
-				// Wait for shutdown or session reconnect
-				select {
-				case <-session.CloseChan():
-				case <-m.shouldShutDown.Channel():
-				}
-				m.onDisconnectFn()
 			}
 		}()
 	})
+}
+
+func (m *muxProvider) Address() string {
+	return m.connProvider.Address()
+}
+
+func (m *muxProvider) MetricLabels() []string {
+	return m.metricLabels
+}
+
+func (m *muxProvider) AllowMoreConns(amt int64) {
+	m.muxPermits.Release(amt)
+}
+
+// DrainConns will block until the requested number of connections have drained.
+// Warning: This method will not interfere with existing connections, it will just block new ones from being created.
+func (m *muxProvider) DrainConns(ctx context.Context, amt int64) error {
+	return m.muxPermits.Acquire(ctx, amt)
 }
 
 func (m *muxProvider) CloseCh() <-chan struct{} {
 	return m.hasCleanedUp.Channel()
 }
 
-// Close stops the MuxProvider and its associated connProvider permanently.
-func (m *muxProvider) Close() {
-	m.shouldShutDown.Shutdown()
+// WaitForClose does not actually close the provider. That should be done by closing the provider's context.
+func (m *muxProvider) WaitForClose() {
 	// The connProvider has a thread that cleans up resources created by Start(), but if we never started that thread,
 	// we need to consume m.startOnce, and then mark everything as cleaned up
 	m.startOnce.Do(func() {})

@@ -1,7 +1,8 @@
-package testserver
+package endtoendtest
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"time"
 
@@ -12,16 +13,18 @@ import (
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
+	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/temporalio/s2s-proxy/client"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/endtoendtest/testservices"
 	"github.com/temporalio/s2s-proxy/metrics"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
-	"github.com/temporalio/s2s-proxy/transport"
+	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
 type (
@@ -32,15 +35,17 @@ type (
 	}
 
 	EchoServer struct {
-		ServerConfig      config.ProxyServerConfig
-		ClientConfig      config.ProxyClientConfig
-		Server            *s2sproxy.TemporalAPIServer
+		ServerConfig config.ProxyServerConfig
+		ClientConfig config.ProxyClientConfig
+		// provides EchoService directly
+		Temporal *testservices.TemporalServerWithListen
+		// connects to Temporal directly
+		RemoteClient      *grpc.ClientConn
 		Proxy             *s2sproxy.Proxy
 		ClusterInfo       ClusterInfo
 		RemoteClusterInfo ClusterInfo
-		ClientProvider    client.ClientProvider
 		Logger            log.Logger
-		EchoService       *echoAdminService
+		EchoService       *testservices.EchoAdminService
 	}
 
 	WatermarkInfo struct {
@@ -67,18 +72,18 @@ func NewEchoServer(
 	for _, n := range namespaces {
 		ns[n] = true
 	}
-	// echoAdminService handles StreamWorkflowReplicationMessages call from remote Server.
+	// EchoAdminService handles StreamWorkflowReplicationMessages call from remote Server.
 	// It acts as stream sender by echoing back InclusiveLowWatermark in SyncReplicationState message.
-	senderAdminService := &echoAdminService{
-		serviceName: serviceName,
-		logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.ServerAddress)),
-		namespaces:  ns,
-		payloadSize: defaultPayloadSize,
+	senderAdminService := &testservices.EchoAdminService{
+		ServiceName: serviceName,
+		Logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.ServerAddress)),
+		Namespaces:  ns,
+		PayloadSize: defaultPayloadSize,
 	}
 
-	senderWorkflowService := &echoWorkflowService{
-		serviceName: serviceName,
-		logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.ServerAddress)),
+	senderWorkflowService := &testservices.EchoWorkflowService{
+		ServiceName: serviceName,
+		Logger:      log.With(logger, common.ServiceTag(serviceName), tag.Address(localClusterInfo.ServerAddress)),
 	}
 
 	var proxy *s2sproxy.Proxy
@@ -110,7 +115,6 @@ func NewEchoServer(
 		configProvider := config.NewMockConfigProvider(*localClusterInfo.S2sProxyConfig)
 		proxy = s2sproxy.NewProxy(
 			configProvider,
-			transport.NewTransportManager(configProvider, logger),
 			logger,
 		)
 
@@ -142,45 +146,46 @@ func NewEchoServer(
 		},
 	}
 
-	tm := transport.NewTransportManager(&config.EmptyConfigProvider, logger)
-	serverTransport, err := tm.OpenServer(serverConfig)
-	if err != nil {
-		logger.Fatal("Failed to create Server transport", tag.Error(err))
-	}
-
-	clientTransport, err := tm.OpenClient(clientConfig)
-	if err != nil {
-		logger.Fatal("Failed to create client transport", tag.Error(err))
-	}
-
 	logger = log.With(logger, common.ServiceTag(serviceName))
+	var parsedTLSCfg *tls.Config
+	if clientConfig.TLS.IsEnabled() {
+		var err error
+		parsedTLSCfg, err = encryption.GetClientTLSConfig(clientConfig.TLS)
+		if err != nil {
+			panic(err)
+		}
+	}
+	client, err := grpc.NewClient(clientConfig.ServerAddress,
+		grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetStandardGRPCClientInterceptor("local"))...)
+	if err != nil {
+		panic(err)
+	}
 	return &EchoServer{
 		ServerConfig: serverConfig,
 		ClientConfig: clientConfig,
-		Server: s2sproxy.NewTemporalAPIServer(
+		Temporal: testservices.NewTemporalAPIServer(
 			serviceName,
-			serverConfig,
 			senderAdminService,
 			senderWorkflowService,
 			nil,
-			serverTransport,
+			localClusterInfo.ServerAddress,
 			logger),
+		RemoteClient:      client,
 		EchoService:       senderAdminService,
 		Proxy:             proxy,
 		ClusterInfo:       localClusterInfo,
 		RemoteClusterInfo: remoteClusterInfo,
-		ClientProvider:    client.NewClientProvider(clientConfig, client.NewClientFactory(clientTransport, metrics.GRPCOutboundClientMetrics, logger), logger),
 		Logger:            logger,
 	}
 }
 
 func (s *EchoServer) SetPayloadSize(size int) {
-	s.EchoService.payloadSize = size
+	s.EchoService.PayloadSize = size
 }
 
 func (s *EchoServer) Start() {
 	s.Logger.Info(fmt.Sprintf("Starting echoServer with ServerConfig: %v, ClientConfig: %v", s.ServerConfig, s.ClientConfig))
-	s.Server.Start()
+	s.Temporal.Start()
 	if s.Proxy != nil {
 		_ = s.Proxy.Start()
 	}
@@ -190,11 +195,11 @@ func (s *EchoServer) Stop() {
 	if s.Proxy != nil {
 		s.Proxy.Stop()
 	}
-	s.Server.Stop()
+	s.Temporal.Stop()
 }
 
 const (
-	retryInterval = 1 * time.Second // Interval between retries
+	retryInterval = 200 * time.Millisecond // Interval between retries
 )
 
 func Retry[T interface{}](f func() (T, error), maxRetries int, logger log.Logger) (T, error) {
@@ -220,31 +225,25 @@ func Retry[T interface{}](f func() (T, error), maxRetries int, logger log.Logger
 }
 
 func (s *EchoServer) DescribeCluster(req *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
-	adminClient, err := s.ClientProvider.GetAdminClient()
-	if err != nil {
-		return nil, err
+	if s.RemoteClient == nil {
+		panic("nil RemoteClient")
 	}
-
-	return adminClient.DescribeCluster(context.Background(), req)
+	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	return adminservice.NewAdminServiceClient(s.RemoteClient).DescribeCluster(timeout, req)
 }
 
 func (s *EchoServer) DescribeMutableState(req *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
-	adminClient, err := s.ClientProvider.GetAdminClient()
-	if err != nil {
-		return nil, err
-	}
-
-	return adminClient.DescribeMutableState(context.Background(), req)
+	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	return adminservice.NewAdminServiceClient(s.RemoteClient).DescribeMutableState(timeout, req)
 }
 
 func (s *EchoServer) CreateStreamClient() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
 	metaData := history.EncodeClusterShardMD(s.ClusterInfo.ClusterShardID, s.RemoteClusterInfo.ClusterShardID)
 	targetContext := metadata.NewOutgoingContext(context.TODO(), metaData)
 
-	adminClient, err := s.ClientProvider.GetAdminClient()
-	if err != nil {
-		return nil, err
-	}
+	adminClient := adminservice.NewAdminServiceClient(s.RemoteClient)
 
 	return Retry(func() (adminservice.AdminService_StreamWorkflowReplicationMessagesClient, error) {
 		return adminClient.StreamWorkflowReplicationMessages(targetContext)
@@ -316,10 +315,21 @@ func (s *EchoServer) SendAndRecv(sequence []int64) (map[int64]bool, error) {
 
 // Test workflowservice by making some request.
 // Remote Server echoes the Namespace field in the request as the WorkflowNamespace field in the response.
-func (r *EchoServer) PollActivityTaskQueue(req *workflowservice.PollActivityTaskQueueRequest) (*workflowservice.PollActivityTaskQueueResponse, error) {
-	wfclient, err := r.ClientProvider.GetWorkflowServiceClient()
-	if err != nil {
-		return nil, err
+func (s *EchoServer) PollActivityTaskQueue(req *workflowservice.PollActivityTaskQueueRequest) (*workflowservice.PollActivityTaskQueueResponse, error) {
+	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	return workflowservice.NewWorkflowServiceClient(s.RemoteClient).PollActivityTaskQueue(timeout, req)
+}
+func (s *EchoServer) Describe() string {
+	proxyDescription := "no proxy"
+	if s.Proxy != nil {
+		proxyDescription = s.Proxy.Describe()
 	}
-	return wfclient.PollActivityTaskQueue(context.Background(), req)
+	return fmt.Sprintf("[EchoServer \n"+
+		"ClusterInfo: %v\n"+
+		"RemoteClusterInfo: %v\n,"+
+		"Server config: %v\n,"+
+		"Client config: %v\n,"+
+		"Proxy config: %v\n,"+
+		"]", s.ServerConfig, s.ClientConfig, proxyDescription, s.ClusterInfo, s.RemoteClusterInfo)
 }
