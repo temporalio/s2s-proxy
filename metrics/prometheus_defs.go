@@ -12,13 +12,12 @@ var (
 
 	// /proxy/adminservice.go
 
-	AdminServiceStreamsActive        = DefaultGaugeVec("admin_service_streams_active", "Number of admin service streams open", "direction")
-	AdminServiceStreamDuration       = DefaultHistogramVec("admin_service_stream_duration", "The length of time each stream was open", "direction")
-	AdminServiceWaitingForConnection = DefaultGaugeVec("admin_service_waiting_for_connection", "Indicates the number of requests waiting on a client", "direction")
-	AdminServiceStreamsOpenedCount   = DefaultCounterVec("admin_service_streams_opened_count", "Number of streams opened", "direction")
-	AdminServiceStreamsClosedCount   = DefaultCounterVec("admin_service_streams_closed_count", "Number of streams closed", "direction")
-	AdminServiceStreamReqCount       = DefaultCounterVec("admin_service_stream_request_count", "Number of messages received", "direction")
-	AdminServiceStreamRespCount      = DefaultCounterVec("admin_service_stream_response_count", "Number of messages received", "direction")
+	AdminServiceStreamsActive      = DefaultGaugeVec("admin_service_streams_active", "Number of admin service streams open", "direction")
+	AdminServiceStreamDuration     = DefaultHistogramVec("admin_service_stream_duration", "The length of time each stream was open", "direction")
+	AdminServiceStreamsOpenedCount = DefaultCounterVec("admin_service_streams_opened_count", "Number of streams opened", "direction")
+	AdminServiceStreamsClosedCount = DefaultCounterVec("admin_service_streams_closed_count", "Number of streams closed", "direction")
+	AdminServiceStreamReqCount     = DefaultCounterVec("admin_service_stream_request_count", "Number of messages received", "direction")
+	AdminServiceStreamRespCount    = DefaultCounterVec("admin_service_stream_response_count", "Number of messages received", "direction")
 	// AdminServiceStreamTerminatedCount labels are direction (inbound/outbound) and terminated_by (source/target)
 	AdminServiceStreamTerminatedCount = DefaultCounterVec("admin_service_stream_terminated_count", "Stream was terminated by remote server", "direction", "terminated_by")
 
@@ -100,7 +99,6 @@ func init() {
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
 		collectors.WithoutGoCollectorRuntimeMetrics(collectors.MetricsDebug.Matcher)))
 	prometheus.MustRegister(AdminServiceStreamsActive)
-	prometheus.MustRegister(AdminServiceWaitingForConnection)
 	prometheus.MustRegister(AdminServiceStreamDuration)
 	prometheus.MustRegister(AdminServiceStreamsOpenedCount)
 	prometheus.MustRegister(AdminServiceStreamsClosedCount)

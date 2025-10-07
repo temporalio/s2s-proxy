@@ -49,6 +49,7 @@ type (
 		Address() string
 		IsUsable() bool
 		Describe() string
+		Name() string
 	}
 	MuxProviderBuilder func(AddNewMux, context.Context) (MuxProvider, error)
 )
@@ -180,4 +181,7 @@ func (m *multiMuxManager) Describe() string {
 	sb.WriteString(strconv.FormatBool(m.hasShutDown.IsShutdown()))
 	sb.WriteString("]")
 	return sb.String()
+}
+func (m *multiMuxManager) Name() string {
+	return m.name
 }
