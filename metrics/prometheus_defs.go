@@ -23,10 +23,8 @@ var (
 
 	// /proxy/health_check.go
 
-	InboundIsHealthy         = DefaultGauge("health_check_success", "Inbound mux server is healthy")
-	InboundHealthCheckCount  = DefaultCounter("health_check_success_count", "Inbound health check count")
-	OutboundIsHealthy        = DefaultGauge("outbound_is_healthy", "Outbound proxy service is healthy")
-	OutboundHealthCheckCount = DefaultCounter("outbound_health_check_count", "Outbound health check count")
+	LBHealthSuccessCount = DefaultCounterVec("health_check_success", "Indicates whether the proxy reported healthy to the LB", "direction")
+	LBHealthCheckCount   = DefaultCounterVec("health_check_success_count", "Emitted every health check", "direction")
 
 	// /proxy/proxy.go
 
@@ -106,10 +104,8 @@ func init() {
 	prometheus.MustRegister(AdminServiceStreamRespCount)
 	prometheus.MustRegister(AdminServiceStreamTerminatedCount)
 
-	prometheus.MustRegister(InboundIsHealthy)
-	prometheus.MustRegister(InboundHealthCheckCount)
-	prometheus.MustRegister(OutboundIsHealthy)
-	prometheus.MustRegister(OutboundHealthCheckCount)
+	prometheus.MustRegister(LBHealthSuccessCount)
+	prometheus.MustRegister(LBHealthCheckCount)
 
 	prometheus.MustRegister(GRPCServerMetrics)
 	prometheus.MustRegister(NewProxyCount)

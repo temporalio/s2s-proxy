@@ -48,6 +48,7 @@ type (
 		// Address is used by unit tests for dynamic port allocation
 		Address() string
 		IsUsable() bool
+		HasConnectionsAvailable() bool
 		Describe() string
 		Name() string
 	}
@@ -100,6 +101,9 @@ func (m *multiMuxManager) IsUsable() bool {
 		}
 	}
 	return false
+}
+func (m *multiMuxManager) HasConnectionsAvailable() bool {
+	return m.muxProvider.HasConnectionsAvailable()
 }
 
 func (m *multiMuxManager) AddConnection(yamuxSession *yamux.Session, conn net.Conn) {

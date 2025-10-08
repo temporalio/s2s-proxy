@@ -62,6 +62,7 @@ type (
 		IsUsable() bool
 		Describe() string
 		Name() string
+		HasConnectionsAvailable() bool
 	}
 	// closableClientConn represents a ClientConnInterface with a Close and a Describe. It's implemented by
 	// grpcutil.MultiClientConn and describableClientConn.
@@ -238,6 +239,10 @@ func (c *ClusterConnection) Describe() string {
 		c.outboundServer.Describe(), c.outboundClient.Describe(), c.inboundServer.Describe(), c.inboundClient.Describe())
 }
 
+func (c *ClusterConnection) AcceptingInbound() bool {
+	return c.inboundServer.HasConnectionsAvailable()
+}
+
 // buildProxyServer uses the provided grpc.ClientConnInterface and config.ProxyConfig to create a grpc.Server that proxies
 // the Temporal API across the ClientConnInterface.
 func buildProxyServer(client grpc.ClientConnInterface, isInbound bool, serverCfg config.ProxyConfig, overrideExternalAddress string,
@@ -290,6 +295,9 @@ func (s *simpleGRPCServer) Start() {
 		s.server.GracefulStop()
 		_ = s.listener.Close()
 	})
+}
+func (s *simpleGRPCServer) HasConnectionsAvailable() bool {
+	return true
 }
 func (s *simpleGRPCServer) IsUsable() bool {
 	return true
