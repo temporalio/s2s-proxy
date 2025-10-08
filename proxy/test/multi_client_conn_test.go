@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc"
@@ -17,7 +18,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/temporalio/s2s-proxy/endtoendtest"
-	"github.com/temporalio/s2s-proxy/proto/1_22/server/api/adminservice/v1"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
@@ -65,18 +65,23 @@ func TestMultiClientUpdateState(t *testing.T) {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`))
 	require.NoError(t, err)
+	require.False(t, mcc.CanMakeCalls())
 	connMap := map[string]func() (net.Conn, error){"a mux!": scenario.Muxes[0].ClientMux.Open}
 	mcc.UpdateState(connMap)
+	require.True(t, mcc.CanMakeCalls())
 	requireCallWithNewClient(t, mcc)
 	for i := range 10 {
 		key := fmt.Sprintf("mux-%d", i)
 		connMap[key] = scenario.Muxes[i].ClientMux.Open
 	}
 	mcc.UpdateState(connMap)
+	require.True(t, mcc.CanMakeCalls())
 	for range scenario.Muxes {
 		requireCallWithNewClient(t, mcc)
 	}
+	require.True(t, mcc.CanMakeCalls())
 	mcc.UpdateState(make(map[string]func() (net.Conn, error)))
+	require.False(t, mcc.CanMakeCalls())
 	timeout, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	client := adminservice.NewAdminServiceClient(mcc)
 	_, err = client.DescribeCluster(timeout, &adminservice.DescribeClusterRequest{})

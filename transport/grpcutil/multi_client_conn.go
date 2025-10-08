@@ -88,6 +88,9 @@ func (mcc *MultiClientConn) OnConnectionListUpdate(muxes map[string]session.Mana
 }
 
 func (mcc *MultiClientConn) CanMakeCalls() bool {
+	if mcc == nil || mcc.lifetime.Err() != nil {
+		return false
+	}
 	mcc.connMapLock.RLock()
 	defer mcc.connMapLock.RUnlock()
 	return len(mcc.connMap) > 0

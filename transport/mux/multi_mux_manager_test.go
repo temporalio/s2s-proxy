@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/server/common/log"
 
@@ -34,7 +33,6 @@ func TestMultiMuxManager(t *testing.T) {
 			clientConns.Store(&clone)
 		})
 
-	// Avoid the MuxManager's Start(), which assumes we're using TCP
 	muxesOnPipes.serverMM.Start()
 	muxesOnPipes.clientMM.Start()
 
@@ -44,6 +42,8 @@ func TestMultiMuxManager(t *testing.T) {
 	serverEvent := proxyassert.RequireCh(t, muxesOnPipes.serverEvents, 2*time.Second, "should have seen a connection from the serverProvider")
 	require.Equal(t, "opened", clientEvent.eventType)
 	serverSession := serverEvent.session
+	require.False(t, muxesOnPipes.serverMM.CanAcceptConnections(), "All connections should have been consumed")
+	require.False(t, muxesOnPipes.clientMM.CanAcceptConnections(), "All connections should have been consumed")
 
 	// Close connections. We should see both sides fire disconnectFn
 	for _, v := range *clientConns.Load() {
@@ -59,8 +59,12 @@ func TestMultiMuxManager(t *testing.T) {
 	require.Equal(t, "closed", serverEvent.eventType)
 	require.Same(t, serverSession, serverEvent.session)
 
-	assert.True(t, clientSession.IsClosed(), "clientSession should be closed")
-	assert.True(t, serverSession.IsClosed(), "serverSession should be closed")
+	require.Eventually(t, clientSession.IsClosed, time.Millisecond*200, time.Millisecond*10, "clientSession should be closed")
+	require.Eventually(t, serverSession.IsClosed, time.Millisecond*200, time.Millisecond*10, "serverSession should be closed")
+	require.Eventually(t, func() bool { return !muxesOnPipes.serverMM.CanAcceptConnections() },
+		time.Millisecond*200, time.Millisecond*10, "Provider should start trying the connection")
+	require.Eventually(t, func() bool { return !muxesOnPipes.clientMM.CanAcceptConnections() },
+		time.Millisecond*200, time.Millisecond*10, "Client should start trying the connection")
 
 	clientConn, serverConn := net.Pipe()
 	muxesOnPipes.clientConnCh <- clientConn

@@ -47,7 +47,6 @@ type (
 		CloseChan() <-chan struct{}
 		// Address is used by unit tests for dynamic port allocation
 		Address() string
-		CanMakeCalls() bool
 		CanAcceptConnections() bool
 		Describe() string
 		Name() string
@@ -94,14 +93,6 @@ func (m *multiMuxManager) Address() string {
 	return m.muxProvider.Address()
 }
 
-func (m *multiMuxManager) CanMakeCalls() bool {
-	for _, s := range m.muxes {
-		if s.State().State == session.Connected {
-			return true
-		}
-	}
-	return false
-}
 func (m *multiMuxManager) CanAcceptConnections() bool {
 	return m.muxProvider.HasConnectionsAvailable()
 }
