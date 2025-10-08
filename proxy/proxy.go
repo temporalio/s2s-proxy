@@ -139,7 +139,7 @@ func (s *Proxy) Start() error {
 			// TODO: assumes only one mux right now. When there are multiple remotes, we may want to receive them all
 			//       on the same port and do something different here
 			for _, cc := range s.clusterConnections {
-				if !cc.AcceptingInbound() {
+				if !cc.AcceptingInboundTraffic() {
 					return false
 				}
 			}
@@ -158,7 +158,7 @@ func (s *Proxy) Start() error {
 			// TODO: assumes only one mux right now. When there are multiple remotes, some of them may be healthy
 			//       and others not
 			for _, cc := range s.clusterConnections {
-				if !cc.RemoteUsable() {
+				if !cc.AcceptingOutboundTraffic() {
 					return false
 				}
 			}

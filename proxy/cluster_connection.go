@@ -59,10 +59,9 @@ type (
 	// IsUsable and Describe allow the caller to know and log the current state of the server.
 	contextAwareServer interface {
 		Start()
-		IsUsable() bool
 		Describe() string
 		Name() string
-		HasConnectionsAvailable() bool
+		CanAcceptConnections() bool
 	}
 	// closableClientConn represents a ClientConnInterface with a Close and a Describe. It's implemented by
 	// grpcutil.MultiClientConn and describableClientConn.
@@ -70,6 +69,7 @@ type (
 		grpc.ClientConnInterface
 		Close() error
 		Describe() string
+		CanMakeCalls() bool
 	}
 )
 
@@ -228,19 +228,16 @@ func (c *ClusterConnection) Start() {
 	c.outboundServer.Start()
 	c.outboundObserver.Start(c.lifetime, c.outboundServer.Name(), "outbound")
 }
-func (c *ClusterConnection) RemoteUsable() bool {
-	return c.inboundServer.IsUsable()
-}
-func (c *ClusterConnection) LocalUsable() bool {
-	return c.outboundServer.IsUsable()
-}
 func (c *ClusterConnection) Describe() string {
 	return fmt.Sprintf("[ClusterConnection connects outbound server %s to outbound client %s, inbound server %s to inbound client %s]",
 		c.outboundServer.Describe(), c.outboundClient.Describe(), c.inboundServer.Describe(), c.inboundClient.Describe())
 }
 
-func (c *ClusterConnection) AcceptingInbound() bool {
-	return c.inboundServer.HasConnectionsAvailable()
+func (c *ClusterConnection) AcceptingInboundTraffic() bool {
+	return c.inboundClient.CanMakeCalls() && c.inboundServer.CanAcceptConnections()
+}
+func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
+	return c.outboundClient.CanMakeCalls() && c.outboundServer.CanAcceptConnections()
 }
 
 // buildProxyServer uses the provided grpc.ClientConnInterface and config.ProxyConfig to create a grpc.Server that proxies
@@ -296,10 +293,10 @@ func (s *simpleGRPCServer) Start() {
 		_ = s.listener.Close()
 	})
 }
-func (s *simpleGRPCServer) HasConnectionsAvailable() bool {
+func (s *simpleGRPCServer) CanAcceptConnections() bool {
 	return true
 }
-func (s *simpleGRPCServer) IsUsable() bool {
+func (s *simpleGRPCServer) CanMakeCalls() bool {
 	return true
 }
 func (s *simpleGRPCServer) Describe() string {
@@ -310,4 +307,7 @@ func (s *simpleGRPCServer) Name() string {
 }
 func (d describableClientConn) Describe() string {
 	return fmt.Sprintf("[grpc.ClientConn %s, state=%s]", d.Target(), d.GetState().String())
+}
+func (d describableClientConn) CanMakeCalls() bool {
+	return true
 }

@@ -87,6 +87,12 @@ func (mcc *MultiClientConn) OnConnectionListUpdate(muxes map[string]session.Mana
 	mcc.UpdateState(connMap)
 }
 
+func (mcc *MultiClientConn) CanMakeCalls() bool {
+	mcc.connMapLock.RLock()
+	defer mcc.connMapLock.RUnlock()
+	return len(mcc.connMap) > 0
+}
+
 // grpc.ClientConnInterface
 
 // Invoke forwards to grpc.ClientConn
