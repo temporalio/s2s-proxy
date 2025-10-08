@@ -21,15 +21,13 @@ type outboundHealthChecker struct {
 
 func (h *outboundHealthChecker) createHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		metrics.OutboundHealthCheckCount.Inc()
+		metrics.LBHealthCheckCount.WithLabelValues("outbound").Inc()
+		w.Header().Set("Content-Type", "text/plain")
 		if h.isHealthy() {
-			metrics.OutboundIsHealthy.Set(1)
-			w.Header().Set("Content-Type", "text/plain")
+			metrics.LBHealthSuccessCount.WithLabelValues("outbound").Inc()
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("OK"))
 		} else {
-			metrics.OutboundIsHealthy.Set(0)
-			w.Header().Set("Content-Type", "text/plain")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("Outbound mux not established. Please try again"))
 		}
@@ -44,22 +42,28 @@ func newOutboundHealthCheck(isHealthy func() bool, logger log.Logger) HealthChec
 }
 
 type inboundHealthChecker struct {
-	logger log.Logger
+	isHealthy func() bool
+	logger    log.Logger
 }
 
 func (h *inboundHealthChecker) createHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// TODO: Check something here, and use it to set isHealthy to 0
-		metrics.InboundIsHealthy.Set(1)
-		metrics.InboundHealthCheckCount.Inc()
+		metrics.LBHealthCheckCount.WithLabelValues("inbound").Inc()
 		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
+		if h.isHealthy() {
+			metrics.LBHealthSuccessCount.WithLabelValues("inbound").Inc()
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("OK"))
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("Mux capacity is full. Please try again"))
+		}
 	}
 }
 
-func newInboundHealthCheck(logger log.Logger) HealthChecker {
+func newInboundHealthCheck(isHealthy func() bool, logger log.Logger) HealthChecker {
 	return &inboundHealthChecker{
-		logger: logger,
+		isHealthy: isHealthy,
+		logger:    logger,
 	}
 }

@@ -135,7 +135,17 @@ func (s *Proxy) startMetricsHandler(lifetime context.Context, cfg config.Metrics
 func (s *Proxy) Start() error {
 	if s.inboundHealthCheckConfig != nil {
 		var err error
-		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(s.logger), *s.inboundHealthCheckConfig); err != nil {
+		healthFn := func() bool {
+			// TODO: assumes only one mux right now. When there are multiple remotes, we may want to receive them all
+			//       on the same port and do something different here
+			for _, cc := range s.clusterConnections {
+				if !cc.AcceptingInboundTraffic() {
+					return false
+				}
+			}
+			return true
+		}
+		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(healthFn, s.logger), *s.inboundHealthCheckConfig); err != nil {
 			return err
 		}
 	} else {
@@ -145,10 +155,10 @@ func (s *Proxy) Start() error {
 
 	if s.outboundHealthCheckConfig != nil {
 		healthFn := func() bool {
-			// TODO: assumes only one mux right now. When there are multiple outbounds, some of them may be healthy
+			// TODO: assumes only one mux right now. When there are multiple remotes, some of them may be healthy
 			//       and others not
 			for _, cc := range s.clusterConnections {
-				if !cc.RemoteUsable() {
+				if !cc.AcceptingOutboundTraffic() {
 					return false
 				}
 			}

@@ -49,6 +49,7 @@ type (
 		DrainConns(ctx context.Context, amt int64) error
 		Address() string
 		MetricLabels() []string
+		HasConnectionsAvailable() bool
 	}
 )
 
@@ -182,4 +183,14 @@ func (m *muxProvider) WaitForClose() {
 }
 func (m *muxProvider) isClosed() bool {
 	return m.hasCleanedUp.IsShutdown()
+}
+
+// HasConnectionsAvailable checks whether more connections can be allocated by this provider.
+// Used to return false to the inbound health check so that a receiver-provider can be removed from inbound VIP mappings
+func (m *muxProvider) HasConnectionsAvailable() bool {
+	if m.muxPermits.TryAcquire(1) {
+		m.muxPermits.Release(1)
+		return true
+	}
+	return false
 }
