@@ -59,7 +59,7 @@ var (
 	// Mux Manager
 
 	muxManagerLabels       = []string{"addr", "mode", "config_name"}
-	MuxErrors              = DefaultCounterVec("mux_errors", "Number of errors observed from mux", muxManagerLabels...)
+	MuxErrors              = DefaultCounterVec("mux_errors", "Number of errors observed from mux", append(muxManagerLabels, "error")...)
 	MuxConnectionEstablish = DefaultCounterVec("mux_connection_establish", "Number of times mux has established", muxManagerLabels...)
 	MuxDialFailed          = DefaultCounterVec("mux_dial_failed", "Mux failed when dialing", muxManagerLabels...)
 	MuxDialSuccess         = DefaultCounterVec("mux_dial_success", "Mux succeeded on dial", muxManagerLabels...)

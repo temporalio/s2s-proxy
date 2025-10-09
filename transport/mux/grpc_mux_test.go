@@ -19,6 +19,10 @@ import (
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
+func init() {
+	MuxManagerStartDelay = 0
+}
+
 func TestGRPCMux(t *testing.T) {
 	logger := log.NewTestLogger()
 

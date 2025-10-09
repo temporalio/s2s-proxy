@@ -18,10 +18,12 @@ import (
 	"github.com/temporalio/s2s-proxy/endtoendtest/testservices"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
+	"github.com/temporalio/s2s-proxy/transport/mux"
 )
 
 func init() {
 	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+	mux.MuxManagerStartDelay = 0
 }
 
 func getDynamicPorts(t *testing.T, num int) []string {

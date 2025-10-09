@@ -17,6 +17,7 @@ import (
 
 func init() {
 	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+	MuxManagerStartDelay = 0
 }
 
 func TestMultiMuxManager(t *testing.T) {

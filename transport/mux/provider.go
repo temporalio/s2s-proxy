@@ -3,6 +3,7 @@ package mux
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -65,7 +66,6 @@ func NewMuxProvider(ctx context.Context,
 ) MuxProvider {
 	// Initialize the counters so we get clear "0"s
 	metrics.MuxConnectionEstablish.WithLabelValues(metricLabels...)
-	metrics.MuxErrors.WithLabelValues(metricLabels...)
 	provider := &muxProvider{
 		name:         name,
 		lifetime:     ctx,
@@ -111,32 +111,42 @@ func (m *muxProvider) Start() {
 				var conn net.Conn
 				conn, err = m.connProvider.NewConnection()
 				if err != nil {
-					if errors.Is(err, context.Canceled) {
+					if m.lifetime.Err() != nil {
 						return
 					}
 					m.muxPermits.Release(1)
-					m.logger.Info("Error getting connection from connProvider", tag.Error(err))
+					m.logger.Info("Couldn't connect to mux TCP destination", tag.Error(err))
 					continue connect
 				}
 
 				var session *yamux.Session
 				session, err = m.sessionFn(conn)
 				if err != nil {
-					if errors.Is(err, context.Canceled) {
+					if m.lifetime.Err() != nil {
 						return
 					}
 					m.muxPermits.Release(1)
-					m.logger.Error("Failed to create mux session", tag.Error(err))
+					m.logger.Error("Invalid mux client configuration", tag.Error(err))
 					continue connect
 				}
 				// Force Yamux to actually send something on the conn to make sure it's alive
 				_, err = session.Ping()
 				if err != nil {
-					if errors.Is(err, context.Canceled) {
+					if m.lifetime.Err() != nil {
 						return
+					} else if errors.Is(err, yamux.ErrConnectionWriteTimeout) {
+						m.logger.Info("Timed out establishing mux", tag.Error(err), tag.NewStringTag("remoteAddr", session.RemoteAddr().String()))
+						metrics.MuxErrors.WithLabelValues(append(m.metricLabels, "timeout")...).Inc()
+					} else if err == io.EOF {
+						m.logger.Info("Remote immediately disconnected. This usually means the listener had queued connections", tag.Error(err), tag.NewStringTag("remoteAddr", session.RemoteAddr().String()))
+						metrics.MuxErrors.WithLabelValues(append(m.metricLabels, "disconnected")...).Inc()
+					} else {
+						m.logger.Warn("Unknown error", tag.Error(err), tag.NewStringTag("remoteAddr", session.RemoteAddr().String()))
+						metrics.MuxErrors.WithLabelValues(append(m.metricLabels, "unknown")...).Inc()
 					}
-					m.logger.Error("got an invalid connection from connProvider", tag.Error(err))
-					metrics.MuxErrors.WithLabelValues(m.metricLabels...).Inc()
+					// Make sure session & conn close on error
+					_ = session.Close()
+					_ = conn.Close()
 					m.muxPermits.Release(1)
 					continue connect
 				}

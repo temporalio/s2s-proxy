@@ -17,11 +17,13 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/endtoendtest"
+	"github.com/temporalio/s2s-proxy/transport/mux"
 )
 
 func init() {
 	// silence info log spam
 	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+	mux.MuxManagerStartDelay = 0
 }
 
 const (

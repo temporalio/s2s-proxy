@@ -83,7 +83,7 @@ func waitAndCleanup(s *muxSession, afterShutdown func()) {
 	s.cancel()
 	_ = s.session.Close()
 	_ = s.conn.Close()
-	s.state.Store(&MuxSessionInfo{State: Closed})
+	s.state.Store(&MuxSessionInfo{State: Closed, Err: s.state.Load().Err})
 	afterShutdown()
 }
 

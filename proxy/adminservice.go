@@ -43,7 +43,10 @@ func NewAdminServiceProxyServer(
 	reportStreamValue func(idx int32, value int32),
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
-	logger = log.With(logger, common.ServiceTag(serviceName))
+	// The AdminServiceStreams will duplicate the same output for an underlying connection issue hundreds of times.
+	// Limit their output to three times per minute
+	logger = log.NewThrottledLogger(log.With(logger, common.ServiceTag(serviceName)),
+		func() float64 { return 3.0 / 60.0 })
 	return &adminServiceProxyServer{
 		adminClient:             adminClient,
 		logger:                  logger,

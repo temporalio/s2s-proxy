@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/hashicorp/yamux"
 	"go.temporal.io/server/common/channel"
@@ -16,6 +17,8 @@ import (
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
+
+var MuxManagerStartDelay = time.Minute
 
 type (
 	multiMuxManager struct {
@@ -150,6 +153,25 @@ func (m *multiMuxManager) Start() {
 	m.init.Do(func() {
 		// Start the mux provider
 		m.muxProvider.Start()
+		go func() {
+			ticker := time.NewTicker(time.Minute)
+			for m.lifetime.Err() == nil {
+				select {
+				case <-ticker.C:
+				case <-m.lifetime.Done():
+				}
+				sb := strings.Builder{}
+				m.muxesLock.RLock()
+				for _, v := range m.muxes {
+					sb.WriteString(v.Describe())
+				}
+				m.muxesLock.RUnlock()
+				m.logger.Info("MuxManager status", tag.NewBoolTag("shutdown", m.hasShutDown.IsShutdown()),
+					tag.Name(m.name), tag.NewStringTag("sessions", sb.String()))
+			}
+		}()
+		// Allow the mux provider some time to provide connections
+		<-time.After(MuxManagerStartDelay)
 	})
 }
 func (m *multiMuxManager) Describe() string {
