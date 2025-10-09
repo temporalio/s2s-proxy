@@ -59,6 +59,7 @@ func emitYamuxMetrics(lifetime context.Context, muxCategory string, id string, s
 		} else {
 			// Clean up the label so we don't report it forever
 			metrics.MuxStreamsActive.DeleteLabelValues(metricLabels...)
+			metrics.MuxSessionOpen.DeleteLabelValues(metricLabels...)
 		}
 		metrics.MuxObserverReportCount.WithLabelValues(metricLabels...).Inc()
 	}

@@ -110,7 +110,6 @@ func (p *establishingConnProvider) NewConnection() (net.Conn, error) {
 		return nil, err
 	}
 	metrics.MuxDialSuccess.WithLabelValues(p.metricLabels...).Inc()
-	metrics.MuxConnectionEstablish.WithLabelValues(p.metricLabels...).Inc()
 	return client, nil
 }
 

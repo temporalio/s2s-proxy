@@ -44,6 +44,30 @@ func (s *muxServer) Run(t *testing.T) {
 	}
 }
 
+func TestListenerHandoff(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	serverConnCh := make(chan net.Conn)
+	listenerClosedCh := make(chan struct{})
+	go func() {
+		serverSide, err := listener.Accept()
+		require.NoError(t, err)
+		serverConnCh <- serverSide
+		err = listener.Close()
+		require.NoError(t, err)
+		close(listenerClosedCh)
+	}()
+	clientConn, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	serverConn := <-serverConnCh
+	<-listenerClosedCh
+	_, _ = clientConn.Write([]byte("Hi"))
+	buf := make([]byte, 1024)
+	n, _ := serverConn.Read(buf)
+	require.Equal(t, []byte("Hi"), buf[:n])
+	close(serverConnCh)
+}
+
 func TestMultiMux(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	serverCh, shutDownMux, muxListenerAddrCh := make(chan *muxServer), make(chan struct{}), make(chan string)
