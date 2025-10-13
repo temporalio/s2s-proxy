@@ -23,6 +23,7 @@ type (
 	SenderDebugInfo struct {
 		RingStartProxyID      int64            `json:"ring_start_proxy_id"`
 		RingSize              int              `json:"ring_size"`
+		RingMaxSize           int              `json:"ring_max_size"`
 		RingCapacity          int              `json:"ring_capacity"`
 		RingHead              int              `json:"ring_head"`
 		NextProxyTaskID       int64            `json:"next_proxy_task_id"`

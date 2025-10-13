@@ -31,6 +31,7 @@ type proxyIDRingBuffer struct {
 	entries      []proxyIDMapping
 	head         int
 	size         int
+	maxSize      int   // Maximum size ever reached
 	startProxyID int64 // proxyID of the current head element when size > 0
 }
 
@@ -76,6 +77,9 @@ func (b *proxyIDRingBuffer) Append(proxyID int64, sourceShard history.ClusterSha
 				pos := (b.head + b.size) % len(b.entries)
 				b.entries[pos] = proxyIDMapping{sourceShard: history.ClusterShardID{}, sourceTask: 0}
 				b.size++
+				if b.size > b.maxSize {
+					b.maxSize = b.size
+				}
 				expected++
 			}
 		}
@@ -83,6 +87,9 @@ func (b *proxyIDRingBuffer) Append(proxyID int64, sourceShard history.ClusterSha
 	pos := (b.head + b.size) % len(b.entries)
 	b.entries[pos] = proxyIDMapping{sourceShard: sourceShard, sourceTask: sourceTask}
 	b.size++
+	if b.size > b.maxSize {
+		b.maxSize = b.size
+	}
 }
 
 // AggregateUpTo computes the per-shard aggregation up to watermark without removing entries.
@@ -172,6 +179,7 @@ func (s *proxyStreamSender) buildSenderDebugSnapshot(maxEntries int) *SenderDebu
 	if s.idRing != nil {
 		info.RingStartProxyID = s.idRing.startProxyID
 		info.RingSize = s.idRing.size
+		info.RingMaxSize = s.idRing.maxSize
 		info.RingCapacity = len(s.idRing.entries)
 		info.RingHead = s.idRing.head
 
