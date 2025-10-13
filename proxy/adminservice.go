@@ -252,16 +252,16 @@ func ClusterShardIDtoShortString(sd history.ClusterShardID) string {
 // stream using our configured adminClient. When we Recv on the initiator, we Send to the client.
 // When we Recv on the client, we Send to the initiator
 func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
-	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	streamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 ) (retError error) {
 	defer log.CapturePanic(s.logger, &retError)
 
-	targetMetadata, ok := metadata.FromIncomingContext(targetStreamServer.Context())
+	targetMetadata, ok := metadata.FromIncomingContext(streamServer.Context())
 	if !ok {
 		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
 	}
 	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(
-		headers.NewGRPCHeaderGetter(targetStreamServer.Context()),
+		headers.NewGRPCHeaderGetter(streamServer.Context()),
 	)
 	if err != nil {
 		return err
@@ -313,7 +313,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 
 	forwarder := newStreamForwarder(
 		s.adminClient,
-		targetStreamServer,
+		streamServer,
 		targetMetadata,
 		sourceClusterShardID,
 		targetClusterShardID,

@@ -159,28 +159,28 @@ func GetGlobalStreamTracker() *StreamTracker {
 
 // BuildSenderStreamID returns the canonical sender stream ID.
 func BuildSenderStreamID(source, target history.ClusterShardID) string {
-	return fmt.Sprintf("snd-%s-%s", ClusterShardIDtoShortString(source), ClusterShardIDtoShortString(target))
+	return fmt.Sprintf("snd-%s", ClusterShardIDtoShortString(target))
 }
 
 // BuildReceiverStreamID returns the canonical receiver stream ID.
 func BuildReceiverStreamID(source, target history.ClusterShardID) string {
-	return fmt.Sprintf("rcv-%s-%s", ClusterShardIDtoShortString(source), ClusterShardIDtoShortString(target))
+	return fmt.Sprintf("rcv-%s", ClusterShardIDtoShortString(source))
 }
 
 // BuildForwarderStreamID returns the canonical forwarder stream ID.
 // Note: forwarder uses server-first ordering in the ID.
 func BuildForwarderStreamID(client, server history.ClusterShardID) string {
-	return fmt.Sprintf("fwd-%s-%s", ClusterShardIDtoShortString(server), ClusterShardIDtoShortString(client))
+	return fmt.Sprintf("fwd-snd-%s", ClusterShardIDtoShortString(server))
 }
 
 // BuildIntraProxySenderStreamID returns the server-side intra-proxy stream ID for a peer and shard pair.
 func BuildIntraProxySenderStreamID(peer string, source, target history.ClusterShardID) string {
-	return fmt.Sprintf("ip-snd-%s-%s|%s", peer, ClusterShardIDtoShortString(source), ClusterShardIDtoShortString(target))
+	return fmt.Sprintf("ip-snd-%s-%s|%s", ClusterShardIDtoShortString(source), ClusterShardIDtoShortString(target), peer)
 }
 
 // BuildIntraProxyReceiverStreamID returns the client-side intra-proxy stream ID for a peer and shard pair.
 func BuildIntraProxyReceiverStreamID(peer string, source, target history.ClusterShardID) string {
-	return fmt.Sprintf("ip-rcv-%s-%s|%s", peer, ClusterShardIDtoShortString(source), ClusterShardIDtoShortString(target))
+	return fmt.Sprintf("ip-rcv-%s-%s|%s", ClusterShardIDtoShortString(source), ClusterShardIDtoShortString(target), peer)
 }
 
 // formatDurationSeconds formats a duration in seconds to a readable string

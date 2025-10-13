@@ -29,3 +29,5 @@ frontend.persistenceMaxQPS:
     constraints: {}
 history.shardUpdateMinInterval:
   - value: 1s
+history.ReplicationStreamSendEmptyTaskDuration:
+  - value: 10s

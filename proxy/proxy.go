@@ -348,12 +348,16 @@ func (s *Proxy) GetRemoteSendChansByCluster(clusterID int32) map[history.Cluster
 	return result
 }
 
-// RemoveRemoteSendChan removes the send channel for a specific shard ID
-func (s *Proxy) RemoveRemoteSendChan(shardID history.ClusterShardID) {
+// RemoveRemoteSendChan removes the send channel for a specific shard ID only if it matches the provided channel
+func (s *Proxy) RemoveRemoteSendChan(shardID history.ClusterShardID, expectedChan chan RoutedMessage) {
 	s.remoteSendChannelsMu.Lock()
 	defer s.remoteSendChannelsMu.Unlock()
-	delete(s.remoteSendChannels, shardID)
-	s.logger.Info("Removed remote send channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	if currentChan, exists := s.remoteSendChannels[shardID]; exists && currentChan == expectedChan {
+		delete(s.remoteSendChannels, shardID)
+		s.logger.Info("Removed remote send channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	} else {
+		s.logger.Info("Skipped removing remote send channel for shard (channel mismatch or already removed)", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	}
 }
 
 // SetLocalAckChan registers an ack channel for a specific shard ID
@@ -372,9 +376,21 @@ func (s *Proxy) GetLocalAckChan(shardID history.ClusterShardID) (chan RoutedAck,
 	return ch, exists
 }
 
-// RemoveLocalAckChan removes the ack channel for a specific shard ID
-func (s *Proxy) RemoveLocalAckChan(shardID history.ClusterShardID) {
+// RemoveLocalAckChan removes the ack channel for a specific shard ID only if it matches the provided channel
+func (s *Proxy) RemoveLocalAckChan(shardID history.ClusterShardID, expectedChan chan RoutedAck) {
 	s.logger.Info("Remove local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	s.localAckChannelsMu.Lock()
+	defer s.localAckChannelsMu.Unlock()
+	if currentChan, exists := s.localAckChannels[shardID]; exists && currentChan == expectedChan {
+		delete(s.localAckChannels, shardID)
+	} else {
+		s.logger.Info("Skipped removing local ack channel for shard (channel mismatch or already removed)", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	}
+}
+
+// ForceRemoveLocalAckChan unconditionally removes the ack channel for a specific shard ID
+func (s *Proxy) ForceRemoveLocalAckChan(shardID history.ClusterShardID) {
+	s.logger.Info("Force remove local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 	s.localAckChannelsMu.Lock()
 	defer s.localAckChannelsMu.Unlock()
 	delete(s.localAckChannels, shardID)
@@ -396,7 +412,9 @@ func (s *Proxy) GetLocalReceiverCancelFunc(shardID history.ClusterShardID) (cont
 	return cancelFunc, exists
 }
 
-// RemoveLocalReceiverCancelFunc removes the cancel function for a local receiver for a specific shard ID
+// RemoveLocalReceiverCancelFunc unconditionally removes the cancel function for a local receiver for a specific shard ID
+// Note: Functions cannot be compared in Go, so we use unconditional removal.
+// The race condition is primarily with channels; TerminatePreviousLocalReceiver handles forced cleanup.
 func (s *Proxy) RemoveLocalReceiverCancelFunc(shardID history.ClusterShardID) {
 	s.logger.Info("Remove local receiver cancel function for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 	s.localReceiverCancelFuncsMu.Lock()
@@ -413,10 +431,8 @@ func (s *Proxy) TerminatePreviousLocalReceiver(serverShardID history.ClusterShar
 		// Cancel the previous receiver's context
 		prevCancelFunc()
 
-		// Remove the cancel function from tracking
+		// Force remove the cancel function and ack channel from tracking
 		s.RemoveLocalReceiverCancelFunc(serverShardID)
-
-		// Also clean up the associated ack channel if it exists
-		s.RemoveLocalAckChan(serverShardID)
+		s.ForceRemoveLocalAckChan(serverShardID)
 	}
 }

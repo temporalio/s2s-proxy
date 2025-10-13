@@ -59,32 +59,33 @@ func newIntraProxyManager(logger log.Logger, proxy *Proxy, shardManager ShardMan
 // intraProxyStreamSender registers server stream and forwards upstream ACKs to shard owners (local or remote).
 // Replication messages are sent by intraProxyManager.sendMessages using the registered server stream.
 type intraProxyStreamSender struct {
-	logger        log.Logger
-	shardManager  ShardManager
-	proxy         *Proxy
-	intraMgr      *intraProxyManager
-	peerNodeName  string
-	targetShardID history.ClusterShardID
-	sourceShardID history.ClusterShardID
-	streamID      string
-	server        adminservice.AdminService_StreamWorkflowReplicationMessagesServer
+	logger             log.Logger
+	shardManager       ShardManager
+	proxy              *Proxy
+	intraMgr           *intraProxyManager
+	peerNodeName       string
+	targetShardID      history.ClusterShardID
+	sourceShardID      history.ClusterShardID
+	streamID           string
+	sourceStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer
 }
 
 func (s *intraProxyStreamSender) Run(
-	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	sourceStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	shutdownChan channel.ShutdownOnce,
 ) error {
+	s.streamID = BuildIntraProxySenderStreamID(s.peerNodeName, s.sourceShardID, s.targetShardID)
+	s.logger = log.With(s.logger, tag.NewStringTag("streamID", s.streamID))
+
 	s.logger.Info("intraProxyStreamSender Run")
 	defer s.logger.Info("intraProxyStreamSender Run finished")
 
 	// Register server-side intra-proxy stream in tracker
-	s.streamID = BuildIntraProxySenderStreamID(s.peerNodeName, s.sourceShardID, s.targetShardID)
-	s.logger = log.With(s.logger, tag.NewStringTag("streamID", s.streamID))
 	st := GetGlobalStreamTracker()
 	st.RegisterStream(s.streamID, "StreamWorkflowReplicationMessages", "intra-proxy", ClusterShardIDtoString(s.targetShardID), ClusterShardIDtoString(s.sourceShardID), StreamRoleForwarder)
 	defer st.UnregisterStream(s.streamID)
 
-	s.server = targetStreamServer
+	s.sourceStreamServer = sourceStreamServer
 
 	// register this sender so sendMessages can use it
 	s.intraMgr.RegisterSender(s.peerNodeName, s.targetShardID, s.sourceShardID, s)
@@ -100,7 +101,7 @@ func (s *intraProxyStreamSender) recvAck(shutdownChan channel.ShutdownOnce) erro
 	defer s.logger.Info("intraProxyStreamSender recvAck finished")
 
 	for !shutdownChan.IsShutdown() {
-		req, err := s.server.Recv()
+		req, err := s.sourceStreamServer.Recv()
 		if err == io.EOF {
 			s.logger.Info("intraProxyStreamSender recvAck encountered EOF")
 			return nil
@@ -143,6 +144,9 @@ func (s *intraProxyStreamSender) recvAck(shutdownChan channel.ShutdownOnce) erro
 
 // sendReplicationMessages sends replication messages to the peer via the server stream.
 func (s *intraProxyStreamSender) sendReplicationMessages(resp *adminservice.StreamWorkflowReplicationMessagesResponse) error {
+	s.logger.Info("intraProxyStreamSender sendReplicationMessages started")
+	defer s.logger.Info("intraProxyStreamSender sendReplicationMessages finished")
+
 	// Update server-side intra-proxy tracker for outgoing messages
 	if msgs, ok := resp.GetAttributes().(*adminservice.StreamWorkflowReplicationMessagesResponse_Messages); ok && msgs.Messages != nil {
 		st := GetGlobalStreamTracker()
@@ -154,7 +158,7 @@ func (s *intraProxyStreamSender) sendReplicationMessages(resp *adminservice.Stre
 		st.UpdateStreamReplicationMessages(s.streamID, msgs.Messages.ExclusiveHighWatermark)
 		st.UpdateStream(s.streamID)
 	}
-	if err := s.server.Send(resp); err != nil {
+	if err := s.sourceStreamServer.Send(resp); err != nil {
 		return err
 	}
 	return nil
@@ -177,6 +181,9 @@ type intraProxyStreamReceiver struct {
 
 // Run opens the client stream with metadata, registers tracking, and starts receiver goroutines.
 func (r *intraProxyStreamReceiver) Run(ctx context.Context, p *Proxy, conn *grpc.ClientConn) error {
+	r.streamID = BuildIntraProxyReceiverStreamID(r.peerNodeName, r.sourceShardID, r.targetShardID)
+	r.logger = log.With(r.logger, tag.NewStringTag("streamID", r.streamID))
+
 	r.logger.Info("intraProxyStreamReceiver Run")
 	// Build metadata according to receiver pattern: client=targetShard, server=sourceShard
 	md := metadata.New(map[string]string{})
@@ -204,8 +211,6 @@ func (r *intraProxyStreamReceiver) Run(ctx context.Context, p *Proxy, conn *grpc
 	r.streamClient = stream
 
 	// Register client-side intra-proxy stream in tracker
-	r.streamID = BuildIntraProxyReceiverStreamID(r.peerNodeName, r.sourceShardID, r.targetShardID)
-	r.logger = log.With(r.logger, tag.NewStringTag("streamID", r.streamID))
 	st := GetGlobalStreamTracker()
 	st.RegisterStream(r.streamID, "StreamWorkflowReplicationMessages", "intra-proxy", ClusterShardIDtoString(r.targetShardID), ClusterShardIDtoString(r.sourceShardID), StreamRoleForwarder)
 	defer st.UnregisterStream(r.streamID)
@@ -216,8 +221,8 @@ func (r *intraProxyStreamReceiver) Run(ctx context.Context, p *Proxy, conn *grpc
 
 // recvReplicationMessages receives replication messages and forwards to local shard owner.
 func (r *intraProxyStreamReceiver) recvReplicationMessages(self *Proxy) error {
-	r.logger.Info("recvReplicationMessages started")
-	defer r.logger.Info("recvReplicationMessages finished")
+	r.logger.Info("intraProxyStreamReceiver recvReplicationMessages started")
+	defer r.logger.Info("intraProxyStreamReceiver recvReplicationMessages finished")
 
 	shutdown := r.shutdown
 	defer shutdown.Shutdown()
@@ -250,11 +255,22 @@ func (r *intraProxyStreamReceiver) recvReplicationMessages(self *Proxy) error {
 			logged := false
 			for !sent {
 				if ch, ok := self.GetRemoteSendChan(r.targetShardID); ok {
-					select {
-					case ch <- msg:
-						sent = true
-						r.logger.Info("Receiver sent ReplicationTasks to local target shard", tag.NewStringTag("targetShard", ClusterShardIDtoString(r.targetShardID)), tag.NewInt64("exclusive_high", msgs.Messages.ExclusiveHighWatermark))
-					case <-shutdown.Channel():
+					func() {
+						defer func() {
+							if panicErr := recover(); panicErr != nil {
+								r.logger.Warn("Failed to send to local target shard (channel closed)",
+									tag.NewStringTag("targetShard", ClusterShardIDtoString(r.targetShardID)))
+							}
+						}()
+						select {
+						case ch <- msg:
+							sent = true
+							r.logger.Info("Receiver sent ReplicationTasks to local target shard", tag.NewStringTag("targetShard", ClusterShardIDtoString(r.targetShardID)), tag.NewInt64("exclusive_high", msgs.Messages.ExclusiveHighWatermark))
+						case <-shutdown.Channel():
+							// Will be handled outside the func
+						}
+					}()
+					if shutdown.IsShutdown() {
 						return nil
 					}
 				} else {
@@ -277,6 +293,9 @@ func (r *intraProxyStreamReceiver) recvReplicationMessages(self *Proxy) error {
 
 // sendAck sends an ACK upstream via the client stream and updates tracker.
 func (r *intraProxyStreamReceiver) sendAck(req *adminservice.StreamWorkflowReplicationMessagesRequest) error {
+	r.logger.Info("intraProxyStreamReceiver sendAck started")
+	defer r.logger.Info("intraProxyStreamReceiver sendAck finished")
+
 	if err := r.streamClient.Send(req); err != nil {
 		return err
 	}
@@ -722,12 +741,6 @@ func (m *intraProxyManager) ReconcilePeerStreams(
 	check := func(ps *peerState) {
 		// Collect keys to close for receivers
 		for key := range ps.receivers {
-			if _, ok2 := desired[key]; !ok2 {
-				m.closePeerShardLocked(peerNodeName, ps, key)
-			}
-		}
-		// And for server-side senders, if they don't belong to desired pairs
-		for key := range ps.senders {
 			if _, ok2 := desired[key]; !ok2 {
 				m.closePeerShardLocked(peerNodeName, ps, key)
 			}
