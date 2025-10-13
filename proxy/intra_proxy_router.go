@@ -344,7 +344,10 @@ func (m *intraProxyManager) EnsureReceiverForPeerShard(p *Proxy, peerNodeName st
 		return
 	}
 	// Require at least one shard to be local to this instance
-	if !m.shardManager.IsLocalShard(targetShard) && !m.shardManager.IsLocalShard(sourceShard) {
+	isLocalTargetShard := m.shardManager.IsLocalShard(targetShard)
+	isLocalSourceShard := m.shardManager.IsLocalShard(sourceShard)
+	if !isLocalTargetShard && !isLocalSourceShard {
+		logger.Info("EnsureReceiverForPeerShard skipping because neither shard is local", tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShard)), tag.NewStringTag("sourceShard", ClusterShardIDtoString(sourceShard)), tag.NewBoolTag("isLocalTargetShard", isLocalTargetShard), tag.NewBoolTag("isLocalSourceShard", isLocalSourceShard))
 		return
 	}
 	// Consolidated path: ensure stream and background loops
@@ -483,8 +486,13 @@ func (m *intraProxyManager) ensureStream(
 	// Let the receiver open stream, register tracking, and start goroutines
 	go func() {
 		if err := recv.Run(ctx, p, ps.conn); err != nil {
-			recv.logger.Error("intraProxyStreamReceiver Run failed", tag.Error(err))
+			m.logger.Error("intraProxyStreamReceiver.Run error", tag.Error(err))
 		}
+		// remove the receiver from the peer state
+		m.streamsMu.Lock()
+		delete(ps.receivers, key)
+		delete(ps.recvShutdown, key)
+		m.streamsMu.Unlock()
 	}()
 	return nil
 }
@@ -641,6 +649,8 @@ func (m *intraProxyManager) ClosePeerShard(peer string, clientShard, serverShard
 }
 
 func (m *intraProxyManager) Start() error {
+	m.logger.Info("intraProxyManager started")
+	defer m.logger.Info("intraProxyManager stopped")
 	go func() {
 		for {
 			// timer

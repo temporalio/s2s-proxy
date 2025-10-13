@@ -32,15 +32,15 @@ profiling:
 memberlist:
   enabled: true
   nodeName: "proxy-node-b-1"
-  bindAddr: "0.0.0.0"
+  bindAddr: "127.0.0.1"
   bindPort: 6335
-  joinAddrs:
-    - "localhost:6435"
+  # joinAddrs:
+  #   - "localhost:6435"
   proxyAddresses:
     "proxy-node-b-1": "localhost:6333"
     "proxy-node-b-2": "localhost:6433"
-  # TCP-only configuration for restricted networks
+  # # TCP-only configuration for restricted networks
   tcpOnly: true           # Use TCP transport only, disable UDP
-  disableTCPPings: true   # Disable TCP pings for faster convergence
-  probeTimeoutMs: 1000    # Longer timeout for network latency
-  probeIntervalMs: 2000   # Less frequent probes to reduce network noise
+  # disableTCPPings: true   # Disable TCP pings for faster convergence
+  # probeTimeoutMs: 1000    # Longer timeout for network latency
+  # probeIntervalMs: 2000   # Less frequent probes to reduce network noise

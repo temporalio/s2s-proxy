@@ -162,9 +162,6 @@ func (sm *shardManagerImpl) SetOnRemoteShardChange(handler func(peer string, sha
 func (sm *shardManagerImpl) Start(lifetime context.Context) error {
 	sm.logger.Info("Starting shard manager")
 
-	sm.mutex.Lock()
-	defer sm.mutex.Unlock()
-
 	if sm.started {
 		sm.logger.Info("Shard manager already started")
 		return nil
@@ -173,20 +170,29 @@ func (sm *shardManagerImpl) Start(lifetime context.Context) error {
 	// Configure memberlist
 	var mlConfig *memberlist.Config
 	if sm.config.TCPOnly {
-		mlConfig = memberlist.DefaultWANConfig()
-		// Disable UDP for restricted networks
+		// Use LAN config as base for TCP-only mode
+		mlConfig = memberlist.DefaultLANConfig()
 		mlConfig.DisableTcpPings = sm.config.DisableTCPPings
+		// Set default timeouts for TCP-only if not specified
+		if sm.config.ProbeTimeoutMs == 0 {
+			mlConfig.ProbeTimeout = 1 * time.Second
+		}
+		if sm.config.ProbeIntervalMs == 0 {
+			mlConfig.ProbeInterval = 2 * time.Second
+		}
 	} else {
 		mlConfig = memberlist.DefaultLocalConfig()
 	}
-
 	mlConfig.Name = sm.config.NodeName
 	mlConfig.BindAddr = sm.config.BindAddr
 	mlConfig.BindPort = sm.config.BindPort
+	mlConfig.AdvertiseAddr = sm.config.BindAddr
+	mlConfig.AdvertisePort = sm.config.BindPort
+
 	mlConfig.Delegate = sm.delegate
 	mlConfig.Events = &shardEventDelegate{manager: sm, logger: sm.logger}
 
-	// Configure timeouts if specified
+	// Configure custom timeouts if specified
 	if sm.config.ProbeTimeoutMs > 0 {
 		mlConfig.ProbeTimeout = time.Duration(sm.config.ProbeTimeoutMs) * time.Millisecond
 	}
@@ -194,25 +200,60 @@ func (sm *shardManagerImpl) Start(lifetime context.Context) error {
 		mlConfig.ProbeInterval = time.Duration(sm.config.ProbeIntervalMs) * time.Millisecond
 	}
 
-	// Create memberlist
-	ml, err := memberlist.Create(mlConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create memberlist: %w", err)
+	sm.logger.Info("Creating memberlist",
+		tag.NewStringTag("nodeName", mlConfig.Name),
+		tag.NewStringTag("bindAddr", mlConfig.BindAddr),
+		tag.NewStringTag("bindPort", fmt.Sprintf("%d", mlConfig.BindPort)),
+		tag.NewBoolTag("tcpOnly", sm.config.TCPOnly),
+		tag.NewBoolTag("disableTcpPings", mlConfig.DisableTcpPings),
+		tag.NewStringTag("probeTimeout", mlConfig.ProbeTimeout.String()),
+		tag.NewStringTag("probeInterval", mlConfig.ProbeInterval.String()))
+
+	// Create memberlist with timeout protection
+	type result struct {
+		ml  *memberlist.Memberlist
+		err error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		ml, err := memberlist.Create(mlConfig)
+		resultCh <- result{ml: ml, err: err}
+	}()
+
+	var ml *memberlist.Memberlist
+	select {
+	case res := <-resultCh:
+		ml = res.ml
+		if res.err != nil {
+			return fmt.Errorf("failed to create memberlist: %w", res.err)
+		}
+		sm.logger.Info("Memberlist created successfully")
+	case <-time.After(10 * time.Second):
+		return fmt.Errorf("memberlist.Create() timed out after 10s - check bind address/port availability")
 	}
 
+	sm.mutex.Lock()
 	sm.ml = ml
 	sm.localAddr = fmt.Sprintf("%s:%d", sm.config.BindAddr, sm.config.BindPort)
+	sm.started = true
+
+	sm.logger.Info("Shard manager base initialization complete",
+		tag.NewStringTag("node", sm.config.NodeName),
+		tag.NewStringTag("addr", sm.localAddr))
+
+	sm.mutex.Unlock()
 
 	// Join existing cluster if configured
 	if len(sm.config.JoinAddrs) > 0 {
+		sm.logger.Info("Attempting to join cluster", tag.NewStringTag("joinAddrs", fmt.Sprintf("%v", sm.config.JoinAddrs)))
 		num, err := ml.Join(sm.config.JoinAddrs)
 		if err != nil {
 			sm.logger.Warn("Failed to join some cluster members", tag.Error(err))
+		} else {
+			sm.logger.Info("Joined memberlist cluster", tag.NewStringTag("members", strconv.Itoa(num)))
 		}
-		sm.logger.Info("Joined memberlist cluster", tag.NewStringTag("members", strconv.Itoa(num)))
 	}
 
-	sm.started = true
 	sm.logger.Info("Shard manager started",
 		tag.NewStringTag("node", sm.config.NodeName),
 		tag.NewStringTag("addr", sm.localAddr))
@@ -225,11 +266,12 @@ func (sm *shardManagerImpl) Start(lifetime context.Context) error {
 
 func (sm *shardManagerImpl) Stop() {
 	sm.mutex.Lock()
-	defer sm.mutex.Unlock()
 
 	if !sm.started || sm.ml == nil {
+		sm.mutex.Unlock()
 		return
 	}
+	sm.mutex.Unlock()
 
 	// Leave the cluster gracefully
 	err := sm.ml.Leave(5 * time.Second)
@@ -242,7 +284,9 @@ func (sm *shardManagerImpl) Stop() {
 		sm.logger.Error("Error shutting down memberlist", tag.Error(err))
 	}
 
+	sm.mutex.Lock()
 	sm.started = false
+	sm.mutex.Unlock()
 	sm.logger.Info("Shard manager stopped")
 }
 
@@ -405,6 +449,8 @@ func (sm *shardManagerImpl) GetRemoteShardsForPeer(peerNodeName string) (map[str
 	membersChan := make(chan []*memberlist.Node, 1)
 	go func() {
 		defer func() { _ = recover() }()
+		sm.mutex.RLock()
+		defer sm.mutex.RUnlock()
 		membersChan <- sm.ml.Members()
 	}()
 
@@ -605,9 +651,18 @@ func (sm *shardManagerImpl) broadcastShardChange(msgType string, shard history.C
 
 // shardDelegate implements memberlist.Delegate
 func (sd *shardDelegate) NodeMeta(limit int) []byte {
+	// Copy shard map under read lock to avoid concurrent map iteration/modification
+	sd.manager.mutex.RLock()
+	shardsCopy := make(map[string]ShardInfo, len(sd.manager.localShards))
+	for k, v := range sd.manager.localShards {
+		shardsCopy[k] = v
+	}
+	nodeName := sd.manager.config.NodeName
+	sd.manager.mutex.RUnlock()
+
 	state := NodeShardState{
-		NodeName: sd.manager.config.NodeName,
-		Shards:   sd.manager.localShards,
+		NodeName: nodeName,
+		Shards:   shardsCopy,
 		Updated:  time.Now(),
 	}
 
