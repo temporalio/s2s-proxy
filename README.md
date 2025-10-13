@@ -39,15 +39,15 @@ for data transfer.
 architecture-beta
 
 group clusterA(cloud)[Cluster A]
-service temporalA(server)[Cluster A frontend] in clusterA
+service temporalA(server)[Temporal Cluster A] in clusterA
 service s2sA(server)[S2S Proxy A] in clusterA
-service s2sPortA(internet)[Cluster A port] in clusterA
+service s2sPortA(internet)[Cluster A proxy connection] in clusterA
 
 
 group clusterB(cloud)[Cluster B]
-service temporalB(server)[Cluster B frontend] in clusterB
+service temporalB(server)[Temporal Cluster B] in clusterB
 service s2sB(server)[S2S Proxy B] in clusterB
-service s2sPortB(internet)[Cluster B port] in clusterB
+service s2sPortB(internet)[Cluster B proxy connection] in clusterB
 
 %% Client connections
 temporalA:T <--> B:s2sA
