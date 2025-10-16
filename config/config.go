@@ -224,8 +224,6 @@ func newConfigProvider(ctx *cli.Context) (ConfigProvider, error) {
 		return nil, err
 	}
 
-	ToClusterConnConfig(s2sConfig)
-
 	return &cliConfigProvider{
 		ctx:       ctx,
 		s2sConfig: s2sConfig,
