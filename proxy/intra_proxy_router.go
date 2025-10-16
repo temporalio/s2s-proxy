@@ -98,7 +98,10 @@ func (s *intraProxyStreamSender) Run(
 // recvAck reads ACKs from the peer and routes them to the source shard owner.
 func (s *intraProxyStreamSender) recvAck(shutdownChan channel.ShutdownOnce) error {
 	s.logger.Info("intraProxyStreamSender recvAck")
-	defer s.logger.Info("intraProxyStreamSender recvAck finished")
+	defer func() {
+		s.logger.Info("intraProxyStreamSender recvAck finished")
+		shutdownChan.Shutdown()
+	}()
 
 	for !shutdownChan.IsShutdown() {
 		req, err := s.sourceStreamServer.Recv()
@@ -107,7 +110,6 @@ func (s *intraProxyStreamSender) recvAck(shutdownChan channel.ShutdownOnce) erro
 			return nil
 		}
 		if err != nil {
-			shutdownChan.Shutdown()
 			s.logger.Error("intraProxyStreamSender recvAck encountered error", tag.Error(err))
 			return err
 		}

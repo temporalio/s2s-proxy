@@ -77,6 +77,10 @@ type (
 		// Local shards owned by this node, keyed by short id
 		localShards map[string]ShardInfo
 		intraMgr    *intraProxyManager
+		// Join retry control
+		stopJoinRetry   chan struct{}
+		joinWg          sync.WaitGroup
+		joinLoopRunning bool
 	}
 
 	// shardDelegate implements memberlist.Delegate for shard state management
@@ -119,11 +123,12 @@ func NewShardManager(configProvider config.ConfigProvider, logger log.Logger) (S
 	}
 
 	sm := &shardManagerImpl{
-		config:      cfg,
-		logger:      logger,
-		delegate:    delegate,
-		localShards: make(map[string]ShardInfo),
-		intraMgr:    nil,
+		config:        cfg,
+		logger:        logger,
+		delegate:      delegate,
+		localShards:   make(map[string]ShardInfo),
+		intraMgr:      nil,
+		stopJoinRetry: make(chan struct{}),
 	}
 
 	delegate.manager = sm
@@ -245,13 +250,7 @@ func (sm *shardManagerImpl) Start(lifetime context.Context) error {
 
 	// Join existing cluster if configured
 	if len(sm.config.JoinAddrs) > 0 {
-		sm.logger.Info("Attempting to join cluster", tag.NewStringTag("joinAddrs", fmt.Sprintf("%v", sm.config.JoinAddrs)))
-		num, err := ml.Join(sm.config.JoinAddrs)
-		if err != nil {
-			sm.logger.Warn("Failed to join some cluster members", tag.Error(err))
-		} else {
-			sm.logger.Info("Joined memberlist cluster", tag.NewStringTag("members", strconv.Itoa(num)))
-		}
+		sm.startJoinLoop()
 	}
 
 	sm.logger.Info("Shard manager started",
@@ -273,6 +272,10 @@ func (sm *shardManagerImpl) Stop() {
 	}
 	sm.mutex.Unlock()
 
+	// Stop any ongoing join retry
+	close(sm.stopJoinRetry)
+	sm.joinWg.Wait()
+
 	// Leave the cluster gracefully
 	err := sm.ml.Leave(5 * time.Second)
 	if err != nil {
@@ -288,6 +291,83 @@ func (sm *shardManagerImpl) Stop() {
 	sm.started = false
 	sm.mutex.Unlock()
 	sm.logger.Info("Shard manager stopped")
+}
+
+// startJoinLoop starts the join retry loop if not already running
+func (sm *shardManagerImpl) startJoinLoop() {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+
+	if sm.joinLoopRunning {
+		sm.logger.Info("Join loop already running, skipping")
+		return
+	}
+
+	sm.logger.Info("Starting join loop")
+	sm.joinLoopRunning = true
+	sm.joinWg.Add(1)
+	go sm.retryJoinCluster()
+}
+
+// retryJoinCluster attempts to join the cluster infinitely with exponential backoff
+func (sm *shardManagerImpl) retryJoinCluster() {
+	defer func() {
+		sm.joinWg.Done()
+		sm.mutex.Lock()
+		sm.joinLoopRunning = false
+		sm.mutex.Unlock()
+	}()
+
+	const (
+		initialInterval = 2 * time.Second
+		maxInterval     = 60 * time.Second
+	)
+
+	interval := initialInterval
+	attempt := 0
+
+	sm.logger.Info("Starting join retry loop",
+		tag.NewStringTag("joinAddrs", fmt.Sprintf("%v", sm.config.JoinAddrs)))
+
+	for {
+		attempt++
+
+		sm.mutex.RLock()
+		ml := sm.ml
+		joinAddrs := sm.config.JoinAddrs
+		sm.mutex.RUnlock()
+
+		if ml == nil {
+			sm.logger.Warn("Memberlist not initialized, stopping retry")
+			return
+		}
+
+		sm.logger.Info("Attempting to join cluster",
+			tag.NewStringTag("attempt", strconv.Itoa(attempt)),
+			tag.NewStringTag("joinAddrs", fmt.Sprintf("%v", joinAddrs)))
+
+		num, err := ml.Join(joinAddrs)
+		if err != nil {
+			sm.logger.Warn("Failed to join cluster", tag.Error(err))
+
+			// Exponential backoff with cap
+			select {
+			case <-sm.stopJoinRetry:
+				sm.logger.Info("Join retry cancelled")
+				return
+			case <-time.After(interval):
+				interval *= 2
+				if interval > maxInterval {
+					interval = maxInterval
+				}
+			}
+		} else {
+			sm.logger.Info("Successfully joined memberlist cluster",
+				tag.NewStringTag("members", strconv.Itoa(num)),
+				tag.NewStringTag("attempt", strconv.Itoa(attempt)))
+			return
+		}
+	}
 }
 
 func (sm *shardManagerImpl) RegisterShard(clientShardID history.ClusterShardID) time.Time {
@@ -809,6 +889,16 @@ func (sed *shardEventDelegate) NotifyLeave(node *memberlist.Node) {
 	sed.logger.Info("Node left cluster",
 		tag.NewStringTag("node", node.Name),
 		tag.NewStringTag("addr", node.Addr.String()))
+
+	// If we're now isolated and have join addresses configured, restart join loop
+	if sed.manager != nil && sed.manager.ml != nil {
+		numMembers := sed.manager.ml.NumMembers()
+		if numMembers == 1 && len(sed.manager.config.JoinAddrs) > 0 {
+			sed.logger.Info("Node is now isolated, restarting join loop",
+				tag.NewStringTag("numMembers", strconv.Itoa(numMembers)))
+			sed.manager.startJoinLoop()
+		}
+	}
 }
 
 func (sed *shardEventDelegate) NotifyUpdate(node *memberlist.Node) {
