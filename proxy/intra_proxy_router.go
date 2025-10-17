@@ -719,44 +719,72 @@ func (m *intraProxyManager) ReconcilePeerStreams(
 		tag.NewStringTag("localShards", fmt.Sprintf("%v", localShards)),
 	)
 
-	// Build desired set of cross-cluster pairs
-	desired := make(map[peerStreamKey]string)
+	// Build desiredReceivers receiver set of cross-cluster pairs
+	desiredReceivers := make(map[peerStreamKey]string)
 	for _, l := range localShards {
 		for peer, shards := range remoteShards {
 			for _, r := range shards.Shards {
 				if l.ClusterID == r.ID.ClusterID {
 					continue
 				}
-				desired[peerStreamKey{targetShard: l, sourceShard: r.ID}] = peer
+				desiredReceivers[peerStreamKey{targetShard: l, sourceShard: r.ID}] = peer
 			}
 		}
 	}
 
-	m.logger.Info("ReconcilePeerStreams", tag.NewStringTag("desired", fmt.Sprintf("%v", desired)))
+	// Build desiredSenders set: inverted direction of desiredReceivers
+	// Senders exist when remote shard is the target and local shard is the source
+	desiredSenders := make(map[peerStreamKey]string)
+	for _, l := range localShards {
+		for peer, shards := range remoteShards {
+			for _, r := range shards.Shards {
+				if l.ClusterID == r.ID.ClusterID {
+					continue
+				}
+				desiredSenders[peerStreamKey{targetShard: r.ID, sourceShard: l}] = peer
+			}
+		}
+	}
+
+	m.logger.Info("ReconcilePeerStreams", tag.NewStringTag("desiredReceivers", fmt.Sprintf("%v", desiredReceivers)), tag.NewStringTag("desiredSenders", fmt.Sprintf("%v", desiredSenders)))
 
 	// Ensure all desired receivers exist
-	for key := range desired {
-		m.EnsureReceiverForPeerShard(p, desired[key], key.targetShard, key.sourceShard)
+	for key := range desiredReceivers {
+		m.EnsureReceiverForPeerShard(p, desiredReceivers[key], key.targetShard, key.sourceShard)
 	}
 
 	// Prune anything not desired
-	check := func(ps *peerState) {
+	check := func(peer string, ps *peerState) {
 		// Collect keys to close for receivers
+		var receiversToClose []peerStreamKey
 		for key := range ps.receivers {
-			if _, ok2 := desired[key]; !ok2 {
-				m.closePeerShardLocked(peerNodeName, ps, key)
+			if _, ok2 := desiredReceivers[key]; !ok2 {
+				receiversToClose = append(receiversToClose, key)
 			}
+		}
+		for _, key := range receiversToClose {
+			m.closePeerShardLocked(peer, ps, key)
+		}
+		// Collect keys to close for senders
+		var sendersToClose []peerStreamKey
+		for key := range ps.senders {
+			if _, ok2 := desiredSenders[key]; !ok2 {
+				sendersToClose = append(sendersToClose, key)
+			}
+		}
+		for _, key := range sendersToClose {
+			m.closePeerShardLocked(peer, ps, key)
 		}
 	}
 
 	m.streamsMu.Lock()
 	if peerNodeName != "" {
 		if ps, ok := m.peers[peerNodeName]; ok && ps != nil {
-			check(ps)
+			check(peerNodeName, ps)
 		}
 	} else {
-		for _, ps := range m.peers {
-			check(ps)
+		for peer, ps := range m.peers {
+			check(peer, ps)
 		}
 	}
 	m.streamsMu.Unlock()
