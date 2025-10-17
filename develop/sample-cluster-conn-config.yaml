@@ -1,0 +1,83 @@
+clusterConnections:
+  - name: "myCoolCluster"
+    localServer:
+      connection:
+        connectionType: "tcp" # TCP type must define both inbound and outbound
+        tcpClient:
+          address: "127.0.0.1:9001"
+          tls:
+            certificatePath: ""
+            keyPath: ""
+            remoteCAPath: ""
+            caServerName: ""
+            validateClientCA: false
+        tcpServer:
+          address: "127.0.0.1:9002"
+          tls:
+            certificatePath: ""
+            keyPath: ""
+            remoteCAPath: ""
+            caServerName: ""
+            validateClientCA: false
+      clusterInfo:
+        serverVersion: "over 9000"
+        shardCount: 42
+        failoverVersionIncrement: 1000
+        initialFailoverVersion: 1
+      aclPolicy:
+        allowedMethods:
+          adminService:
+            - AddOrUpdateRemoteCluster
+            - DescribeCluster
+            - DescribeMutableState
+            - GetNamespaceReplicationMessages
+            - GetWorkflowExecutionRawHistoryV2
+            - ListClusters
+            - StreamWorkflowReplicationMessages
+        allowedNamespaces:
+          - namespace1
+          - namespace2
+      apiOverrides:
+        adminService:
+          DescribeCluster:
+            response:
+              failover_version_increment: 100
+    remoteServer:
+      connection:
+        connectionType: "mux-server" # One mux represents both inbound and outbound
+        muxCount: 10
+        muxAddressInfo:
+          address: "127.0.0.1:9004"
+          tls:
+            certificatePath: ""
+            keyPath: ""
+            remoteCAPath: ""
+            caServerName: ""
+            validateClientCA: false
+      clusterInfo:
+        shardCount: 42
+        serverVersion: "v1.22"
+        failoverVersionIncrement: 1000
+        initialFailoverVersion: 1
+    namespaceTranslation:
+      mappings:
+        - localString: "localName"
+          remoteString: "remoteName"
+    searchAttributeTranslation:
+      namespaceMappings:
+        - name: "namespace1"
+          namespaceId: "namespace-id-1"
+          mappings:
+            - localFieldName: "localSearchAttribute"
+              remoteFieldName: "remoteSearchAttribute"
+    outboundHealthCheck:
+      protocol: "http"
+      listenAddress: "127.0.0.1:911"
+    inboundHealthCheck:
+      protocol: "http"
+      listenAddress: "127.0.0.1:912"
+metrics:
+  prometheus:
+    listenAddress: "0.0.0.0:9090"
+profiling:
+  pprofAddress: "localhost:6060"

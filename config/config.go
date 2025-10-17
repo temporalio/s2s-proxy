@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
+	"github.com/temporalio/s2s-proxy/collect"
 	"github.com/temporalio/s2s-proxy/encryption"
 )
 
@@ -109,16 +110,22 @@ type (
 	}
 
 	S2SProxyConfig struct {
-		Inbound                    *ProxyConfig          `yaml:"inbound"`
-		Outbound                   *ProxyConfig          `yaml:"outbound"`
-		MuxTransports              []MuxTransportConfig  `yaml:"mux"`
-		HealthCheck                *HealthCheckConfig    `yaml:"healthCheck"`
+		// Soon to be deprecated! Create an item in ClusterConnections instead
+		Inbound *ProxyConfig `yaml:"inbound"`
+		// Soon to be deprecated! Create an item in ClusterConnections instead
+		Outbound *ProxyConfig `yaml:"outbound"`
+		// Soon to be deprecated! Create an item in ClusterConnections instead
+		MuxTransports []MuxTransportConfig `yaml:"mux"`
+		// Soon to be deprecated! Create an item in ClusterConnections instead
+		HealthCheck *HealthCheckConfig `yaml:"healthCheck"`
+		// Soon to be deprecated! Create an item in ClusterConnections instead
 		OutboundHealthCheck        *HealthCheckConfig    `yaml:"outboundHealthCheck"`
 		NamespaceNameTranslation   NameTranslationConfig `yaml:"namespaceNameTranslation"`
 		SearchAttributeTranslation SATranslationConfig   `yaml:"searchAttributeTranslation"`
 		Metrics                    *MetricsConfig        `yaml:"metrics"`
 		ProfilingConfig            ProfilingConfig       `yaml:"profiling"`
 		Logging                    LoggingConfig         `yaml:"logging"`
+		ClusterConnections         []ClusterConnConfig   `yaml:"clusterConnections"`
 	}
 
 	SATranslationConfig struct {
@@ -386,6 +393,26 @@ func (s SATranslationConfig) ToMaps(inBound bool) (map[string]map[string]string,
 		}
 	}
 	return reqMap, respMap
+}
+
+// AsLocalToRemoteBiMaps converts the flat list of namespace + local/remote pairs into a map of BiMaps, with local->remote
+// as the direction returned. The remote->local mapping can be accessed with saTranslator[namespaceId].Inverse()
+func (s SATranslationConfig) AsLocalToRemoteBiMaps() (map[string]collect.StaticBiMap[string, string], error) {
+	outer := make(map[string]collect.StaticBiMap[string, string], len(s.NamespaceMappings))
+	for _, mapping := range s.NamespaceMappings {
+		var err error
+		outer[mapping.NamespaceId], err = collect.NewStaticBiMap(func(yield func(string, string) bool) {
+			for _, attrPair := range mapping.Mappings {
+				if !yield(attrPair.LocalName, attrPair.RemoteName) {
+					return
+				}
+			}
+		}, len(mapping.Mappings))
+		if err != nil {
+			return nil, err
+		}
+	}
+	return outer, nil
 }
 
 func (l LoggingConfig) GetThrottleMaxRPS() float64 {
