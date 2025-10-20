@@ -44,3 +44,20 @@ func TestBasic(t *testing.T) {
 	require.Equal(t, "remoteSearchAttribute", saTranslation["namespace-id-1"].Get("localSearchAttribute"))
 	require.Equal(t, "localSearchAttribute", saTranslation["namespace-id-1"].Inverse().Get("remoteSearchAttribute"))
 }
+
+func TestConversion(t *testing.T) {
+	samplePath := filepath.Join("..", "develop", "sample-config.yaml")
+
+	proxyConfig, err := LoadConfig[S2SProxyConfig](samplePath)
+	require.NoError(t, err)
+	converted := ToClusterConnConfig(proxyConfig)
+	require.Equal(t, 1, len(converted.ClusterConnections))
+	require.Nil(t, converted.Inbound)
+	require.Nil(t, converted.Outbound)
+	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].RemoteServer.Connection.ConnectionType)
+	require.True(t, converted.ClusterConnections[0].RemoteServer.Connection.TcpServer.TLSConfig.ValidateClientCA)
+	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].LocalServer.Connection.ConnectionType)
+	require.Equal(t, "AddOrUpdateRemoteCluster", converted.ClusterConnections[0].LocalServer.ACLPolicy.AllowedMethods.AdminService[0])
+	require.Equal(t, "namespace1", converted.ClusterConnections[0].LocalServer.ACLPolicy.AllowedNamespaces[0])
+	require.Equal(t, int64(100), *converted.ClusterConnections[0].LocalServer.APIOverrides.AdminSerivce.DescribeCluster.Response.FailoverVersionIncrement)
+}
