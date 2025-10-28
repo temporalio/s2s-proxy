@@ -13,7 +13,9 @@ type (
 	StaticBiMap[K, V comparable] interface {
 		Get(key K) V
 		GetExists(key K) (V, bool)
+		AsMap() map[K]V
 		Inverse() StaticBiMap[V, K]
+		Len() int
 	}
 	ConflictError[T comparable] struct {
 		isKey   bool
@@ -57,6 +59,16 @@ func (m *staticBiMap[K, V]) Get(key K) V {
 }
 func (m *staticBiMap[K, V]) Inverse() StaticBiMap[V, K] {
 	return m.inverse
+}
+func (m *staticBiMap[K, V]) Len() int {
+	if m == nil {
+		return 0
+	}
+	// Length is simple for this map because multi-mappings are not allowed
+	return len(m.contents)
+}
+func (m *staticBiMap[K, V]) AsMap() map[K]V {
+	return m.contents
 }
 
 func (e ConflictError[T]) Error() string {

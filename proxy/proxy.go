@@ -35,12 +35,12 @@ type (
 )
 
 func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
-	s2sConfig := configProvider.GetS2SProxyConfig()
+	s2sConfig := config.ToClusterConnConfig(configProvider.GetS2SProxyConfig())
 	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
 		lifetime:           ctx,
 		cancel:             cancel,
-		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.MuxTransports)+1),
+		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.MuxTransports)),
 		logger: log.NewThrottledLogger(
 			logger,
 			func() float64 {
@@ -48,37 +48,20 @@ func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 			},
 		),
 	}
-	if s2sConfig.Inbound == nil || s2sConfig.Outbound == nil {
+	if (s2sConfig.Inbound == nil || s2sConfig.Outbound == nil) && len(s2sConfig.ClusterConnections) == 0 {
 		panic(errors.New("cannot create proxy without inbound and outbound config"))
-	}
-	if s2sConfig.HealthCheck != nil {
-		proxy.inboundHealthCheckConfig = s2sConfig.HealthCheck
 	}
 	if s2sConfig.Metrics != nil {
 		proxy.metricsConfig = s2sConfig.Metrics
 	}
-	if s2sConfig.OutboundHealthCheck != nil {
-		proxy.outboundHealthCheckConfig = s2sConfig.OutboundHealthCheck
-	}
 	// TODO: This is effectively 1 right now. We need to rewrite the config a bit to support multiple clusters
-	for _, muxCfg := range s2sConfig.MuxTransports {
-		cc, err := NewMuxClusterConnection(ctx, muxCfg, *s2sConfig.Inbound, *s2sConfig.Outbound,
-			s2sConfig.NamespaceNameTranslation, s2sConfig.SearchAttributeTranslation, logger)
+	for _, clusterCfg := range s2sConfig.ClusterConnections {
+		cc, err := NewClusterConnection(ctx, clusterCfg, logger)
 		if err != nil {
-			logger.Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", muxCfg.Name))
+			logger.Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", clusterCfg.Name))
 			continue
 		}
-		proxy.clusterConnections[migrationId{muxCfg.Name}] = cc
-	}
-	if len(s2sConfig.MuxTransports) == 0 {
-		logger.Info("No mux transports configured, falling back to TCP+TLS")
-		cc, err := NewTCPClusterConnection(ctx, *s2sConfig.Inbound, *s2sConfig.Outbound,
-			s2sConfig.NamespaceNameTranslation, s2sConfig.SearchAttributeTranslation, logger)
-		if err != nil {
-			logger.Fatal("Incorrectly configured TCP cluster connection", tag.Error(err))
-			panic(err)
-		}
-		proxy.clusterConnections[migrationId{"default"}] = cc
+		proxy.clusterConnections[migrationId{clusterCfg.Name}] = cc
 	}
 
 	metrics.NewProxyCount.Inc()

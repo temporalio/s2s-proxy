@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/temporalio/s2s-proxy/collect"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
@@ -18,19 +19,14 @@ import (
 
 func MakeServerOptions(
 	logger log.Logger,
-	isInbound bool,
-	tlsConfig encryption.ServerTLSConfig,
+	directionLabel string,
+	tlsConfig encryption.TLSConfig,
 	aclPolicy *config.ACLPolicy,
-	namespaceTranslation config.NameTranslationConfig,
-	searchAttributeTranslation config.SATranslationConfig,
+	namespaceTranslation collect.StaticBiMap[string, string],
+	searchAttributeTranslation config.SearchAttributeTranslation,
 ) ([]grpc.ServerOption, error) {
 	var unaryInterceptors []grpc.UnaryServerInterceptor
 	var streamInterceptors []grpc.StreamServerInterceptor
-
-	directionLabel := "outbound"
-	if isInbound {
-		directionLabel = "inbound"
-	}
 	labelGenerator := grpcprom.WithLabelsFromContext(func(_ context.Context) (labels prometheus.Labels) {
 		return prometheus.Labels{"direction": directionLabel}
 	})
@@ -40,20 +36,16 @@ func MakeServerOptions(
 	streamInterceptors = append(streamInterceptors, metrics.GRPCServerMetrics.StreamServerInterceptor(labelGenerator))
 
 	var translators []interceptor.Translator
-	if namespaceTranslation.IsEnabled() {
-		// NamespaceNameTranslator needs to be called before namespace access control so that
-		// local name can be used in namespace allowed list.
-		reqMap, respMap := namespaceTranslation.ToMaps(isInbound)
-		translators = append(translators, interceptor.NewNamespaceNameTranslator(logger, reqMap, respMap))
+	if namespaceTranslation.Len() > 0 {
+		translators = append(translators, interceptor.NewNamespaceNameTranslator(logger, namespaceTranslation.AsMap(), namespaceTranslation.Inverse().AsMap()))
 	}
 
-	if searchAttributeTranslation.IsEnabled() {
-		logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", searchAttributeTranslation.NamespaceMappings))
-		if len(searchAttributeTranslation.NamespaceMappings) > 1 {
+	if searchAttributeTranslation.LenNamespaces() > 0 {
+		logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", searchAttributeTranslation))
+		if searchAttributeTranslation.LenNamespaces() > 1 {
 			panic("multiple namespace search attribute mappings are not supported")
 		}
-		reqMap, respMap := searchAttributeTranslation.ToMaps(isInbound)
-		translators = append(translators, interceptor.NewSearchAttributeTranslator(logger, reqMap, respMap))
+		translators = append(translators, interceptor.NewSearchAttributeTranslator(logger, searchAttributeTranslation.FlattenMaps(), searchAttributeTranslation.Inverse().FlattenMaps()))
 	}
 
 	if len(translators) > 0 {
@@ -62,7 +54,7 @@ func MakeServerOptions(
 		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
 	}
 
-	if isInbound && aclPolicy != nil {
+	if aclPolicy != nil {
 		aclInterceptor := interceptor.NewAccessControlInterceptor(logger, aclPolicy.AllowedMethods.AdminService, aclPolicy.AllowedNamespaces)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
 		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)

@@ -23,21 +23,18 @@ import (
 type (
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		adminClient             adminservice.AdminServiceClient
-		logger                  log.Logger
-		outboundAddressOverride string
-		apiOverrides            *config.APIOverridesConfig
-		metricLabelValues       []string
-		reportStreamValue       func(idx int32, value int32)
+		adminClient       adminservice.AdminServiceClient
+		logger            log.Logger
+		apiOverrides      *config.APIOverridesConfig
+		metricLabelValues []string
+		reportStreamValue func(idx int32, value int32)
 	}
 )
 
-// NewAdminServiceProxyServer creates a proxy admin service. outboundAddressOverride replaces the
-// FrontendAddress in AddOrUpdateRemoteClusterRequest
+// NewAdminServiceProxyServer creates a proxy admin service.
 func NewAdminServiceProxyServer(
 	serviceName string,
 	adminClient adminservice.AdminServiceClient,
-	outboundAddressOverride string,
 	apiOverrides *config.APIOverridesConfig,
 	metricLabelValues []string,
 	reportStreamValue func(idx int32, value int32),
@@ -48,22 +45,23 @@ func NewAdminServiceProxyServer(
 	logger = log.NewThrottledLogger(log.With(logger, common.ServiceTag(serviceName)),
 		func() float64 { return 3.0 / 60.0 })
 	return &adminServiceProxyServer{
-		adminClient:             adminClient,
-		logger:                  logger,
-		outboundAddressOverride: outboundAddressOverride,
-		apiOverrides:            apiOverrides,
-		metricLabelValues:       metricLabelValues,
-		reportStreamValue:       reportStreamValue,
+		adminClient:       adminClient,
+		logger:            logger,
+		apiOverrides:      apiOverrides,
+		metricLabelValues: metricLabelValues,
+		reportStreamValue: reportStreamValue,
 	}
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
-	if !common.IsRequestTranslationDisabled(ctx) {
-		if len(s.outboundAddressOverride) > 0 {
+	if !common.IsRequestTranslationDisabled(ctx) && s.apiOverrides != nil {
+		reqOverride := s.apiOverrides.AdminSerivce.AddOrUpdateRemoteCluster
+		if reqOverride != nil && len(reqOverride.Request.FrontendAddress) > 0 {
 			// Override this address so that cross-cluster connections flow through the proxy.
 			// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
 			// from the local temporal server, or the proxy may be deployed behind a load balancer.
-			in0.FrontendAddress = s.outboundAddressOverride
+			// Only used in single-proxy scenarios, i.e. Temporal <> Proxy <> Temporal
+			in0.FrontendAddress = reqOverride.Request.FrontendAddress
 		}
 	}
 	return s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)

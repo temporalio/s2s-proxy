@@ -17,18 +17,12 @@ import (
 )
 
 type (
-	ServerTLSConfig struct {
-		CertificatePath   string `yaml:"certificatePath"`
-		KeyPath           string `yaml:"keyPath"`
-		ClientCAPath      string `yaml:"clientCAPath"`
-		RequireClientAuth bool   `yaml:"requireClientAuth"`
-	}
-
-	ClientTLSConfig struct {
-		CertificatePath string `yaml:"certificatePath"`
-		KeyPath         string `yaml:"keyPath"`
-		ServerName      string `yaml:"serverName"`
-		ServerCAPath    string `yaml:"serverCAPath"`
+	TLSConfig struct {
+		CertificatePath  string `yaml:"certificatePath"`
+		KeyPath          string `yaml:"keyPath"`
+		RemoteCAPath     string `yaml:"remoteCAPath"`
+		CAServerName     string `yaml:"caServerName"`
+		ValidateClientCA bool   `yaml:"validateClientCA"`
 	}
 
 	HttpGetter interface {
@@ -36,23 +30,18 @@ type (
 	}
 )
 
+func (t TLSConfig) IsEnabled() bool {
+	return (t.CertificatePath != "" && t.KeyPath != "") || (t.RemoteCAPath != "" && t.CAServerName != "")
+}
+
 var netClient HttpGetter = &http.Client{
 	Timeout: time.Second * 10,
 }
 
-func (s ServerTLSConfig) IsEnabled() bool {
-	if s.CertificatePath != "" && s.KeyPath != "" {
-		// has valid config for client auth.
-		return true
-	}
-
-	return false
-}
-
-func GetServerTLSConfig(serverConfig ServerTLSConfig, logger log.Logger) (*tls.Config, error) {
+func GetServerTLSConfig(serverConfig TLSConfig, logger log.Logger) (*tls.Config, error) {
 	certPath := serverConfig.CertificatePath
 	keyPath := serverConfig.KeyPath
-	clientCAPath := serverConfig.ClientCAPath
+	clientCAPath := serverConfig.RemoteCAPath
 
 	if !serverConfig.IsEnabled() {
 		return nil, nil
@@ -62,7 +51,7 @@ func GetServerTLSConfig(serverConfig ServerTLSConfig, logger log.Logger) (*tls.C
 	var clientCAPool *x509.CertPool
 
 	clientAuthType := tls.NoClientCert
-	if serverConfig.RequireClientAuth {
+	if serverConfig.ValidateClientCA {
 		clientAuthType = tls.RequireAndVerifyClientCert
 		caCertPool, err := fetchCACert(clientCAPath)
 		if err != nil {
@@ -101,25 +90,11 @@ func GetServerTLSConfig(serverConfig ServerTLSConfig, logger log.Logger) (*tls.C
 	return c, nil
 }
 
-func (c ClientTLSConfig) IsEnabled() bool {
-	if c.CertificatePath != "" && c.KeyPath != "" {
-		// has valid config for client auth.
-		return true
-	}
-
-	if c.ServerName != "" && c.ServerCAPath != "" {
-		// has valid config for server auth.
-		return true
-	}
-
-	return false
-}
-
-func GetClientTLSConfig(clientConfig ClientTLSConfig) (*tls.Config, error) {
+func GetClientTLSConfig(clientConfig TLSConfig) (*tls.Config, error) {
 	certPath := clientConfig.CertificatePath
 	keyPath := clientConfig.KeyPath
-	caPath := clientConfig.ServerCAPath
-	serverName := clientConfig.ServerName
+	caPath := clientConfig.RemoteCAPath
+	serverName := clientConfig.CAServerName
 
 	if !clientConfig.IsEnabled() {
 		return nil, nil

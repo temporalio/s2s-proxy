@@ -39,13 +39,12 @@ func (s *adminserviceSuite) AfterTest() {
 }
 
 type adminProxyServerInput struct {
-	outboundAddressOverride string
-	apiOverrides            *config.APIOverridesConfig
-	metricLabels            []string
+	apiOverrides *config.APIOverridesConfig
+	metricLabels []string
 }
 
 func (s *adminserviceSuite) newAdminServiceProxyServer(in adminProxyServerInput, observer *ReplicationStreamObserver) adminservice.AdminServiceServer {
-	return NewAdminServiceProxyServer("test-service-name", s.adminClientMock, in.outboundAddressOverride,
+	return NewAdminServiceProxyServer("test-service-name", s.adminClientMock,
 		in.apiOverrides, in.metricLabels, observer.ReportStreamValue, log.NewTestLogger())
 }
 
@@ -76,16 +75,15 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 		{
 			name: "no override on outbound request",
 			adminProxyServerInput: adminProxyServerInput{
-				outboundAddressOverride: "",
-				metricLabels:            []string{"outbound"},
+				metricLabels: []string{"outbound"},
 			},
 			expectedReq: makeOriginalReq(),
 		},
 		{
 			name: "override on inbound request",
 			adminProxyServerInput: adminProxyServerInput{
-				outboundAddressOverride: fakeExternalAddr,
-				metricLabels:            []string{"inbound"},
+				apiOverrides: overrideExternalAddr(fakeExternalAddr),
+				metricLabels: []string{"inbound"},
 			},
 			expectedReq: makeModifiedReq(), // request is modified
 		},
@@ -95,24 +93,22 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 				common.RequestTranslationHeaderName: "false",
 			},
 			adminProxyServerInput: adminProxyServerInput{
-				outboundAddressOverride: fakeExternalAddr,
-				metricLabels:            []string{"inbound"},
+				apiOverrides: overrideExternalAddr(fakeExternalAddr),
+				metricLabels: []string{"inbound"},
 			},
 			expectedReq: makeOriginalReq(), // request is not modified
 		},
 		{
 			name: "no override on empty config",
 			adminProxyServerInput: adminProxyServerInput{
-				outboundAddressOverride: "",
-				metricLabels:            []string{"inbound"},
+				metricLabels: []string{"inbound"},
 			},
 			expectedReq: makeOriginalReq(),
 		},
 		{
 			name: "nil outbound config",
 			adminProxyServerInput: adminProxyServerInput{
-				outboundAddressOverride: "",
-				metricLabels:            []string{"outbound"},
+				metricLabels: []string{"outbound"},
 			},
 			expectedReq: makeOriginalReq(),
 		},
@@ -129,6 +125,18 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 			s.Equal(expResp, resp)
 			s.Equal("[]", observer.PrintActiveStreams())
 		})
+	}
+}
+
+func overrideExternalAddr(addr string) *config.APIOverridesConfig {
+	return &config.APIOverridesConfig{
+		AdminSerivce: config.AdminServiceOverrides{
+			AddOrUpdateRemoteCluster: &config.AddOrUpdateRemoteClusterOverride{
+				Request: config.AddOrUpdateRemoteClusterRequestOverrides{
+					FrontendAddress: addr,
+				},
+			},
+		},
 	}
 }
 
@@ -169,8 +177,7 @@ func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
 		{
 			name: "nil override config",
 			adminProxyServerInput: adminProxyServerInput{
-				outboundAddressOverride: "",
-				metricLabels:            []string{"outbound"},
+				metricLabels: []string{"outbound"},
 			},
 			mockResp: makeResp(),
 			expResp:  makeResp(),

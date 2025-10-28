@@ -45,9 +45,9 @@ func init() {
 // NewMuxEstablisherProvider makes an outbound call using the provided TCP settings. This constructor handles unpacking
 // the TLS config, configures the connection provider with retry and exponential backoff, and sets a disconnect
 // sleep time of 1-2 seconds.
-func NewMuxEstablisherProvider(lifetime context.Context, name string, transportFn AddNewMux, connectionsCapacity int64, setting config.TCPClientSetting, metricLabels []string, logger log.Logger) (MuxProvider, error) {
+func NewMuxEstablisherProvider(lifetime context.Context, name string, transportFn AddNewMux, connectionsCapacity int64, setting config.TCPTLSInfo, metricLabels []string, logger log.Logger) (MuxProvider, error) {
 	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
-	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
+	if tlsCfg := setting.TLSConfig; tlsCfg.IsEnabled() {
 		tlsConfig, err := encryption.GetClientTLSConfig(tlsCfg)
 		if err != nil {
 			return nil, err
@@ -58,7 +58,7 @@ func NewMuxEstablisherProvider(lifetime context.Context, name string, transportF
 		tlsWrapper = func(conn net.Conn) net.Conn { return tls.Client(conn, tlsConfig) }
 	}
 	connPv := &establishingConnProvider{
-		serverAddress: setting.ServerAddress,
+		serverAddress: setting.ConnectionString,
 		tlsWrapper:    tlsWrapper,
 		logger:        logger,
 		// The connProvider doesn't need the whole shutDown object, so don't give it a reference

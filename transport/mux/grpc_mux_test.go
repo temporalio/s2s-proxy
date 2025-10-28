@@ -27,13 +27,12 @@ func TestGRPCMux(t *testing.T) {
 	logger := log.NewTestLogger()
 
 	// Receiving
-	serverConfig := config.MuxTransportConfig{
-		Name: "serverMux",
-		Mode: config.ServerMode,
-		Server: config.TCPServerSetting{
-			ListenAddress: "127.0.0.1:0",
-			// No TLS
-			// No external address
+	serverConfig := config.ClusterDefinition{
+		Connection: config.TransportInfo{
+			ConnectionType: config.ConnTypeMuxServer,
+			MuxAddressInfo: config.TCPTLSInfo{
+				ConnectionString: "127.0.0.1:0",
+			},
 		},
 	}
 	receivingClient, err := grpcutil.NewMultiClientConn(t.Context(), "receivingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
@@ -46,7 +45,7 @@ func TestGRPCMux(t *testing.T) {
 	}
 	adminservice.RegisterAdminServiceServer(receivingServerDefn, receivingEas)
 	require.NoError(t, err)
-	receivingMuxManager, err := NewGRPCMuxManager(t.Context(), serverConfig, receivingClient, receivingServerDefn, logger)
+	receivingMuxManager, err := NewGRPCMuxManager(t.Context(), "receivingMM", serverConfig, receivingClient, receivingServerDefn, logger)
 	require.NoError(t, err)
 	receivingMuxManager.Start()
 	receivingAdminServiceClient := adminservice.NewAdminServiceClient(receivingClient)
@@ -59,12 +58,12 @@ func TestGRPCMux(t *testing.T) {
 	// TODO: Confirm no connections available from receivingClient
 
 	// Establishing
-	clientConfig := config.MuxTransportConfig{
-		Name: "clientMux",
-		Mode: config.ClientMode,
-		Client: config.TCPClientSetting{
-			ServerAddress: receivingMuxManager.Address(),
-			// No TLS
+	clientConfig := config.ClusterDefinition{
+		Connection: config.TransportInfo{
+			ConnectionType: config.ConnTypeMuxClient,
+			MuxAddressInfo: config.TCPTLSInfo{
+				ConnectionString: "127.0.0.1:0",
+			},
 		},
 	}
 	establishingClient, err := grpcutil.NewMultiClientConn(t.Context(), "establishingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
@@ -77,7 +76,7 @@ func TestGRPCMux(t *testing.T) {
 		PayloadSize: 1024,
 	}
 	adminservice.RegisterAdminServiceServer(establishingServer, establishingEas)
-	establishingMuxManager, err := NewGRPCMuxManager(t.Context(), clientConfig, establishingClient, establishingServer, logger)
+	establishingMuxManager, err := NewGRPCMuxManager(t.Context(), "establishingMM", clientConfig, establishingClient, establishingServer, logger)
 	require.NoError(t, err)
 	establishingMuxManager.Start()
 }

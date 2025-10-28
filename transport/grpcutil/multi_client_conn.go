@@ -54,7 +54,12 @@ func NewMultiClientConn(lifetime context.Context, name string, opts ...grpc.Dial
 		return nil, errors.Wrap(err, "Failed to create underlying grpc client")
 	}
 	// UpdateState will panic if this isn't called first, or a connection hasn't been attempted yet.
-	mcc.clientConn.Connect()
+	go func() {
+		err = mcc.clientConn.Invoke(lifetime, "fakeMethod", "", "")
+		fmt.Println("fakeMethod called: ", err)
+	}()
+	//mcc.clientConn.Connect()
+	//fmt.Printf("Connected MCC %s\n", name)
 	context.AfterFunc(lifetime, func() {
 		_ = mcc.Close()
 	})
