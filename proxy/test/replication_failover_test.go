@@ -133,9 +133,10 @@ func (s *ReplicationTestSuite) SetupSuite() {
 	proxyAOutbound := fmt.Sprintf("localhost:%d", basePort+1)
 	s.proxyBAddress = fmt.Sprintf("localhost:%d", basePort+100)
 	proxyBOutbound := fmt.Sprintf("localhost:%d", basePort+101)
+	muxServerAddress := fmt.Sprintf("localhost:%d", basePort+200)
 
-	s.proxyA = s.createProxy("proxy-a", s.proxyAAddress, proxyAOutbound, s.proxyBAddress, s.clusterA)
-	s.proxyB = s.createProxy("proxy-b", s.proxyBAddress, proxyBOutbound, s.proxyAAddress, s.clusterB)
+	s.proxyA = s.createProxy("proxy-a", s.proxyAAddress, proxyAOutbound, muxServerAddress, s.clusterA, config.ClientMode)
+	s.proxyB = s.createProxy("proxy-b", s.proxyBAddress, proxyBOutbound, muxServerAddress, s.clusterB, config.ServerMode)
 
 	s.configureRemoteCluster(s.clusterA, s.clusterB.ClusterName(), proxyAOutbound)
 	s.configureRemoteCluster(s.clusterB, s.clusterA.ClusterName(), proxyBOutbound)
@@ -221,17 +222,17 @@ func (s *ReplicationTestSuite) createProxy(
 	name string,
 	inboundAddress string,
 	outboundAddress string,
-	remoteProxyAddress string,
+	muxAddress string,
 	cluster *testcore.TestCluster,
+	muxMode config.MuxMode,
 ) *s2sproxy.Proxy {
+	muxTransportName := "muxed"
 	cfg := &config.S2SProxyConfig{
 		Inbound: &config.ProxyConfig{
 			Name: name + "-inbound",
 			Server: config.ProxyServerConfig{
-				Type: config.TCPTransport,
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: inboundAddress,
-				},
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
 			},
 			Client: config.ProxyClientConfig{
 				Type: config.TCPTransport,
@@ -249,11 +250,12 @@ func (s *ReplicationTestSuite) createProxy(
 				},
 			},
 			Client: config.ProxyClientConfig{
-				Type: config.TCPTransport,
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: remoteProxyAddress,
-				},
+				Type:             config.MuxTransport,
+				MuxTransportName: muxTransportName,
 			},
+		},
+		MuxTransports: []config.MuxTransportConfig{
+			s.makeMuxTransportConfig(muxTransportName, muxMode, muxAddress, 1),
 		},
 	}
 
@@ -267,10 +269,31 @@ func (s *ReplicationTestSuite) createProxy(
 	s.logger.Info("Started proxy", tag.NewStringTag("name", name),
 		tag.NewStringTag("inboundAddress", inboundAddress),
 		tag.NewStringTag("outboundAddress", outboundAddress),
-		tag.NewStringTag("remoteProxyAddress", remoteProxyAddress),
+		tag.NewStringTag("muxAddress", muxAddress),
+		tag.NewStringTag("muxMode", string(muxMode)),
 	)
 
 	return proxy
+}
+
+func (s *ReplicationTestSuite) makeMuxTransportConfig(name string, mode config.MuxMode, address string, numConns int) config.MuxTransportConfig {
+	if mode == config.ServerMode {
+		return config.MuxTransportConfig{
+			Name:           name,
+			Mode:           mode,
+			Client:         config.TCPClientSetting{},
+			Server:         config.TCPServerSetting{ListenAddress: address},
+			NumConnections: numConns,
+		}
+	} else {
+		return config.MuxTransportConfig{
+			Name:           name,
+			Mode:           mode,
+			Client:         config.TCPClientSetting{ServerAddress: address},
+			Server:         config.TCPServerSetting{},
+			NumConnections: numConns,
+		}
+	}
 }
 
 type simpleConfigProvider struct {
