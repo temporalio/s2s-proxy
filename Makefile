@@ -11,7 +11,7 @@ GO_GET_TOOL    = go get -tool -modfile=$(TOOLS_MOD_FILE)
 
 # Disable cgo by default.
 CGO_ENABLED ?= 0
-TEST_ARG ?= -race -timeout=5m
+TEST_ARG ?= -race -timeout=5m -tags test_dep
 BENCH_ARG ?= -benchtime=5000x
 
 ALL_SRC         := $(shell find . -name "*.go")
@@ -43,7 +43,7 @@ fmt:
 # Refer to .golangci.yml for configuration options
 lint:
 	@printf $(COLOR) "Running golangci-lint...\n"
-	$(GO_TOOL) golangci-lint run
+	$(GO_TOOL) golangci-lint run --build-tags=test_dep
 
 bench:
 	@go test -run '^$$' -benchmem -bench=. ./... $(BENCH_ARG)

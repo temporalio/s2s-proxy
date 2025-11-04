@@ -41,6 +41,7 @@ jobs:
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.1
+          args: --build-tags=test_dep
 
   build:
     runs-on: ubuntu-latest
