@@ -2,8 +2,6 @@ name: Build and Publish Docker Image
 
 permissions:
   contents: read
-  packages: read
-  security-events: write
 
 on:
   push:

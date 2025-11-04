@@ -7,6 +7,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  actions: write
+
 # this ensures that the old run is abandoned when we have a new push to the PR branch
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
