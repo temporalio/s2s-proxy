@@ -108,7 +108,7 @@ type (
 	}
 
 	APIOverridesConfig struct {
-		AdminSerivce AdminServiceOverrides `yaml:"adminService"`
+		AdminService AdminServiceOverrides `yaml:"adminService"`
 	}
 
 	ProxyConfig struct {

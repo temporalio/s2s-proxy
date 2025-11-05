@@ -59,5 +59,5 @@ func TestConversion(t *testing.T) {
 	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].LocalServer.Connection.ConnectionType)
 	require.Equal(t, "AddOrUpdateRemoteCluster", converted.ClusterConnections[0].LocalServer.ACLPolicy.AllowedMethods.AdminService[0])
 	require.Equal(t, "namespace1", converted.ClusterConnections[0].LocalServer.ACLPolicy.AllowedNamespaces[0])
-	require.Equal(t, int64(100), *converted.ClusterConnections[0].LocalServer.APIOverrides.AdminSerivce.DescribeCluster.Response.FailoverVersionIncrement)
+	require.Equal(t, int64(100), *converted.ClusterConnections[0].LocalServer.APIOverrides.AdminService.DescribeCluster.Response.FailoverVersionIncrement)
 }

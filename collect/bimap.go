@@ -51,13 +51,24 @@ func NewStaticBiMap[K, V comparable](pairs iter.Seq2[K, V], expectedSize int) (S
 }
 
 func (m *staticBiMap[K, V]) GetExists(key K) (V, bool) {
+	if m == nil {
+		var empty V
+		return empty, false
+	}
 	val, exists := m.contents[key]
 	return val, exists
 }
 func (m *staticBiMap[K, V]) Get(key K) V {
+	if m == nil {
+		var empty V
+		return empty
+	}
 	return m.contents[key]
 }
 func (m *staticBiMap[K, V]) Inverse() StaticBiMap[V, K] {
+	if m == nil {
+		return nil
+	}
 	return m.inverse
 }
 func (m *staticBiMap[K, V]) Len() int {
@@ -68,6 +79,9 @@ func (m *staticBiMap[K, V]) Len() int {
 	return len(m.contents)
 }
 func (m *staticBiMap[K, V]) AsMap() map[K]V {
+	if m == nil {
+		return nil
+	}
 	return m.contents
 }
 

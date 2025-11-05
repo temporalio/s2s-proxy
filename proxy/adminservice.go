@@ -55,7 +55,7 @@ func NewAdminServiceProxyServer(
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
 	if !common.IsRequestTranslationDisabled(ctx) && s.apiOverrides != nil {
-		reqOverride := s.apiOverrides.AdminSerivce.AddOrUpdateRemoteCluster
+		reqOverride := s.apiOverrides.AdminService.AddOrUpdateRemoteCluster
 		if reqOverride != nil && len(reqOverride.Request.FrontendAddress) > 0 {
 			// Override this address so that cross-cluster connections flow through the proxy.
 			// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
@@ -93,8 +93,8 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 		return resp, err
 	}
 
-	if s.apiOverrides != nil && s.apiOverrides.AdminSerivce.DescribeCluster != nil {
-		responseOverride := s.apiOverrides.AdminSerivce.DescribeCluster.Response
+	if s.apiOverrides != nil && s.apiOverrides.AdminService.DescribeCluster != nil {
+		responseOverride := s.apiOverrides.AdminService.DescribeCluster.Response
 		if resp != nil && responseOverride.FailoverVersionIncrement != nil {
 			resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
 		}

@@ -130,7 +130,7 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 
 func overrideExternalAddr(addr string) *config.APIOverridesConfig {
 	return &config.APIOverridesConfig{
-		AdminSerivce: config.AdminServiceOverrides{
+		AdminService: config.AdminServiceOverrides{
 			AddOrUpdateRemoteCluster: &config.AddOrUpdateRemoteClusterOverride{
 				Request: config.AddOrUpdateRemoteClusterRequestOverrides{
 					FrontendAddress: addr,
@@ -157,7 +157,7 @@ func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
 
 	createOverrideConfig := func() *config.APIOverridesConfig {
 		return &config.APIOverridesConfig{
-			AdminSerivce: config.AdminServiceOverrides{
+			AdminService: config.AdminServiceOverrides{
 				DescribeCluster: &config.DescribeClusterOverride{
 					Response: config.DescribeClusterResponseOverrides{
 						FailoverVersionIncrement: &overrideValue,
