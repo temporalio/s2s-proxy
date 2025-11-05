@@ -46,6 +46,7 @@ type (
 		GetS2SProxyConfig() S2SProxyConfig
 	}
 
+	// ServerTLSConfig provides backwards compatibility with existing configurations. Prefer config.ClusterConnConfig instead.
 	ServerTLSConfig struct {
 		CertificatePath   string `yaml:"certificatePath"`
 		KeyPath           string `yaml:"keyPath"`
@@ -53,6 +54,7 @@ type (
 		RequireClientAuth bool   `yaml:"requireClientAuth"`
 	}
 
+	// ClientTLSConfig provides backwards compatibility with existing configurations. Prefer config.ClusterConnConfig instead.
 	ClientTLSConfig struct {
 		CertificatePath string `yaml:"certificatePath"`
 		KeyPath         string `yaml:"keyPath"`
