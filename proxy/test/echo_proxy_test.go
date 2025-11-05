@@ -518,7 +518,7 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 						Namespace: ts.clientNamespace,
 					})
 				}, 5, logger)
-				s.NoError(err)
+				s.Require().NoError(err)
 				s.Require().NotNil(resp)
 			},
 		)

@@ -54,7 +54,6 @@ func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 	if s2sConfig.Metrics != nil {
 		proxy.metricsConfig = s2sConfig.Metrics
 	}
-	// TODO: This is effectively 1 right now. We need to rewrite the config a bit to support multiple clusters
 	for _, clusterCfg := range s2sConfig.ClusterConnections {
 		cc, err := NewClusterConnection(ctx, clusterCfg, logger)
 		if err != nil {
@@ -62,6 +61,13 @@ func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 			continue
 		}
 		proxy.clusterConnections[migrationId{clusterCfg.Name}] = cc
+	}
+	// TODO: correctly host multiple health checks
+	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].InboundHealthCheck.ListenAddress != "" {
+		proxy.inboundHealthCheckConfig = &s2sConfig.ClusterConnections[0].InboundHealthCheck
+	}
+	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].OutboundHealthCheck.ListenAddress != "" {
+		proxy.outboundHealthCheckConfig = &s2sConfig.ClusterConnections[0].OutboundHealthCheck
 	}
 
 	metrics.NewProxyCount.Inc()
@@ -119,8 +125,7 @@ func (s *Proxy) Start() error {
 	if s.inboundHealthCheckConfig != nil {
 		var err error
 		healthFn := func() bool {
-			// TODO: assumes only one mux right now. When there are multiple remotes, we may want to receive them all
-			//       on the same port and do something different here
+			// TODO: overly conservative right now. When there are multiple remotes, we should track their health separately
 			for _, cc := range s.clusterConnections {
 				if !cc.AcceptingInboundTraffic() {
 					return false
@@ -138,8 +143,7 @@ func (s *Proxy) Start() error {
 
 	if s.outboundHealthCheckConfig != nil {
 		healthFn := func() bool {
-			// TODO: assumes only one mux right now. When there are multiple remotes, some of them may be healthy
-			//       and others not
+			// TODO: overly conservative right now. When there are multiple remotes, we should track their health separately
 			for _, cc := range s.clusterConnections {
 				if !cc.AcceptingOutboundTraffic() {
 					return false

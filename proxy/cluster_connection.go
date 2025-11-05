@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/auth"
+	"github.com/temporalio/s2s-proxy/collect"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/metrics"
@@ -87,13 +88,21 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	if err != nil {
 		return nil, err
 	}
-	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, connConfig, connConfig.RemoteServer, "inbound",
-		cc.inboundClient, cc.outboundClient, cc.logger)
+	nsTranslations, err := connConfig.NamespaceTranslation.AsLocalToRemoteBiMap()
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, connConfig, connConfig.LocalServer, "outbound",
-		cc.outboundClient, cc.inboundClient, cc.logger)
+	saTranslations, err := connConfig.SearchAttributeTranslation.AsLocalToRemoteSATranslation()
+	if err != nil {
+		return nil, err
+	}
+	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, connConfig.Name, connConfig.RemoteServer, "inbound",
+		cc.inboundClient, cc.outboundClient, nsTranslations.Inverse(), saTranslations.Inverse(), cc.logger)
+	if err != nil {
+		return nil, err
+	}
+	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, connConfig.Name, connConfig.LocalServer, "outbound",
+		cc.outboundClient, cc.inboundClient, nsTranslations, saTranslations, cc.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -106,25 +115,28 @@ func createClient(lifetime context.Context, connectionName string, transportCfg 
 		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		return grpcutil.NewMultiClientConn(lifetime, fmt.Sprintf("client-conn-%s", connectionName),
+			// TLS is handled by the mux connection, so tlsConfig will always be nil
 			grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics(directionLabel))...)
 	default:
 		return nil, errors.New("invalid connection type")
 	}
 }
 
-func createServer(lifetime context.Context, cfg config.ClusterConnConfig, cd config.ClusterDefinition, directionLabel string, client closableClientConn, managedClient closableClientConn, logger log.Logger) (contextAwareServer, *ReplicationStreamObserver, error) {
+func createServer(lifetime context.Context, name string, cd config.ClusterDefinition,
+	directionLabel string, client closableClientConn, managedClient closableClientConn,
+	nsTranslations collect.StaticBiMap[string, string], saTranslations config.SearchAttributeTranslation, logger log.Logger) (contextAwareServer, *ReplicationStreamObserver, error) {
 	switch cd.Connection.ConnectionType {
 	case config.ConnTypeTCP:
 		// No special logic required for managedClient
-		return createTCPServer(lifetime, client, cfg, cd, directionLabel, logger)
+		return createTCPServer(lifetime, client, name, cd, directionLabel, nsTranslations, saTranslations, logger)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		observer := NewReplicationStreamObserver(logger)
-		grpcServer, err := buildProxyServer(client, directionLabel, cfg, cd, observer, logger)
+		grpcServer, err := buildProxyServer(client, directionLabel, cd, observer, nsTranslations, saTranslations, logger)
 		if err != nil {
 			return nil, nil, err
 		}
 		// The Mux manager needs to update its associated client
-		muxMgr, err := mux.NewGRPCMuxManager(lifetime, cfg.Name, cd, managedClient.(*grpcutil.MultiClientConn), grpcServer, logger)
+		muxMgr, err := mux.NewGRPCMuxManager(lifetime, name, cd, managedClient.(*grpcutil.MultiClientConn), grpcServer, logger)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -134,18 +146,20 @@ func createServer(lifetime context.Context, cfg config.ClusterConnConfig, cd con
 	}
 }
 
-func createTCPServer(lifetime context.Context, client closableClientConn, cfg config.ClusterConnConfig, cd config.ClusterDefinition, directionLabel string, logger log.Logger) (contextAwareServer, *ReplicationStreamObserver, error) {
+func createTCPServer(lifetime context.Context, client closableClientConn, name string,
+	cd config.ClusterDefinition, directionLabel string, nsTranslations collect.StaticBiMap[string, string],
+	saTranslations config.SearchAttributeTranslation, logger log.Logger) (contextAwareServer, *ReplicationStreamObserver, error) {
 	observer := NewReplicationStreamObserver(logger)
 	listener, err := net.Listen("tcp", cd.Connection.TcpServer.ConnectionString)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid configuration for inbound server: %w", err)
 	}
-	grpcServer, err := buildProxyServer(client, directionLabel, cfg, cd, observer, logger)
+	grpcServer, err := buildProxyServer(client, directionLabel, cd, observer, nsTranslations, saTranslations, logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create inbound server: %w", err)
 	}
 	server := &simpleGRPCServer{
-		name:     cfg.Name,
+		name:     name,
 		lifetime: lifetime,
 		listener: listener,
 		server:   grpcServer,
@@ -196,16 +210,9 @@ func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
 
 // buildProxyServer uses the provided grpc.ClientConnInterface and config.ProxyConfig to create a grpc.Server that proxies
 // the Temporal API across the ClientConnInterface.
-func buildProxyServer(client grpc.ClientConnInterface, directionLabel string, cfg config.ClusterConnConfig, cd config.ClusterDefinition, observer *ReplicationStreamObserver, logger log.Logger) (*grpc.Server, error) {
-	nsTranslations, err := cfg.NamespaceTranslation.AsLocalToRemoteBiMap()
-	if err != nil {
-		return nil, err
-	}
-	searchAttributeTranslations, err := cfg.SearchAttributeTranslation.AsLocalToRemoteSATranslation()
-	if err != nil {
-		return nil, err
-	}
-	serverOpts, err := MakeServerOptions(logger, directionLabel, cd.Connection.TcpServer.TLSConfig, cd.ACLPolicy, nsTranslations, searchAttributeTranslations)
+func buildProxyServer(client grpc.ClientConnInterface, directionLabel string, cd config.ClusterDefinition,
+	observer *ReplicationStreamObserver, nsTranslations collect.StaticBiMap[string, string], saTranslations config.SearchAttributeTranslation, logger log.Logger) (*grpc.Server, error) {
+	serverOpts, err := MakeServerOptions(logger, directionLabel, cd.Connection.TcpServer.TLSConfig, cd.ACLPolicy, nsTranslations, saTranslations)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse server options: %w", err)
 	}

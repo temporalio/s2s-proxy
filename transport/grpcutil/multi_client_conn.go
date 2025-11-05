@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -16,7 +17,12 @@ import (
 )
 
 const (
-	scheme = "multiclient"
+	scheme                         = "multiclient"
+	prometheusDisallowedCharacters = `[^a-zA-Z0-9_-]`
+)
+
+var (
+	urlReplacePattern = regexp.MustCompile(prometheusDisallowedCharacters)
 )
 
 // MultiClientConn is a wrapper over grpc.ClientConn that allows it to be configured over a set of existing
@@ -26,8 +32,10 @@ const (
 // when they are used, and they will break MultiClientConn.
 // Note: This is not ready for use in production yet, ClientConn.Connect() and ClientConn.UpdateState() cannot yet be called properly.
 type MultiClientConn struct {
+	// When lifetime closes, this MultiClientConn will also close
 	lifetime context.Context
-	name     string
+	// name is used in the custom resolver, and must therefore be a valid base url. NewMultiClientConn sanitizes names inline
+	name string
 	// connMapLock is being used with connMap over a sync.Map for now. If using a MultiClientConn on large numbers of
 	// muxes, it's probably best to switch to sync.Map for the sharded read locks
 	connMapLock sync.RWMutex
@@ -41,14 +49,16 @@ type MultiClientConn struct {
 }
 
 func NewMultiClientConn(lifetime context.Context, name string, opts ...grpc.DialOption) (*MultiClientConn, error) {
-	mcc := &MultiClientConn{lifetime: lifetime, name: name}
+	// The name is used in the protocol and for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
+	sanitizedName := sanitizeForURL(name)
+	mcc := &MultiClientConn{lifetime: lifetime, name: sanitizedName}
 	var err error
 	dialOpts := make([]grpc.DialOption, len(opts)+2)
 	mcc.resolver = manual.NewBuilderWithScheme(scheme)
 	dialOpts[0] = grpc.WithResolvers(mcc.resolver)
 	dialOpts[1] = grpc.WithContextDialer(mcc.getMapDialer())
 	copy(dialOpts[2:], opts)
-	mcc.clientConn, err = grpc.NewClient(fmt.Sprintf("%s://%s", scheme, name),
+	mcc.clientConn, err = grpc.NewClient(fmt.Sprintf("%s://%s", scheme, sanitizedName),
 		dialOpts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create underlying grpc client")
@@ -58,12 +68,18 @@ func NewMultiClientConn(lifetime context.Context, name string, opts ...grpc.Dial
 		err = mcc.clientConn.Invoke(lifetime, "fakeMethod", "", "")
 		fmt.Println("fakeMethod called: ", err)
 	}()
-	//mcc.clientConn.Connect()
-	//fmt.Printf("Connected MCC %s\n", name)
+	mcc.clientConn.Connect()
 	context.AfterFunc(lifetime, func() {
 		_ = mcc.Close()
 	})
 	return mcc, nil
+}
+
+func sanitizeForURL(value string) string {
+	if len(value) == 0 {
+		return value
+	}
+	return urlReplacePattern.ReplaceAllLiteralString(value, "_")
 }
 
 // UpdateState holds a pointer to the original map. It is the caller's responsibility to clone the passed pointer
