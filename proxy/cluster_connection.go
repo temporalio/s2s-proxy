@@ -74,17 +74,25 @@ type (
 	}
 )
 
+func sanitizeConnectionName(name string) string {
+	// Prometheus is more restrictive than grpc.Dial, so we'll just reuse the prometheus sanitizer for now
+	return metrics.SanitizeForPrometheus(name)
+}
+
+// NewClusterConnection unpacks the connConfig and creates the inbound and outbound clients and servers.
 func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logger log.Logger) (*ClusterConnection, error) {
+	// The name is used in metrics and in the protocol for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
+	sanitizedConnectionName := sanitizeConnectionName(connConfig.Name)
 	cc := &ClusterConnection{
 		lifetime: lifetime,
-		logger:   log.With(logger, tag.NewStringTag("clusterConn", connConfig.Name)),
+		logger:   log.With(logger, tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
-	cc.inboundClient, err = createClient(lifetime, connConfig.Name, connConfig.LocalServer.Connection, "inbound")
+	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.LocalServer.Connection, "inbound")
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundClient, err = createClient(lifetime, connConfig.Name, connConfig.RemoteServer.Connection, "outbound")
+	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.RemoteServer.Connection, "outbound")
 	if err != nil {
 		return nil, err
 	}
@@ -96,12 +104,12 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	if err != nil {
 		return nil, err
 	}
-	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, connConfig.Name, connConfig.RemoteServer, "inbound",
+	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, sanitizedConnectionName, connConfig.RemoteServer, "inbound",
 		cc.inboundClient, cc.outboundClient, nsTranslations.Inverse(), saTranslations.Inverse(), cc.logger)
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, connConfig.Name, connConfig.LocalServer, "outbound",
+	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, sanitizedConnectionName, connConfig.LocalServer, "outbound",
 		cc.outboundClient, cc.inboundClient, nsTranslations, saTranslations, cc.logger)
 	if err != nil {
 		return nil, err

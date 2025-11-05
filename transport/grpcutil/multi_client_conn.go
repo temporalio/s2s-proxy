@@ -17,12 +17,12 @@ import (
 )
 
 const (
-	scheme                         = "multiclient"
-	prometheusDisallowedCharacters = `[^a-zA-Z0-9_-]`
+	scheme               = "multiclient"
+	disallowedCharacters = `[^a-zA-Z0-9_-]`
 )
 
 var (
-	urlReplacePattern = regexp.MustCompile(prometheusDisallowedCharacters)
+	disallowedCharactersPattern = regexp.MustCompile(disallowedCharacters)
 )
 
 // MultiClientConn is a wrapper over grpc.ClientConn that allows it to be configured over a set of existing
@@ -49,16 +49,17 @@ type MultiClientConn struct {
 }
 
 func NewMultiClientConn(lifetime context.Context, name string, opts ...grpc.DialOption) (*MultiClientConn, error) {
-	// The name is used in the protocol and for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
-	sanitizedName := sanitizeForURL(name)
-	mcc := &MultiClientConn{lifetime: lifetime, name: sanitizedName}
+	if disallowedCharactersPattern.MatchString(name) {
+		return nil, errors.Errorf("invalid client conn name: %s", name)
+	}
+	mcc := &MultiClientConn{lifetime: lifetime, name: name}
 	var err error
 	dialOpts := make([]grpc.DialOption, len(opts)+2)
 	mcc.resolver = manual.NewBuilderWithScheme(scheme)
 	dialOpts[0] = grpc.WithResolvers(mcc.resolver)
 	dialOpts[1] = grpc.WithContextDialer(mcc.getMapDialer())
 	copy(dialOpts[2:], opts)
-	mcc.clientConn, err = grpc.NewClient(fmt.Sprintf("%s://%s", scheme, sanitizedName),
+	mcc.clientConn, err = grpc.NewClient(fmt.Sprintf("%s://%s", scheme, name),
 		dialOpts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create underlying grpc client")
@@ -73,13 +74,6 @@ func NewMultiClientConn(lifetime context.Context, name string, opts ...grpc.Dial
 		_ = mcc.Close()
 	})
 	return mcc, nil
-}
-
-func sanitizeForURL(value string) string {
-	if len(value) == 0 {
-		return value
-	}
-	return urlReplacePattern.ReplaceAllLiteralString(value, "_")
 }
 
 // UpdateState holds a pointer to the original map. It is the caller's responsibility to clone the passed pointer
