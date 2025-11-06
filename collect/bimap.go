@@ -20,8 +20,8 @@ type (
 	ConflictError[T comparable] struct {
 		isKey   bool
 		newItem T
-		// why existingItem? For some kinds of comparable, things with different content can be equal.
-		// for those items, it's helpful to dump the value of the existing thing in addition
+		// Why existingItem? For some kinds of comparable, things with different content can be equal.
+		// For those items, it's helpful to dump the value of the existing thing in addition
 		existingItem T
 	}
 )

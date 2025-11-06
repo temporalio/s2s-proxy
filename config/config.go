@@ -47,6 +47,7 @@ type (
 	}
 
 	// ServerTLSConfig provides backwards compatibility with existing configurations. Prefer config.ClusterConnConfig instead.
+	// TODO: This will be removed soon!
 	ServerTLSConfig struct {
 		CertificatePath   string `yaml:"certificatePath"`
 		KeyPath           string `yaml:"keyPath"`
@@ -55,6 +56,7 @@ type (
 	}
 
 	// ClientTLSConfig provides backwards compatibility with existing configurations. Prefer config.ClusterConnConfig instead.
+	// TODO: This will be removed soon!
 	ClientTLSConfig struct {
 		CertificatePath string `yaml:"certificatePath"`
 		KeyPath         string `yaml:"keyPath"`
@@ -135,15 +137,15 @@ type (
 	}
 
 	S2SProxyConfig struct {
-		// Soon to be deprecated! Create an item in ClusterConnections instead
+		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
 		Inbound *ProxyConfig `yaml:"inbound"`
-		// Soon to be deprecated! Create an item in ClusterConnections instead
+		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
 		Outbound *ProxyConfig `yaml:"outbound"`
-		// Soon to be deprecated! Create an item in ClusterConnections instead
+		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
 		MuxTransports []MuxTransportConfig `yaml:"mux"`
-		// Soon to be deprecated! Create an item in ClusterConnections instead
+		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
 		HealthCheck *HealthCheckConfig `yaml:"healthCheck"`
-		// Soon to be deprecated! Create an item in ClusterConnections instead
+		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
 		OutboundHealthCheck        *HealthCheckConfig    `yaml:"outboundHealthCheck"`
 		NamespaceNameTranslation   NameTranslationConfig `yaml:"namespaceNameTranslation"`
 		SearchAttributeTranslation SATranslationConfig   `yaml:"searchAttributeTranslation"`

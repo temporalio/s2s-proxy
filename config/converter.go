@@ -90,16 +90,15 @@ func determineConnectionType(proxyCfg S2SProxyConfig, isLocal bool) ConnectionTy
 		return ConnTypeTCP
 	case MuxTransport:
 		mode := findTransport(proxyCfg.MuxTransports, source.Client.MuxTransportName).Mode
-		if mode == "" {
-			panic(fmt.Sprintf("couldn't find mux transport \"%s\" in %v", source.Client.MuxTransportName, proxyCfg.MuxTransports))
-		}
 		switch mode {
 		case ServerMode:
 			return ConnTypeMuxServer
 		case ClientMode:
 			return ConnTypeMuxClient
 		default:
-			panic(fmt.Sprintf("invalid mux transport mode \"%s\"", source.Name))
+			// Panic is ok here because the legacy config can only ever have one connection. If this is misconfigured,
+			// the whole proxy won't work anyway.
+			panic(fmt.Sprintf("couldn't find mux transport \"%s\" in %v", source.Client.MuxTransportName, proxyCfg.MuxTransports))
 		}
 	default:
 		return ConnTypeTCP
