@@ -15,7 +15,6 @@ import (
 	"go.temporal.io/server/common/log"
 
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/endtoendtest"
 	"github.com/temporalio/s2s-proxy/transport/mux"
 )
@@ -64,7 +63,7 @@ type (
 	cfgOption func(c *config.S2SProxyConfig)
 )
 
-func withServerTLS(tls encryption.ServerTLSConfig, inbound bool) cfgOption {
+func withServerTLS(tls config.ServerTLSConfig, inbound bool) cfgOption {
 	return func(c *config.S2SProxyConfig) {
 		if inbound {
 			c.Inbound.Server.TLS = tls
@@ -74,7 +73,7 @@ func withServerTLS(tls encryption.ServerTLSConfig, inbound bool) cfgOption {
 	}
 }
 
-func withClientTLS(tls encryption.ClientTLSConfig, inbound bool) cfgOption {
+func withClientTLS(tls config.ClientTLSConfig, inbound bool) cfgOption {
 	return func(c *config.S2SProxyConfig) {
 		if inbound {
 			c.Inbound.Client.TLS = tls
@@ -129,7 +128,7 @@ func withNamespaceTranslation(mapping []config.NameMappingConfig, _ bool) cfgOpt
 func EchoServerTLSOptions() []cfgOption {
 	return []cfgOption{
 		withServerTLS(
-			encryption.ServerTLSConfig{
+			config.ServerTLSConfig{
 				CertificatePath:   filepath.Join("certificates", "proxy1.pem"),
 				KeyPath:           filepath.Join("certificates", "proxy1.key"),
 				ClientCAPath:      filepath.Join("certificates", "proxy2.pem"),
@@ -138,7 +137,7 @@ func EchoServerTLSOptions() []cfgOption {
 			true,
 		),
 		withClientTLS(
-			encryption.ClientTLSConfig{
+			config.ClientTLSConfig{
 				CertificatePath: filepath.Join("certificates", "proxy1.pem"),
 				KeyPath:         filepath.Join("certificates", "proxy1.key"),
 				ServerName:      "onebox-proxy2.cluster.tmprl.cloud",
@@ -191,7 +190,7 @@ func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 func EchoClientTLSOptions() []cfgOption {
 	return []cfgOption{
 		withServerTLS(
-			encryption.ServerTLSConfig{
+			config.ServerTLSConfig{
 				CertificatePath:   filepath.Join("certificates", "proxy2.pem"),
 				KeyPath:           filepath.Join("certificates", "proxy2.key"),
 				ClientCAPath:      filepath.Join("certificates", "proxy1.pem"),
@@ -200,7 +199,7 @@ func EchoClientTLSOptions() []cfgOption {
 			true,
 		),
 		withClientTLS(
-			encryption.ClientTLSConfig{
+			config.ClientTLSConfig{
 				CertificatePath: filepath.Join("certificates", "proxy2.pem"),
 				KeyPath:         filepath.Join("certificates", "proxy2.key"),
 				ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
@@ -519,7 +518,7 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 						Namespace: ts.clientNamespace,
 					})
 				}, 5, logger)
-				s.NoError(err)
+				s.Require().NoError(err)
 				s.Require().NotNil(resp)
 			},
 		)

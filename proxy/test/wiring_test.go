@@ -140,7 +140,7 @@ func TestWiringWithEchoService(t *testing.T) {
 	// Test s2s-proxy health check
 
 	// The server may take a few 10s of ms to start
-	var healthErr = fmt.Errorf("Not started")
+	var healthErr = fmt.Errorf("not started")
 	for attempts := 0; healthErr != nil && attempts < 5; attempts++ {
 		_, healthErr = http.Get(fmt.Sprintf("http://%s/health", echoServerInfo.S2sProxyConfig.HealthCheck.ListenAddress))
 		time.Sleep(10 * time.Millisecond)

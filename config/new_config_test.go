@@ -39,10 +39,10 @@ func TestBasic(t *testing.T) {
 	require.Equal(t, "", nsTranslation.Inverse().Get("UnknownName"))
 	require.Equal(t, NewTuple("", false), NewTuple(nsTranslation.GetExists("UnknownName")))
 	require.Equal(t, NewTuple("", false), NewTuple(nsTranslation.Inverse().GetExists("UnknownName")))
-	saTranslation, err := proxyConfig.ClusterConnections[0].SearchAttributeTranslation.AsLocalToRemoteBiMaps()
+	saTranslation, err := proxyConfig.ClusterConnections[0].SearchAttributeTranslation.AsLocalToRemoteSATranslation()
 	require.NoError(t, err)
-	require.Equal(t, "remoteSearchAttribute", saTranslation["namespace-id-1"].Get("localSearchAttribute"))
-	require.Equal(t, "localSearchAttribute", saTranslation["namespace-id-1"].Inverse().Get("remoteSearchAttribute"))
+	require.Equal(t, "remoteSearchAttribute", saTranslation.Get("namespace-id-1", "localSearchAttribute"))
+	require.Equal(t, "localSearchAttribute", saTranslation.Inverse().Get("namespace-id-1", "remoteSearchAttribute"))
 }
 
 func TestConversion(t *testing.T) {
@@ -59,5 +59,5 @@ func TestConversion(t *testing.T) {
 	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].LocalServer.Connection.ConnectionType)
 	require.Equal(t, "AddOrUpdateRemoteCluster", converted.ClusterConnections[0].LocalServer.ACLPolicy.AllowedMethods.AdminService[0])
 	require.Equal(t, "namespace1", converted.ClusterConnections[0].LocalServer.ACLPolicy.AllowedNamespaces[0])
-	require.Equal(t, int64(100), *converted.ClusterConnections[0].LocalServer.APIOverrides.AdminSerivce.DescribeCluster.Response.FailoverVersionIncrement)
+	require.Equal(t, int64(100), *converted.ClusterConnections[0].LocalServer.APIOverrides.AdminService.DescribeCluster.Response.FailoverVersionIncrement)
 }

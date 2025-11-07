@@ -1,7 +1,10 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
 
+	"github.com/temporalio/s2s-proxy/encryption"
+)
 
 // ToClusterConnConfig converts from previous versions of proxy config to the new format without requiring a rewrite.
 func ToClusterConnConfig(config S2SProxyConfig) S2SProxyConfig {
@@ -86,16 +89,19 @@ func determineConnectionType(proxyCfg S2SProxyConfig, isLocal bool) ConnectionTy
 	case TCPTransport:
 		return ConnTypeTCP
 	case MuxTransport:
-		switch findTransport(proxyCfg.MuxTransports, source.Name).Mode {
+		mode := findTransport(proxyCfg.MuxTransports, source.Client.MuxTransportName).Mode
+		switch mode {
 		case ServerMode:
 			return ConnTypeMuxServer
 		case ClientMode:
 			return ConnTypeMuxClient
 		default:
-			panic(fmt.Sprintf("invalid mux transport mode %s", source.Name))
+			// Panic is ok here because the legacy config can only ever have one connection. If this is misconfigured,
+			// the whole proxy won't work anyway.
+			panic(fmt.Sprintf("couldn't find mux transport \"%s\" in %v", source.Client.MuxTransportName, proxyCfg.MuxTransports))
 		}
 	default:
-		panic(fmt.Sprintf("invalid client type %s", source.Client.Type))
+		return ConnTypeTCP
 	}
 }
 func findTransport(muxes []MuxTransportConfig, name string) MuxTransportConfig {
@@ -110,7 +116,7 @@ func findTransport(muxes []MuxTransportConfig, name string) MuxTransportConfig {
 func translateClientTCPTLSInfo(cfg TCPClientSetting) TCPTLSInfo {
 	return TCPTLSInfo{
 		ConnectionString: cfg.ServerAddress,
-		TLSConfig: TLSConfig{
+		TLSConfig: encryption.TLSConfig{
 			CertificatePath:  cfg.TLS.CertificatePath,
 			KeyPath:          cfg.TLS.KeyPath,
 			RemoteCAPath:     cfg.TLS.ServerCAPath,
@@ -122,7 +128,7 @@ func translateClientTCPTLSInfo(cfg TCPClientSetting) TCPTLSInfo {
 func translateServerTCPTLSInfo(cfg TCPServerSetting) TCPTLSInfo {
 	return TCPTLSInfo{
 		ConnectionString: cfg.ListenAddress,
-		TLSConfig: TLSConfig{
+		TLSConfig: encryption.TLSConfig{
 			CertificatePath:  cfg.TLS.CertificatePath,
 			KeyPath:          cfg.TLS.KeyPath,
 			RemoteCAPath:     cfg.TLS.ClientCAPath,

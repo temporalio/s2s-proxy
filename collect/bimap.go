@@ -13,13 +13,15 @@ type (
 	StaticBiMap[K, V comparable] interface {
 		Get(key K) V
 		GetExists(key K) (V, bool)
+		AsMap() map[K]V
 		Inverse() StaticBiMap[V, K]
+		Len() int
 	}
 	ConflictError[T comparable] struct {
 		isKey   bool
 		newItem T
-		// why existingItem? For some kinds of comparable, things with different content can be equal.
-		// for those items, it's helpful to dump the value of the existing thing in addition
+		// Why existingItem? For some kinds of comparable, things with different content can be equal.
+		// For those items, it's helpful to dump the value of the existing thing in addition
 		existingItem T
 	}
 )
@@ -49,14 +51,38 @@ func NewStaticBiMap[K, V comparable](pairs iter.Seq2[K, V], expectedSize int) (S
 }
 
 func (m *staticBiMap[K, V]) GetExists(key K) (V, bool) {
+	if m == nil {
+		var empty V
+		return empty, false
+	}
 	val, exists := m.contents[key]
 	return val, exists
 }
 func (m *staticBiMap[K, V]) Get(key K) V {
+	if m == nil {
+		var empty V
+		return empty
+	}
 	return m.contents[key]
 }
 func (m *staticBiMap[K, V]) Inverse() StaticBiMap[V, K] {
+	if m == nil {
+		return nil
+	}
 	return m.inverse
+}
+func (m *staticBiMap[K, V]) Len() int {
+	if m == nil {
+		return 0
+	}
+	// Length is simple for this map because multi-mappings are not allowed
+	return len(m.contents)
+}
+func (m *staticBiMap[K, V]) AsMap() map[K]V {
+	if m == nil {
+		return nil
+	}
+	return m.contents
 }
 
 func (e ConflictError[T]) Error() string {

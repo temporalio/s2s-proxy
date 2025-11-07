@@ -32,10 +32,10 @@ type receivingConnProvider struct {
 
 // NewMuxReceiverProvider runs a TCP server and waits for a client to connect. Once a connection is established and
 // authenticated with the TLS config, it starts a yamux session and returns the details using transportFn
-func NewMuxReceiverProvider(lifetime context.Context, name string, transportFn AddNewMux, connectionCapacity int64, setting config.TCPServerSetting, metricLabels []string, upstreamLog log.Logger) (MuxProvider, error) {
-	logger := log.With(upstreamLog, tag.NewStringTag("component", "receivingMux"), tag.NewStringTag("listenAddr", setting.ListenAddress))
+func NewMuxReceiverProvider(lifetime context.Context, name string, transportFn AddNewMux, connectionCapacity int64, setting config.TCPTLSInfo, metricLabels []string, upstreamLog log.Logger) (MuxProvider, error) {
+	logger := log.With(upstreamLog, tag.NewStringTag("component", "receivingMux"), tag.NewStringTag("listenAddr", setting.ConnectionString))
 	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
-	if tlsCfg := setting.TLS; tlsCfg.IsEnabled() {
+	if tlsCfg := setting.TLSConfig; tlsCfg.IsEnabled() {
 		tlsConfig, err := encryption.GetServerTLSConfig(tlsCfg, logger)
 		if err != nil {
 			return nil, err
@@ -45,7 +45,7 @@ func NewMuxReceiverProvider(lifetime context.Context, name string, transportFn A
 		}
 		tlsWrapper = func(conn net.Conn) net.Conn { return tls.Server(conn, tlsConfig) }
 	}
-	listener, err := net.Listen("tcp", setting.ListenAddress)
+	listener, err := net.Listen("tcp", setting.ConnectionString)
 	if err != nil {
 		return nil, err
 	}
