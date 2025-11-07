@@ -151,25 +151,6 @@ func makeMuxClusterConfig(name string, client config.ConnectionType, localTempor
 	return cc
 }
 
-//func makeTCPProxyConfig(name string, serverAddress string, clientAddress string) config.ProxyConfig {
-//	return config.ProxyConfig{
-//		Name: name,
-//		Server: config.ProxyServerConfig{
-//			Type: config.TCPTransport,
-//			TCPServerSetting: config.TCPServerSetting{
-//				ListenAddress: serverAddress,
-//			},
-//		},
-//		Client: config.ProxyClientConfig{
-//			Type: config.TCPTransport,
-//			TCPClientSetting: config.TCPClientSetting{
-//				ServerAddress: clientAddress,
-//			},
-//		},
-//		// nil ACLPolicy and APIOverrides
-//	}
-//}
-
 func makeEchoServer(name string, listenAddress string, logger log.Logger) *testservices.TemporalServerWithListen {
 	logger.Info("Starting echo server", tag.NewStringTag("name", name), tag.Address(listenAddress))
 	return testservices.NewTemporalAPIServer(name,
@@ -177,42 +158,6 @@ func makeEchoServer(name string, listenAddress string, logger log.Logger) *tests
 		testservices.NewEchoWorkflowService(name, logger),
 		nil, listenAddress, logger)
 }
-
-//func makeMuxTransportConfig(name string, mode config.MuxMode, address string, numConns int) config.MuxTransportConfig {
-//	if mode == config.ServerMode {
-//		return config.MuxTransportConfig{
-//			Name:           name,
-//			Mode:           mode,
-//			Client:         config.TCPClientSetting{},
-//			Server:         config.TCPServerSetting{ListenAddress: address},
-//			NumConnections: numConns,
-//		}
-//	} else {
-//		return config.MuxTransportConfig{
-//			Name:           name,
-//			Mode:           mode,
-//			Client:         config.TCPClientSetting{ServerAddress: address},
-//			Server:         config.TCPServerSetting{},
-//			NumConnections: numConns,
-//		}
-//	}
-//}
-//
-//func makeMuxProxyConfig(name string, inbound bool, muxName string, tcpAddress string) config.ProxyConfig {
-//	if inbound {
-//		return config.ProxyConfig{
-//			Name:   name,
-//			Server: config.ProxyServerConfig{Type: config.MuxTransport, MuxTransportName: muxName},
-//			Client: config.ProxyClientConfig{Type: config.TCPTransport, TCPClientSetting: config.TCPClientSetting{ServerAddress: tcpAddress}},
-//		}
-//	} else {
-//		return config.ProxyConfig{
-//			Name:   name,
-//			Server: config.ProxyServerConfig{Type: config.TCPTransport, TCPServerSetting: config.TCPServerSetting{ListenAddress: tcpAddress}},
-//			Client: config.ProxyClientConfig{Type: config.MuxTransport, MuxTransportName: muxName},
-//		}
-//	}
-//}
 
 func newPairedLocalClusterConnection(t *testing.T, isMux bool, logger log.Logger) *pairedLocalClusterConnection {
 	a := getDynamicPlccAddresses(t)

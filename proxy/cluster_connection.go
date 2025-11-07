@@ -9,16 +9,20 @@ import (
 	"net"
 	"time"
 
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/collect"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"github.com/temporalio/s2s-proxy/transport/mux"
@@ -72,6 +76,22 @@ type (
 		Describe() string
 		CanMakeCalls() bool
 	}
+	serverConfiguration struct {
+		// name identifies the connection in metrics and in the mux custom resolver. Must be sanitized.
+		name              string
+		// clusterDefinition contains the connection information for the server
+		clusterDefinition config.ClusterDefinition
+		// directionLabel is used in metrics. DO NOT hang application logic off of this! Pass the appropriate arguments instead.
+		directionLabel    string
+		// client is the ClientConnInterface that the server will use to make calls.
+		client            closableClientConn
+		// managedClient is updated by the multi-mux-manager that also owns the server. Needs some more cleanup.
+		managedClient     closableClientConn
+		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
+		nsTranslations    collect.StaticBiMap[string, string]
+		saTranslations    config.SearchAttributeTranslation
+		logger            log.Logger
+	}
 )
 
 func sanitizeConnectionName(name string) string {
@@ -104,13 +124,29 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	if err != nil {
 		return nil, err
 	}
-	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, sanitizedConnectionName, connConfig.RemoteServer, "inbound",
-		cc.inboundClient, cc.outboundClient, nsTranslations.Inverse(), saTranslations.Inverse(), cc.logger)
+	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, serverConfiguration{
+		name:              sanitizedConnectionName,
+		clusterDefinition: connConfig.RemoteServer,
+		directionLabel:    "inbound",
+		client:            cc.inboundClient,
+		managedClient:     cc.outboundClient,
+		nsTranslations:    nsTranslations.Inverse(),
+		saTranslations:    saTranslations.Inverse(),
+		logger:            cc.logger,
+	})
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, sanitizedConnectionName, connConfig.LocalServer, "outbound",
-		cc.outboundClient, cc.inboundClient, nsTranslations, saTranslations, cc.logger)
+	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, serverConfiguration{
+		name:              sanitizedConnectionName,
+		clusterDefinition: connConfig.LocalServer,
+		directionLabel:    "outbound",
+		client:            cc.outboundClient,
+		managedClient:     cc.inboundClient,
+		nsTranslations:    nsTranslations,
+		saTranslations:    saTranslations,
+		logger:            cc.logger,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -130,21 +166,19 @@ func createClient(lifetime context.Context, connectionName string, transportCfg 
 	}
 }
 
-func createServer(lifetime context.Context, name string, cd config.ClusterDefinition,
-	directionLabel string, client closableClientConn, managedClient closableClientConn,
-	nsTranslations collect.StaticBiMap[string, string], saTranslations config.SearchAttributeTranslation, logger log.Logger) (contextAwareServer, *ReplicationStreamObserver, error) {
-	switch cd.Connection.ConnectionType {
+func createServer(lifetime context.Context, c serverConfiguration) (contextAwareServer, *ReplicationStreamObserver, error) {
+	switch c.clusterDefinition.Connection.ConnectionType {
 	case config.ConnTypeTCP:
 		// No special logic required for managedClient
-		return createTCPServer(lifetime, client, name, cd, directionLabel, nsTranslations, saTranslations, logger)
+		return createTCPServer(lifetime, c)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
-		observer := NewReplicationStreamObserver(logger)
-		grpcServer, err := buildProxyServer(client, directionLabel, cd, observer, nsTranslations, saTranslations, logger)
+		observer := NewReplicationStreamObserver(c.logger)
+		grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.MuxAddressInfo.TLSConfig, observer.ReportStreamValue)
 		if err != nil {
 			return nil, nil, err
 		}
 		// The Mux manager needs to update its associated client
-		muxMgr, err := mux.NewGRPCMuxManager(lifetime, name, cd, managedClient.(*grpcutil.MultiClientConn), grpcServer, logger)
+		muxMgr, err := mux.NewGRPCMuxManager(lifetime, c.name, c.clusterDefinition, c.managedClient.(*grpcutil.MultiClientConn), grpcServer, c.logger)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -154,24 +188,22 @@ func createServer(lifetime context.Context, name string, cd config.ClusterDefini
 	}
 }
 
-func createTCPServer(lifetime context.Context, client closableClientConn, name string,
-	cd config.ClusterDefinition, directionLabel string, nsTranslations collect.StaticBiMap[string, string],
-	saTranslations config.SearchAttributeTranslation, logger log.Logger) (contextAwareServer, *ReplicationStreamObserver, error) {
-	observer := NewReplicationStreamObserver(logger)
-	listener, err := net.Listen("tcp", cd.Connection.TcpServer.ConnectionString)
+func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAwareServer, *ReplicationStreamObserver, error) {
+	observer := NewReplicationStreamObserver(c.logger)
+	listener, err := net.Listen("tcp", c.clusterDefinition.Connection.TcpServer.ConnectionString)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid configuration for inbound server: %w", err)
 	}
-	grpcServer, err := buildProxyServer(client, directionLabel, cd, observer, nsTranslations, saTranslations, logger)
+	grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.TcpServer.TLSConfig, observer.ReportStreamValue)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create inbound server: %w", err)
 	}
 	server := &simpleGRPCServer{
-		name:     name,
+		name:     c.name,
 		lifetime: lifetime,
 		listener: listener,
 		server:   grpcServer,
-		logger:   logger,
+		logger:   c.logger,
 	}
 	return server, observer, nil
 }
@@ -218,24 +250,75 @@ func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
 
 // buildProxyServer uses the provided grpc.ClientConnInterface and config.ProxyConfig to create a grpc.Server that proxies
 // the Temporal API across the ClientConnInterface.
-func buildProxyServer(client grpc.ClientConnInterface, directionLabel string, cd config.ClusterDefinition,
-	observer *ReplicationStreamObserver, nsTranslations collect.StaticBiMap[string, string], saTranslations config.SearchAttributeTranslation, logger log.Logger) (*grpc.Server, error) {
-	serverOpts, err := MakeServerOptions(logger, directionLabel, cd.Connection.TcpServer.TLSConfig, cd.ACLPolicy, nsTranslations, saTranslations)
+func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, observeFn func(int32, int32)) (*grpc.Server, error) {
+	serverOpts, err := makeServerOptions(c, tlsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse server options: %w", err)
 	}
 	server := grpc.NewServer(serverOpts...)
-	adminServiceImpl := NewAdminServiceProxyServer(fmt.Sprintf("%sAdminService", directionLabel), adminservice.NewAdminServiceClient(client),
-		cd.APIOverrides, []string{directionLabel}, observer.ReportStreamValue, logger)
+	adminServiceImpl := NewAdminServiceProxyServer(fmt.Sprintf("%sAdminService", c.directionLabel), adminservice.NewAdminServiceClient(c.client),
+		c.clusterDefinition.APIOverrides, []string{c.directionLabel}, observeFn, c.logger)
 	var accessControl *auth.AccessControl
-	if cd.ACLPolicy != nil {
-		accessControl = auth.NewAccesControl(cd.ACLPolicy.AllowedNamespaces)
+	if c.clusterDefinition.ACLPolicy != nil {
+		accessControl = auth.NewAccesControl(c.clusterDefinition.ACLPolicy.AllowedNamespaces)
 	}
-	workflowServiceImpl := NewWorkflowServiceProxyServer("inboundWorkflowService", workflowservice.NewWorkflowServiceClient(client),
-		accessControl, logger)
+	workflowServiceImpl := NewWorkflowServiceProxyServer("inboundWorkflowService", workflowservice.NewWorkflowServiceClient(c.client),
+		accessControl, c.logger)
 	adminservice.RegisterAdminServiceServer(server, adminServiceImpl)
 	workflowservice.RegisterWorkflowServiceServer(server, workflowServiceImpl)
 	return server, nil
+}
+
+func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([]grpc.ServerOption, error) {
+	var unaryInterceptors []grpc.UnaryServerInterceptor
+	var streamInterceptors []grpc.StreamServerInterceptor
+	labelGenerator := grpcprom.WithLabelsFromContext(func(_ context.Context) (labels prometheus.Labels) {
+		return prometheus.Labels{"direction": c.directionLabel}
+	})
+
+	// Ordering matters! These metrics happen BEFORE the translations/acl
+	unaryInterceptors = append(unaryInterceptors, metrics.GRPCServerMetrics.UnaryServerInterceptor(labelGenerator))
+	streamInterceptors = append(streamInterceptors, metrics.GRPCServerMetrics.StreamServerInterceptor(labelGenerator))
+
+	var translators []interceptor.Translator
+	if c.nsTranslations.Len() > 0 {
+		translators = append(translators, interceptor.NewNamespaceNameTranslator(c.logger, c.nsTranslations.AsMap(), c.nsTranslations.Inverse().AsMap()))
+	}
+
+	if c.saTranslations.LenNamespaces() > 0 {
+		c.logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", c.saTranslations))
+		if c.saTranslations.LenNamespaces() > 1 {
+			panic("multiple namespace search attribute mappings are not supported")
+		}
+		translators = append(translators, interceptor.NewSearchAttributeTranslator(c.logger, c.saTranslations.FlattenMaps(), c.saTranslations.Inverse().FlattenMaps()))
+	}
+
+	if len(translators) > 0 {
+		tr := interceptor.NewTranslationInterceptor(c.logger, translators)
+		unaryInterceptors = append(unaryInterceptors, tr.Intercept)
+		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
+	}
+
+	if c.clusterDefinition.ACLPolicy != nil {
+		aclInterceptor := interceptor.NewAccessControlInterceptor(c.logger, c.clusterDefinition.ACLPolicy.AllowedMethods.AdminService, c.clusterDefinition.ACLPolicy.AllowedNamespaces)
+		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
+		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
+	}
+
+	opts := []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(unaryInterceptors...),
+		grpc.ChainStreamInterceptor(streamInterceptors...),
+	}
+
+	if tlsConfig.IsEnabled() {
+		tlsConfig, err := encryption.GetServerTLSConfig(tlsConfig, c.logger)
+		if err != nil {
+			return opts, err
+		}
+		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	}
+
+	return opts, nil
 }
 
 func (s *simpleGRPCServer) Start() {

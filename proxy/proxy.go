@@ -48,7 +48,7 @@ func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 			},
 		),
 	}
-	if (s2sConfig.Inbound == nil || s2sConfig.Outbound == nil) && len(s2sConfig.ClusterConnections) == 0 {
+	if len(s2sConfig.ClusterConnections) == 0 {
 		panic(errors.New("cannot create proxy without inbound and outbound config"))
 	}
 	if s2sConfig.Metrics != nil {

@@ -17,12 +17,15 @@ import (
 )
 
 const (
-	scheme               = "multiclient"
-	disallowedCharacters = `[^a-zA-Z0-9_-]`
+	scheme = "multiclient"
+	// urlDisallowedCharacters is used to validate baseURL-unfriendly characters in the "name" given to MCC.
+	// If the address used in the manual resolver is not a valid baseURL, the client will panic at runtime with
+	// confusing errors (nil pointers, "update called without grpc.Dial", etc.)
+	urlDisallowedCharacters = `[^a-zA-Z0-9_-]`
 )
 
 var (
-	disallowedCharactersPattern = regexp.MustCompile(disallowedCharacters)
+	urlDisallowedCharactersPattern = regexp.MustCompile(urlDisallowedCharacters)
 )
 
 // MultiClientConn is a wrapper over grpc.ClientConn that allows it to be configured over a set of existing
@@ -34,7 +37,7 @@ var (
 type MultiClientConn struct {
 	// When lifetime closes, this MultiClientConn will also close
 	lifetime context.Context
-	// name is used in the custom resolver, and must therefore be a valid base url. NewMultiClientConn sanitizes names inline
+	// name is used in the custom resolver and must therefore be a valid base url. NewMultiClientConn sanitizes names inline
 	name string
 	// connMapLock is being used with connMap over a sync.Map for now. If using a MultiClientConn on large numbers of
 	// muxes, it's probably best to switch to sync.Map for the sharded read locks
@@ -49,7 +52,7 @@ type MultiClientConn struct {
 }
 
 func NewMultiClientConn(lifetime context.Context, name string, opts ...grpc.DialOption) (*MultiClientConn, error) {
-	if disallowedCharactersPattern.MatchString(name) {
+	if urlDisallowedCharactersPattern.MatchString(name) {
 		return nil, errors.Errorf("invalid client conn name: %s", name)
 	}
 	mcc := &MultiClientConn{lifetime: lifetime, name: name}
