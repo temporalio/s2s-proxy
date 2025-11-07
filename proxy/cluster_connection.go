@@ -78,19 +78,19 @@ type (
 	}
 	serverConfiguration struct {
 		// name identifies the connection in metrics and in the mux custom resolver. Must be sanitized.
-		name              string
+		name string
 		// clusterDefinition contains the connection information for the server
 		clusterDefinition config.ClusterDefinition
 		// directionLabel is used in metrics. DO NOT hang application logic off of this! Pass the appropriate arguments instead.
-		directionLabel    string
+		directionLabel string
 		// client is the ClientConnInterface that the server will use to make calls.
-		client            closableClientConn
+		client closableClientConn
 		// managedClient is updated by the multi-mux-manager that also owns the server. Needs some more cleanup.
-		managedClient     closableClientConn
+		managedClient closableClientConn
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
-		nsTranslations    collect.StaticBiMap[string, string]
-		saTranslations    config.SearchAttributeTranslation
-		logger            log.Logger
+		nsTranslations collect.StaticBiMap[string, string]
+		saTranslations config.SearchAttributeTranslation
+		logger         log.Logger
 	}
 )
 
