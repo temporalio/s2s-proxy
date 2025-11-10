@@ -1,28 +1,33 @@
-# Stage 1: Build
+# Build stage
 FROM --platform=$BUILDPLATFORM temporalio/base-builder:1.15.5 AS builder
 
 ARG TARGETARCH
 
-# Install build tools
-RUN apk add --update --no-cache ca-certificates git make openssh
+# System dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    git \
+    make \
+    openssh
 
 # Making sure that dependency is not touched
 ENV GOFLAGS="-mod=readonly"
 
 WORKDIR /s2s-proxy
 
-# Copy go mod dependencies and build cache
-COPY go.mod ./
-COPY go.sum ./
+# Dependency manifests
+COPY go.mod go.sum ./
 
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
+# Source code
 COPY . .
 
+# Build
 # need to make clean first in case binaries to be built are stale
 RUN make clean && CGO_ENABLED=0 make bins
 
-# Stage 2: Create image
+# Runtime stage
 FROM alpine:3.22 AS base
 
 COPY --from=builder /s2s-proxy/bins/s2s-proxy /usr/local/bin/
