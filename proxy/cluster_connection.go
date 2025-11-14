@@ -90,6 +90,7 @@ type (
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
 		nsTranslations collect.StaticBiMap[string, string]
 		saTranslations config.SearchAttributeTranslation
+		shardCountConfig config.ShardCountConfig
 		logger         log.Logger
 	}
 )
@@ -132,6 +133,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		managedClient:     cc.outboundClient,
 		nsTranslations:    nsTranslations.Inverse(),
 		saTranslations:    saTranslations.Inverse(),
+		shardCountConfig:  connConfig.ShardCountConfig,
 		logger:            cc.logger,
 	})
 	if err != nil {
@@ -145,6 +147,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		managedClient:     cc.inboundClient,
 		nsTranslations:    nsTranslations,
 		saTranslations:    saTranslations,
+		shardCountConfig:  connConfig.ShardCountConfig,
 		logger:            cc.logger,
 	})
 	if err != nil {
@@ -256,8 +259,9 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		return nil, fmt.Errorf("could not parse server options: %w", err)
 	}
 	server := grpc.NewServer(serverOpts...)
+	isInbound := c.directionLabel == "inbound"
 	adminServiceImpl := NewAdminServiceProxyServer(fmt.Sprintf("%sAdminService", c.directionLabel), adminservice.NewAdminServiceClient(c.client),
-		c.clusterDefinition.APIOverrides, []string{c.directionLabel}, observeFn, c.logger)
+		c.clusterDefinition.APIOverrides, []string{c.directionLabel}, observeFn, c.shardCountConfig, isInbound, c.logger)
 	var accessControl *auth.AccessControl
 	if c.clusterDefinition.ACLPolicy != nil {
 		accessControl = auth.NewAccesControl(c.clusterDefinition.ACLPolicy.AllowedNamespaces)

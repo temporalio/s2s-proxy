@@ -35,6 +35,13 @@ const (
 	ServerMode MuxMode = "server" // server of underly tcp connection in mux mode.
 )
 
+type ShardCountMode string
+
+const (
+	ShardCountDefault ShardCountMode = ""
+	ShardCountLCM     ShardCountMode = "lcm"
+)
+
 type HealthCheckProtocol string
 
 const (
@@ -149,6 +156,7 @@ type (
 		OutboundHealthCheck        *HealthCheckConfig    `yaml:"outboundHealthCheck"`
 		NamespaceNameTranslation   NameTranslationConfig `yaml:"namespaceNameTranslation"`
 		SearchAttributeTranslation SATranslationConfig   `yaml:"searchAttributeTranslation"`
+		ShardCountConfig           ShardCountConfig      `yaml:"shardCount"`
 		Metrics                    *MetricsConfig        `yaml:"metrics"`
 		ProfilingConfig            ProfilingConfig       `yaml:"profiling"`
 		Logging                    LoggingConfig         `yaml:"logging"`
@@ -177,6 +185,12 @@ type (
 
 	NameTranslationConfig struct {
 		Mappings []NameMappingConfig `yaml:"mappings"`
+	}
+
+	ShardCountConfig struct {
+		Mode             ShardCountMode `yaml:"mode"`
+		LocalShardCount  int32          `yaml:"localShardCount"`
+		RemoteShardCount int32          `yaml:"remoteShardCount"`
 	}
 
 	NameMappingConfig struct {

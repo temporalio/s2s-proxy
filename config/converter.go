@@ -41,11 +41,13 @@ func ToClusterConnConfig(config S2SProxyConfig) S2SProxyConfig {
 				SearchAttributeTranslation: config.SearchAttributeTranslation,
 				OutboundHealthCheck:        flattenNilHealthCheck(config.OutboundHealthCheck),
 				InboundHealthCheck:         flattenNilHealthCheck(config.HealthCheck),
+				ShardCountConfig:           config.ShardCountConfig,
 			},
 		},
 		Metrics:         config.Metrics,
 		ProfilingConfig: config.ProfilingConfig,
 		Logging:         config.Logging,
+		ShardCountConfig: config.ShardCountConfig,
 	}
 }
 

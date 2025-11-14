@@ -47,11 +47,12 @@ type (
 		proxyAAddress string
 		proxyBAddress string
 
-		shardCountA int
-		shardCountB int
-		namespace   string
-		namespaceID string
-		startTime   time.Time
+		shardCountA      int
+		shardCountB      int
+		shardCountConfig config.ShardCountConfig
+		namespace        string
+		namespaceID      string
+		startTime        time.Time
 
 		workflows []*WorkflowDistribution
 
@@ -72,6 +73,7 @@ type (
 		ShardCountA      int
 		ShardCountB      int
 		WorkflowsPerPair int
+		ShardCountConfig config.ShardCountConfig
 	}
 )
 
@@ -100,6 +102,17 @@ var testConfigs = []TestConfig{
 		ShardCountB:      4,
 		WorkflowsPerPair: 1,
 	},
+	{
+		Name:             "ArbitraryShards_2to3_LCM",
+		ShardCountA:      2,
+		ShardCountB:      3,
+		WorkflowsPerPair: 1,
+		ShardCountConfig: config.ShardCountConfig{
+			Mode:             config.ShardCountLCM,
+			LocalShardCount:  2,
+			RemoteShardCount: 3,
+		},
+	},
 }
 
 func TestReplicationFailoverTestSuite(t *testing.T) {
@@ -108,6 +121,7 @@ func TestReplicationFailoverTestSuite(t *testing.T) {
 			s := &ReplicationTestSuite{
 				shardCountA:      tc.ShardCountA,
 				shardCountB:      tc.ShardCountB,
+				shardCountConfig: tc.ShardCountConfig,
 				workflowsPerPair: tc.WorkflowsPerPair,
 			}
 			suite.Run(t, s)
@@ -135,8 +149,14 @@ func (s *ReplicationTestSuite) SetupSuite() {
 	proxyBOutbound := fmt.Sprintf("localhost:%d", basePort+101)
 	muxServerAddress := fmt.Sprintf("localhost:%d", basePort+200)
 
-	s.proxyA = s.createProxy("proxy-a", s.proxyAAddress, proxyAOutbound, muxServerAddress, s.clusterA, config.ClientMode)
-	s.proxyB = s.createProxy("proxy-b", s.proxyBAddress, proxyBOutbound, muxServerAddress, s.clusterB, config.ServerMode)
+	proxyBShardConfig := s.shardCountConfig
+	if proxyBShardConfig.Mode == config.ShardCountLCM {
+		proxyBShardConfig.LocalShardCount = int32(s.shardCountB)
+		proxyBShardConfig.RemoteShardCount = int32(s.shardCountA)
+	}
+
+	s.proxyA = s.createProxy("proxy-a", s.proxyAAddress, proxyAOutbound, muxServerAddress, s.clusterA, config.ClientMode, config.ShardCountConfig{})
+	s.proxyB = s.createProxy("proxy-b", s.proxyBAddress, proxyBOutbound, muxServerAddress, s.clusterB, config.ServerMode, proxyBShardConfig)
 
 	s.configureRemoteCluster(s.clusterA, s.clusterB.ClusterName(), proxyAOutbound)
 	s.configureRemoteCluster(s.clusterB, s.clusterA.ClusterName(), proxyBOutbound)
@@ -225,6 +245,7 @@ func (s *ReplicationTestSuite) createProxy(
 	muxAddress string,
 	cluster *testcore.TestCluster,
 	muxMode config.MuxMode,
+	shardCountConfig config.ShardCountConfig,
 ) *s2sproxy.Proxy {
 	muxTransportName := "muxed"
 	cfg := &config.S2SProxyConfig{
@@ -257,6 +278,7 @@ func (s *ReplicationTestSuite) createProxy(
 		MuxTransports: []config.MuxTransportConfig{
 			s.makeMuxTransportConfig(muxTransportName, muxMode, muxAddress, 1),
 		},
+		ShardCountConfig: shardCountConfig,
 	}
 
 	configProvider := &simpleConfigProvider{cfg: *cfg}

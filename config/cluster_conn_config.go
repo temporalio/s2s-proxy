@@ -15,6 +15,7 @@ type (
 		SearchAttributeTranslation SATranslationConfig `yaml:"searchAttributeTranslation"`
 		OutboundHealthCheck        HealthCheckConfig   `yaml:"outboundHealthCheck"`
 		InboundHealthCheck         HealthCheckConfig   `yaml:"inboundHealthCheck"`
+		ShardCountConfig           ShardCountConfig    `yaml:"shardCount"`
 	}
 	StringTranslator struct {
 		Mappings    []StringMapping `yaml:"mappings"`
