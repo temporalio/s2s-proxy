@@ -108,9 +108,7 @@ var testConfigs = []TestConfig{
 		ShardCountB:      3,
 		WorkflowsPerPair: 1,
 		ShardCountConfig: config.ShardCountConfig{
-			Mode:             config.ShardCountLCM,
-			LocalShardCount:  2,
-			RemoteShardCount: 3,
+			Mode: config.ShardCountLCM,
 		},
 	},
 }
@@ -247,38 +245,45 @@ func (s *ReplicationTestSuite) createProxy(
 	muxMode config.MuxMode,
 	shardCountConfig config.ShardCountConfig,
 ) *s2sproxy.Proxy {
-	muxTransportName := "muxed"
+	var muxConnectionType config.ConnectionType
+	var muxAddressInfo config.TCPTLSInfo
+	if muxMode == config.ServerMode {
+		muxConnectionType = config.ConnTypeMuxServer
+		muxAddressInfo = config.TCPTLSInfo{
+			ConnectionString: muxAddress,
+		}
+	} else {
+		muxConnectionType = config.ConnTypeMuxClient
+		muxAddressInfo = config.TCPTLSInfo{
+			ConnectionString: muxAddress,
+		}
+	}
+
 	cfg := &config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: name + "-inbound",
-			Server: config.ProxyServerConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			},
-			Client: config.ProxyClientConfig{
-				Type: config.TCPTransport,
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: cluster.Host().FrontendGRPCAddress(),
+		ClusterConnections: []config.ClusterConnConfig{
+			{
+				Name: name,
+				LocalServer: config.ClusterDefinition{
+					Connection: config.TransportInfo{
+						ConnectionType: config.ConnTypeTCP,
+						TcpClient: config.TCPTLSInfo{
+							ConnectionString: cluster.Host().FrontendGRPCAddress(),
+						},
+						TcpServer: config.TCPTLSInfo{
+							ConnectionString: outboundAddress,
+						},
+					},
 				},
-			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: name + "-outbound",
-			Server: config.ProxyServerConfig{
-				Type: config.TCPTransport,
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: outboundAddress,
+				RemoteServer: config.ClusterDefinition{
+					Connection: config.TransportInfo{
+						ConnectionType: muxConnectionType,
+						MuxCount:       1,
+						MuxAddressInfo: muxAddressInfo,
+					},
 				},
-			},
-			Client: config.ProxyClientConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
+				ShardCountConfig: shardCountConfig,
 			},
 		},
-		MuxTransports: []config.MuxTransportConfig{
-			s.makeMuxTransportConfig(muxTransportName, muxMode, muxAddress, 1),
-		},
-		ShardCountConfig: shardCountConfig,
 	}
 
 	configProvider := &simpleConfigProvider{cfg: *cfg}

@@ -51,6 +51,12 @@ type (
 		ConnectionString string               `yaml:"address"`
 		TLSConfig        encryption.TLSConfig `yaml:"tls"`
 	}
+
+	ShardCountConfig struct {
+		Mode             ShardCountMode `yaml:"mode"`
+		LocalShardCount  int32          `yaml:"localShardCount"`
+		RemoteShardCount int32          `yaml:"remoteShardCount"`
+	}
 )
 
 const (

@@ -31,7 +31,7 @@ type (
 		metricLabelValues []string
 		reportStreamValue func(idx int32, value int32)
 		shardCountConfig  config.ShardCountConfig
-		isInbound         bool
+		targetShardCount  int32
 	}
 )
 
@@ -43,7 +43,7 @@ func NewAdminServiceProxyServer(
 	metricLabelValues []string,
 	reportStreamValue func(idx int32, value int32),
 	shardCountConfig config.ShardCountConfig,
-	isInbound bool,
+	targetShardCount int32,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	// The AdminServiceStreams will duplicate the same output for an underlying connection issue hundreds of times.
@@ -57,7 +57,7 @@ func NewAdminServiceProxyServer(
 		metricLabelValues: metricLabelValues,
 		reportStreamValue: reportStreamValue,
 		shardCountConfig:  shardCountConfig,
-		isInbound:         isInbound,
+		targetShardCount:  targetShardCount,
 	}
 }
 
@@ -288,13 +288,8 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 			ClusterID: sourceClusterShardID.ClusterID,
 		}
 		LCM := common.LCM(s.shardCountConfig.LocalShardCount, s.shardCountConfig.RemoteShardCount)
-		if s.isInbound {
-			// Stream is going to local server. Remap shard id by local server shard count.
-			newSourceShardID.ShardID = mapShardIDUnique(LCM, s.shardCountConfig.LocalShardCount, sourceClusterShardID.ShardID)
-		} else {
-			// Stream is going to remote server. Remap shard id by remote server shard count.
-			newSourceShardID.ShardID = mapShardIDUnique(LCM, s.shardCountConfig.RemoteShardCount, sourceClusterShardID.ShardID)
-		}
+		// Remap shard id using the pre-calculated target shard count.
+		newSourceShardID.ShardID = mapShardIDUnique(LCM, s.targetShardCount, sourceClusterShardID.ShardID)
 
 		logger = log.With(logger,
 			tag.NewStringTag("newTarget", ClusterShardIDtoString(newTargetShardID)),

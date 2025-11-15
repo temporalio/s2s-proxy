@@ -156,7 +156,6 @@ type (
 		OutboundHealthCheck        *HealthCheckConfig    `yaml:"outboundHealthCheck"`
 		NamespaceNameTranslation   NameTranslationConfig `yaml:"namespaceNameTranslation"`
 		SearchAttributeTranslation SATranslationConfig   `yaml:"searchAttributeTranslation"`
-		ShardCountConfig           ShardCountConfig      `yaml:"shardCount"`
 		Metrics                    *MetricsConfig        `yaml:"metrics"`
 		ProfilingConfig            ProfilingConfig       `yaml:"profiling"`
 		Logging                    LoggingConfig         `yaml:"logging"`
@@ -187,11 +186,6 @@ type (
 		Mappings []NameMappingConfig `yaml:"mappings"`
 	}
 
-	ShardCountConfig struct {
-		Mode             ShardCountMode `yaml:"mode"`
-		LocalShardCount  int32          `yaml:"localShardCount"`
-		RemoteShardCount int32          `yaml:"remoteShardCount"`
-	}
 
 	NameMappingConfig struct {
 		LocalName  string `yaml:"localName"`
