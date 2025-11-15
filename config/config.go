@@ -186,7 +186,6 @@ type (
 		Mappings []NameMappingConfig `yaml:"mappings"`
 	}
 
-
 	NameMappingConfig struct {
 		LocalName  string `yaml:"localName"`
 		RemoteName string `yaml:"remoteName"`

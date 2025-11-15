@@ -88,10 +88,10 @@ type (
 		// managedClient is updated by the multi-mux-manager that also owns the server. Needs some more cleanup.
 		managedClient closableClientConn
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
-		nsTranslations collect.StaticBiMap[string, string]
-		saTranslations config.SearchAttributeTranslation
+		nsTranslations   collect.StaticBiMap[string, string]
+		saTranslations   config.SearchAttributeTranslation
 		shardCountConfig config.ShardCountConfig
-		logger         log.Logger
+		logger           log.Logger
 	}
 )
 

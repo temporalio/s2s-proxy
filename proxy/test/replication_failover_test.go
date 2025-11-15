@@ -303,26 +303,6 @@ func (s *ReplicationTestSuite) createProxy(
 	return proxy
 }
 
-func (s *ReplicationTestSuite) makeMuxTransportConfig(name string, mode config.MuxMode, address string, numConns int) config.MuxTransportConfig {
-	if mode == config.ServerMode {
-		return config.MuxTransportConfig{
-			Name:           name,
-			Mode:           mode,
-			Client:         config.TCPClientSetting{},
-			Server:         config.TCPServerSetting{ListenAddress: address},
-			NumConnections: numConns,
-		}
-	} else {
-		return config.MuxTransportConfig{
-			Name:           name,
-			Mode:           mode,
-			Client:         config.TCPClientSetting{ServerAddress: address},
-			Server:         config.TCPServerSetting{},
-			NumConnections: numConns,
-		}
-	}
-}
-
 type simpleConfigProvider struct {
 	cfg config.S2SProxyConfig
 }
