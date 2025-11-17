@@ -97,7 +97,6 @@ func (f *StreamForwarder) Run() error {
 	defer cancel()
 
 	// The underlying adminClient will try to grab a connection when we call StreamWorkflowReplicationMessages.
-	// The connection is separately managed, so we want to see how long it takes to establish that conn.
 	sourceStreamClient, err := f.adminClient.StreamWorkflowReplicationMessages(outgoingContext)
 	if err != nil {
 		f.logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
@@ -123,7 +122,7 @@ func (f *StreamForwarder) Run() error {
 	//  ^targetStreamServer   ^sourceStreamClient
 	//
 	// We can freely close sourceStreamClient with closeSend. gRPC will only cancel targetStreamServer when we return from
-	// this function.
+	// the service handler.
 	// Scenario 1: Remote disconnects. sourceStreamClient.Recv will return EOF. This unblocks forwardReplicationMessages and sets shutdownChan.
 	//             forwardAck needs to be unblocked from targetStreamServer.Recv
 	// Scenario 2: Local disconnects. targetStreamServer.Recv will return EOF. This unblocks forwardAck and sets shutdownChan.
@@ -131,7 +130,7 @@ func (f *StreamForwarder) Run() error {
 	f.shutdownChan = channel.NewShutdownOnce()
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go f.forwardAck(&wg)
+	go f.forwardAcks(&wg)
 	go f.forwardReplicationMessages(&wg)
 	wg.Wait()
 
@@ -191,7 +190,7 @@ func (f *StreamForwarder) forwardReplicationMessages(wg *sync.WaitGroup) {
 	}
 }
 
-func (f *StreamForwarder) forwardAck(wg *sync.WaitGroup) {
+func (f *StreamForwarder) forwardAcks(wg *sync.WaitGroup) {
 	defer func() {
 		f.logger.Debug("Shutdown targetStreamServer.Recv loop.")
 		f.shutdownChan.Shutdown()
