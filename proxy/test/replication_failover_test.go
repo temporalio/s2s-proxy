@@ -47,11 +47,12 @@ type (
 		proxyAAddress string
 		proxyBAddress string
 
-		shardCountA int
-		shardCountB int
-		namespace   string
-		namespaceID string
-		startTime   time.Time
+		shardCountA      int
+		shardCountB      int
+		shardCountConfig config.ShardCountConfig
+		namespace        string
+		namespaceID      string
+		startTime        time.Time
 
 		workflows []*WorkflowDistribution
 
@@ -72,6 +73,7 @@ type (
 		ShardCountA      int
 		ShardCountB      int
 		WorkflowsPerPair int
+		ShardCountConfig config.ShardCountConfig
 	}
 )
 
@@ -100,6 +102,15 @@ var testConfigs = []TestConfig{
 		ShardCountB:      4,
 		WorkflowsPerPair: 1,
 	},
+	{
+		Name:             "ArbitraryShards_2to3_LCM",
+		ShardCountA:      2,
+		ShardCountB:      3,
+		WorkflowsPerPair: 1,
+		ShardCountConfig: config.ShardCountConfig{
+			Mode: config.ShardCountLCM,
+		},
+	},
 }
 
 func TestReplicationFailoverTestSuite(t *testing.T) {
@@ -108,6 +119,7 @@ func TestReplicationFailoverTestSuite(t *testing.T) {
 			s := &ReplicationTestSuite{
 				shardCountA:      tc.ShardCountA,
 				shardCountB:      tc.ShardCountB,
+				shardCountConfig: tc.ShardCountConfig,
 				workflowsPerPair: tc.WorkflowsPerPair,
 			}
 			suite.Run(t, s)
@@ -135,8 +147,14 @@ func (s *ReplicationTestSuite) SetupSuite() {
 	proxyBOutbound := fmt.Sprintf("localhost:%d", basePort+101)
 	muxServerAddress := fmt.Sprintf("localhost:%d", basePort+200)
 
-	s.proxyA = s.createProxy("proxy-a", s.proxyAAddress, proxyAOutbound, muxServerAddress, s.clusterA, config.ClientMode)
-	s.proxyB = s.createProxy("proxy-b", s.proxyBAddress, proxyBOutbound, muxServerAddress, s.clusterB, config.ServerMode)
+	proxyBShardConfig := s.shardCountConfig
+	if proxyBShardConfig.Mode == config.ShardCountLCM {
+		proxyBShardConfig.LocalShardCount = int32(s.shardCountB)
+		proxyBShardConfig.RemoteShardCount = int32(s.shardCountA)
+	}
+
+	s.proxyA = s.createProxy("proxy-a", s.proxyAAddress, proxyAOutbound, muxServerAddress, s.clusterA, config.ClientMode, config.ShardCountConfig{})
+	s.proxyB = s.createProxy("proxy-b", s.proxyBAddress, proxyBOutbound, muxServerAddress, s.clusterB, config.ServerMode, proxyBShardConfig)
 
 	s.configureRemoteCluster(s.clusterA, s.clusterB.ClusterName(), proxyAOutbound)
 	s.configureRemoteCluster(s.clusterB, s.clusterA.ClusterName(), proxyBOutbound)
@@ -225,37 +243,46 @@ func (s *ReplicationTestSuite) createProxy(
 	muxAddress string,
 	cluster *testcore.TestCluster,
 	muxMode config.MuxMode,
+	shardCountConfig config.ShardCountConfig,
 ) *s2sproxy.Proxy {
-	muxTransportName := "muxed"
+	var muxConnectionType config.ConnectionType
+	var muxAddressInfo config.TCPTLSInfo
+	if muxMode == config.ServerMode {
+		muxConnectionType = config.ConnTypeMuxServer
+		muxAddressInfo = config.TCPTLSInfo{
+			ConnectionString: muxAddress,
+		}
+	} else {
+		muxConnectionType = config.ConnTypeMuxClient
+		muxAddressInfo = config.TCPTLSInfo{
+			ConnectionString: muxAddress,
+		}
+	}
+
 	cfg := &config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: name + "-inbound",
-			Server: config.ProxyServerConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			},
-			Client: config.ProxyClientConfig{
-				Type: config.TCPTransport,
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: cluster.Host().FrontendGRPCAddress(),
+		ClusterConnections: []config.ClusterConnConfig{
+			{
+				Name: name,
+				LocalServer: config.ClusterDefinition{
+					Connection: config.TransportInfo{
+						ConnectionType: config.ConnTypeTCP,
+						TcpClient: config.TCPTLSInfo{
+							ConnectionString: cluster.Host().FrontendGRPCAddress(),
+						},
+						TcpServer: config.TCPTLSInfo{
+							ConnectionString: outboundAddress,
+						},
+					},
 				},
-			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: name + "-outbound",
-			Server: config.ProxyServerConfig{
-				Type: config.TCPTransport,
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: outboundAddress,
+				RemoteServer: config.ClusterDefinition{
+					Connection: config.TransportInfo{
+						ConnectionType: muxConnectionType,
+						MuxCount:       1,
+						MuxAddressInfo: muxAddressInfo,
+					},
 				},
+				ShardCountConfig: shardCountConfig,
 			},
-			Client: config.ProxyClientConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			},
-		},
-		MuxTransports: []config.MuxTransportConfig{
-			s.makeMuxTransportConfig(muxTransportName, muxMode, muxAddress, 1),
 		},
 	}
 
@@ -274,26 +301,6 @@ func (s *ReplicationTestSuite) createProxy(
 	)
 
 	return proxy
-}
-
-func (s *ReplicationTestSuite) makeMuxTransportConfig(name string, mode config.MuxMode, address string, numConns int) config.MuxTransportConfig {
-	if mode == config.ServerMode {
-		return config.MuxTransportConfig{
-			Name:           name,
-			Mode:           mode,
-			Client:         config.TCPClientSetting{},
-			Server:         config.TCPServerSetting{ListenAddress: address},
-			NumConnections: numConns,
-		}
-	} else {
-		return config.MuxTransportConfig{
-			Name:           name,
-			Mode:           mode,
-			Client:         config.TCPClientSetting{ServerAddress: address},
-			Server:         config.TCPServerSetting{},
-			NumConnections: numConns,
-		}
-	}
 }
 
 type simpleConfigProvider struct {

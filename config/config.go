@@ -35,6 +35,13 @@ const (
 	ServerMode MuxMode = "server" // server of underly tcp connection in mux mode.
 )
 
+type ShardCountMode string
+
+const (
+	ShardCountDefault ShardCountMode = ""
+	ShardCountLCM     ShardCountMode = "lcm"
+)
+
 type HealthCheckProtocol string
 
 const (

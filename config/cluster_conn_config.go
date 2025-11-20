@@ -15,6 +15,7 @@ type (
 		SearchAttributeTranslation SATranslationConfig `yaml:"searchAttributeTranslation"`
 		OutboundHealthCheck        HealthCheckConfig   `yaml:"outboundHealthCheck"`
 		InboundHealthCheck         HealthCheckConfig   `yaml:"inboundHealthCheck"`
+		ShardCountConfig           ShardCountConfig    `yaml:"shardCount"`
 	}
 	StringTranslator struct {
 		Mappings    []StringMapping `yaml:"mappings"`
@@ -49,6 +50,12 @@ type (
 	TCPTLSInfo struct {
 		ConnectionString string               `yaml:"address"`
 		TLSConfig        encryption.TLSConfig `yaml:"tls"`
+	}
+
+	ShardCountConfig struct {
+		Mode             ShardCountMode `yaml:"mode"`
+		LocalShardCount  int32          `yaml:"localShardCount"`
+		RemoteShardCount int32          `yaml:"remoteShardCount"`
 	}
 )
 
