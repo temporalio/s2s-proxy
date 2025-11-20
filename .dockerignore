@@ -9,6 +9,7 @@ docs/
 
 # Tests
 *_test.go
+**/*testutil.go
 endtoendtest/
 mocks/
 
