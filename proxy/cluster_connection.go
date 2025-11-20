@@ -20,6 +20,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/collect"
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
@@ -91,6 +92,7 @@ type (
 		nsTranslations   collect.StaticBiMap[string, string]
 		saTranslations   config.SearchAttributeTranslation
 		shardCountConfig config.ShardCountConfig
+		targetShardCount int32
 		logger           log.Logger
 	}
 )
@@ -125,6 +127,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	if err != nil {
 		return nil, err
 	}
+
 	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, serverConfiguration{
 		name:              sanitizedConnectionName,
 		clusterDefinition: connConfig.RemoteServer,
@@ -134,6 +137,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		nsTranslations:    nsTranslations.Inverse(),
 		saTranslations:    saTranslations.Inverse(),
 		shardCountConfig:  connConfig.ShardCountConfig,
+		targetShardCount:  connConfig.ShardCountConfig.LocalShardCount,
 		logger:            cc.logger,
 	})
 	if err != nil {
@@ -148,6 +152,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		nsTranslations:    nsTranslations,
 		saTranslations:    saTranslations,
 		shardCountConfig:  connConfig.ShardCountConfig,
+		targetShardCount:  connConfig.ShardCountConfig.RemoteShardCount,
 		logger:            cc.logger,
 	})
 	if err != nil {
@@ -259,16 +264,17 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		return nil, fmt.Errorf("could not parse server options: %w", err)
 	}
 	server := grpc.NewServer(serverOpts...)
-	var targetShardCount int32
-	if c.directionLabel == "inbound" {
-		// Stream is going to local server. Remap shard id by local server shard count.
-		targetShardCount = c.shardCountConfig.LocalShardCount
-	} else {
-		// Stream is going to remote server. Remap shard id by remote server shard count.
-		targetShardCount = c.shardCountConfig.RemoteShardCount
+
+	var lcmParameters LCMParameters
+	if c.shardCountConfig.Mode == config.ShardCountLCM {
+		lcmParameters = LCMParameters{
+			LCM:              common.LCM(c.shardCountConfig.LocalShardCount, c.shardCountConfig.RemoteShardCount),
+			TargetShardCount: c.targetShardCount,
+		}
 	}
+
 	adminServiceImpl := NewAdminServiceProxyServer(fmt.Sprintf("%sAdminService", c.directionLabel), adminservice.NewAdminServiceClient(c.client),
-		c.clusterDefinition.APIOverrides, []string{c.directionLabel}, observeFn, c.shardCountConfig, targetShardCount, c.logger)
+		c.clusterDefinition.APIOverrides, []string{c.directionLabel}, observeFn, c.shardCountConfig, lcmParameters, c.logger)
 	var accessControl *auth.AccessControl
 	if c.clusterDefinition.ACLPolicy != nil {
 		accessControl = auth.NewAccesControl(c.clusterDefinition.ACLPolicy.AllowedNamespaces)

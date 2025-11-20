@@ -23,6 +23,11 @@ import (
 )
 
 type (
+	LCMParameters struct {
+		LCM              int32 `yaml:"lcm"`
+		TargetShardCount int32 `yaml:"targetShardCount"`
+	}
+
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
 		adminClient       adminservice.AdminServiceClient
@@ -31,7 +36,7 @@ type (
 		metricLabelValues []string
 		reportStreamValue func(idx int32, value int32)
 		shardCountConfig  config.ShardCountConfig
-		targetShardCount  int32
+		lcmParameters     LCMParameters
 	}
 )
 
@@ -43,7 +48,7 @@ func NewAdminServiceProxyServer(
 	metricLabelValues []string,
 	reportStreamValue func(idx int32, value int32),
 	shardCountConfig config.ShardCountConfig,
-	targetShardCount int32,
+	lcmParameters LCMParameters,
 	logger log.Logger,
 ) adminservice.AdminServiceServer {
 	// The AdminServiceStreams will duplicate the same output for an underlying connection issue hundreds of times.
@@ -57,7 +62,7 @@ func NewAdminServiceProxyServer(
 		metricLabelValues: metricLabelValues,
 		reportStreamValue: reportStreamValue,
 		shardCountConfig:  shardCountConfig,
-		targetShardCount:  targetShardCount,
+		lcmParameters:     lcmParameters,
 	}
 }
 
@@ -104,7 +109,7 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 	if s.shardCountConfig.Mode == config.ShardCountLCM {
 		// Present a fake number of shards. In LCM mode, we present the least
 		// common multiple of both cluster shard counts.
-		resp.HistoryShardCount = common.LCM(s.shardCountConfig.RemoteShardCount, s.shardCountConfig.LocalShardCount)
+		resp.HistoryShardCount = s.lcmParameters.LCM
 	}
 
 	if s.apiOverrides != nil && s.apiOverrides.AdminService.DescribeCluster != nil {
@@ -287,9 +292,8 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		newSourceShardID := history.ClusterShardID{
 			ClusterID: sourceClusterShardID.ClusterID,
 		}
-		LCM := common.LCM(s.shardCountConfig.LocalShardCount, s.shardCountConfig.RemoteShardCount)
 		// Remap shard id using the pre-calculated target shard count.
-		newSourceShardID.ShardID = mapShardIDUnique(LCM, s.targetShardCount, sourceClusterShardID.ShardID)
+		newSourceShardID.ShardID = mapShardIDUnique(s.lcmParameters.LCM, s.lcmParameters.TargetShardCount, sourceClusterShardID.ShardID)
 
 		logger = log.With(logger,
 			tag.NewStringTag("newTarget", ClusterShardIDtoString(newTargetShardID)),
