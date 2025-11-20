@@ -4,14 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"sync"
-	"time"
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
 	servercommon "go.temporal.io/server/common"
-	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -306,49 +303,19 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		targetMetadata.Set(history.MetadataKeyServerShardID, strconv.Itoa(int(newSourceShardID.ShardID)))
 	}
 
-	outgoingContext := metadata.NewOutgoingContext(targetStreamServer.Context(), targetMetadata)
-	outgoingContext, cancel := context.WithCancel(outgoingContext)
-	defer cancel()
-
-	// The underlying adminClient will try to grab a connection when we call StreamWorkflowReplicationMessages.
-	// The connection is separately managed, so we want to see how long it takes to establish that conn.
-	sourceStreamClient, err := s.adminClient.StreamWorkflowReplicationMessages(outgoingContext)
+	forwarder := newStreamForwarder(
+		s.adminClient,
+		targetStreamServer,
+		targetMetadata,
+		sourceClusterShardID,
+		targetClusterShardID,
+		s.metricLabelValues,
+		logger,
+	)
+	err = forwarder.Run()
 	if err != nil {
-		logger.Error("remoteAdminServiceClient.StreamWorkflowReplicationMessages encountered error", tag.Error(err))
 		return err
 	}
-	// We succesfully got a stream connection, so mark the stream as active
-	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(s.metricLabelValues...).Inc()
-	defer metrics.AdminServiceStreamsClosedCount.WithLabelValues(s.metricLabelValues...).Inc()
-	streamStartTime := time.Now()
-
-	// When one side of the stream dies, we want to tell the other side to hang up
-	// (see https://stackoverflow.com/questions/68218469/how-to-un-wedge-go-grpc-bidi-streaming-server-from-the-blocking-recv-call)
-	// One call to StreamWorkflowReplicationMessages establishes a one-way channel through the proxy from one server to another.
-	// For an outbound stream, we have:
-	// StreamWorkflowReplicationMessagesRequest
-	// Local.Recv ===> Proxy ===> Remote.Send
-	//  ^targetStreamServer    ^sourceStreamClient
-	//
-	// StreamWorkflowReplicationMessagesResponse
-	// Local.Send <=== Proxy <=== Remote.Recv
-	//  ^targetStreamServer   ^sourceStreamClient
-	//
-	// We can freely close sourceStreamClient with closeSend. gRPC will only cancel targetStreamServer when we return from
-	// this function.
-	// Scenario 1: Remote disconnects. sourceStreamClient.Recv will return EOF. This unblocks transferSourceToTarget and sets shutdownChan.
-	//             transferTargetToSource needs to be unblocked from targetStreamServer.Recv
-	// Scenario 2: Local disconnects. targetStreamServer.Recv will return EOF. This unblocks transferTargetToSource and sets shutdownChan.
-	//             transferSourceToTarget needs to be unblocked from sourceStreamClient.Recv
-	shutdownChan := channel.NewShutdownOnce()
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go transferTargetToSource(sourceStreamClient, targetStreamServer, &wg, shutdownChan, s.metricLabelValues, logger)
-	go transferSourceToTarget(sourceStreamClient, targetStreamServer, &wg, shutdownChan, s.metricLabelValues, logger)
-	wg.Wait()
-
-	streamDuration := time.Since(streamStartTime)
-	metrics.AdminServiceStreamDuration.WithLabelValues(s.metricLabelValues...).Observe(streamDuration.Seconds())
 	// Do not try to transfer EOF from the source here. Just returning "nil" is sufficient to terminate the stream
 	// to the client.
 	return nil
