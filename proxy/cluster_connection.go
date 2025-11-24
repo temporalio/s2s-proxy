@@ -20,6 +20,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/collect"
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
@@ -88,9 +89,11 @@ type (
 		// managedClient is updated by the multi-mux-manager that also owns the server. Needs some more cleanup.
 		managedClient closableClientConn
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
-		nsTranslations collect.StaticBiMap[string, string]
-		saTranslations config.SearchAttributeTranslation
-		logger         log.Logger
+		nsTranslations   collect.StaticBiMap[string, string]
+		saTranslations   config.SearchAttributeTranslation
+		shardCountConfig config.ShardCountConfig
+		targetShardCount int32
+		logger           log.Logger
 	}
 )
 
@@ -124,6 +127,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	if err != nil {
 		return nil, err
 	}
+
 	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, serverConfiguration{
 		name:              sanitizedConnectionName,
 		clusterDefinition: connConfig.RemoteServer,
@@ -132,6 +136,8 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		managedClient:     cc.outboundClient,
 		nsTranslations:    nsTranslations.Inverse(),
 		saTranslations:    saTranslations.Inverse(),
+		shardCountConfig:  connConfig.ShardCountConfig,
+		targetShardCount:  connConfig.ShardCountConfig.LocalShardCount,
 		logger:            cc.logger,
 	})
 	if err != nil {
@@ -145,6 +151,8 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		managedClient:     cc.inboundClient,
 		nsTranslations:    nsTranslations,
 		saTranslations:    saTranslations,
+		shardCountConfig:  connConfig.ShardCountConfig,
+		targetShardCount:  connConfig.ShardCountConfig.RemoteShardCount,
 		logger:            cc.logger,
 	})
 	if err != nil {
@@ -256,8 +264,17 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		return nil, fmt.Errorf("could not parse server options: %w", err)
 	}
 	server := grpc.NewServer(serverOpts...)
+
+	var lcmParameters LCMParameters
+	if c.shardCountConfig.Mode == config.ShardCountLCM {
+		lcmParameters = LCMParameters{
+			LCM:              common.LCM(c.shardCountConfig.LocalShardCount, c.shardCountConfig.RemoteShardCount),
+			TargetShardCount: c.targetShardCount,
+		}
+	}
+
 	adminServiceImpl := NewAdminServiceProxyServer(fmt.Sprintf("%sAdminService", c.directionLabel), adminservice.NewAdminServiceClient(c.client),
-		c.clusterDefinition.APIOverrides, []string{c.directionLabel}, observeFn, c.logger)
+		c.clusterDefinition.APIOverrides, []string{c.directionLabel}, observeFn, c.shardCountConfig, lcmParameters, c.logger)
 	var accessControl *auth.AccessControl
 	if c.clusterDefinition.ACLPolicy != nil {
 		accessControl = auth.NewAccesControl(c.clusterDefinition.ACLPolicy.AllowedNamespaces)

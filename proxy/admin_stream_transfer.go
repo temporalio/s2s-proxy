@@ -72,10 +72,6 @@ func newStreamForwarder(
 	metricLabelValues []string,
 	logger log.Logger,
 ) *StreamForwarder {
-	logger = log.With(logger,
-		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
-		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
-
 	return &StreamForwarder{
 		adminClient:          adminClient,
 		targetStreamServer:   targetStreamServer,
