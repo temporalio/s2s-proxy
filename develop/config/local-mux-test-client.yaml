@@ -1,0 +1,64 @@
+inbound:
+  name: "inbound-server"
+  server:
+    type: "mux"
+    mux: "muxed"
+  client:
+    tcp:
+      serverAddress: "127.0.0.1:7234"
+      tls:
+        certificatePath: "/tls/internode/tls.crt"
+        keyPath: "/tls/internode/tls.key"
+        serverCAPath: "/tls/internode/ca.crt"
+        serverName: "frontend.temporal.svc.cluster.local"
+  aclPolicy:
+    allowedMethods:
+      adminService:
+        - AddOrUpdateRemoteCluster
+        - RemoveRemoteCluster
+        - DescribeCluster
+        - DescribeMutableState
+        - GetNamespaceReplicationMessages
+        - GetWorkflowExecutionRawHistoryV2
+        - ListClusters
+        - StreamWorkflowReplicationMessages
+        - ReapplyEvents
+        - GetNamespace # for EagerGetNamespace
+outbound:
+  name: "outbound-server"
+  server:
+    tcp:
+      externalAddress: "127.0.0.1:9234"
+      listenAddress: "0.0.0.0:9234"
+      tls:
+        # The certificate used by local Temporal cluster to connect to
+        certificatePath: "/tls/internode/tls.crt"
+        #
+        keyPath: "/tls/internode/tls.key"
+        clientCAPath: ""
+        requireClientAuth: false
+  client:
+    type: "mux"
+    mux: "muxed"
+mux:
+  - name: "muxed"
+    mode: "client"
+    client:
+      serverAddress: "127.0.0.1:8233"
+      tls:
+        # Should be client certificate
+        certificatePath: "/s2c-client-tls/tls.crt"
+        # Should be client key
+        keyPath: "/s2c-client-tls/tls.key"
+outboundHealthCheck:
+  protocol: "http"
+  listenAddress: "0.0.0.0:8556"
+namespaceNameTranslation:
+  mappings:
+    - localName: "mg-hybrid"
+      remoteName: "mg-hybrid"
+metrics:
+  prometheus:
+    listenAddress: "0.0.0.0:9090"
+# This enables profiling with the default config and port
+profiling: {}

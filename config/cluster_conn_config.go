@@ -33,6 +33,8 @@ type (
 		// APIOverrides has a meaningful nil value: it separates override-to-zero and no-override
 		APIOverrides *APIOverridesConfig `yaml:"apiOverrides"`
 	}
+
+	// ClusterInfo is not used right now. In the future it will contain detected details from the Temporal cluster
 	ClusterInfo struct {
 		ServerVersion            string `yaml:"serverVersion"`
 		ShardCount               int    `yaml:"shardCount"`
@@ -40,12 +42,21 @@ type (
 		InitialFailoverVersion   int    `yaml:"initialFailoverVersion"`
 	}
 	ConnectionType string
-	TransportInfo  struct {
+
+	// TransportInfo is a union of the tcp and mux config objects. Valid configs are one of:
+	// ConnectionType=tcp, TcpClient, TcpServer
+	// ConnectionType=mux-client, MuxAddressInfo, MuxCount
+	// ConnectionType=mux-server, MuxAddressInfo, MuxCount
+	TransportInfo struct {
 		ConnectionType ConnectionType `yaml:"connectionType"`
-		TcpClient      TCPTLSInfo     `yaml:"tcpClient"`
-		TcpServer      TCPTLSInfo     `yaml:"tcpServer"`
-		MuxCount       int            `yaml:"muxCount"`
-		MuxAddressInfo TCPTLSInfo     `yaml:"muxAddressInfo"`
+		// TcpClient is the client used to call this server. Used only for ConnectionType=tcp
+		TcpClient TCPTLSInfo `yaml:"tcpClient"`
+		// TcpServer is the server responsible for receiving calls from the remote server. Used only for ConnectionType=tcp
+		TcpServer TCPTLSInfo `yaml:"tcpServer"`
+		MuxCount  int        `yaml:"muxCount"`
+		// MuxAddressInfo is the mux address for the connection. On mux-server, this is the listen address, usually "0.0.0.0:<port>"
+		// On mux-client, this is the remote address+port, e.g. "<remote-ip>:<port>"
+		MuxAddressInfo TCPTLSInfo `yaml:"muxAddressInfo"`
 	}
 	TCPTLSInfo struct {
 		ConnectionString string               `yaml:"address"`

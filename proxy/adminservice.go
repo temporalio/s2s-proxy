@@ -64,13 +64,12 @@ func NewAdminServiceProxyServer(
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
+	// FrontendAddress should be overridden to a routable address for the local proxy (either its ClusterIP or LB).
+	// This is used to allow the remote Temporal server to send AddOrUpdateRemoteCluster, and have the local cluster
+	// correctly identify its local proxy as the "remote cluster".
 	if !common.IsRequestTranslationDisabled(ctx) && s.apiOverrides != nil {
 		reqOverride := s.apiOverrides.AdminService.AddOrUpdateRemoteCluster
 		if reqOverride != nil && len(reqOverride.Request.FrontendAddress) > 0 {
-			// Override this address so that cross-cluster connections flow through the proxy.
-			// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
-			// from the local temporal server, or the proxy may be deployed behind a load balancer.
-			// Only used in single-proxy scenarios, i.e. Temporal <> Proxy <> Temporal
 			in0.FrontendAddress = reqOverride.Request.FrontendAddress
 		}
 	}

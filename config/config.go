@@ -98,6 +98,9 @@ type (
 	}
 
 	DescribeClusterResponseOverrides struct {
+		// FailoverVersionIncrement override is used to bypass validation when the local Temporal FVI is not equal to the remote.
+		// Note that it's only valid to ignore validation like this when one FVI is an exact multiple of the other, and
+		// the initial failover version increment for both cells is less than the smaller of the two FVIs.
 		FailoverVersionIncrement *int64 `yaml:"failover_version_increment,omitempty"`
 	}
 
@@ -106,6 +109,8 @@ type (
 	}
 
 	AddOrUpdateRemoteClusterRequestOverrides struct {
+		// FrontendAddress is used to allow the remote Temporal cluster to add itself as a connected cluster to
+		// the local Temporal cluster. It should be set to the load-balancer or ClusterIP of the local proxy.
 		FrontendAddress string `yaml:"FrontendAddress"`
 	}
 
