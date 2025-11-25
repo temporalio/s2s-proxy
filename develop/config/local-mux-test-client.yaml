@@ -7,10 +7,14 @@ inbound:
     tcp:
       serverAddress: "127.0.0.1:7234"
       tls:
-        certificatePath: "/tls/internode/tls.crt"
-        keyPath: "/tls/internode/tls.key"
-        serverCAPath: "/tls/internode/ca.crt"
-        serverName: "frontend.temporal.svc.cluster.local"
+        # Should be Temporal Server cert
+        certificatePath: "./develop/certificates/temporal2.pem"
+        # Should be Temporal Server key
+        keyPath: "./develop/certificates/temporal2.key"
+        # Should be Temporal Server cert
+        serverCAPath: "./develop/certificates/temporal2.pem"
+        # Should be Temporal Server identity name from serverCAPath
+        serverName: "faketemporal-2.cluster.tmprl.cloud"
   aclPolicy:
     allowedMethods:
       adminService:
@@ -31,10 +35,11 @@ outbound:
       externalAddress: "127.0.0.1:9234"
       listenAddress: "0.0.0.0:9234"
       tls:
-        # The certificate used by local Temporal cluster to connect to
-        certificatePath: "/tls/internode/tls.crt"
-        #
-        keyPath: "/tls/internode/tls.key"
+        # Should be the proxy server cert
+        certificatePath: "./develop/certificates/proxy1.pem"
+        # Should be the proxy server key
+        keyPath: "./develop/certificates/proxy1.key"
+        # Don't care about the client CA-cert because we don't expect one
         clientCAPath: ""
         requireClientAuth: false
   client:
@@ -46,10 +51,12 @@ mux:
     client:
       serverAddress: "127.0.0.1:8233"
       tls:
-        # Should be client certificate
-        certificatePath: "/s2c-client-tls/tls.crt"
-        # Should be client key
-        keyPath: "/s2c-client-tls/tls.key"
+        # Should be the proxy-client certificate
+        certificatePath: "./develop/certificates/proxy2.pem"
+        # Should be the proxy-client key
+        keyPath: "./develop/certificates/proxy2.key"
+        # Should be the proxy-server certificate
+        serverCAPath: "./develop/certificates/proxy1.pem"
 outboundHealthCheck:
   protocol: "http"
   listenAddress: "0.0.0.0:8556"

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,7 +23,7 @@ import (
 )
 
 func init() {
-	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "info")
 	mux.MuxManagerStartDelay = 0
 }
 
@@ -282,4 +283,92 @@ func TestMuxCCFailover(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "remote-EchoAdminService", resp.ClusterName, "Local cluster connection should have reconnected")
 	cancel()
+}
+
+func TestTCPTLSConfig(t *testing.T) {
+	configFiles := []string{
+		"local-mux-test-client.yaml",
+		"local-mux-test-server.yaml",
+	}
+	translatedConfig := make([]config.S2SProxyConfig, len(configFiles))
+	for i, file := range configFiles {
+		samplePath := filepath.Join("..", "develop", "config", file)
+		s2sConfig, err := config.LoadConfig[config.S2SProxyConfig](samplePath)
+		require.NoError(t, err)
+		require.Equal(t, config.MuxTransport, s2sConfig.Inbound.Server.Type)
+		require.Equal(t, config.MuxTransport, s2sConfig.Outbound.Client.Type)
+		require.NoError(t, err)
+		rewriteClientTLSPaths(&s2sConfig.Inbound.Client.TLS)
+		rewriteServerTLSPaths(&s2sConfig.Inbound.Server.TLS)
+		rewriteClientTLSPaths(&s2sConfig.Outbound.Client.TLS)
+		rewriteServerTLSPaths(&s2sConfig.Outbound.Server.TLS)
+		rewriteServerTLSPaths(&s2sConfig.MuxTransports[0].Server.TLS)
+		rewriteClientTLSPaths(&s2sConfig.MuxTransports[0].Client.TLS)
+		translatedConfig[i] = config.ToClusterConnConfig(s2sConfig)
+	}
+	require.Equal(t, 1, len(translatedConfig[0].ClusterConnections))
+	require.Equal(t, config.ConnTypeTCP, translatedConfig[0].ClusterConnections[0].LocalServer.Connection.ConnectionType)
+	require.Equal(t, "0.0.0.0:9234", translatedConfig[0].ClusterConnections[0].LocalServer.Connection.TcpServer.ConnectionString)
+	require.Equal(t, "127.0.0.1:7234", translatedConfig[0].ClusterConnections[0].LocalServer.Connection.TcpClient.ConnectionString)
+	require.Equal(t, config.ConnTypeMuxClient, translatedConfig[0].ClusterConnections[0].RemoteServer.Connection.ConnectionType)
+	require.Equal(t, "127.0.0.1:8233", translatedConfig[0].ClusterConnections[0].RemoteServer.Connection.MuxAddressInfo.ConnectionString)
+	require.Equal(t, true, translatedConfig[1].ClusterConnections[0].RemoteServer.Connection.MuxAddressInfo.TLSConfig.IsEnabled())
+
+	require.Equal(t, 1, len(translatedConfig[1].ClusterConnections))
+	require.Equal(t, config.ConnTypeTCP, translatedConfig[1].ClusterConnections[0].LocalServer.Connection.ConnectionType)
+	require.Equal(t, "0.0.0.0:9233", translatedConfig[1].ClusterConnections[0].LocalServer.Connection.TcpServer.ConnectionString)
+	require.Equal(t, "127.0.0.1:7233", translatedConfig[1].ClusterConnections[0].LocalServer.Connection.TcpClient.ConnectionString)
+	require.Equal(t, config.ConnTypeMuxServer, translatedConfig[1].ClusterConnections[0].RemoteServer.Connection.ConnectionType)
+	require.Equal(t, "0.0.0.0:8233", translatedConfig[1].ClusterConnections[0].RemoteServer.Connection.MuxAddressInfo.ConnectionString)
+	require.Equal(t, true, translatedConfig[1].ClusterConnections[0].RemoteServer.Connection.MuxAddressInfo.TLSConfig.IsEnabled())
+
+	logger := log.NewTestLogger()
+	clientMux := NewProxy(config.NewMockConfigProvider(translatedConfig[0]), logger)
+	serverMux := NewProxy(config.NewMockConfigProvider(translatedConfig[1]), logger)
+	serverMux.clusterConnections[migrationId{name: "inbound-server/outbound-server"}].Start()
+	clientMux.clusterConnections[migrationId{name: "inbound-server/outbound-server"}].Start()
+	temporalServer1 := makeEchoServer("Mux Server Backend", "127.0.0.1:7233", logger)
+	temporalServer2 := makeEchoServer("Mux Client Backend", "127.0.0.1:7234", logger)
+	temporalServer1.Start()
+	temporalServer2.Start()
+	<-time.After(time.Second)
+	muxServerOutboundClient, err := grpc.NewClient("127.0.0.1:9233",
+		grpcutil.MakeDialOptions(nil,
+			metrics.GetStandardGRPCClientInterceptor("mux-server-outbound"))...,
+	)
+	require.NoError(t, err)
+	muxClientOutboundClient, err := grpc.NewClient("127.0.0.1:9234",
+		grpcutil.MakeDialOptions(nil,
+			metrics.GetStandardGRPCClientInterceptor("mux-client-outbound"))...,
+	)
+	require.NoError(t, err)
+	resp, err := adminservice.NewAdminServiceClient(muxServerOutboundClient).DescribeCluster(context.Background(), &adminservice.DescribeClusterRequest{})
+	require.NoError(t, err)
+	require.Equal(t, "Mux Client Backend-EchoAdminService", resp.ClusterName)
+	resp, err = adminservice.NewAdminServiceClient(muxClientOutboundClient).DescribeCluster(context.Background(), &adminservice.DescribeClusterRequest{})
+	require.NoError(t, err)
+	require.Equal(t, "Mux Server Backend-EchoAdminService", resp.ClusterName)
+
+	temporalServer2.Stop()
+	temporalServer1.Stop()
+	serverMux.Stop()
+	clientMux.Stop()
+}
+
+func rewriteClientTLSPaths(clientTLSConfig *config.ClientTLSConfig) {
+	clientTLSConfig.CertificatePath = reroot(clientTLSConfig.CertificatePath)
+	clientTLSConfig.KeyPath = reroot(clientTLSConfig.KeyPath)
+	clientTLSConfig.ServerCAPath = reroot(clientTLSConfig.ServerCAPath)
+
+}
+func reroot(in string) string {
+	if in == "" {
+		return in
+	}
+	return filepath.Join("..", "develop", "certificates", filepath.Base(in))
+}
+func rewriteServerTLSPaths(serverTLS *config.ServerTLSConfig) {
+	serverTLS.CertificatePath = reroot(serverTLS.CertificatePath)
+	serverTLS.KeyPath = reroot(serverTLS.KeyPath)
+	serverTLS.ClientCAPath = reroot(serverTLS.ClientCAPath)
 }

@@ -2,8 +2,6 @@ package config
 
 import (
 	"fmt"
-
-	"github.com/temporalio/s2s-proxy/encryption"
 )
 
 // ToClusterConnConfig converts from previous versions of proxy config to the new format without requiring a rewrite.
@@ -116,23 +114,12 @@ func findTransport(muxes []MuxTransportConfig, name string) MuxTransportConfig {
 func translateClientTCPTLSInfo(cfg TCPClientSetting) TCPTLSInfo {
 	return TCPTLSInfo{
 		ConnectionString: cfg.ServerAddress,
-		TLSConfig: encryption.TLSConfig{
-			CertificatePath:  cfg.TLS.CertificatePath,
-			KeyPath:          cfg.TLS.KeyPath,
-			RemoteCAPath:     cfg.TLS.ServerCAPath,
-			CAServerName:     cfg.TLS.ServerName,
-			ValidateClientCA: false,
-		},
+		TLSConfig:        FromClientTLSConfig(cfg.TLS),
 	}
 }
 func translateServerTCPTLSInfo(cfg TCPServerSetting) TCPTLSInfo {
 	return TCPTLSInfo{
 		ConnectionString: cfg.ListenAddress,
-		TLSConfig: encryption.TLSConfig{
-			CertificatePath:  cfg.TLS.CertificatePath,
-			KeyPath:          cfg.TLS.KeyPath,
-			RemoteCAPath:     cfg.TLS.ClientCAPath,
-			ValidateClientCA: cfg.TLS.RequireClientAuth,
-		},
+		TLSConfig:        FromServerTLSConfig(cfg.TLS),
 	}
 }
