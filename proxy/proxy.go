@@ -138,11 +138,11 @@ func (s *Proxy) Start() error {
 		healthFn := func() bool {
 			// TODO: assumes only one mux right now. When there are multiple remotes, we may want to receive them all
 			//       on the same port and do something different here
-			for _, cc := range s.clusterConnections {
-				if !cc.AcceptingInboundTraffic() {
-					return false
-				}
-			}
+			//for _, cc := range s.clusterConnections {
+			//	if !cc.AcceptingInboundTraffic() {
+			//		return false
+			//	}
+			//}
 			return true
 		}
 		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(healthFn, s.logger), *s.inboundHealthCheckConfig); err != nil {
@@ -157,11 +157,11 @@ func (s *Proxy) Start() error {
 		healthFn := func() bool {
 			// TODO: assumes only one mux right now. When there are multiple remotes, some of them may be healthy
 			//       and others not
-			for _, cc := range s.clusterConnections {
-				if !cc.AcceptingOutboundTraffic() {
-					return false
-				}
-			}
+			//for _, cc := range s.clusterConnections {
+			//	if !cc.AcceptingOutboundTraffic() {
+			//		return false
+			//	}
+			//}
 			return true
 		}
 		var err error
