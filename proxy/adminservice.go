@@ -58,12 +58,14 @@ func NewAdminServiceProxyServer(
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
+	s.logger.Info("Received AddOrUpdateRemoteCluster", tag.Address(in0.FrontendAddress), tag.NewBoolTag("Enabled", in0.GetEnableRemoteClusterConnection()), tag.NewStringsTag("configTags", s.metricLabelValues))
 	if !common.IsRequestTranslationDisabled(ctx) {
 		if len(s.outboundAddressOverride) > 0 {
 			// Override this address so that cross-cluster connections flow through the proxy.
 			// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
 			// from the local temporal server, or the proxy may be deployed behind a load balancer.
 			in0.FrontendAddress = s.outboundAddressOverride
+			s.logger.Info("Overwrote outbound address", tag.Address(in0.FrontendAddress), tag.NewStringsTag("configTags", s.metricLabelValues))
 		}
 	}
 	return s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
@@ -90,18 +92,35 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 }
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
+	s.logger.Info("Received DescribeClusterRequest")
 	resp, err := s.adminClient.DescribeCluster(ctx, in0)
 	if common.IsRequestTranslationDisabled(ctx) {
 		return resp, err
 	}
-
+	if resp != nil {
+		s.logger.Info("Raw DescribeClusterResponse", tag.NewStringTag("clusterID", resp.ClusterId),
+			tag.NewStringTag("clusterName", resp.ClusterName), tag.NewStringTag("version", resp.ServerVersion),
+			tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement), tag.NewInt64("initialFailoverVersion", resp.InitialFailoverVersion),
+			tag.NewBoolTag("isGlobalNamespaceEnabled", resp.IsGlobalNamespaceEnabled), tag.NewStringsTag("configTags", s.metricLabelValues))
+	}
 	if s.apiOverrides != nil && s.apiOverrides.AdminSerivce.DescribeCluster != nil {
 		responseOverride := s.apiOverrides.AdminSerivce.DescribeCluster.Response
 		if resp != nil && responseOverride.FailoverVersionIncrement != nil {
 			resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
+			s.logger.Info("Overwrite FailoverVersionIncrement", tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement),
+				tag.NewStringsTag("configTags", s.metricLabelValues))
 		}
 	}
 
+	if resp != nil {
+		s.logger.Info("Translated DescribeClusterResponse", tag.NewStringTag("clusterID", resp.ClusterId),
+			tag.NewStringTag("clusterName", resp.ClusterName), tag.NewStringTag("version", resp.ServerVersion),
+			tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement), tag.NewInt64("initialFailoverVersion", resp.InitialFailoverVersion),
+			tag.NewBoolTag("isGlobalNamespaceEnabled", resp.IsGlobalNamespaceEnabled), tag.NewStringsTag("configTags", s.metricLabelValues))
+	}
+	if err != nil {
+		s.logger.Info("Error from remote server!", tag.Error(err), tag.NewStringsTag("configTags", s.metricLabelValues))
+	}
 	return resp, err
 }
 
