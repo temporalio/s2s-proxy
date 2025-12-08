@@ -19,13 +19,5 @@ mux:
     mode: "client"
     client:
       serverAddress: "localhost:7003" 
-# shardCount:
-#   mode: "lcm"
-#   localShardCount: 2
-#   remoteShardCount: 3
-# shardCount:
-#   mode: "fixed"
-#   localShardCount: 2
-#   remoteShardCount: 3
 profiling:
   pprofAddress: "localhost:6060"

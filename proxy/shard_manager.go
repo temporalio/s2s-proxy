@@ -45,9 +45,9 @@ type (
 		// GetShardOwner returns the node name that owns the given shard
 		GetShardOwner(shard history.ClusterShardID) (string, bool)
 		// DeliverAckToShardOwner routes an ACK request to the appropriate shard owner (local or remote)
-		DeliverAckToShardOwner(srcShard history.ClusterShardID, routedAck *RoutedAck, proxy *Proxy, shutdownChan channel.ShutdownOnce, logger log.Logger, ack int64, allowForward bool) bool
+		DeliverAckToShardOwner(srcShard history.ClusterShardID, routedAck *RoutedAck, clusterConnection *ClusterConnection, shutdownChan channel.ShutdownOnce, logger log.Logger, ack int64, allowForward bool) bool
 		// DeliverMessagesToShardOwner routes replication messages to the appropriate shard owner (local or remote)
-		DeliverMessagesToShardOwner(targetShard history.ClusterShardID, routedMsg *RoutedMessage, proxy *Proxy, shutdownChan channel.ShutdownOnce, logger log.Logger) bool
+		DeliverMessagesToShardOwner(targetShard history.ClusterShardID, routedMsg *RoutedMessage, clusterConnection *ClusterConnection, shutdownChan channel.ShutdownOnce, logger log.Logger) bool
 		// SetOnPeerJoin registers a callback invoked when a new peer joins
 		SetOnPeerJoin(handler func(nodeName string))
 		// SetOnPeerLeave registers a callback invoked when a peer leaves.
@@ -56,21 +56,18 @@ type (
 		SetOnLocalShardChange(handler func(shard history.ClusterShardID, added bool))
 		// New: notify when remote shard set changes for a peer
 		SetOnRemoteShardChange(handler func(peer string, shard history.ClusterShardID, added bool))
-
-		SetIntraProxyManager(intraMgr *intraProxyManager)
-		GetIntraProxyManager() *intraProxyManager
 	}
 
 	shardManagerImpl struct {
-		config      *config.MemberlistConfig
-		logger      log.Logger
-		ml          *memberlist.Memberlist
-		delegate    *shardDelegate
-		mutex       sync.RWMutex
-		localAddr   string
-		started     bool
-		onPeerJoin  func(nodeName string)
-		onPeerLeave func(nodeName string)
+		memberlistConfig *config.MemberlistConfig
+		logger           log.Logger
+		ml               *memberlist.Memberlist
+		delegate         *shardDelegate
+		mutex            sync.RWMutex
+		localAddr        string
+		started          bool
+		onPeerJoin       func(nodeName string)
+		onPeerLeave      func(nodeName string)
 		// New callbacks
 		onLocalShardChange  func(shard history.ClusterShardID, added bool)
 		onRemoteShardChange func(peer string, shard history.ClusterShardID, added bool)
@@ -112,28 +109,23 @@ type (
 )
 
 // NewShardManager creates a new shard manager instance
-func NewShardManager(configProvider config.ConfigProvider, logger log.Logger) (ShardManager, error) {
-	cfg := configProvider.GetS2SProxyConfig().MemberlistConfig
-	if cfg == nil || !cfg.Enabled {
-		return &noopShardManager{}, nil
-	}
-
+func NewShardManager(memberlistConfig *config.MemberlistConfig, logger log.Logger) ShardManager {
 	delegate := &shardDelegate{
 		logger: logger,
 	}
 
 	sm := &shardManagerImpl{
-		config:        cfg,
-		logger:        logger,
-		delegate:      delegate,
-		localShards:   make(map[string]ShardInfo),
-		intraMgr:      nil,
-		stopJoinRetry: make(chan struct{}),
+		memberlistConfig: memberlistConfig,
+		logger:           logger,
+		delegate:         delegate,
+		localShards:      make(map[string]ShardInfo),
+		intraMgr:         nil,
+		stopJoinRetry:    make(chan struct{}),
 	}
 
 	delegate.manager = sm
 
-	return sm, nil
+	return sm
 }
 
 // SetOnPeerJoin registers a callback invoked on new peer joins.
@@ -174,42 +166,42 @@ func (sm *shardManagerImpl) Start(lifetime context.Context) error {
 
 	// Configure memberlist
 	var mlConfig *memberlist.Config
-	if sm.config.TCPOnly {
+	if sm.memberlistConfig.TCPOnly {
 		// Use LAN config as base for TCP-only mode
 		mlConfig = memberlist.DefaultLANConfig()
-		mlConfig.DisableTcpPings = sm.config.DisableTCPPings
+		mlConfig.DisableTcpPings = sm.memberlistConfig.DisableTCPPings
 		// Set default timeouts for TCP-only if not specified
-		if sm.config.ProbeTimeoutMs == 0 {
+		if sm.memberlistConfig.ProbeTimeoutMs == 0 {
 			mlConfig.ProbeTimeout = 1 * time.Second
 		}
-		if sm.config.ProbeIntervalMs == 0 {
+		if sm.memberlistConfig.ProbeIntervalMs == 0 {
 			mlConfig.ProbeInterval = 2 * time.Second
 		}
 	} else {
 		mlConfig = memberlist.DefaultLocalConfig()
 	}
-	mlConfig.Name = sm.config.NodeName
-	mlConfig.BindAddr = sm.config.BindAddr
-	mlConfig.BindPort = sm.config.BindPort
-	mlConfig.AdvertiseAddr = sm.config.BindAddr
-	mlConfig.AdvertisePort = sm.config.BindPort
+	mlConfig.Name = sm.memberlistConfig.NodeName
+	mlConfig.BindAddr = sm.memberlistConfig.BindAddr
+	mlConfig.BindPort = sm.memberlistConfig.BindPort
+	mlConfig.AdvertiseAddr = sm.memberlistConfig.BindAddr
+	mlConfig.AdvertisePort = sm.memberlistConfig.BindPort
 
 	mlConfig.Delegate = sm.delegate
 	mlConfig.Events = &shardEventDelegate{manager: sm, logger: sm.logger}
 
 	// Configure custom timeouts if specified
-	if sm.config.ProbeTimeoutMs > 0 {
-		mlConfig.ProbeTimeout = time.Duration(sm.config.ProbeTimeoutMs) * time.Millisecond
+	if sm.memberlistConfig.ProbeTimeoutMs > 0 {
+		mlConfig.ProbeTimeout = time.Duration(sm.memberlistConfig.ProbeTimeoutMs) * time.Millisecond
 	}
-	if sm.config.ProbeIntervalMs > 0 {
-		mlConfig.ProbeInterval = time.Duration(sm.config.ProbeIntervalMs) * time.Millisecond
+	if sm.memberlistConfig.ProbeIntervalMs > 0 {
+		mlConfig.ProbeInterval = time.Duration(sm.memberlistConfig.ProbeIntervalMs) * time.Millisecond
 	}
 
 	sm.logger.Info("Creating memberlist",
 		tag.NewStringTag("nodeName", mlConfig.Name),
 		tag.NewStringTag("bindAddr", mlConfig.BindAddr),
 		tag.NewStringTag("bindPort", fmt.Sprintf("%d", mlConfig.BindPort)),
-		tag.NewBoolTag("tcpOnly", sm.config.TCPOnly),
+		tag.NewBoolTag("tcpOnly", sm.memberlistConfig.TCPOnly),
 		tag.NewBoolTag("disableTcpPings", mlConfig.DisableTcpPings),
 		tag.NewStringTag("probeTimeout", mlConfig.ProbeTimeout.String()),
 		tag.NewStringTag("probeInterval", mlConfig.ProbeInterval.String()))
@@ -239,22 +231,22 @@ func (sm *shardManagerImpl) Start(lifetime context.Context) error {
 
 	sm.mutex.Lock()
 	sm.ml = ml
-	sm.localAddr = fmt.Sprintf("%s:%d", sm.config.BindAddr, sm.config.BindPort)
+	sm.localAddr = fmt.Sprintf("%s:%d", sm.memberlistConfig.BindAddr, sm.memberlistConfig.BindPort)
 	sm.started = true
 
 	sm.logger.Info("Shard manager base initialization complete",
-		tag.NewStringTag("node", sm.config.NodeName),
+		tag.NewStringTag("node", sm.memberlistConfig.NodeName),
 		tag.NewStringTag("addr", sm.localAddr))
 
 	sm.mutex.Unlock()
 
 	// Join existing cluster if configured
-	if len(sm.config.JoinAddrs) > 0 {
+	if len(sm.memberlistConfig.JoinAddrs) > 0 {
 		sm.startJoinLoop()
 	}
 
 	sm.logger.Info("Shard manager started",
-		tag.NewStringTag("node", sm.config.NodeName),
+		tag.NewStringTag("node", sm.memberlistConfig.NodeName),
 		tag.NewStringTag("addr", sm.localAddr))
 
 	context.AfterFunc(lifetime, func() {
@@ -327,14 +319,14 @@ func (sm *shardManagerImpl) retryJoinCluster() {
 	attempt := 0
 
 	sm.logger.Info("Starting join retry loop",
-		tag.NewStringTag("joinAddrs", fmt.Sprintf("%v", sm.config.JoinAddrs)))
+		tag.NewStringTag("joinAddrs", fmt.Sprintf("%v", sm.memberlistConfig.JoinAddrs)))
 
 	for {
 		attempt++
 
 		sm.mutex.RLock()
 		ml := sm.ml
-		joinAddrs := sm.config.JoinAddrs
+		joinAddrs := sm.memberlistConfig.JoinAddrs
 		sm.mutex.RUnlock()
 
 		if ml == nil {
@@ -433,20 +425,20 @@ func (sm *shardManagerImpl) IsLocalShard(clientShardID history.ClusterShardID) b
 
 func (sm *shardManagerImpl) GetProxyAddress(nodeName string) (string, bool) {
 	// TODO: get the proxy address from the memberlist metadata
-	if sm.config.ProxyAddresses == nil {
+	if sm.memberlistConfig.ProxyAddresses == nil {
 		return "", false
 	}
-	addr, found := sm.config.ProxyAddresses[nodeName]
+	addr, found := sm.memberlistConfig.ProxyAddresses[nodeName]
 	return addr, found
 }
 
 func (sm *shardManagerImpl) GetNodeName() string {
-	return sm.config.NodeName
+	return sm.memberlistConfig.NodeName
 }
 
 func (sm *shardManagerImpl) GetMemberNodes() []string {
 	if !sm.started || sm.ml == nil {
-		return []string{sm.config.NodeName}
+		return []string{sm.memberlistConfig.NodeName}
 	}
 
 	// Use a timeout to prevent deadlocks when memberlist is busy
@@ -470,8 +462,8 @@ func (sm *shardManagerImpl) GetMemberNodes() []string {
 	case <-time.After(100 * time.Millisecond):
 		// Timeout: return cached node name to prevent hanging
 		sm.logger.Warn("GetMemberNodes timeout, returning self node",
-			tag.NewStringTag("node", sm.config.NodeName))
-		return []string{sm.config.NodeName}
+			tag.NewStringTag("node", sm.memberlistConfig.NodeName))
+		return []string{sm.memberlistConfig.NodeName}
 	}
 }
 
@@ -505,7 +497,7 @@ func (sm *shardManagerImpl) GetShardInfo() ShardDebugInfo {
 
 	return ShardDebugInfo{
 		Enabled:           true,
-		NodeName:          sm.config.NodeName,
+		NodeName:          sm.memberlistConfig.NodeName,
 		LocalShards:       localShardMap,
 		LocalShardCount:   len(localShardMap),
 		RemoteShards:      remoteShardsMap,
@@ -514,7 +506,6 @@ func (sm *shardManagerImpl) GetShardInfo() ShardDebugInfo {
 }
 
 func (sm *shardManagerImpl) GetShardOwner(shard history.ClusterShardID) (string, bool) {
-	// FIXME: improve this: store remote shards in a map in the shardManagerImpl
 	remoteShards, err := sm.GetRemoteShardsForPeer("")
 	if err != nil {
 		sm.logger.Error("Failed to get remote shards", tag.Error(err))
@@ -578,14 +569,14 @@ func (sm *shardManagerImpl) GetRemoteShardsForPeer(peerNodeName string) (map[str
 func (sm *shardManagerImpl) DeliverAckToShardOwner(
 	sourceShard history.ClusterShardID,
 	routedAck *RoutedAck,
-	proxy *Proxy,
+	clusterConnection *ClusterConnection,
 	shutdownChan channel.ShutdownOnce,
 	logger log.Logger,
 	ack int64,
 	allowForward bool,
 ) bool {
 	logger = log.With(logger, tag.NewStringTag("sourceShard", ClusterShardIDtoString(sourceShard)), tag.NewInt64("ack", ack))
-	if ackCh, ok := proxy.GetLocalAckChan(sourceShard); ok {
+	if ackCh, ok := clusterConnection.localAckChannels[sourceShard]; ok {
 		delivered := false
 		func() {
 			defer func() {
@@ -614,13 +605,13 @@ func (sm *shardManagerImpl) DeliverAckToShardOwner(
 	}
 
 	// Attempt remote delivery via intra-proxy when enabled and shard is remote
-	if owner, ok := sm.GetShardOwner(sourceShard); ok && owner != sm.config.NodeName {
+	if owner, ok := sm.GetShardOwner(sourceShard); ok && owner != sm.memberlistConfig.NodeName {
 		if addr, found := sm.GetProxyAddress(owner); found {
 			clientShard := routedAck.TargetShard
 			serverShard := sourceShard
-			mgr := proxy.GetIntraProxyManager(migrationId{owner})
+			mgr := clusterConnection.intraMgr
 			// Synchronous send to preserve ordering
-			if err := mgr.sendAck(context.Background(), owner, clientShard, serverShard, proxy, routedAck.Req); err != nil {
+			if err := mgr.sendAck(context.Background(), owner, clientShard, serverShard, routedAck.Req); err != nil {
 				logger.Error("Failed to forward ACK to shard owner via intra-proxy", tag.Error(err), tag.NewStringTag("owner", owner), tag.NewStringTag("addr", addr))
 				return false
 			}
@@ -640,14 +631,14 @@ func (sm *shardManagerImpl) DeliverAckToShardOwner(
 func (sm *shardManagerImpl) DeliverMessagesToShardOwner(
 	targetShard history.ClusterShardID,
 	routedMsg *RoutedMessage,
-	proxy *Proxy,
+	clusterConnection *ClusterConnection,
 	shutdownChan channel.ShutdownOnce,
 	logger log.Logger,
 ) bool {
 	logger = log.With(logger, tag.NewStringTag("task-target-shard", ClusterShardIDtoString(targetShard)))
 
 	// Try local delivery first
-	if ch, ok := proxy.GetRemoteSendChan(targetShard); ok {
+	if ch, ok := clusterConnection.remoteSendChannels[targetShard]; ok {
 		delivered := false
 		func() {
 			defer func() {
@@ -672,12 +663,12 @@ func (sm *shardManagerImpl) DeliverMessagesToShardOwner(
 	}
 
 	// Attempt remote delivery via intra-proxy when enabled and shard is remote
-	if sm.config != nil {
-		if owner, ok := sm.GetShardOwner(targetShard); ok && owner != sm.config.NodeName {
+	if sm.memberlistConfig != nil {
+		if owner, ok := sm.GetShardOwner(targetShard); ok && owner != sm.memberlistConfig.NodeName {
 			if addr, found := sm.GetProxyAddress(owner); found {
 				if mgr := sm.GetIntraProxyManager(); mgr != nil {
 					resp := routedMsg.Resp
-					if err := mgr.sendReplicationMessages(context.Background(), owner, targetShard, routedMsg.SourceShard, proxy, resp); err != nil {
+					if err := mgr.sendReplicationMessages(context.Background(), owner, targetShard, routedMsg.SourceShard, resp); err != nil {
 						logger.Error("Failed to forward replication messages to shard owner via intra-proxy", tag.Error(err), tag.NewStringTag("owner", owner), tag.NewStringTag("addr", addr))
 						return false
 					}
@@ -740,7 +731,7 @@ func (sm *shardManagerImpl) broadcastShardChange(msgType string, shard history.C
 
 	msg := ShardMessage{
 		Type:        msgType,
-		NodeName:    sm.config.NodeName,
+		NodeName:    sm.memberlistConfig.NodeName,
 		ClientShard: shard,
 		Timestamp:   time.Now(),
 	}
@@ -753,7 +744,7 @@ func (sm *shardManagerImpl) broadcastShardChange(msgType string, shard history.C
 
 	for _, member := range sm.ml.Members() {
 		// Skip sending to self node
-		if member.Name == sm.config.NodeName {
+		if member.Name == sm.memberlistConfig.NodeName {
 			continue
 		}
 
@@ -777,7 +768,7 @@ func (sd *shardDelegate) NodeMeta(limit int) []byte {
 	for k, v := range sd.manager.localShards {
 		shardsCopy[k] = v
 	}
-	nodeName := sd.manager.config.NodeName
+	nodeName := sd.manager.memberlistConfig.NodeName
 	sd.manager.mutex.RUnlock()
 
 	state := NodeShardState{
@@ -794,7 +785,7 @@ func (sd *shardDelegate) NodeMeta(limit int) []byte {
 
 	if len(data) > limit {
 		// If metadata is too large, just send node name
-		return []byte(sd.manager.config.NodeName)
+		return []byte(sd.manager.memberlistConfig.NodeName)
 	}
 
 	return data
@@ -893,7 +884,7 @@ func (sed *shardEventDelegate) NotifyLeave(node *memberlist.Node) {
 	// If we're now isolated and have join addresses configured, restart join loop
 	if sed.manager != nil && sed.manager.ml != nil {
 		numMembers := sed.manager.ml.NumMembers()
-		if numMembers == 1 && len(sed.manager.config.JoinAddrs) > 0 {
+		if numMembers == 1 && len(sed.manager.memberlistConfig.JoinAddrs) > 0 {
 			sed.logger.Info("Node is now isolated, restarting join loop",
 				tag.NewStringTag("numMembers", strconv.Itoa(numMembers)))
 			sed.manager.startJoinLoop()
@@ -905,108 +896,4 @@ func (sed *shardEventDelegate) NotifyUpdate(node *memberlist.Node) {
 	sed.logger.Info("Node updated",
 		tag.NewStringTag("node", node.Name),
 		tag.NewStringTag("addr", node.Addr.String()))
-}
-
-// noopShardManager provides a no-op implementation when memberlist is disabled
-type noopShardManager struct{}
-
-func (nsm *noopShardManager) Start(_ context.Context) error                       { return nil }
-func (nsm *noopShardManager) Stop()                                               {}
-func (nsm *noopShardManager) RegisterShard(history.ClusterShardID) time.Time      { return time.Now() }
-func (nsm *noopShardManager) UnregisterShard(history.ClusterShardID, time.Time)   {}
-func (nsm *noopShardManager) GetShardOwner(history.ClusterShardID) (string, bool) { return "", false }
-func (nsm *noopShardManager) GetProxyAddress(string) (string, bool)               { return "", false }
-func (nsm *noopShardManager) IsLocalShard(history.ClusterShardID) bool            { return true }
-func (nsm *noopShardManager) GetNodeName() string                                 { return "" }
-func (nsm *noopShardManager) GetMemberNodes() []string                            { return []string{} }
-func (nsm *noopShardManager) GetLocalShards() map[string]history.ClusterShardID {
-	return make(map[string]history.ClusterShardID)
-}
-func (nsm *noopShardManager) GetRemoteShardsForPeer(string) (map[string]NodeShardState, error) {
-	return make(map[string]NodeShardState), nil
-}
-func (nsm *noopShardManager) GetShardInfo() ShardDebugInfo {
-	return ShardDebugInfo{
-		Enabled:           false,
-		NodeName:          "",
-		LocalShards:       make(map[string]history.ClusterShardID),
-		LocalShardCount:   0,
-		ClusterNodes:      []string{},
-		ClusterSize:       0,
-		RemoteShards:      make(map[string]string),
-		RemoteShardCounts: make(map[string]int),
-	}
-}
-
-func (nsm *noopShardManager) SetOnPeerJoin(handler func(nodeName string))  {}
-func (nsm *noopShardManager) SetOnPeerLeave(handler func(nodeName string)) {}
-func (nsm *noopShardManager) SetOnLocalShardChange(handler func(shard history.ClusterShardID, added bool)) {
-}
-func (nsm *noopShardManager) SetOnRemoteShardChange(handler func(peer string, shard history.ClusterShardID, added bool)) {
-}
-
-func (nsm *noopShardManager) DeliverAckToShardOwner(srcShard history.ClusterShardID, routedAck *RoutedAck, proxy *Proxy, shutdownChan channel.ShutdownOnce, logger log.Logger, ack int64, allowForward bool) bool {
-	if proxy != nil {
-		if ackCh, ok := proxy.GetLocalAckChan(srcShard); ok {
-			delivered := false
-			func() {
-				defer func() {
-					if panicErr := recover(); panicErr != nil {
-						if logger != nil {
-							logger.Warn("Failed to deliver ACK to local shard owner (channel closed)")
-						}
-					}
-				}()
-				select {
-				case ackCh <- *routedAck:
-					delivered = true
-				case <-shutdownChan.Channel():
-					// Shutdown signal received
-				}
-			}()
-			if delivered {
-				return true
-			}
-			if shutdownChan.IsShutdown() {
-				return false
-			}
-		}
-	}
-	return false
-}
-
-func (nsm *noopShardManager) DeliverMessagesToShardOwner(targetShard history.ClusterShardID, routedMsg *RoutedMessage, proxy *Proxy, shutdownChan channel.ShutdownOnce, logger log.Logger) bool {
-	if proxy != nil {
-		if ch, ok := proxy.GetRemoteSendChan(targetShard); ok {
-			delivered := false
-			func() {
-				defer func() {
-					if panicErr := recover(); panicErr != nil {
-						if logger != nil {
-							logger.Warn("Failed to deliver messages to local shard owner (channel closed)")
-						}
-					}
-				}()
-				select {
-				case ch <- *routedMsg:
-					delivered = true
-				case <-shutdownChan.Channel():
-					// Shutdown signal received
-				}
-			}()
-			if delivered {
-				return true
-			}
-			if shutdownChan.IsShutdown() {
-				return false
-			}
-		}
-	}
-	return false
-}
-
-func (nsm *noopShardManager) SetIntraProxyManager(intraMgr *intraProxyManager) {
-}
-func (nsm *noopShardManager) GetIntraProxyManager() *intraProxyManager {
-	return nil
 }

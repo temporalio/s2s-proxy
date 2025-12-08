@@ -23,12 +23,11 @@ import (
 // intraProxyManager maintains long-lived intra-proxy streams to peer proxies and
 // provides simple send helpers (e.g., forwarding ACKs).
 type intraProxyManager struct {
-	logger           log.Logger
-	streamsMu        sync.RWMutex
-	shardManager     ShardManager
-	shardCountConfig config.ShardCountConfig
-	proxy            *Proxy
-	notifyCh         chan struct{}
+	logger            log.Logger
+	streamsMu         sync.RWMutex
+	shardCountConfig  config.ShardCountConfig
+	clusterConnection *ClusterConnection
+	notifyCh          chan struct{}
 	// Group state by remote peer for unified lifecycle ops
 	peers map[string]*peerState
 }
@@ -45,14 +44,13 @@ type peerStreamKey struct {
 	sourceShard history.ClusterShardID
 }
 
-func newIntraProxyManager(logger log.Logger, proxy *Proxy, shardManager ShardManager, shardCountConfig config.ShardCountConfig) *intraProxyManager {
+func newIntraProxyManager(logger log.Logger, clusterConnection *ClusterConnection, shardCountConfig config.ShardCountConfig) *intraProxyManager {
 	return &intraProxyManager{
-		logger:           logger,
-		proxy:            proxy,
-		shardManager:     shardManager,
-		shardCountConfig: shardCountConfig,
-		peers:            make(map[string]*peerState),
-		notifyCh:         make(chan struct{}),
+		logger:            logger,
+		clusterConnection: clusterConnection,
+		shardCountConfig:  shardCountConfig,
+		peers:             make(map[string]*peerState),
+		notifyCh:          make(chan struct{}),
 	}
 }
 
@@ -60,8 +58,7 @@ func newIntraProxyManager(logger log.Logger, proxy *Proxy, shardManager ShardMan
 // Replication messages are sent by intraProxyManager.sendMessages using the registered server stream.
 type intraProxyStreamSender struct {
 	logger             log.Logger
-	shardManager       ShardManager
-	proxy              *Proxy
+	clusterConnection  *ClusterConnection
 	intraMgr           *intraProxyManager
 	peerNodeName       string
 	targetShardID      history.ClusterShardID
@@ -134,7 +131,7 @@ func (s *intraProxyStreamSender) recvAck(shutdownChan channel.ShutdownOnce) erro
 
 			s.logger.Info("Sender forwarding ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(s.sourceShardID)), tag.NewInt64("ack", ack))
 			// FIXME: should retry. If not succeed, return and shutdown the stream
-			sent := s.shardManager.DeliverAckToShardOwner(s.sourceShardID, routedAck, s.proxy, shutdownChan, s.logger, ack, false)
+			sent := s.clusterConnection.shardManager.DeliverAckToShardOwner(s.sourceShardID, routedAck, s.clusterConnection, shutdownChan, s.logger, ack, false)
 			if !sent {
 				s.logger.Error("Sender failed to forward ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(s.sourceShardID)), tag.NewInt64("ack", ack))
 				return fmt.Errorf("failed to forward ACK to source shard")
@@ -168,21 +165,20 @@ func (s *intraProxyStreamSender) sendReplicationMessages(resp *adminservice.Stre
 
 // intraProxyStreamReceiver ensures a client stream to peer exists and sends aggregated ACKs upstream.
 type intraProxyStreamReceiver struct {
-	logger        log.Logger
-	shardManager  ShardManager
-	proxy         *Proxy
-	intraMgr      *intraProxyManager
-	peerNodeName  string
-	targetShardID history.ClusterShardID
-	sourceShardID history.ClusterShardID
-	streamClient  adminservice.AdminService_StreamWorkflowReplicationMessagesClient
-	streamID      string
-	shutdown      channel.ShutdownOnce
-	cancel        context.CancelFunc
+	logger            log.Logger
+	clusterConnection *ClusterConnection
+	intraMgr          *intraProxyManager
+	peerNodeName      string
+	targetShardID     history.ClusterShardID
+	sourceShardID     history.ClusterShardID
+	streamClient      adminservice.AdminService_StreamWorkflowReplicationMessagesClient
+	streamID          string
+	shutdown          channel.ShutdownOnce
+	cancel            context.CancelFunc
 }
 
 // Run opens the client stream with metadata, registers tracking, and starts receiver goroutines.
-func (r *intraProxyStreamReceiver) Run(ctx context.Context, p *Proxy, conn *grpc.ClientConn) error {
+func (r *intraProxyStreamReceiver) Run(ctx context.Context, clusterConnection *ClusterConnection, conn *grpc.ClientConn) error {
 	r.streamID = BuildIntraProxyReceiverStreamID(r.peerNodeName, r.sourceShardID, r.targetShardID)
 	r.logger = log.With(r.logger, tag.NewStringTag("streamID", r.streamID))
 
@@ -195,7 +191,7 @@ func (r *intraProxyStreamReceiver) Run(ctx context.Context, p *Proxy, conn *grpc
 	md.Set(history.MetadataKeyServerShardID, fmt.Sprintf("%d", r.sourceShardID.ShardID))
 	ctx = metadata.NewOutgoingContext(ctx, md)
 	ctx = common.WithIntraProxyHeaders(ctx, map[string]string{
-		common.IntraProxyOriginProxyIDHeader: r.shardManager.GetShardInfo().NodeName,
+		common.IntraProxyOriginProxyIDHeader: clusterConnection.shardManager.GetShardInfo().NodeName,
 	})
 
 	// Ensure we can cancel Recv() by canceling the context when tearing down
@@ -218,11 +214,11 @@ func (r *intraProxyStreamReceiver) Run(ctx context.Context, p *Proxy, conn *grpc
 	defer st.UnregisterStream(r.streamID)
 
 	// Start replication receiver loop
-	return r.recvReplicationMessages(p)
+	return r.recvReplicationMessages(r.clusterConnection)
 }
 
 // recvReplicationMessages receives replication messages and forwards to local shard owner.
-func (r *intraProxyStreamReceiver) recvReplicationMessages(self *Proxy) error {
+func (r *intraProxyStreamReceiver) recvReplicationMessages(clusterConnection *ClusterConnection) error {
 	r.logger.Info("intraProxyStreamReceiver recvReplicationMessages started")
 	defer r.logger.Info("intraProxyStreamReceiver recvReplicationMessages finished")
 
@@ -256,7 +252,7 @@ func (r *intraProxyStreamReceiver) recvReplicationMessages(self *Proxy) error {
 			sent := false
 			logged := false
 			for !sent {
-				if ch, ok := self.GetRemoteSendChan(r.targetShardID); ok {
+				if ch, ok := clusterConnection.remoteSendChannels[r.targetShardID]; ok {
 					func() {
 						defer func() {
 							if panicErr := recover(); panicErr != nil {
@@ -349,7 +345,7 @@ func (m *intraProxyManager) UnregisterSender(
 }
 
 // EnsureReceiverForPeerShard ensures a client stream and an ACK aggregator exist for the given peer/shard pair.
-func (m *intraProxyManager) EnsureReceiverForPeerShard(p *Proxy, peerNodeName string, targetShard history.ClusterShardID, sourceShard history.ClusterShardID) {
+func (m *intraProxyManager) EnsureReceiverForPeerShard(clusterConnection *ClusterConnection, peerNodeName string, targetShard history.ClusterShardID, sourceShard history.ClusterShardID) {
 	logger := log.With(m.logger,
 		tag.NewStringTag("peerNodeName", peerNodeName),
 		tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShard)),
@@ -361,18 +357,18 @@ func (m *intraProxyManager) EnsureReceiverForPeerShard(p *Proxy, peerNodeName st
 		return
 	}
 	// Do not create intra-proxy streams to self instance
-	if peerNodeName == m.shardManager.GetNodeName() {
+	if peerNodeName == m.clusterConnection.shardManager.GetNodeName() {
 		return
 	}
 	// Require at least one shard to be local to this instance
-	isLocalTargetShard := m.shardManager.IsLocalShard(targetShard)
-	isLocalSourceShard := m.shardManager.IsLocalShard(sourceShard)
+	isLocalTargetShard := m.clusterConnection.shardManager.IsLocalShard(targetShard)
+	isLocalSourceShard := m.clusterConnection.shardManager.IsLocalShard(sourceShard)
 	if !isLocalTargetShard && !isLocalSourceShard {
 		logger.Info("EnsureReceiverForPeerShard skipping because neither shard is local", tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShard)), tag.NewStringTag("sourceShard", ClusterShardIDtoString(sourceShard)), tag.NewBoolTag("isLocalTargetShard", isLocalTargetShard), tag.NewBoolTag("isLocalSourceShard", isLocalSourceShard))
 		return
 	}
 	// Consolidated path: ensure stream and background loops
-	err := m.ensureStream(context.Background(), logger, peerNodeName, targetShard, sourceShard, p)
+	err := m.ensureStream(context.Background(), logger, peerNodeName, targetShard, sourceShard, m.clusterConnection)
 	if err != nil {
 		logger.Error("failed to ensureStream", tag.Error(err))
 	}
@@ -382,7 +378,7 @@ func (m *intraProxyManager) EnsureReceiverForPeerShard(p *Proxy, peerNodeName st
 func (m *intraProxyManager) ensurePeer(
 	ctx context.Context,
 	peerNodeName string,
-	p *Proxy,
+	clusterConnection *ClusterConnection,
 ) (*peerState, error) {
 	m.streamsMu.RLock()
 	if ps, ok := m.peers[peerNodeName]; ok && ps != nil && ps.conn != nil {
@@ -418,7 +414,7 @@ func (m *intraProxyManager) ensurePeer(
 	// 	grpc.WithDisableServiceConfig(),
 	// )
 
-	proxyAddresses, ok := m.shardManager.GetProxyAddress(peerNodeName)
+	proxyAddresses, ok := clusterConnection.shardManager.GetProxyAddress(peerNodeName)
 	if !ok {
 		return nil, fmt.Errorf("proxy address not found")
 	}
@@ -460,7 +456,7 @@ func (m *intraProxyManager) ensureStream(
 	peerNodeName string,
 	targetShard history.ClusterShardID,
 	sourceShard history.ClusterShardID,
-	p *Proxy,
+	clusterConnection *ClusterConnection,
 ) error {
 	logger.Info("ensureStream")
 	key := peerStreamKey{targetShard: targetShard, sourceShard: sourceShard}
@@ -477,7 +473,7 @@ func (m *intraProxyManager) ensureStream(
 	m.streamsMu.RUnlock()
 
 	// Reuse shared connection per peer
-	ps, err := m.ensurePeer(ctx, peerNodeName, p)
+	ps, err := m.ensurePeer(ctx, peerNodeName, clusterConnection)
 	if err != nil {
 		logger.Error("Failed to ensure peer", tag.Error(err))
 		return err
@@ -489,12 +485,11 @@ func (m *intraProxyManager) ensureStream(
 			tag.NewStringTag("peerNodeName", peerNodeName),
 			tag.NewStringTag("targetShardID", ClusterShardIDtoString(targetShard)),
 			tag.NewStringTag("sourceShardID", ClusterShardIDtoString(sourceShard))),
-		shardManager:  m.shardManager,
-		proxy:         p,
-		intraMgr:      m,
-		peerNodeName:  peerNodeName,
-		targetShardID: targetShard,
-		sourceShardID: sourceShard,
+		clusterConnection: clusterConnection,
+		intraMgr:          m,
+		peerNodeName:      peerNodeName,
+		targetShardID:     targetShard,
+		sourceShardID:     sourceShard,
 	}
 	// initialize shutdown handle and register it for lifecycle management
 	recv.shutdown = channel.NewShutdownOnce()
@@ -506,7 +501,7 @@ func (m *intraProxyManager) ensureStream(
 
 	// Let the receiver open stream, register tracking, and start goroutines
 	go func() {
-		if err := recv.Run(ctx, p, ps.conn); err != nil {
+		if err := recv.Run(ctx, clusterConnection, ps.conn); err != nil {
 			m.logger.Error("intraProxyStreamReceiver.Run error", tag.Error(err))
 		}
 		// remove the receiver from the peer state
@@ -524,7 +519,6 @@ func (m *intraProxyManager) sendAck(
 	peerNodeName string,
 	clientShard history.ClusterShardID,
 	serverShard history.ClusterShardID,
-	p *Proxy,
 	req *adminservice.StreamWorkflowReplicationMessagesRequest,
 ) error {
 	key := peerStreamKey{targetShard: clientShard, sourceShard: serverShard}
@@ -548,7 +542,6 @@ func (m *intraProxyManager) sendReplicationMessages(
 	peerNodeName string,
 	targetShard history.ClusterShardID,
 	sourceShard history.ClusterShardID,
-	p *Proxy,
 	resp *adminservice.StreamWorkflowReplicationMessagesResponse,
 ) error {
 	key := peerStreamKey{targetShard: targetShard, sourceShard: sourceShard}
@@ -669,7 +662,7 @@ func (m *intraProxyManager) ClosePeerShard(peer string, clientShard, serverShard
 	}
 }
 
-func (m *intraProxyManager) Start() error {
+func (m *intraProxyManager) Start() {
 	m.logger.Info("intraProxyManager started")
 	defer m.logger.Info("intraProxyManager stopped")
 	go func() {
@@ -678,13 +671,12 @@ func (m *intraProxyManager) Start() error {
 			timer := time.NewTimer(1 * time.Second)
 			select {
 			case <-timer.C:
-				m.ReconcilePeerStreams(m.proxy, "")
+				m.ReconcilePeerStreams(m.clusterConnection, "")
 			case <-m.notifyCh:
-				m.ReconcilePeerStreams(m.proxy, "")
+				m.ReconcilePeerStreams(m.clusterConnection, "")
 			}
 		}
 	}()
-	return nil
 }
 
 func (m *intraProxyManager) Notify() {
@@ -698,7 +690,7 @@ func (m *intraProxyManager) Notify() {
 // for a given peer and closes any sender/receiver not in the desired set.
 // This mirrors the Temporal StreamReceiverMonitor approach.
 func (m *intraProxyManager) ReconcilePeerStreams(
-	p *Proxy,
+	clusterConnection *ClusterConnection,
 	peerNodeName string,
 ) {
 	m.logger.Info("ReconcilePeerStreams", tag.NewStringTag("peerNodeName", peerNodeName))
@@ -707,8 +699,8 @@ func (m *intraProxyManager) ReconcilePeerStreams(
 	if mode := m.shardCountConfig.Mode; mode != config.ShardCountRouting {
 		return
 	}
-	localShards := m.shardManager.GetLocalShards()
-	remoteShards, err := m.shardManager.GetRemoteShardsForPeer(peerNodeName)
+	localShards := clusterConnection.shardManager.GetLocalShards()
+	remoteShards, err := clusterConnection.shardManager.GetRemoteShardsForPeer(peerNodeName)
 	if err != nil {
 		m.logger.Error("Failed to get remote shards for peer", tag.Error(err))
 		return
@@ -750,7 +742,7 @@ func (m *intraProxyManager) ReconcilePeerStreams(
 
 	// Ensure all desired receivers exist
 	for key := range desiredReceivers {
-		m.EnsureReceiverForPeerShard(p, desiredReceivers[key], key.targetShard, key.sourceShard)
+		m.EnsureReceiverForPeerShard(clusterConnection, desiredReceivers[key], key.targetShard, key.sourceShard)
 	}
 
 	// Prune anything not desired

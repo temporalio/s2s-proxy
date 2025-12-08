@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
+	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
@@ -60,7 +62,20 @@ type (
 		inboundObserver  *ReplicationStreamObserver
 		outboundObserver *ReplicationStreamObserver
 		shardManager     ShardManager
+		intraMgr         *intraProxyManager
 		logger           log.Logger
+
+		// remoteSendChannels maps shard IDs to send channels for replication message routing
+		remoteSendChannels   map[history.ClusterShardID]chan RoutedMessage
+		remoteSendChannelsMu sync.RWMutex
+
+		// localAckChannels maps shard IDs to ack channels for local acknowledgment handling
+		localAckChannels   map[history.ClusterShardID]chan RoutedAck
+		localAckChannelsMu sync.RWMutex
+
+		// localReceiverCancelFuncs maps shard IDs to context cancel functions for local receiver termination
+		localReceiverCancelFuncs   map[history.ClusterShardID]context.CancelFunc
+		localReceiverCancelFuncsMu sync.RWMutex
 	}
 	// contextAwareServer represents a startable gRPC server used to provide the Temporal interface on some connection.
 	// IsUsable and Describe allow the caller to know and log the current state of the server.
@@ -93,8 +108,11 @@ type (
 		nsTranslations   collect.StaticBiMap[string, string]
 		saTranslations   config.SearchAttributeTranslation
 		shardCountConfig config.ShardCountConfig
-		targetShardCount int32
 		logger           log.Logger
+
+		clusterConnection  *ClusterConnection
+		lcmParameters      LCMParameters
+		overrideShardCount int32
 	}
 )
 
@@ -104,13 +122,15 @@ func sanitizeConnectionName(name string) string {
 }
 
 // NewClusterConnection unpacks the connConfig and creates the inbound and outbound clients and servers.
-func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, shardManager ShardManager, logger log.Logger) (*ClusterConnection, error) {
+func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logger log.Logger) (*ClusterConnection, error) {
 	// The name is used in metrics and in the protocol for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
 	sanitizedConnectionName := sanitizeConnectionName(connConfig.Name)
 	cc := &ClusterConnection{
-		lifetime:     lifetime,
-		logger:       log.With(logger, tag.NewStringTag("clusterConn", sanitizedConnectionName)),
-		shardManager: shardManager,
+		lifetime:                 lifetime,
+		logger:                   log.With(logger, tag.NewStringTag("clusterConn", sanitizedConnectionName)),
+		remoteSendChannels:       make(map[history.ClusterShardID]chan RoutedMessage),
+		localAckChannels:         make(map[history.ClusterShardID]chan RoutedAck),
+		localReceiverCancelFuncs: make(map[history.ClusterShardID]context.CancelFunc),
 	}
 	var err error
 	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.LocalServer.Connection, "inbound")
@@ -130,36 +150,70 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		return nil, err
 	}
 
+	var lcmParameters LCMParameters
+	if connConfig.ShardCountConfig.Mode == config.ShardCountLCM {
+		lcmParameters = LCMParameters{
+			LCM:              common.LCM(connConfig.ShardCountConfig.LocalShardCount, connConfig.ShardCountConfig.RemoteShardCount),
+			TargetShardCount: connConfig.ShardCountConfig.LocalShardCount,
+		}
+	}
+	getOverrideShardCount := func(shardCountConfig config.ShardCountConfig, reverse bool) int32 {
+		switch shardCountConfig.Mode {
+		case config.ShardCountLCM:
+			return lcmParameters.LCM
+		case config.ShardCountRouting:
+			if reverse {
+				return shardCountConfig.RemoteShardCount
+			}
+			return shardCountConfig.LocalShardCount
+		}
+		return 0
+	}
+
 	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, serverConfiguration{
-		name:              sanitizedConnectionName,
-		clusterDefinition: connConfig.RemoteServer,
-		directionLabel:    "inbound",
-		client:            cc.inboundClient,
-		managedClient:     cc.outboundClient,
-		nsTranslations:    nsTranslations.Inverse(),
-		saTranslations:    saTranslations.Inverse(),
-		shardCountConfig:  connConfig.ShardCountConfig,
-		targetShardCount:  connConfig.ShardCountConfig.LocalShardCount,
-		logger:            cc.logger,
+		name:               sanitizedConnectionName,
+		clusterDefinition:  connConfig.RemoteServer,
+		directionLabel:     "inbound",
+		client:             cc.inboundClient,
+		managedClient:      cc.outboundClient,
+		nsTranslations:     nsTranslations.Inverse(),
+		saTranslations:     saTranslations.Inverse(),
+		shardCountConfig:   connConfig.ShardCountConfig,
+		logger:             cc.logger,
+		clusterConnection:  cc,
+		overrideShardCount: getOverrideShardCount(connConfig.ShardCountConfig, true),
+		lcmParameters:      lcmParameters,
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if connConfig.ShardCountConfig.Mode == config.ShardCountLCM {
+		lcmParameters.TargetShardCount = connConfig.ShardCountConfig.RemoteShardCount
 	}
 	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, serverConfiguration{
-		name:              sanitizedConnectionName,
-		clusterDefinition: connConfig.LocalServer,
-		directionLabel:    "outbound",
-		client:            cc.outboundClient,
-		managedClient:     cc.inboundClient,
-		nsTranslations:    nsTranslations,
-		saTranslations:    saTranslations,
-		shardCountConfig:  connConfig.ShardCountConfig,
-		targetShardCount:  connConfig.ShardCountConfig.RemoteShardCount,
-		logger:            cc.logger,
+		name:               sanitizedConnectionName,
+		clusterDefinition:  connConfig.LocalServer,
+		directionLabel:     "outbound",
+		client:             cc.outboundClient,
+		managedClient:      cc.inboundClient,
+		nsTranslations:     nsTranslations,
+		saTranslations:     saTranslations,
+		shardCountConfig:   connConfig.ShardCountConfig,
+		logger:             cc.logger,
+		clusterConnection:  cc,
+		overrideShardCount: getOverrideShardCount(connConfig.ShardCountConfig, false),
+		lcmParameters:      lcmParameters,
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	if connConfig.MemberlistConfig != nil {
+		cc.shardManager = NewShardManager(connConfig.MemberlistConfig, logger)
+		cc.intraMgr = newIntraProxyManager(logger, cc, connConfig.ShardCountConfig)
+	}
+
 	return cc, nil
 }
 
@@ -245,6 +299,15 @@ func (c *ClusterConnection) Start() {
 	c.inboundObserver.Start(c.lifetime, c.inboundServer.Name(), "inbound")
 	c.outboundServer.Start()
 	c.outboundObserver.Start(c.lifetime, c.outboundServer.Name(), "outbound")
+	if c.shardManager != nil {
+		err := c.shardManager.Start(c.lifetime)
+		if err != nil {
+			c.logger.Error("Failed to start shard manager", tag.Error(err))
+		}
+	}
+	if c.intraMgr != nil {
+		c.intraMgr.Start()
+	}
 }
 func (c *ClusterConnection) Describe() string {
 	return fmt.Sprintf("[ClusterConnection connects outbound server %s to outbound client %s, inbound server %s to inbound client %s]",
@@ -258,6 +321,181 @@ func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
 	return c.outboundClient.CanMakeCalls() && c.outboundServer.CanAcceptConnections()
 }
 
+// GetShardInfo returns debug information about shard distribution
+func (c *ClusterConnection) GetShardInfos() []ShardDebugInfo {
+	var shardInfos []ShardDebugInfo
+	if c.shardManager != nil {
+		shardInfos = append(shardInfos, c.shardManager.GetShardInfo())
+	}
+	return shardInfos
+}
+
+// GetChannelInfo returns debug information about active channels
+func (c *ClusterConnection) GetChannelInfo() ChannelDebugInfo {
+	remoteSendChannels := make(map[string]int)
+	var totalSendChannels int
+
+	// Collect remote send channel info first
+	c.remoteSendChannelsMu.RLock()
+	for shardID, ch := range c.remoteSendChannels {
+		shardKey := ClusterShardIDtoString(shardID)
+		remoteSendChannels[shardKey] = len(ch)
+	}
+	totalSendChannels = len(c.remoteSendChannels)
+	c.remoteSendChannelsMu.RUnlock()
+
+	localAckChannels := make(map[string]int)
+	var totalAckChannels int
+
+	// Collect local ack channel info separately
+	c.localAckChannelsMu.RLock()
+	for shardID, ch := range c.localAckChannels {
+		shardKey := ClusterShardIDtoString(shardID)
+		localAckChannels[shardKey] = len(ch)
+	}
+	totalAckChannels = len(c.localAckChannels)
+	c.localAckChannelsMu.RUnlock()
+
+	return ChannelDebugInfo{
+		RemoteSendChannels: remoteSendChannels,
+		LocalAckChannels:   localAckChannels,
+		TotalSendChannels:  totalSendChannels,
+		TotalAckChannels:   totalAckChannels,
+	}
+}
+
+// SetRemoteSendChan registers a send channel for a specific shard ID
+func (c *ClusterConnection) SetRemoteSendChan(shardID history.ClusterShardID, sendChan chan RoutedMessage) {
+	c.logger.Info("Register remote send channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	c.remoteSendChannelsMu.Lock()
+	defer c.remoteSendChannelsMu.Unlock()
+	c.remoteSendChannels[shardID] = sendChan
+}
+
+// GetRemoteSendChan retrieves the send channel for a specific shard ID
+func (c *ClusterConnection) GetRemoteSendChan(shardID history.ClusterShardID) (chan RoutedMessage, bool) {
+	c.remoteSendChannelsMu.RLock()
+	defer c.remoteSendChannelsMu.RUnlock()
+	ch, exists := c.remoteSendChannels[shardID]
+	return ch, exists
+}
+
+// GetAllRemoteSendChans returns a map of all remote send channels
+func (c *ClusterConnection) GetAllRemoteSendChans() map[history.ClusterShardID]chan RoutedMessage {
+	c.remoteSendChannelsMu.RLock()
+	defer c.remoteSendChannelsMu.RUnlock()
+
+	// Create a copy of the map
+	result := make(map[history.ClusterShardID]chan RoutedMessage, len(c.remoteSendChannels))
+	for k, v := range c.remoteSendChannels {
+		result[k] = v
+	}
+	return result
+}
+
+// GetRemoteSendChansByCluster returns a copy of remote send channels filtered by clusterID
+func (c *ClusterConnection) GetRemoteSendChansByCluster(clusterID int32) map[history.ClusterShardID]chan RoutedMessage {
+	c.remoteSendChannelsMu.RLock()
+	defer c.remoteSendChannelsMu.RUnlock()
+
+	result := make(map[history.ClusterShardID]chan RoutedMessage)
+	for k, v := range c.remoteSendChannels {
+		if k.ClusterID == clusterID {
+			result[k] = v
+		}
+	}
+	return result
+}
+
+// RemoveRemoteSendChan removes the send channel for a specific shard ID only if it matches the provided channel
+func (c *ClusterConnection) RemoveRemoteSendChan(shardID history.ClusterShardID, expectedChan chan RoutedMessage) {
+	c.remoteSendChannelsMu.Lock()
+	defer c.remoteSendChannelsMu.Unlock()
+	if currentChan, exists := c.remoteSendChannels[shardID]; exists && currentChan == expectedChan {
+		delete(c.remoteSendChannels, shardID)
+		c.logger.Info("Removed remote send channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	} else {
+		c.logger.Info("Skipped removing remote send channel for shard (channel mismatch or already removed)", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	}
+}
+
+// SetLocalAckChan registers an ack channel for a specific shard ID
+func (c *ClusterConnection) SetLocalAckChan(shardID history.ClusterShardID, ackChan chan RoutedAck) {
+	c.logger.Info("Register local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	c.localAckChannelsMu.Lock()
+	defer c.localAckChannelsMu.Unlock()
+	c.localAckChannels[shardID] = ackChan
+}
+
+// GetLocalAckChan retrieves the ack channel for a specific shard ID
+func (c *ClusterConnection) GetLocalAckChan(shardID history.ClusterShardID) (chan RoutedAck, bool) {
+	c.localAckChannelsMu.RLock()
+	defer c.localAckChannelsMu.RUnlock()
+	ch, exists := c.localAckChannels[shardID]
+	return ch, exists
+}
+
+// RemoveLocalAckChan removes the ack channel for a specific shard ID only if it matches the provided channel
+func (c *ClusterConnection) RemoveLocalAckChan(shardID history.ClusterShardID, expectedChan chan RoutedAck) {
+	c.logger.Info("Remove local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	c.localAckChannelsMu.Lock()
+	defer c.localAckChannelsMu.Unlock()
+	if currentChan, exists := c.localAckChannels[shardID]; exists && currentChan == expectedChan {
+		delete(c.localAckChannels, shardID)
+	} else {
+		c.logger.Info("Skipped removing local ack channel for shard (channel mismatch or already removed)", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	}
+}
+
+// ForceRemoveLocalAckChan unconditionally removes the ack channel for a specific shard ID
+func (c *ClusterConnection) ForceRemoveLocalAckChan(shardID history.ClusterShardID) {
+	c.logger.Info("Force remove local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	c.localAckChannelsMu.Lock()
+	defer c.localAckChannelsMu.Unlock()
+	delete(c.localAckChannels, shardID)
+}
+
+// SetLocalReceiverCancelFunc registers a cancel function for a local receiver for a specific shard ID
+func (c *ClusterConnection) SetLocalReceiverCancelFunc(shardID history.ClusterShardID, cancelFunc context.CancelFunc) {
+	c.logger.Info("Register local receiver cancel function for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	c.localReceiverCancelFuncsMu.Lock()
+	defer c.localReceiverCancelFuncsMu.Unlock()
+	c.localReceiverCancelFuncs[shardID] = cancelFunc
+}
+
+// GetLocalReceiverCancelFunc retrieves the cancel function for a local receiver for a specific shard ID
+func (c *ClusterConnection) GetLocalReceiverCancelFunc(shardID history.ClusterShardID) (context.CancelFunc, bool) {
+	c.localReceiverCancelFuncsMu.RLock()
+	defer c.localReceiverCancelFuncsMu.RUnlock()
+	cancelFunc, exists := c.localReceiverCancelFuncs[shardID]
+	return cancelFunc, exists
+}
+
+// RemoveLocalReceiverCancelFunc unconditionally removes the cancel function for a local receiver for a specific shard ID
+// Note: Functions cannot be compared in Go, so we use unconditional removal.
+// The race condition is primarily with channels; TerminatePreviousLocalReceiver handles forced cleanup.
+func (c *ClusterConnection) RemoveLocalReceiverCancelFunc(shardID history.ClusterShardID) {
+	c.logger.Info("Remove local receiver cancel function for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
+	c.localReceiverCancelFuncsMu.Lock()
+	defer c.localReceiverCancelFuncsMu.Unlock()
+	delete(c.localReceiverCancelFuncs, shardID)
+}
+
+// TerminatePreviousLocalReceiver checks if there is a previous local receiver for this shard and terminates it if needed
+func (c *ClusterConnection) TerminatePreviousLocalReceiver(serverShardID history.ClusterShardID) {
+	// Check if there's a previous cancel function for this shard
+	if prevCancelFunc, exists := c.GetLocalReceiverCancelFunc(serverShardID); exists {
+		c.logger.Info("Terminating previous local receiver for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(serverShardID)))
+
+		// Cancel the previous receiver's context
+		prevCancelFunc()
+
+		// Force remove the cancel function and ack channel from tracking
+		c.RemoveLocalReceiverCancelFunc(serverShardID)
+		c.ForceRemoveLocalAckChan(serverShardID)
+	}
+}
+
 // buildProxyServer uses the provided grpc.ClientConnInterface and config.ProxyConfig to create a grpc.Server that proxies
 // the Temporal API across the ClientConnInterface.
 func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, observeFn func(int32, int32)) (*grpc.Server, error) {
@@ -267,16 +505,19 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	}
 	server := grpc.NewServer(serverOpts...)
 
-	var lcmParameters LCMParameters
-	if c.shardCountConfig.Mode == config.ShardCountLCM {
-		lcmParameters = LCMParameters{
-			LCM:              common.LCM(c.shardCountConfig.LocalShardCount, c.shardCountConfig.RemoteShardCount),
-			TargetShardCount: c.targetShardCount,
-		}
-	}
-
-	adminServiceImpl := NewAdminServiceProxyServer(fmt.Sprintf("%sAdminService", c.directionLabel), adminservice.NewAdminServiceClient(c.client),
-		c.clusterDefinition.APIOverrides, []string{c.directionLabel}, observeFn, c.shardCountConfig, lcmParameters, c.logger)
+	adminServiceImpl := NewAdminServiceProxyServer(
+		fmt.Sprintf("%sAdminService", c.directionLabel),
+		adminservice.NewAdminServiceClient(c.client),
+		adminservice.NewAdminServiceClient(c.managedClient),
+		c.clusterDefinition.APIOverrides,
+		[]string{c.directionLabel},
+		observeFn,
+		c.shardCountConfig,
+		c.lcmParameters,
+		c.logger,
+		c.clusterConnection,
+		c.overrideShardCount,
+	)
 	var accessControl *auth.AccessControl
 	if c.clusterDefinition.ACLPolicy != nil {
 		accessControl = auth.NewAccesControl(c.clusterDefinition.ACLPolicy.AllowedNamespaces)

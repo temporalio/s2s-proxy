@@ -40,7 +40,6 @@ type ShardCountMode string
 const (
 	ShardCountDefault ShardCountMode = ""
 	ShardCountLCM     ShardCountMode = "lcm"
-	ShardCountFixed   ShardCountMode = "fixed"
 	ShardCountRouting ShardCountMode = "routing"
 )
 
@@ -155,10 +154,13 @@ type (
 		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
 		HealthCheck *HealthCheckConfig `yaml:"healthCheck"`
 		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
-		OutboundHealthCheck        *HealthCheckConfig    `yaml:"outboundHealthCheck"`
+		OutboundHealthCheck *HealthCheckConfig `yaml:"outboundHealthCheck"`
+		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
+		ShardCountConfig ShardCountConfig `yaml:"shardCount"`
+		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
+		MemberlistConfig           *MemberlistConfig     `yaml:"memberlist"`
 		NamespaceNameTranslation   NameTranslationConfig `yaml:"namespaceNameTranslation"`
 		SearchAttributeTranslation SATranslationConfig   `yaml:"searchAttributeTranslation"`
-		MemberlistConfig           *MemberlistConfig     `yaml:"memberlist"`
 		Metrics                    *MetricsConfig        `yaml:"metrics"`
 		ProfilingConfig            ProfilingConfig       `yaml:"profiling"`
 		Logging                    LoggingConfig         `yaml:"logging"`

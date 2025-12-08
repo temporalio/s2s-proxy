@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
 	servercommon "go.temporal.io/server/common"
+	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -27,13 +29,16 @@ type (
 
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		adminClient       adminservice.AdminServiceClient
-		logger            log.Logger
-		apiOverrides      *config.APIOverridesConfig
-		metricLabelValues []string
-		reportStreamValue func(idx int32, value int32)
-		shardCountConfig  config.ShardCountConfig
-		lcmParameters     LCMParameters
+		clusterConnection  *ClusterConnection
+		adminClient        adminservice.AdminServiceClient
+		adminClientReverse adminservice.AdminServiceClient
+		logger             log.Logger
+		apiOverrides       *config.APIOverridesConfig
+		metricLabelValues  []string
+		reportStreamValue  func(idx int32, value int32)
+		shardCountConfig   config.ShardCountConfig
+		lcmParameters      LCMParameters
+		overrideShardCount int32
 	}
 )
 
@@ -41,25 +46,31 @@ type (
 func NewAdminServiceProxyServer(
 	serviceName string,
 	adminClient adminservice.AdminServiceClient,
+	adminClientReverse adminservice.AdminServiceClient,
 	apiOverrides *config.APIOverridesConfig,
 	metricLabelValues []string,
 	reportStreamValue func(idx int32, value int32),
 	shardCountConfig config.ShardCountConfig,
 	lcmParameters LCMParameters,
 	logger log.Logger,
+	clusterConnection *ClusterConnection,
+	overrideShardCount int32,
 ) adminservice.AdminServiceServer {
 	// The AdminServiceStreams will duplicate the same output for an underlying connection issue hundreds of times.
 	// Limit their output to three times per minute
 	logger = log.NewThrottledLogger(log.With(logger, common.ServiceTag(serviceName)),
 		func() float64 { return 3.0 / 60.0 })
 	return &adminServiceProxyServer{
-		adminClient:       adminClient,
-		logger:            logger,
-		apiOverrides:      apiOverrides,
-		metricLabelValues: metricLabelValues,
-		reportStreamValue: reportStreamValue,
-		shardCountConfig:  shardCountConfig,
-		lcmParameters:     lcmParameters,
+		clusterConnection:  clusterConnection,
+		adminClient:        adminClient,
+		adminClientReverse: adminClientReverse,
+		logger:             logger,
+		apiOverrides:       apiOverrides,
+		metricLabelValues:  metricLabelValues,
+		reportStreamValue:  reportStreamValue,
+		shardCountConfig:   shardCountConfig,
+		lcmParameters:      lcmParameters,
+		overrideShardCount: overrideShardCount,
 	}
 }
 
@@ -103,10 +114,15 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 		return resp, err
 	}
 
-	if s.shardCountConfig.Mode == config.ShardCountLCM {
+	switch s.shardCountConfig.Mode {
+	case config.ShardCountLCM:
 		// Present a fake number of shards. In LCM mode, we present the least
 		// common multiple of both cluster shard counts.
 		resp.HistoryShardCount = s.lcmParameters.LCM
+	case config.ShardCountRouting:
+		if s.overrideShardCount > 0 {
+			resp.HistoryShardCount = s.overrideShardCount
+		}
 	}
 
 	if s.apiOverrides != nil && s.apiOverrides.AdminService.DescribeCluster != nil {
@@ -267,6 +283,9 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		return err
 	}
 
+	// Detect intra-proxy streams early for logging/behavior toggles
+	isIntraProxy := common.IsIntraProxy(streamServer.Context())
+
 	logger := log.With(s.logger,
 		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
 		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
@@ -307,8 +326,12 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		targetMetadata.Set(history.MetadataKeyServerShardID, strconv.Itoa(int(newSourceShardID.ShardID)))
 	}
 
+	if isIntraProxy {
+		return s.streamIntraProxyRouting(logger, streamServer, sourceClusterShardID, targetClusterShardID)
+	}
+
 	if s.shardCountConfig.Mode == config.ShardCountRouting {
-		return s.streamRouting()
+		return s.streamRouting(logger, streamServer, sourceClusterShardID, targetClusterShardID)
 	}
 
 	forwarder := newStreamForwarder(
@@ -329,10 +352,105 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	return nil
 }
 
-// streamRouting: placeholder for future stream routing implementation
-func (s *adminServiceProxyServer) streamRouting() error {
-	_ = &proxyStreamSender{}
-	_ = &proxyStreamReceiver{}
+func (s *adminServiceProxyServer) streamIntraProxyRouting(
+	logger log.Logger,
+	streamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	clientShardID history.ClusterShardID,
+	serverShardID history.ClusterShardID,
+) error {
+	logger.Info("streamIntraProxyRouting started")
+	defer logger.Info("streamIntraProxyRouting finished")
+
+	// Determine remote peer identity from intra-proxy headers
+	peerNodeName := ""
+	if md, ok := metadata.FromIncomingContext(streamServer.Context()); ok {
+		vals := md.Get(common.IntraProxyOriginProxyIDHeader)
+		if len(vals) > 0 {
+			peerNodeName = vals[0]
+		}
+	}
+
+	// Only allow intra-proxy when at least one shard is local to this proxy instance
+	isLocalClient := s.clusterConnection.shardManager.IsLocalShard(clientShardID)
+	isLocalServer := s.clusterConnection.shardManager.IsLocalShard(serverShardID)
+	if isLocalClient || !isLocalServer {
+		logger.Info("Skipping intra-proxy between two local shards or two remote shards. Client may use outdated shard info.",
+			tag.NewStringTag("client", ClusterShardIDtoString(clientShardID)),
+			tag.NewStringTag("server", ClusterShardIDtoString(serverShardID)),
+			tag.NewBoolTag("isLocalClient", isLocalClient),
+			tag.NewBoolTag("isLocalServer", isLocalServer),
+		)
+		return nil
+	}
+
+	// Sender: handle ACKs coming from peer and forward to original owner
+	sender := &intraProxyStreamSender{
+		logger:            logger,
+		clusterConnection: s.clusterConnection,
+		peerNodeName:      peerNodeName,
+		targetShardID:     clientShardID,
+		sourceShardID:     serverShardID,
+	}
+
+	shutdownChan := channel.NewShutdownOnce()
+	go func() {
+		if err := sender.Run(streamServer, shutdownChan); err != nil {
+			logger.Error("intraProxyStreamSender.Run error", tag.Error(err))
+		}
+	}()
+	<-shutdownChan.Channel()
+	return nil
+}
+
+func (s *adminServiceProxyServer) streamRouting(
+	logger log.Logger,
+	streamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	clientShardID history.ClusterShardID,
+	serverShardID history.ClusterShardID,
+) error {
+	logger.Info("streamRouting started")
+	defer logger.Info("streamRouting stopped")
+
+	// client: stream receiver
+	// server: stream sender
+	proxyStreamSender := &proxyStreamSender{
+		logger:            logger,
+		clusterConnection: s.clusterConnection,
+		sourceShardID:     clientShardID,
+		targetShardID:     serverShardID,
+		directionLabel:    "routing",
+	}
+
+	var localShardCount int32
+	if s.shardCountConfig.Mode == config.ShardCountRouting {
+		localShardCount = s.shardCountConfig.LocalShardCount
+	} else {
+		localShardCount = s.shardCountConfig.RemoteShardCount
+	}
+	// receiver for reverse direction
+	proxyStreamReceiverReverse := &proxyStreamReceiver{
+		logger:            s.logger,
+		clusterConnection: s.clusterConnection,
+		adminClient:       s.adminClientReverse,
+		localShardCount:   localShardCount,
+		sourceShardID:     serverShardID,
+		targetShardID:     clientShardID,
+		directionLabel:    "routing",
+	}
+
+	shutdownChan := channel.NewShutdownOnce()
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		proxyStreamSender.Run(streamServer, shutdownChan)
+	}()
+	go func() {
+		defer wg.Done()
+		proxyStreamReceiverReverse.Run(shutdownChan)
+	}()
+	wg.Wait()
+
 	return nil
 }
 

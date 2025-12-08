@@ -81,11 +81,11 @@ type (
 	}
 
 	DebugResponse struct {
-		Timestamp     time.Time        `json:"timestamp"`
-		ActiveStreams []StreamInfo     `json:"active_streams"`
-		StreamCount   int              `json:"stream_count"`
-		ShardInfos    []ShardDebugInfo `json:"shard_infos"`
-		ChannelInfo   ChannelDebugInfo `json:"channel_info"`
+		Timestamp     time.Time          `json:"timestamp"`
+		ActiveStreams []StreamInfo       `json:"active_streams"`
+		StreamCount   int                `json:"stream_count"`
+		ShardInfos    []ShardDebugInfo   `json:"shard_infos"`
+		ChannelInfos  []ChannelDebugInfo `json:"channel_infos"`
 	}
 )
 
@@ -95,21 +95,23 @@ func HandleDebugInfo(w http.ResponseWriter, r *http.Request, proxyInstance *Prox
 	var activeStreams []StreamInfo
 	var streamCount int
 	var shardInfos []ShardDebugInfo
-	var channelInfo ChannelDebugInfo
+	var channelInfos []ChannelDebugInfo
 
 	// Get active streams information
 	streamTracker := GetGlobalStreamTracker()
 	activeStreams = streamTracker.GetActiveStreams()
 	streamCount = streamTracker.GetStreamCount()
-	shardInfos = proxyInstance.GetShardInfos()
-	channelInfo = proxyInstance.GetChannelInfo()
+	for _, clusterConnection := range proxyInstance.clusterConnections {
+		shardInfos = append(shardInfos, clusterConnection.GetShardInfos()...)
+		channelInfos = append(channelInfos, clusterConnection.GetChannelInfo())
+	}
 
 	response := DebugResponse{
 		Timestamp:     time.Now(),
 		ActiveStreams: activeStreams,
 		StreamCount:   streamCount,
 		ShardInfos:    shardInfos,
-		ChannelInfo:   channelInfo,
+		ChannelInfos:  channelInfos,
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
