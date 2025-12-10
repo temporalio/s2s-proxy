@@ -142,12 +142,7 @@ func (s *Proxy) Start() error {
 	if s.inboundHealthCheckConfig != nil {
 		var err error
 		healthFn := func() bool {
-			// TODO: overly conservative right now. When there are multiple remotes, we should track their health separately
-			for _, cc := range s.clusterConnections {
-				if !cc.AcceptingInboundTraffic() {
-					return false
-				}
-			}
+			// TODO: Rethink health checks. The inbound/outbound traffic availability isn't quite right for a health check
 			return true
 		}
 		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(healthFn, s.logger), *s.inboundHealthCheckConfig); err != nil {
@@ -160,12 +155,7 @@ func (s *Proxy) Start() error {
 
 	if s.outboundHealthCheckConfig != nil {
 		healthFn := func() bool {
-			// TODO: overly conservative right now. When there are multiple remotes, we should track their health separately
-			for _, cc := range s.clusterConnections {
-				if !cc.AcceptingOutboundTraffic() {
-					return false
-				}
-			}
+			// TODO: Rethink health checks. The inbound/outbound traffic availability isn't quite right for a health check
 			return true
 		}
 		var err error
