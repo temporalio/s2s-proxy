@@ -16,6 +16,7 @@ type (
 		OutboundHealthCheck        HealthCheckConfig   `yaml:"outboundHealthCheck"`
 		InboundHealthCheck         HealthCheckConfig   `yaml:"inboundHealthCheck"`
 		ShardCountConfig           ShardCountConfig    `yaml:"shardCount"`
+		MemberlistConfig           *MemberlistConfig   `yaml:"memberlist"`
 	}
 	StringTranslator struct {
 		Mappings    []StringMapping `yaml:"mappings"`

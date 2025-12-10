@@ -6,4 +6,5 @@ import (
 
 var Module = fx.Options(
 	fx.Provide(NewProxy),
+	fx.Provide(NewShardManager),
 )

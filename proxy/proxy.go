@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 
+	"go.temporal.io/server/api/adminservice/v1"
+	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
@@ -20,6 +22,19 @@ type (
 		// Needs some config revision before uncommenting:
 		//accountId string
 	}
+
+	// RoutedAck wraps an ACK with the target shard it originated from
+	RoutedAck struct {
+		TargetShard history.ClusterShardID
+		Req         *adminservice.StreamWorkflowReplicationMessagesRequest
+	}
+
+	// RoutedMessage wraps a replication response with originating client shard info
+	RoutedMessage struct {
+		SourceShard history.ClusterShardID
+		Resp        *adminservice.StreamWorkflowReplicationMessagesResponse
+	}
+
 	Proxy struct {
 		lifetime                  context.Context
 		cancel                    context.CancelFunc
@@ -54,13 +69,15 @@ func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 	if s2sConfig.Metrics != nil {
 		proxy.metricsConfig = s2sConfig.Metrics
 	}
+
 	for _, clusterCfg := range s2sConfig.ClusterConnections {
 		cc, err := NewClusterConnection(ctx, clusterCfg, logger)
 		if err != nil {
 			logger.Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", clusterCfg.Name))
 			continue
 		}
-		proxy.clusterConnections[migrationId{clusterCfg.Name}] = cc
+		migrationId := migrationId{clusterCfg.Name}
+		proxy.clusterConnections[migrationId] = cc
 	}
 	// TODO: correctly host multiple health checks
 	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].InboundHealthCheck.ListenAddress != "" {

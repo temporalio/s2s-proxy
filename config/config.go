@@ -40,6 +40,7 @@ type ShardCountMode string
 const (
 	ShardCountDefault ShardCountMode = ""
 	ShardCountLCM     ShardCountMode = "lcm"
+	ShardCountRouting ShardCountMode = "routing"
 )
 
 type HealthCheckProtocol string
@@ -153,7 +154,11 @@ type (
 		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
 		HealthCheck *HealthCheckConfig `yaml:"healthCheck"`
 		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
-		OutboundHealthCheck        *HealthCheckConfig    `yaml:"outboundHealthCheck"`
+		OutboundHealthCheck *HealthCheckConfig `yaml:"outboundHealthCheck"`
+		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
+		ShardCountConfig ShardCountConfig `yaml:"shardCount"`
+		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
+		MemberlistConfig           *MemberlistConfig     `yaml:"memberlist"`
 		NamespaceNameTranslation   NameTranslationConfig `yaml:"namespaceNameTranslation"`
 		SearchAttributeTranslation SATranslationConfig   `yaml:"searchAttributeTranslation"`
 		Metrics                    *MetricsConfig        `yaml:"metrics"`
@@ -216,6 +221,31 @@ type (
 
 	LoggingConfig struct {
 		ThrottleMaxRPS float64 `yaml:"throttleMaxRPS"`
+	}
+
+	MemberlistConfig struct {
+		// Enable distributed shard management using memberlist
+		Enabled bool `yaml:"enabled"`
+		// Node name for this proxy instance in the cluster
+		NodeName string `yaml:"nodeName"`
+		// Bind address for memberlist cluster communication
+		BindAddr string `yaml:"bindAddr"`
+		// Bind port for memberlist cluster communication
+		BindPort int `yaml:"bindPort"`
+		// List of existing cluster members to join
+		JoinAddrs []string `yaml:"joinAddrs"`
+		// Shard assignment strategy (deprecated - now uses actual ownership tracking)
+		ShardStrategy string `yaml:"shardStrategy"`
+		// Map of node names to their proxy service addresses for forwarding
+		ProxyAddresses map[string]string `yaml:"proxyAddresses"`
+		// Use TCP-only transport (disables UDP) for restricted networks
+		TCPOnly bool `yaml:"tcpOnly"`
+		// Disable TCP pings when using TCP-only mode
+		DisableTCPPings bool `yaml:"disableTCPPings"`
+		// Probe timeout for memberlist health checks
+		ProbeTimeoutMs int `yaml:"probeTimeoutMs"`
+		// Probe interval for memberlist health checks
+		ProbeIntervalMs int `yaml:"probeIntervalMs"`
 	}
 )
 
