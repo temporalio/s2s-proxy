@@ -32,7 +32,7 @@ outbound:
   server:
     tcp:
       listenAddress: "0.0.0.0:9233"
-      externalAddress: "127.0.0.1:9233" 
+      externalAddress: "proxy_service_endpoint:9233" # local server connects to this address for sending outbound requests
       tls:
         certificatePath: ""
         keyPath: ""
