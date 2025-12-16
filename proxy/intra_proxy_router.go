@@ -79,7 +79,7 @@ func (s *intraProxyStreamSender) Run(
 
 	// Register server-side intra-proxy stream in tracker
 	st := GetGlobalStreamTracker()
-	st.RegisterStream(s.streamID, "StreamWorkflowReplicationMessages", "intra-proxy", ClusterShardIDtoString(s.targetShardID), ClusterShardIDtoString(s.sourceShardID), StreamRoleForwarder)
+	st.RegisterStream(s.streamID, "StreamWorkflowReplicationMessages", "intra-proxy", ClusterShardIDtoString(s.sourceShardID), ClusterShardIDtoString(s.targetShardID), StreamRoleForwarder)
 	defer st.UnregisterStream(s.streamID)
 
 	s.sourceStreamServer = sourceStreamServer
@@ -210,7 +210,7 @@ func (r *intraProxyStreamReceiver) Run(ctx context.Context, clusterConnection *C
 
 	// Register client-side intra-proxy stream in tracker
 	st := GetGlobalStreamTracker()
-	st.RegisterStream(r.streamID, "StreamWorkflowReplicationMessages", "intra-proxy", ClusterShardIDtoString(r.targetShardID), ClusterShardIDtoString(r.sourceShardID), StreamRoleForwarder)
+	st.RegisterStream(r.streamID, "StreamWorkflowReplicationMessages", "intra-proxy", ClusterShardIDtoString(r.sourceShardID), ClusterShardIDtoString(r.targetShardID), StreamRoleForwarder)
 	defer st.UnregisterStream(r.streamID)
 
 	// Start replication receiver loop
@@ -663,8 +663,8 @@ func (m *intraProxyManager) ClosePeerShard(peer string, clientShard, serverShard
 }
 
 func (m *intraProxyManager) Start() {
-	m.logger.Info("intraProxyManager started")
-	defer m.logger.Info("intraProxyManager stopped")
+	m.logger.Info("intraProxyManager starting")
+	defer m.logger.Info("intraProxyManager started")
 	go func() {
 		for {
 			// timer

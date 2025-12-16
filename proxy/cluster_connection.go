@@ -110,9 +110,9 @@ type (
 		shardCountConfig config.ShardCountConfig
 		logger           log.Logger
 
-		clusterConnection  *ClusterConnection
-		lcmParameters      LCMParameters
-		overrideShardCount int32
+		clusterConnection *ClusterConnection
+		lcmParameters     LCMParameters
+		routingParameters RoutingParameters
 	}
 )
 
@@ -150,67 +150,78 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		return nil, err
 	}
 
-	var lcmParameters LCMParameters
-	if connConfig.ShardCountConfig.Mode == config.ShardCountLCM {
-		lcmParameters = LCMParameters{
-			LCM:              common.LCM(connConfig.ShardCountConfig.LocalShardCount, connConfig.ShardCountConfig.RemoteShardCount),
-			TargetShardCount: connConfig.ShardCountConfig.LocalShardCount,
+	getLCMParameters := func(shardCountConfig config.ShardCountConfig, inverse bool) LCMParameters {
+		if shardCountConfig.Mode != config.ShardCountLCM {
+			return LCMParameters{}
+		}
+		lcm := common.LCM(shardCountConfig.LocalShardCount, shardCountConfig.RemoteShardCount)
+		if inverse {
+			return LCMParameters{
+				LCM:              lcm,
+				TargetShardCount: shardCountConfig.LocalShardCount,
+			}
+		}
+		return LCMParameters{
+			LCM:              lcm,
+			TargetShardCount: shardCountConfig.RemoteShardCount,
 		}
 	}
-	getOverrideShardCount := func(shardCountConfig config.ShardCountConfig, reverse bool) int32 {
-		switch shardCountConfig.Mode {
-		case config.ShardCountLCM:
-			return lcmParameters.LCM
-		case config.ShardCountRouting:
-			if reverse {
-				return shardCountConfig.RemoteShardCount
-			}
-			return shardCountConfig.LocalShardCount
+	getRoutingParameters := func(shardCountConfig config.ShardCountConfig, inverse bool, directionLabel string) RoutingParameters {
+		if shardCountConfig.Mode != config.ShardCountRouting {
+			return RoutingParameters{}
 		}
-		return 0
+		if inverse {
+			return RoutingParameters{
+				OverrideShardCount:     shardCountConfig.RemoteShardCount,
+				RoutingLocalShardCount: shardCountConfig.LocalShardCount,
+				DirectionLabel:         directionLabel,
+			}
+		}
+		return RoutingParameters{
+			OverrideShardCount:     shardCountConfig.LocalShardCount,
+			RoutingLocalShardCount: shardCountConfig.RemoteShardCount,
+			DirectionLabel:         directionLabel,
+		}
 	}
 
 	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, serverConfiguration{
-		name:               sanitizedConnectionName,
-		clusterDefinition:  connConfig.RemoteServer,
-		directionLabel:     "inbound",
-		client:             cc.inboundClient,
-		managedClient:      cc.outboundClient,
-		nsTranslations:     nsTranslations.Inverse(),
-		saTranslations:     saTranslations.Inverse(),
-		shardCountConfig:   connConfig.ShardCountConfig,
-		logger:             cc.logger,
-		clusterConnection:  cc,
-		overrideShardCount: getOverrideShardCount(connConfig.ShardCountConfig, true),
-		lcmParameters:      lcmParameters,
+		name:              sanitizedConnectionName,
+		clusterDefinition: connConfig.RemoteServer,
+		directionLabel:    "inbound",
+		client:            cc.inboundClient,
+		managedClient:     cc.outboundClient,
+		nsTranslations:    nsTranslations.Inverse(),
+		saTranslations:    saTranslations.Inverse(),
+		shardCountConfig:  connConfig.ShardCountConfig,
+		logger:            cc.logger,
+		clusterConnection: cc,
+		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, true),
+		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, true, "inbound"),
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if connConfig.ShardCountConfig.Mode == config.ShardCountLCM {
-		lcmParameters.TargetShardCount = connConfig.ShardCountConfig.RemoteShardCount
-	}
 	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, serverConfiguration{
-		name:               sanitizedConnectionName,
-		clusterDefinition:  connConfig.LocalServer,
-		directionLabel:     "outbound",
-		client:             cc.outboundClient,
-		managedClient:      cc.inboundClient,
-		nsTranslations:     nsTranslations,
-		saTranslations:     saTranslations,
-		shardCountConfig:   connConfig.ShardCountConfig,
-		logger:             cc.logger,
-		clusterConnection:  cc,
-		overrideShardCount: getOverrideShardCount(connConfig.ShardCountConfig, false),
-		lcmParameters:      lcmParameters,
+		name:              sanitizedConnectionName,
+		clusterDefinition: connConfig.LocalServer,
+		directionLabel:    "outbound",
+		client:            cc.outboundClient,
+		managedClient:     cc.inboundClient,
+		nsTranslations:    nsTranslations,
+		saTranslations:    saTranslations,
+		shardCountConfig:  connConfig.ShardCountConfig,
+		logger:            cc.logger,
+		clusterConnection: cc,
+		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, false),
+		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
 	})
 	if err != nil {
 		return nil, err
 	}
 
+	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, logger)
 	if connConfig.MemberlistConfig != nil {
-		cc.shardManager = NewShardManager(connConfig.MemberlistConfig, logger)
 		cc.intraMgr = newIntraProxyManager(logger, cc, connConfig.ShardCountConfig)
 	}
 
@@ -295,10 +306,6 @@ func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg en
 }
 
 func (c *ClusterConnection) Start() {
-	c.inboundServer.Start()
-	c.inboundObserver.Start(c.lifetime, c.inboundServer.Name(), "inbound")
-	c.outboundServer.Start()
-	c.outboundObserver.Start(c.lifetime, c.outboundServer.Name(), "outbound")
 	if c.shardManager != nil {
 		err := c.shardManager.Start(c.lifetime)
 		if err != nil {
@@ -308,7 +315,12 @@ func (c *ClusterConnection) Start() {
 	if c.intraMgr != nil {
 		c.intraMgr.Start()
 	}
+	c.inboundServer.Start()
+	c.inboundObserver.Start(c.lifetime, c.inboundServer.Name(), "inbound")
+	c.outboundServer.Start()
+	c.outboundObserver.Start(c.lifetime, c.outboundServer.Name(), "outbound")
 }
+
 func (c *ClusterConnection) Describe() string {
 	return fmt.Sprintf("[ClusterConnection connects outbound server %s to outbound client %s, inbound server %s to inbound client %s]",
 		c.outboundServer.Describe(), c.outboundClient.Describe(), c.inboundServer.Describe(), c.inboundClient.Describe())
@@ -317,6 +329,7 @@ func (c *ClusterConnection) Describe() string {
 func (c *ClusterConnection) AcceptingInboundTraffic() bool {
 	return c.inboundClient.CanMakeCalls() && c.inboundServer.CanAcceptConnections()
 }
+
 func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
 	return c.outboundClient.CanMakeCalls() && c.outboundServer.CanAcceptConnections()
 }
@@ -482,17 +495,17 @@ func (c *ClusterConnection) RemoveLocalReceiverCancelFunc(shardID history.Cluste
 }
 
 // TerminatePreviousLocalReceiver checks if there is a previous local receiver for this shard and terminates it if needed
-func (c *ClusterConnection) TerminatePreviousLocalReceiver(serverShardID history.ClusterShardID) {
+func (c *ClusterConnection) TerminatePreviousLocalReceiver(shardID history.ClusterShardID) {
 	// Check if there's a previous cancel function for this shard
-	if prevCancelFunc, exists := c.GetLocalReceiverCancelFunc(serverShardID); exists {
-		c.logger.Info("Terminating previous local receiver for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(serverShardID)))
+	if prevCancelFunc, exists := c.GetLocalReceiverCancelFunc(shardID); exists {
+		c.logger.Info("Terminating previous local receiver for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 
 		// Cancel the previous receiver's context
 		prevCancelFunc()
 
 		// Force remove the cancel function and ack channel from tracking
-		c.RemoveLocalReceiverCancelFunc(serverShardID)
-		c.ForceRemoveLocalAckChan(serverShardID)
+		c.RemoveLocalReceiverCancelFunc(shardID)
+		c.ForceRemoveLocalAckChan(shardID)
 	}
 }
 
@@ -514,9 +527,9 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		observeFn,
 		c.shardCountConfig,
 		c.lcmParameters,
+		c.routingParameters,
 		c.logger,
 		c.clusterConnection,
-		c.overrideShardCount,
 	)
 	var accessControl *auth.AccessControl
 	if c.clusterDefinition.ACLPolicy != nil {

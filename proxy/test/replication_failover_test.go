@@ -47,12 +47,12 @@ type (
 		proxyAAddress string
 		proxyBAddress string
 
-		shardCountA      int
-		shardCountB      int
-		shardCountConfig config.ShardCountConfig
-		namespace        string
-		namespaceID      string
-		startTime        time.Time
+		shardCountA       int
+		shardCountB       int
+		shardCountConfigB config.ShardCountConfig
+		namespace         string
+		namespaceID       string
+		startTime         time.Time
 
 		workflows []*WorkflowDistribution
 
@@ -69,11 +69,11 @@ type (
 	}
 
 	TestConfig struct {
-		Name             string
-		ShardCountA      int
-		ShardCountB      int
-		WorkflowsPerPair int
-		ShardCountConfig config.ShardCountConfig
+		Name              string
+		ShardCountA       int
+		ShardCountB       int
+		WorkflowsPerPair  int
+		ShardCountConfigB config.ShardCountConfig
 	}
 )
 
@@ -107,8 +107,17 @@ var testConfigs = []TestConfig{
 		ShardCountA:      2,
 		ShardCountB:      3,
 		WorkflowsPerPair: 1,
-		ShardCountConfig: config.ShardCountConfig{
+		ShardCountConfigB: config.ShardCountConfig{
 			Mode: config.ShardCountLCM,
+		},
+	},
+	{
+		Name:             "ArbitraryShards_2to3_Routing",
+		ShardCountA:      2,
+		ShardCountB:      3,
+		WorkflowsPerPair: 1,
+		ShardCountConfigB: config.ShardCountConfig{
+			Mode: config.ShardCountRouting,
 		},
 	},
 }
@@ -117,10 +126,10 @@ func TestReplicationFailoverTestSuite(t *testing.T) {
 	for _, tc := range testConfigs {
 		t.Run(tc.Name, func(t *testing.T) {
 			s := &ReplicationTestSuite{
-				shardCountA:      tc.ShardCountA,
-				shardCountB:      tc.ShardCountB,
-				shardCountConfig: tc.ShardCountConfig,
-				workflowsPerPair: tc.WorkflowsPerPair,
+				shardCountA:       tc.ShardCountA,
+				shardCountB:       tc.ShardCountB,
+				shardCountConfigB: tc.ShardCountConfigB,
+				workflowsPerPair:  tc.WorkflowsPerPair,
 			}
 			suite.Run(t, s)
 		})
@@ -147,8 +156,8 @@ func (s *ReplicationTestSuite) SetupSuite() {
 	proxyBOutbound := fmt.Sprintf("localhost:%d", basePort+101)
 	muxServerAddress := fmt.Sprintf("localhost:%d", basePort+200)
 
-	proxyBShardConfig := s.shardCountConfig
-	if proxyBShardConfig.Mode == config.ShardCountLCM {
+	proxyBShardConfig := s.shardCountConfigB
+	if proxyBShardConfig.Mode == config.ShardCountLCM || proxyBShardConfig.Mode == config.ShardCountRouting {
 		proxyBShardConfig.LocalShardCount = int32(s.shardCountB)
 		proxyBShardConfig.RemoteShardCount = int32(s.shardCountA)
 	}
@@ -156,6 +165,10 @@ func (s *ReplicationTestSuite) SetupSuite() {
 	s.proxyA = s.createProxy("proxy-a", s.proxyAAddress, proxyAOutbound, muxServerAddress, s.clusterA, config.ClientMode, config.ShardCountConfig{})
 	s.proxyB = s.createProxy("proxy-b", s.proxyBAddress, proxyBOutbound, muxServerAddress, s.clusterB, config.ServerMode, proxyBShardConfig)
 
+	s.logger.Info("Waiting for proxies to start and connect")
+	time.Sleep(10 * time.Second) // TODO: remove this once we have a better way to wait for proxies to start and connect
+
+	s.logger.Info("Configuring remote clusters")
 	s.configureRemoteCluster(s.clusterA, s.clusterB.ClusterName(), proxyAOutbound)
 	s.configureRemoteCluster(s.clusterB, s.clusterA.ClusterName(), proxyBOutbound)
 	s.waitForReplicationReady()
@@ -229,7 +242,8 @@ func (s *ReplicationTestSuite) createCluster(
 	}
 
 	testClusterFactory := testcore.NewTestClusterFactory()
-	cluster, err := testClusterFactory.NewCluster(s.T(), clusterConfig, s.logger)
+	logger := log.With(s.logger, tag.NewStringTag("clusterName", clusterName))
+	cluster, err := testClusterFactory.NewCluster(s.T(), clusterConfig, logger)
 	s.NoError(err, "Failed to create cluster %s", clusterName)
 	s.NotNil(cluster)
 
@@ -601,18 +615,37 @@ func (s *ReplicationTestSuite) waitForClusterConnected(
 			s.logger.Debug("GetReplicationStatus failed", tag.Error(err))
 			return false
 		}
+		s.logger.Info("GetReplicationStatus response",
+			tag.NewStringTag("response", fmt.Sprintf("%+v", resp)),
+			tag.NewStringTag("source", sourceCluster.ClusterName()),
+			tag.NewStringTag("target", targetClusterName),
+		)
 
 		if len(resp.Shards) == 0 {
 			return false
 		}
 
 		for _, shard := range resp.Shards {
+			s.logger.Info("Replication status",
+				tag.NewStringTag("shard", fmt.Sprintf("%d", shard.ShardId)),
+				tag.NewInt64("maxTaskId", shard.MaxReplicationTaskId),
+				tag.NewStringTag("remoteClusters", fmt.Sprintf("%+v", shard.RemoteClusters)),
+			)
+
 			if shard.MaxReplicationTaskId <= 0 {
+				s.logger.Info("Max replication task id is 0",
+					tag.NewStringTag("shard", fmt.Sprintf("%d", shard.ShardId)),
+					tag.NewInt64("maxTaskId", shard.MaxReplicationTaskId),
+				)
 				continue
 			}
 
 			remoteInfo, ok := shard.RemoteClusters[targetClusterName]
 			if !ok || remoteInfo == nil {
+				s.logger.Info("Remote cluster not found",
+					tag.NewStringTag("shard", fmt.Sprintf("%d", shard.ShardId)),
+					tag.NewStringTag("targetClusterName", targetClusterName),
+				)
 				return false
 			}
 

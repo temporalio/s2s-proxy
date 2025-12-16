@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,7 @@ type StreamForwarder struct {
 	targetClusterShardID history.ClusterShardID
 	metricLabelValues    []string
 	logger               log.Logger
+	streamID             string
 
 	sourceStreamClient adminservice.AdminService_StreamWorkflowReplicationMessagesClient
 	shutdownChan       channel.ShutdownOnce
@@ -72,7 +74,10 @@ func newStreamForwarder(
 	metricLabelValues []string,
 	logger log.Logger,
 ) *StreamForwarder {
+	streamID := BuildForwarderStreamID(sourceClusterShardID, targetClusterShardID)
+	logger = log.With(logger, tag.NewStringTag("streamID", streamID))
 	return &StreamForwarder{
+		streamID:             streamID,
 		adminClient:          adminClient,
 		targetStreamServer:   targetStreamServer,
 		targetMetadata:       targetMetadata,
@@ -87,6 +92,11 @@ func newStreamForwarder(
 // It sets up bidirectional forwarding with proper shutdown handling.
 // Returns the stream duration.
 func (f *StreamForwarder) Run() error {
+	f.logger = log.With(f.logger,
+		tag.NewStringTag("role", "forwarder"),
+		tag.NewStringTag("streamID", f.streamID),
+	)
+
 	// simply forwarding target metadata
 	outgoingContext := metadata.NewOutgoingContext(f.targetStreamServer.Context(), f.targetMetadata)
 	outgoingContext, cancel := context.WithCancel(outgoingContext)
@@ -104,6 +114,13 @@ func (f *StreamForwarder) Run() error {
 	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(f.metricLabelValues...).Inc()
 	defer metrics.AdminServiceStreamsClosedCount.WithLabelValues(f.metricLabelValues...).Inc()
 	streamStartTime := time.Now()
+
+	// Register the forwarder stream here
+	streamTracker := GetGlobalStreamTracker()
+	sourceShard := ClusterShardIDtoString(f.sourceClusterShardID)
+	targetShard := ClusterShardIDtoString(f.targetClusterShardID)
+	streamTracker.RegisterStream(f.streamID, "StreamWorkflowReplicationMessages", "forwarder", sourceShard, targetShard, StreamRoleForwarder)
+	defer streamTracker.UnregisterStream(f.streamID)
 
 	// When one side of the stream dies, we want to tell the other side to hang up
 	// (see https://stackoverflow.com/questions/68218469/how-to-un-wedge-go-grpc-bidi-streaming-server-from-the-blocking-recv-call)
@@ -135,8 +152,10 @@ func (f *StreamForwarder) Run() error {
 }
 
 func (f *StreamForwarder) forwardReplicationMessages(wg *sync.WaitGroup) {
+	f.logger.Info("proxyStreamForwarder forwardReplicationMessages started")
+	defer f.logger.Info("proxyStreamForwarder forwardReplicationMessages finished")
+
 	defer func() {
-		f.logger.Debug("Shutdown sourceStreamClient.Recv loop.")
 		f.shutdownChan.Shutdown()
 		wg.Done()
 	}()
@@ -167,6 +186,15 @@ func (f *StreamForwarder) forwardReplicationMessages(wg *sync.WaitGroup) {
 		case *adminservice.StreamWorkflowReplicationMessagesResponse_Messages:
 			f.logger.Debug("forwarding ReplicationMessages", tag.NewInt64("exclusive", attr.Messages.GetExclusiveHighWatermark()))
 
+			msg := make([]string, 0, len(attr.Messages.ReplicationTasks))
+			for i, task := range attr.Messages.ReplicationTasks {
+				msg = append(msg, fmt.Sprintf("[%d]: %v", i, task.SourceTaskId))
+			}
+			f.logger.Info(fmt.Sprintf("forwarding ReplicationMessages: exclusive %v, tasks: %v", attr.Messages.ExclusiveHighWatermark, strings.Join(msg, ", ")))
+
+			streamTracker := GetGlobalStreamTracker()
+			streamTracker.UpdateStreamReplicationMessages(f.streamID, attr.Messages.ExclusiveHighWatermark)
+
 			if err = f.targetStreamServer.Send(resp); err != nil {
 				if err != io.EOF {
 					f.logger.Error("targetStreamServer.Send encountered error", tag.Error(err))
@@ -188,7 +216,8 @@ func (f *StreamForwarder) forwardReplicationMessages(wg *sync.WaitGroup) {
 
 func (f *StreamForwarder) forwardAcks(wg *sync.WaitGroup) {
 	defer func() {
-		f.logger.Debug("Shutdown targetStreamServer.Recv loop.")
+		f.logger.Info("StreamForwarder forwardAck started")
+		defer f.logger.Info("proxyStreamForwarder forwardAck finished")
 		f.shutdownChan.Shutdown()
 		var err error
 		closeSent := make(chan struct{})
@@ -235,7 +264,15 @@ func (f *StreamForwarder) forwardAcks(wg *sync.WaitGroup) {
 
 		switch attr := req.GetAttributes().(type) {
 		case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
-			f.logger.Debug("forwarding SyncReplicationState", tag.NewInt64("inclusive", attr.SyncReplicationState.GetInclusiveLowWatermark()))
+			f.logger.Info(fmt.Sprintf("forwarding SyncReplicationState: inclusive %v, attr: %v", attr.SyncReplicationState.InclusiveLowWatermark, attr))
+
+			var watermarkTime *time.Time
+			if attr.SyncReplicationState.InclusiveLowWatermarkTime != nil {
+				t := attr.SyncReplicationState.InclusiveLowWatermarkTime.AsTime()
+				watermarkTime = &t
+			}
+			streamTracker := GetGlobalStreamTracker()
+			streamTracker.UpdateStreamSyncReplicationState(f.streamID, attr.SyncReplicationState.InclusiveLowWatermark, watermarkTime)
 			if err = f.sourceStreamClient.Send(req); err != nil {
 				if err != io.EOF {
 					f.logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))

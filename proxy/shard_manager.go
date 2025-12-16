@@ -158,6 +158,10 @@ func (sm *shardManagerImpl) SetOnRemoteShardChange(handler func(peer string, sha
 
 func (sm *shardManagerImpl) Start(lifetime context.Context) error {
 	sm.logger.Info("Starting shard manager")
+	if sm.memberlistConfig == nil {
+		sm.logger.Info("Shard manager not configured, skipping")
+		return nil
+	}
 
 	if sm.started {
 		sm.logger.Info("Shard manager already started")
@@ -425,7 +429,7 @@ func (sm *shardManagerImpl) IsLocalShard(clientShardID history.ClusterShardID) b
 
 func (sm *shardManagerImpl) GetProxyAddress(nodeName string) (string, bool) {
 	// TODO: get the proxy address from the memberlist metadata
-	if sm.memberlistConfig.ProxyAddresses == nil {
+	if sm.memberlistConfig == nil || sm.memberlistConfig.ProxyAddresses == nil {
 		return "", false
 	}
 	addr, found := sm.memberlistConfig.ProxyAddresses[nodeName]
@@ -433,6 +437,9 @@ func (sm *shardManagerImpl) GetProxyAddress(nodeName string) (string, bool) {
 }
 
 func (sm *shardManagerImpl) GetNodeName() string {
+	if sm.memberlistConfig == nil {
+		return ""
+	}
 	return sm.memberlistConfig.NodeName
 }
 
@@ -497,7 +504,7 @@ func (sm *shardManagerImpl) GetShardInfo() ShardDebugInfo {
 
 	return ShardDebugInfo{
 		Enabled:           true,
-		NodeName:          sm.memberlistConfig.NodeName,
+		NodeName:          sm.GetNodeName(),
 		LocalShards:       localShardMap,
 		LocalShardCount:   len(localShardMap),
 		RemoteShards:      remoteShardsMap,
@@ -605,21 +612,23 @@ func (sm *shardManagerImpl) DeliverAckToShardOwner(
 	}
 
 	// Attempt remote delivery via intra-proxy when enabled and shard is remote
-	if owner, ok := sm.GetShardOwner(sourceShard); ok && owner != sm.memberlistConfig.NodeName {
-		if addr, found := sm.GetProxyAddress(owner); found {
-			clientShard := routedAck.TargetShard
-			serverShard := sourceShard
-			mgr := clusterConnection.intraMgr
-			// Synchronous send to preserve ordering
-			if err := mgr.sendAck(context.Background(), owner, clientShard, serverShard, routedAck.Req); err != nil {
-				logger.Error("Failed to forward ACK to shard owner via intra-proxy", tag.Error(err), tag.NewStringTag("owner", owner), tag.NewStringTag("addr", addr))
-				return false
+	if sm.memberlistConfig != nil {
+		if owner, ok := sm.GetShardOwner(sourceShard); ok && owner != sm.memberlistConfig.NodeName {
+			if addr, found := sm.GetProxyAddress(owner); found {
+				clientShard := routedAck.TargetShard
+				serverShard := sourceShard
+				mgr := clusterConnection.intraMgr
+				// Synchronous send to preserve ordering
+				if err := mgr.sendAck(context.Background(), owner, clientShard, serverShard, routedAck.Req); err != nil {
+					logger.Error("Failed to forward ACK to shard owner via intra-proxy", tag.Error(err), tag.NewStringTag("owner", owner), tag.NewStringTag("addr", addr))
+					return false
+				}
+				logger.Info("Forwarded ACK to shard owner via intra-proxy", tag.NewStringTag("owner", owner), tag.NewStringTag("addr", addr))
+				return true
 			}
-			logger.Info("Forwarded ACK to shard owner via intra-proxy", tag.NewStringTag("owner", owner), tag.NewStringTag("addr", addr))
-			return true
+			logger.Warn("Owner proxy address not found for shard")
+			return false
 		}
-		logger.Warn("Owner proxy address not found for shard")
-		return false
 	}
 
 	logger.Warn("No remote shard owner found for source shard")
@@ -725,7 +734,7 @@ func (sm *shardManagerImpl) GetIntraProxyManager() *intraProxyManager {
 }
 
 func (sm *shardManagerImpl) broadcastShardChange(msgType string, shard history.ClusterShardID) {
-	if !sm.started || sm.ml == nil {
+	if !sm.started || sm.ml == nil || sm.memberlistConfig == nil {
 		return
 	}
 
@@ -762,6 +771,9 @@ func (sm *shardManagerImpl) broadcastShardChange(msgType string, shard history.C
 
 // shardDelegate implements memberlist.Delegate
 func (sd *shardDelegate) NodeMeta(limit int) []byte {
+	if sd.manager == nil || sd.manager.memberlistConfig == nil {
+		return nil
+	}
 	// Copy shard map under read lock to avoid concurrent map iteration/modification
 	sd.manager.mutex.RLock()
 	shardsCopy := make(map[string]ShardInfo, len(sd.manager.localShards))
@@ -882,7 +894,7 @@ func (sed *shardEventDelegate) NotifyLeave(node *memberlist.Node) {
 		tag.NewStringTag("addr", node.Addr.String()))
 
 	// If we're now isolated and have join addresses configured, restart join loop
-	if sed.manager != nil && sed.manager.ml != nil {
+	if sed.manager != nil && sed.manager.ml != nil && sed.manager.memberlistConfig != nil {
 		numMembers := sed.manager.ml.NumMembers()
 		if numMembers == 1 && len(sed.manager.memberlistConfig.JoinAddrs) > 0 {
 			sed.logger.Info("Node is now isolated, restarting join loop",

@@ -570,13 +570,15 @@ type proxyStreamReceiver struct {
 	streamID                  string
 	streamTracker             *StreamTracker
 	// keepalive state
-	ackMu           sync.Mutex
+	ackMu           sync.RWMutex
 	lastAckSendTime time.Time
 	lastSentAck     *adminservice.StreamWorkflowReplicationMessagesRequest
 }
 
 // buildReceiverDebugSnapshot builds receiver ACK aggregation state for debugging
 func (r *proxyStreamReceiver) buildReceiverDebugSnapshot() *ReceiverDebugInfo {
+	r.ackMu.RLock()
+	defer r.ackMu.RUnlock()
 	info := &ReceiverDebugInfo{
 		AckByTarget: make(map[string]int64),
 	}
@@ -597,10 +599,8 @@ func (r *proxyStreamReceiver) Run(
 	r.streamID = BuildReceiverStreamID(r.sourceShardID, r.targetShardID)
 	r.logger = log.With(r.logger,
 		tag.NewStringTag("streamID", r.streamID),
-		tag.NewStringTag("client", ClusterShardIDtoString(r.targetShardID)),
-		tag.NewStringTag("server", ClusterShardIDtoString(r.sourceShardID)),
-		tag.NewStringTag("stream-source-shard", ClusterShardIDtoString(r.sourceShardID)),
-		tag.NewStringTag("stream-target-shard", ClusterShardIDtoString(r.targetShardID)),
+		tag.NewStringTag("source", ClusterShardIDtoString(r.sourceShardID)),
+		tag.NewStringTag("target", ClusterShardIDtoString(r.targetShardID)),
 		tag.NewStringTag("role", "receiver"),
 	)
 	r.logger.Info("proxyStreamReceiver Run")
@@ -869,6 +869,7 @@ func (r *proxyStreamReceiver) sendAck(
 			// Update per-target watermark
 			if attr, ok := routed.Req.GetAttributes().(*adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState); ok && attr.SyncReplicationState != nil {
 				r.logger.Info("Receiver received upstream ACK", tag.NewInt64("inclusive_low", attr.SyncReplicationState.InclusiveLowWatermark), tag.NewStringTag("targetShard", ClusterShardIDtoString(routed.TargetShard)))
+				r.ackMu.Lock()
 				r.ackByTarget[routed.TargetShard] = attr.SyncReplicationState.InclusiveLowWatermark
 				// Compute minimal watermark across targets
 				min := int64(0)
@@ -879,7 +880,9 @@ func (r *proxyStreamReceiver) sendAck(
 						first = false
 					}
 				}
-				if !first && min >= r.lastSentMin {
+				lastSentMin := r.lastSentMin
+				r.ackMu.Unlock()
+				if !first && min >= lastSentMin {
 					// Clamp ACK to last known exclusive high watermark from source
 					if r.lastExclusiveHighOriginal > 0 && min > r.lastExclusiveHighOriginal {
 						r.logger.Warn("Aggregated ACK exceeds last source high watermark; clamping",
@@ -922,10 +925,10 @@ func (r *proxyStreamReceiver) sendAck(
 			}
 		case <-ticker.C:
 			// Send keepalive if idle for 1 second
-			r.ackMu.Lock()
+			r.ackMu.RLock()
 			shouldSendKeepalive := r.lastSentAck != nil && time.Since(r.lastAckSendTime) >= 1*time.Second
 			lastAck := r.lastSentAck
-			r.ackMu.Unlock()
+			r.ackMu.RUnlock()
 
 			if shouldSendKeepalive {
 				r.logger.Info("Receiver sending keepalive ACK")

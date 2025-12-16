@@ -28,7 +28,7 @@ func NewStreamTracker() *StreamTracker {
 }
 
 // RegisterStream adds a new active stream
-func (st *StreamTracker) RegisterStream(id, method, direction, clientShard, serverShard, role string) {
+func (st *StreamTracker) RegisterStream(id, method, direction, sourceShard, targetShard, role string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
@@ -37,8 +37,8 @@ func (st *StreamTracker) RegisterStream(id, method, direction, clientShard, serv
 		ID:            id,
 		Method:        method,
 		Direction:     direction,
-		ClientShard:   clientShard,
-		ServerShard:   serverShard,
+		ClientShard:   targetShard,
+		ServerShard:   sourceShard,
 		Role:          role,
 		StartTime:     now,
 		LastSeen:      now,
@@ -159,7 +159,7 @@ func GetGlobalStreamTracker() *StreamTracker {
 
 // BuildSenderStreamID returns the canonical sender stream ID.
 func BuildSenderStreamID(source, target history.ClusterShardID) string {
-	return fmt.Sprintf("snd-%s", ClusterShardIDtoShortString(target))
+	return fmt.Sprintf("snd-%s", ClusterShardIDtoShortString(source))
 }
 
 // BuildReceiverStreamID returns the canonical receiver stream ID.
@@ -169,8 +169,8 @@ func BuildReceiverStreamID(source, target history.ClusterShardID) string {
 
 // BuildForwarderStreamID returns the canonical forwarder stream ID.
 // Note: forwarder uses server-first ordering in the ID.
-func BuildForwarderStreamID(client, server history.ClusterShardID) string {
-	return fmt.Sprintf("fwd-snd-%s", ClusterShardIDtoShortString(server))
+func BuildForwarderStreamID(source, target history.ClusterShardID) string {
+	return fmt.Sprintf("fwd-snd-%s", ClusterShardIDtoShortString(source))
 }
 
 // BuildIntraProxySenderStreamID returns the server-side intra-proxy stream ID for a peer and shard pair.

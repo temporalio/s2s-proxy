@@ -23,8 +23,14 @@ import (
 
 type (
 	LCMParameters struct {
-		LCM              int32 `yaml:"lcm"`
-		TargetShardCount int32 `yaml:"targetShardCount"`
+		LCM              int32
+		TargetShardCount int32
+	}
+
+	RoutingParameters struct {
+		OverrideShardCount     int32
+		RoutingLocalShardCount int32
+		DirectionLabel         string
 	}
 
 	adminServiceProxyServer struct {
@@ -38,7 +44,7 @@ type (
 		reportStreamValue  func(idx int32, value int32)
 		shardCountConfig   config.ShardCountConfig
 		lcmParameters      LCMParameters
-		overrideShardCount int32
+		routingParameters  RoutingParameters
 	}
 )
 
@@ -52,9 +58,9 @@ func NewAdminServiceProxyServer(
 	reportStreamValue func(idx int32, value int32),
 	shardCountConfig config.ShardCountConfig,
 	lcmParameters LCMParameters,
+	routingParameters RoutingParameters,
 	logger log.Logger,
 	clusterConnection *ClusterConnection,
-	overrideShardCount int32,
 ) adminservice.AdminServiceServer {
 	// The AdminServiceStreams will duplicate the same output for an underlying connection issue hundreds of times.
 	// Limit their output to three times per minute
@@ -70,7 +76,7 @@ func NewAdminServiceProxyServer(
 		reportStreamValue:  reportStreamValue,
 		shardCountConfig:   shardCountConfig,
 		lcmParameters:      lcmParameters,
-		overrideShardCount: overrideShardCount,
+		routingParameters:  routingParameters,
 	}
 }
 
@@ -120,8 +126,8 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 		// common multiple of both cluster shard counts.
 		resp.HistoryShardCount = s.lcmParameters.LCM
 	case config.ShardCountRouting:
-		if s.overrideShardCount > 0 {
-			resp.HistoryShardCount = s.overrideShardCount
+		if s.routingParameters.OverrideShardCount > 0 {
+			resp.HistoryShardCount = s.routingParameters.OverrideShardCount
 		}
 	}
 
@@ -131,6 +137,8 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 			resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
 		}
 	}
+
+	s.logger.Info("DescribeCluster response", tag.NewStringTag("response", fmt.Sprintf("%v", resp)))
 
 	return resp, err
 }
@@ -355,8 +363,8 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 func (s *adminServiceProxyServer) streamIntraProxyRouting(
 	logger log.Logger,
 	streamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
-	clientShardID history.ClusterShardID,
-	serverShardID history.ClusterShardID,
+	sourceShardID history.ClusterShardID,
+	targetShardID history.ClusterShardID,
 ) error {
 	logger.Info("streamIntraProxyRouting started")
 	defer logger.Info("streamIntraProxyRouting finished")
@@ -371,14 +379,12 @@ func (s *adminServiceProxyServer) streamIntraProxyRouting(
 	}
 
 	// Only allow intra-proxy when at least one shard is local to this proxy instance
-	isLocalClient := s.clusterConnection.shardManager.IsLocalShard(clientShardID)
-	isLocalServer := s.clusterConnection.shardManager.IsLocalShard(serverShardID)
-	if isLocalClient || !isLocalServer {
+	isLocalSource := s.clusterConnection.shardManager.IsLocalShard(sourceShardID)
+	isLocalTarget := s.clusterConnection.shardManager.IsLocalShard(targetShardID)
+	if isLocalSource || !isLocalTarget {
 		logger.Info("Skipping intra-proxy between two local shards or two remote shards. Client may use outdated shard info.",
-			tag.NewStringTag("client", ClusterShardIDtoString(clientShardID)),
-			tag.NewStringTag("server", ClusterShardIDtoString(serverShardID)),
-			tag.NewBoolTag("isLocalClient", isLocalClient),
-			tag.NewBoolTag("isLocalServer", isLocalServer),
+			tag.NewBoolTag("isLocalSource", isLocalSource),
+			tag.NewBoolTag("isLocalTarget", isLocalTarget),
 		)
 		return nil
 	}
@@ -388,8 +394,8 @@ func (s *adminServiceProxyServer) streamIntraProxyRouting(
 		logger:            logger,
 		clusterConnection: s.clusterConnection,
 		peerNodeName:      peerNodeName,
-		targetShardID:     clientShardID,
-		sourceShardID:     serverShardID,
+		sourceShardID:     sourceShardID,
+		targetShardID:     targetShardID,
 	}
 
 	shutdownChan := channel.NewShutdownOnce()
@@ -405,8 +411,8 @@ func (s *adminServiceProxyServer) streamIntraProxyRouting(
 func (s *adminServiceProxyServer) streamRouting(
 	logger log.Logger,
 	streamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
-	clientShardID history.ClusterShardID,
-	serverShardID history.ClusterShardID,
+	sourceShardID history.ClusterShardID,
+	targetShardID history.ClusterShardID,
 ) error {
 	logger.Info("streamRouting started")
 	defer logger.Info("streamRouting stopped")
@@ -416,26 +422,19 @@ func (s *adminServiceProxyServer) streamRouting(
 	proxyStreamSender := &proxyStreamSender{
 		logger:            logger,
 		clusterConnection: s.clusterConnection,
-		sourceShardID:     clientShardID,
-		targetShardID:     serverShardID,
-		directionLabel:    "routing",
+		sourceShardID:     sourceShardID,
+		targetShardID:     targetShardID,
+		directionLabel:    s.routingParameters.DirectionLabel,
 	}
 
-	var localShardCount int32
-	if s.shardCountConfig.Mode == config.ShardCountRouting {
-		localShardCount = s.shardCountConfig.LocalShardCount
-	} else {
-		localShardCount = s.shardCountConfig.RemoteShardCount
-	}
-	// receiver for reverse direction
-	proxyStreamReceiverReverse := &proxyStreamReceiver{
+	proxyStreamReceiver := &proxyStreamReceiver{
 		logger:            s.logger,
 		clusterConnection: s.clusterConnection,
 		adminClient:       s.adminClientReverse,
-		localShardCount:   localShardCount,
-		sourceShardID:     serverShardID,
-		targetShardID:     clientShardID,
-		directionLabel:    "routing",
+		localShardCount:   s.routingParameters.RoutingLocalShardCount,
+		sourceShardID:     targetShardID, // reverse direction
+		targetShardID:     sourceShardID, // reverse direction
+		directionLabel:    s.routingParameters.DirectionLabel,
 	}
 
 	shutdownChan := channel.NewShutdownOnce()
@@ -447,7 +446,7 @@ func (s *adminServiceProxyServer) streamRouting(
 	}()
 	go func() {
 		defer wg.Done()
-		proxyStreamReceiverReverse.Run(shutdownChan)
+		proxyStreamReceiver.Run(shutdownChan)
 	}()
 	wg.Wait()
 
