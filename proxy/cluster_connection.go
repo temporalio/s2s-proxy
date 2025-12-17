@@ -76,6 +76,10 @@ type (
 		// localReceiverCancelFuncs maps shard IDs to context cancel functions for local receiver termination
 		localReceiverCancelFuncs   map[history.ClusterShardID]context.CancelFunc
 		localReceiverCancelFuncsMu sync.RWMutex
+
+		// activeReceivers tracks active proxyStreamReceiver instances by source shard for watermark propagation
+		activeReceivers   map[history.ClusterShardID]*proxyStreamReceiver
+		activeReceiversMu sync.RWMutex
 	}
 	// contextAwareServer represents a startable gRPC server used to provide the Temporal interface on some connection.
 	// IsUsable and Describe allow the caller to know and log the current state of the server.
@@ -131,6 +135,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		remoteSendChannels:       make(map[history.ClusterShardID]chan RoutedMessage),
 		localAckChannels:         make(map[history.ClusterShardID]chan RoutedAck),
 		localReceiverCancelFuncs: make(map[history.ClusterShardID]context.CancelFunc),
+		activeReceivers:          make(map[history.ClusterShardID]*proxyStreamReceiver),
 	}
 	var err error
 	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.LocalServer.Connection, "inbound")
@@ -311,6 +316,27 @@ func (c *ClusterConnection) Start() {
 		if err != nil {
 			c.logger.Error("Failed to start shard manager", tag.Error(err))
 		}
+		// Wire up shard change callbacks to propagate pending watermarks
+		// Note: This will overwrite any existing callbacks set by SetIntraProxyManager,
+		// but we ensure intra-proxy manager is notified via its Notify() method
+		c.shardManager.SetOnLocalShardChange(func(shard history.ClusterShardID, added bool) {
+			// Notify intra-proxy manager if it exists
+			if c.intraMgr != nil {
+				c.intraMgr.Notify()
+			}
+			if added {
+				c.notifyReceiversOfNewShard(shard)
+			}
+		})
+		c.shardManager.SetOnRemoteShardChange(func(peer string, shard history.ClusterShardID, added bool) {
+			// Notify intra-proxy manager if it exists
+			if c.intraMgr != nil {
+				c.intraMgr.Notify()
+			}
+			if added {
+				c.notifyReceiversOfNewShard(shard)
+			}
+		})
 	}
 	if c.intraMgr != nil {
 		c.intraMgr.Start()
@@ -506,6 +532,38 @@ func (c *ClusterConnection) TerminatePreviousLocalReceiver(shardID history.Clust
 		// Force remove the cancel function and ack channel from tracking
 		c.RemoveLocalReceiverCancelFunc(shardID)
 		c.ForceRemoveLocalAckChan(shardID)
+	}
+}
+
+// RegisterActiveReceiver registers an active receiver for watermark propagation
+func (c *ClusterConnection) RegisterActiveReceiver(sourceShardID history.ClusterShardID, receiver *proxyStreamReceiver) {
+	c.activeReceiversMu.Lock()
+	defer c.activeReceiversMu.Unlock()
+	c.activeReceivers[sourceShardID] = receiver
+}
+
+// UnregisterActiveReceiver removes an active receiver
+func (c *ClusterConnection) UnregisterActiveReceiver(sourceShardID history.ClusterShardID) {
+	c.activeReceiversMu.Lock()
+	defer c.activeReceiversMu.Unlock()
+	delete(c.activeReceivers, sourceShardID)
+}
+
+// notifyReceiversOfNewShard notifies all receivers about a newly registered target shard
+// so they can send pending watermarks if available
+func (c *ClusterConnection) notifyReceiversOfNewShard(targetShardID history.ClusterShardID) {
+	c.activeReceiversMu.RLock()
+	receivers := make([]*proxyStreamReceiver, 0, len(c.activeReceivers))
+	for _, receiver := range c.activeReceivers {
+		receivers = append(receivers, receiver)
+	}
+	c.activeReceiversMu.RUnlock()
+
+	for _, receiver := range receivers {
+		// Only notify receivers that route to the same cluster as the newly registered shard
+		if receiver.targetShardID.ClusterID == targetShardID.ClusterID {
+			receiver.sendPendingWatermarkToShard(targetShardID, c)
+		}
 	}
 }
 

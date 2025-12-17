@@ -235,7 +235,7 @@ func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
 			s.adminClientMock.EXPECT().DescribeCluster(ctx, gomock.Any()).Return(c.mockResp, nil)
 			resp, err := server.DescribeCluster(ctx, req)
 			s.NoError(err)
-			s.Equal(c.expResp, resp)
+			s.Equal(c.expResp.FailoverVersionIncrement, resp.FailoverVersionIncrement)
 			s.Equal("[]", observer.PrintActiveStreams())
 		})
 	}

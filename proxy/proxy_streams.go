@@ -573,6 +573,9 @@ type proxyStreamReceiver struct {
 	ackMu           sync.RWMutex
 	lastAckSendTime time.Time
 	lastSentAck     *adminservice.StreamWorkflowReplicationMessagesRequest
+	// lastWatermark tracks the last watermark received from source shard for late-registering target shards
+	lastWatermarkMu sync.RWMutex
+	lastWatermark   *replicationv1.WorkflowReplicationMessages
 }
 
 // buildReceiverDebugSnapshot builds receiver ACK aggregation state for debugging
@@ -634,9 +637,12 @@ func (r *proxyStreamReceiver) Run(
 	r.ackChan = make(chan RoutedAck, 100)
 	r.clusterConnection.SetLocalAckChan(r.sourceShardID, r.ackChan)
 	r.clusterConnection.SetLocalReceiverCancelFunc(r.sourceShardID, cancel)
+	// Register receiver for watermark propagation to late-registering shards
+	r.clusterConnection.RegisterActiveReceiver(r.sourceShardID, r)
 	defer func() {
 		r.clusterConnection.RemoveLocalAckChan(r.sourceShardID, r.ackChan)
 		r.clusterConnection.RemoveLocalReceiverCancelFunc(r.sourceShardID)
+		r.clusterConnection.UnregisterActiveReceiver(r.sourceShardID)
 	}()
 
 	// init aggregation state
@@ -715,6 +721,14 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 
 			// record last source exclusive high watermark (original id space)
 			r.lastExclusiveHighOriginal = attr.Messages.ExclusiveHighWatermark
+
+			// Track last watermark for late-registering shards
+			r.lastWatermarkMu.Lock()
+			r.lastWatermark = &replicationv1.WorkflowReplicationMessages{
+				ExclusiveHighWatermark: attr.Messages.ExclusiveHighWatermark,
+				Priority:               attr.Messages.Priority,
+			}
+			r.lastWatermarkMu.Unlock()
 
 			// update tracker for incoming messages
 			if r.streamTracker != nil && r.streamID != "" {
@@ -850,6 +864,70 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 		}
 	}
 	return nil
+}
+
+// sendPendingWatermarkToShard sends the last known watermark to a newly registered target shard
+// This ensures late-registering shards receive watermarks that were sent before they registered
+func (r *proxyStreamReceiver) sendPendingWatermarkToShard(targetShardID history.ClusterShardID, clusterConnection *ClusterConnection) {
+	r.lastWatermarkMu.RLock()
+	lastWatermark := r.lastWatermark
+	r.lastWatermarkMu.RUnlock()
+
+	if lastWatermark == nil || lastWatermark.ExclusiveHighWatermark == 0 {
+		// No pending watermark to send
+		return
+	}
+
+	r.logger.Info("Sending pending watermark to newly registered shard",
+		tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)),
+		tag.NewInt64("exclusive_high", lastWatermark.ExclusiveHighWatermark))
+
+	msg := RoutedMessage{
+		SourceShard: r.sourceShardID,
+		Resp: &adminservice.StreamWorkflowReplicationMessagesResponse{
+			Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
+				Messages: &replicationv1.WorkflowReplicationMessages{
+					ExclusiveHighWatermark: lastWatermark.ExclusiveHighWatermark,
+					Priority:               lastWatermark.Priority,
+				},
+			},
+		},
+	}
+
+	// Try to send to local shard first
+	if sendChan, exists := clusterConnection.GetRemoteSendChan(targetShardID); exists {
+		clonedResp := proto.Clone(msg.Resp).(*adminservice.StreamWorkflowReplicationMessagesResponse)
+		clonedMsg := RoutedMessage{
+			SourceShard: msg.SourceShard,
+			Resp:        clonedResp,
+		}
+		select {
+		case sendChan <- clonedMsg:
+			r.logger.Info("Sent pending watermark to local shard",
+				tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
+		default:
+			r.logger.Warn("Failed to send pending watermark to local shard (channel full)",
+				tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
+		}
+		return
+	}
+
+	// If not local, try to send to remote shard
+	if clusterConnection.shardManager != nil {
+		shutdownChan := channel.NewShutdownOnce()
+		clonedResp := proto.Clone(msg.Resp).(*adminservice.StreamWorkflowReplicationMessagesResponse)
+		clonedMsg := RoutedMessage{
+			SourceShard: msg.SourceShard,
+			Resp:        clonedResp,
+		}
+		if clusterConnection.shardManager.DeliverMessagesToShardOwner(targetShardID, &clonedMsg, clusterConnection, shutdownChan, r.logger) {
+			r.logger.Info("Sent pending watermark to remote shard",
+				tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
+		} else {
+			r.logger.Warn("Failed to send pending watermark to remote shard",
+				tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
+		}
+	}
 }
 
 // sendAck forwards ACKs from local ack channel upstream to the local server.

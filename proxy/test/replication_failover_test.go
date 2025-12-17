@@ -3,7 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -136,6 +136,15 @@ func TestReplicationFailoverTestSuite(t *testing.T) {
 	}
 }
 
+func getFreePort() int {
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		panic(fmt.Sprintf("failed to get free port: %v", err))
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
 func (s *ReplicationTestSuite) SetupSuite() {
 	s.Assertions = require.New(s.T())
 	s.logger = log.NewTestLogger()
@@ -149,12 +158,11 @@ func (s *ReplicationTestSuite) SetupSuite() {
 	s.clusterA = s.createCluster("cluster-a", s.shardCountA, 1)
 	s.clusterB = s.createCluster("cluster-b", s.shardCountB, 2)
 
-	basePort := 17000 + rand.Intn(10000)
-	s.proxyAAddress = fmt.Sprintf("localhost:%d", basePort)
-	proxyAOutbound := fmt.Sprintf("localhost:%d", basePort+1)
-	s.proxyBAddress = fmt.Sprintf("localhost:%d", basePort+100)
-	proxyBOutbound := fmt.Sprintf("localhost:%d", basePort+101)
-	muxServerAddress := fmt.Sprintf("localhost:%d", basePort+200)
+	s.proxyAAddress = fmt.Sprintf("localhost:%d", getFreePort())
+	proxyAOutbound := fmt.Sprintf("localhost:%d", getFreePort())
+	s.proxyBAddress = fmt.Sprintf("localhost:%d", getFreePort())
+	proxyBOutbound := fmt.Sprintf("localhost:%d", getFreePort())
+	muxServerAddress := fmt.Sprintf("localhost:%d", getFreePort())
 
 	proxyBShardConfig := s.shardCountConfigB
 	if proxyBShardConfig.Mode == config.ShardCountLCM || proxyBShardConfig.Mode == config.ShardCountRouting {
@@ -639,6 +647,9 @@ func (s *ReplicationTestSuite) waitForClusterConnected(
 				)
 				continue
 			}
+
+			s.NotNil(shard.ShardLocalTime)
+			s.WithinRange(shard.ShardLocalTime.AsTime(), s.startTime, time.Now())
 
 			remoteInfo, ok := shard.RemoteClusters[targetClusterName]
 			if !ok || remoteInfo == nil {
