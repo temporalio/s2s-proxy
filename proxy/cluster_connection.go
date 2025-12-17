@@ -330,7 +330,7 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		c.lcmParameters,
 		c.routingParameters,
 		c.logger,
-		c.clusterConnection,
+		c.clusterConnection.shardManager,
 	)
 	var accessControl *auth.AccessControl
 	if c.clusterDefinition.ACLPolicy != nil {

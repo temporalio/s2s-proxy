@@ -35,7 +35,7 @@ type (
 
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		clusterConnection  *ClusterConnection
+		shardManager       ShardManager
 		adminClient        adminservice.AdminServiceClient
 		adminClientReverse adminservice.AdminServiceClient
 		logger             log.Logger
@@ -60,14 +60,14 @@ func NewAdminServiceProxyServer(
 	lcmParameters LCMParameters,
 	routingParameters RoutingParameters,
 	logger log.Logger,
-	clusterConnection *ClusterConnection,
+	shardManager ShardManager,
 ) adminservice.AdminServiceServer {
 	// The AdminServiceStreams will duplicate the same output for an underlying connection issue hundreds of times.
 	// Limit their output to three times per minute
 	logger = log.NewThrottledLogger(log.With(logger, common.ServiceTag(serviceName)),
 		func() float64 { return 3.0 / 60.0 })
 	return &adminServiceProxyServer{
-		clusterConnection:  clusterConnection,
+		shardManager:       shardManager,
 		adminClient:        adminClient,
 		adminClientReverse: adminClientReverse,
 		logger:             logger,
@@ -379,8 +379,8 @@ func (s *adminServiceProxyServer) streamIntraProxyRouting(
 	}
 
 	// Only allow intra-proxy when at least one shard is local to this proxy instance
-	isLocalSource := s.clusterConnection.shardManager.IsLocalShard(sourceShardID)
-	isLocalTarget := s.clusterConnection.shardManager.IsLocalShard(targetShardID)
+	isLocalSource := s.shardManager.IsLocalShard(sourceShardID)
+	isLocalTarget := s.shardManager.IsLocalShard(targetShardID)
 	if isLocalSource || !isLocalTarget {
 		logger.Info("Skipping intra-proxy between two local shards or two remote shards. Client may use outdated shard info.",
 			tag.NewBoolTag("isLocalSource", isLocalSource),
@@ -392,7 +392,7 @@ func (s *adminServiceProxyServer) streamIntraProxyRouting(
 	// Sender: handle ACKs coming from peer and forward to original owner
 	sender := &intraProxyStreamSender{
 		logger:        logger,
-		shardManager:  s.clusterConnection.shardManager,
+		shardManager:  s.shardManager,
 		peerNodeName:  peerNodeName,
 		sourceShardID: sourceShardID,
 		targetShardID: targetShardID,
@@ -421,7 +421,7 @@ func (s *adminServiceProxyServer) streamRouting(
 	// server: stream sender
 	proxyStreamSender := &proxyStreamSender{
 		logger:         logger,
-		shardManager:   s.clusterConnection.shardManager,
+		shardManager:   s.shardManager,
 		sourceShardID:  sourceShardID,
 		targetShardID:  targetShardID,
 		directionLabel: s.routingParameters.DirectionLabel,
@@ -429,7 +429,7 @@ func (s *adminServiceProxyServer) streamRouting(
 
 	proxyStreamReceiver := &proxyStreamReceiver{
 		logger:          s.logger,
-		shardManager:    s.clusterConnection.shardManager,
+		shardManager:    s.shardManager,
 		adminClient:     s.adminClientReverse,
 		localShardCount: s.routingParameters.RoutingLocalShardCount,
 		sourceShardID:   targetShardID, // reverse direction
