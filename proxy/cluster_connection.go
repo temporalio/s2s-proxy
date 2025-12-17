@@ -132,6 +132,8 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		return nil, err
 	}
 
+	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, connConfig.ShardCountConfig, logger)
+
 	getLCMParameters := func(shardCountConfig config.ShardCountConfig, inverse bool) LCMParameters {
 		if shardCountConfig.Mode != config.ShardCountLCM {
 			return LCMParameters{}
@@ -201,8 +203,6 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	if err != nil {
 		return nil, err
 	}
-
-	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, connConfig.ShardCountConfig, logger)
 
 	return cc, nil
 }
