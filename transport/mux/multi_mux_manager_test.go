@@ -47,12 +47,14 @@ func TestMultiMuxManager(t *testing.T) {
 	require.False(t, muxesOnPipes.clientMM.CanAcceptConnections(), "All connections should have been consumed")
 
 	// Close connections. We should see both sides fire disconnectFn
+	require.Eventually(t, func() bool { return clientConns.Load() != nil }, 2*time.Second, 10*time.Millisecond, "clientConns should be set")
 	for _, v := range *clientConns.Load() {
 		v.Close()
 	}
 	clientEvent = proxyassert.RequireCh(t, muxesOnPipes.clientEvents, 2*time.Second, "Client connection failed to disconnect!\nclientMux:%s", muxesOnPipes.clientMM.Describe())
 	require.Equal(t, "closed", clientEvent.eventType)
 	require.Same(t, clientSession, clientEvent.session)
+	require.Eventually(t, func() bool { return serverConns.Load() != nil }, 2*time.Second, 10*time.Millisecond, "serverConns should be set")
 	for _, v := range *serverConns.Load() {
 		v.Close()
 	}
