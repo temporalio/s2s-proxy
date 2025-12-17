@@ -7,14 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 	"time"
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
-	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
@@ -62,24 +60,7 @@ type (
 		inboundObserver  *ReplicationStreamObserver
 		outboundObserver *ReplicationStreamObserver
 		shardManager     ShardManager
-		intraMgr         *intraProxyManager
 		logger           log.Logger
-
-		// remoteSendChannels maps shard IDs to send channels for replication message routing
-		remoteSendChannels   map[history.ClusterShardID]chan RoutedMessage
-		remoteSendChannelsMu sync.RWMutex
-
-		// localAckChannels maps shard IDs to ack channels for local acknowledgment handling
-		localAckChannels   map[history.ClusterShardID]chan RoutedAck
-		localAckChannelsMu sync.RWMutex
-
-		// localReceiverCancelFuncs maps shard IDs to context cancel functions for local receiver termination
-		localReceiverCancelFuncs   map[history.ClusterShardID]context.CancelFunc
-		localReceiverCancelFuncsMu sync.RWMutex
-
-		// activeReceivers tracks active proxyStreamReceiver instances by source shard for watermark propagation
-		activeReceivers   map[history.ClusterShardID]*proxyStreamReceiver
-		activeReceiversMu sync.RWMutex
 	}
 	// contextAwareServer represents a startable gRPC server used to provide the Temporal interface on some connection.
 	// IsUsable and Describe allow the caller to know and log the current state of the server.
@@ -130,12 +111,8 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	// The name is used in metrics and in the protocol for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
 	sanitizedConnectionName := sanitizeConnectionName(connConfig.Name)
 	cc := &ClusterConnection{
-		lifetime:                 lifetime,
-		logger:                   log.With(logger, tag.NewStringTag("clusterConn", sanitizedConnectionName)),
-		remoteSendChannels:       make(map[history.ClusterShardID]chan RoutedMessage),
-		localAckChannels:         make(map[history.ClusterShardID]chan RoutedAck),
-		localReceiverCancelFuncs: make(map[history.ClusterShardID]context.CancelFunc),
-		activeReceivers:          make(map[history.ClusterShardID]*proxyStreamReceiver),
+		lifetime: lifetime,
+		logger:   log.With(logger, tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
 	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.LocalServer.Connection, "inbound")
@@ -225,10 +202,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		return nil, err
 	}
 
-	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, logger)
-	if connConfig.MemberlistConfig != nil {
-		cc.intraMgr = newIntraProxyManager(logger, cc, connConfig.ShardCountConfig)
-	}
+	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, connConfig.ShardCountConfig, logger)
 
 	return cc, nil
 }
@@ -316,30 +290,6 @@ func (c *ClusterConnection) Start() {
 		if err != nil {
 			c.logger.Error("Failed to start shard manager", tag.Error(err))
 		}
-		// Wire up shard change callbacks to propagate pending watermarks
-		// Note: This will overwrite any existing callbacks set by SetIntraProxyManager,
-		// but we ensure intra-proxy manager is notified via its Notify() method
-		c.shardManager.SetOnLocalShardChange(func(shard history.ClusterShardID, added bool) {
-			// Notify intra-proxy manager if it exists
-			if c.intraMgr != nil {
-				c.intraMgr.Notify()
-			}
-			if added {
-				c.notifyReceiversOfNewShard(shard)
-			}
-		})
-		c.shardManager.SetOnRemoteShardChange(func(peer string, shard history.ClusterShardID, added bool) {
-			// Notify intra-proxy manager if it exists
-			if c.intraMgr != nil {
-				c.intraMgr.Notify()
-			}
-			if added {
-				c.notifyReceiversOfNewShard(shard)
-			}
-		})
-	}
-	if c.intraMgr != nil {
-		c.intraMgr.Start()
 	}
 	c.inboundServer.Start()
 	c.inboundObserver.Start(c.lifetime, c.inboundServer.Name(), "inbound")
@@ -358,213 +308,6 @@ func (c *ClusterConnection) AcceptingInboundTraffic() bool {
 
 func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
 	return c.outboundClient.CanMakeCalls() && c.outboundServer.CanAcceptConnections()
-}
-
-// GetShardInfo returns debug information about shard distribution
-func (c *ClusterConnection) GetShardInfos() []ShardDebugInfo {
-	var shardInfos []ShardDebugInfo
-	if c.shardManager != nil {
-		shardInfos = append(shardInfos, c.shardManager.GetShardInfo())
-	}
-	return shardInfos
-}
-
-// GetChannelInfo returns debug information about active channels
-func (c *ClusterConnection) GetChannelInfo() ChannelDebugInfo {
-	remoteSendChannels := make(map[string]int)
-	var totalSendChannels int
-
-	// Collect remote send channel info first
-	c.remoteSendChannelsMu.RLock()
-	for shardID, ch := range c.remoteSendChannels {
-		shardKey := ClusterShardIDtoString(shardID)
-		remoteSendChannels[shardKey] = len(ch)
-	}
-	totalSendChannels = len(c.remoteSendChannels)
-	c.remoteSendChannelsMu.RUnlock()
-
-	localAckChannels := make(map[string]int)
-	var totalAckChannels int
-
-	// Collect local ack channel info separately
-	c.localAckChannelsMu.RLock()
-	for shardID, ch := range c.localAckChannels {
-		shardKey := ClusterShardIDtoString(shardID)
-		localAckChannels[shardKey] = len(ch)
-	}
-	totalAckChannels = len(c.localAckChannels)
-	c.localAckChannelsMu.RUnlock()
-
-	return ChannelDebugInfo{
-		RemoteSendChannels: remoteSendChannels,
-		LocalAckChannels:   localAckChannels,
-		TotalSendChannels:  totalSendChannels,
-		TotalAckChannels:   totalAckChannels,
-	}
-}
-
-// SetRemoteSendChan registers a send channel for a specific shard ID
-func (c *ClusterConnection) SetRemoteSendChan(shardID history.ClusterShardID, sendChan chan RoutedMessage) {
-	c.logger.Info("Register remote send channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
-	c.remoteSendChannelsMu.Lock()
-	defer c.remoteSendChannelsMu.Unlock()
-	c.remoteSendChannels[shardID] = sendChan
-}
-
-// GetRemoteSendChan retrieves the send channel for a specific shard ID
-func (c *ClusterConnection) GetRemoteSendChan(shardID history.ClusterShardID) (chan RoutedMessage, bool) {
-	c.remoteSendChannelsMu.RLock()
-	defer c.remoteSendChannelsMu.RUnlock()
-	ch, exists := c.remoteSendChannels[shardID]
-	return ch, exists
-}
-
-// GetAllRemoteSendChans returns a map of all remote send channels
-func (c *ClusterConnection) GetAllRemoteSendChans() map[history.ClusterShardID]chan RoutedMessage {
-	c.remoteSendChannelsMu.RLock()
-	defer c.remoteSendChannelsMu.RUnlock()
-
-	// Create a copy of the map
-	result := make(map[history.ClusterShardID]chan RoutedMessage, len(c.remoteSendChannels))
-	for k, v := range c.remoteSendChannels {
-		result[k] = v
-	}
-	return result
-}
-
-// GetRemoteSendChansByCluster returns a copy of remote send channels filtered by clusterID
-func (c *ClusterConnection) GetRemoteSendChansByCluster(clusterID int32) map[history.ClusterShardID]chan RoutedMessage {
-	c.remoteSendChannelsMu.RLock()
-	defer c.remoteSendChannelsMu.RUnlock()
-
-	result := make(map[history.ClusterShardID]chan RoutedMessage)
-	for k, v := range c.remoteSendChannels {
-		if k.ClusterID == clusterID {
-			result[k] = v
-		}
-	}
-	return result
-}
-
-// RemoveRemoteSendChan removes the send channel for a specific shard ID only if it matches the provided channel
-func (c *ClusterConnection) RemoveRemoteSendChan(shardID history.ClusterShardID, expectedChan chan RoutedMessage) {
-	c.remoteSendChannelsMu.Lock()
-	defer c.remoteSendChannelsMu.Unlock()
-	if currentChan, exists := c.remoteSendChannels[shardID]; exists && currentChan == expectedChan {
-		delete(c.remoteSendChannels, shardID)
-		c.logger.Info("Removed remote send channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
-	} else {
-		c.logger.Info("Skipped removing remote send channel for shard (channel mismatch or already removed)", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
-	}
-}
-
-// SetLocalAckChan registers an ack channel for a specific shard ID
-func (c *ClusterConnection) SetLocalAckChan(shardID history.ClusterShardID, ackChan chan RoutedAck) {
-	c.logger.Info("Register local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
-	c.localAckChannelsMu.Lock()
-	defer c.localAckChannelsMu.Unlock()
-	c.localAckChannels[shardID] = ackChan
-}
-
-// GetLocalAckChan retrieves the ack channel for a specific shard ID
-func (c *ClusterConnection) GetLocalAckChan(shardID history.ClusterShardID) (chan RoutedAck, bool) {
-	c.localAckChannelsMu.RLock()
-	defer c.localAckChannelsMu.RUnlock()
-	ch, exists := c.localAckChannels[shardID]
-	return ch, exists
-}
-
-// RemoveLocalAckChan removes the ack channel for a specific shard ID only if it matches the provided channel
-func (c *ClusterConnection) RemoveLocalAckChan(shardID history.ClusterShardID, expectedChan chan RoutedAck) {
-	c.logger.Info("Remove local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
-	c.localAckChannelsMu.Lock()
-	defer c.localAckChannelsMu.Unlock()
-	if currentChan, exists := c.localAckChannels[shardID]; exists && currentChan == expectedChan {
-		delete(c.localAckChannels, shardID)
-	} else {
-		c.logger.Info("Skipped removing local ack channel for shard (channel mismatch or already removed)", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
-	}
-}
-
-// ForceRemoveLocalAckChan unconditionally removes the ack channel for a specific shard ID
-func (c *ClusterConnection) ForceRemoveLocalAckChan(shardID history.ClusterShardID) {
-	c.logger.Info("Force remove local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
-	c.localAckChannelsMu.Lock()
-	defer c.localAckChannelsMu.Unlock()
-	delete(c.localAckChannels, shardID)
-}
-
-// SetLocalReceiverCancelFunc registers a cancel function for a local receiver for a specific shard ID
-func (c *ClusterConnection) SetLocalReceiverCancelFunc(shardID history.ClusterShardID, cancelFunc context.CancelFunc) {
-	c.logger.Info("Register local receiver cancel function for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
-	c.localReceiverCancelFuncsMu.Lock()
-	defer c.localReceiverCancelFuncsMu.Unlock()
-	c.localReceiverCancelFuncs[shardID] = cancelFunc
-}
-
-// GetLocalReceiverCancelFunc retrieves the cancel function for a local receiver for a specific shard ID
-func (c *ClusterConnection) GetLocalReceiverCancelFunc(shardID history.ClusterShardID) (context.CancelFunc, bool) {
-	c.localReceiverCancelFuncsMu.RLock()
-	defer c.localReceiverCancelFuncsMu.RUnlock()
-	cancelFunc, exists := c.localReceiverCancelFuncs[shardID]
-	return cancelFunc, exists
-}
-
-// RemoveLocalReceiverCancelFunc unconditionally removes the cancel function for a local receiver for a specific shard ID
-// Note: Functions cannot be compared in Go, so we use unconditional removal.
-// The race condition is primarily with channels; TerminatePreviousLocalReceiver handles forced cleanup.
-func (c *ClusterConnection) RemoveLocalReceiverCancelFunc(shardID history.ClusterShardID) {
-	c.logger.Info("Remove local receiver cancel function for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
-	c.localReceiverCancelFuncsMu.Lock()
-	defer c.localReceiverCancelFuncsMu.Unlock()
-	delete(c.localReceiverCancelFuncs, shardID)
-}
-
-// TerminatePreviousLocalReceiver checks if there is a previous local receiver for this shard and terminates it if needed
-func (c *ClusterConnection) TerminatePreviousLocalReceiver(shardID history.ClusterShardID) {
-	// Check if there's a previous cancel function for this shard
-	if prevCancelFunc, exists := c.GetLocalReceiverCancelFunc(shardID); exists {
-		c.logger.Info("Terminating previous local receiver for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
-
-		// Cancel the previous receiver's context
-		prevCancelFunc()
-
-		// Force remove the cancel function and ack channel from tracking
-		c.RemoveLocalReceiverCancelFunc(shardID)
-		c.ForceRemoveLocalAckChan(shardID)
-	}
-}
-
-// RegisterActiveReceiver registers an active receiver for watermark propagation
-func (c *ClusterConnection) RegisterActiveReceiver(sourceShardID history.ClusterShardID, receiver *proxyStreamReceiver) {
-	c.activeReceiversMu.Lock()
-	defer c.activeReceiversMu.Unlock()
-	c.activeReceivers[sourceShardID] = receiver
-}
-
-// UnregisterActiveReceiver removes an active receiver
-func (c *ClusterConnection) UnregisterActiveReceiver(sourceShardID history.ClusterShardID) {
-	c.activeReceiversMu.Lock()
-	defer c.activeReceiversMu.Unlock()
-	delete(c.activeReceivers, sourceShardID)
-}
-
-// notifyReceiversOfNewShard notifies all receivers about a newly registered target shard
-// so they can send pending watermarks if available
-func (c *ClusterConnection) notifyReceiversOfNewShard(targetShardID history.ClusterShardID) {
-	c.activeReceiversMu.RLock()
-	receivers := make([]*proxyStreamReceiver, 0, len(c.activeReceivers))
-	for _, receiver := range c.activeReceivers {
-		receivers = append(receivers, receiver)
-	}
-	c.activeReceiversMu.RUnlock()
-
-	for _, receiver := range receivers {
-		// Only notify receivers that route to the same cluster as the newly registered shard
-		if receiver.targetShardID.ClusterID == targetShardID.ClusterID {
-			receiver.sendPendingWatermarkToShard(targetShardID, c)
-		}
-	}
 }
 
 // buildProxyServer uses the provided grpc.ClientConnInterface and config.ProxyConfig to create a grpc.Server that proxies

@@ -141,7 +141,11 @@ func getFreePort() int {
 	if err != nil {
 		panic(fmt.Sprintf("failed to get free port: %v", err))
 	}
-	defer l.Close()
+	defer func() {
+		if err := l.Close(); err != nil {
+			fmt.Printf("Failed to close listener: %v\n", err)
+		}
+	}()
 	return l.Addr().(*net.TCPAddr).Port
 }
 

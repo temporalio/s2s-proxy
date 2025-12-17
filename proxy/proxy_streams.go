@@ -140,13 +140,13 @@ func (b *proxyIDRingBuffer) Discard(count int) {
 // (another proxy or a target server) and receiving ACKs back.
 // This is scaffolding only – the concrete behavior will be wired in later.
 type proxyStreamSender struct {
-	logger            log.Logger
-	clusterConnection *ClusterConnection
-	targetShardID     history.ClusterShardID
-	sourceShardID     history.ClusterShardID
-	directionLabel    string
-	streamID          string
-	streamTracker     *StreamTracker
+	logger         log.Logger
+	shardManager   ShardManager
+	targetShardID  history.ClusterShardID
+	sourceShardID  history.ClusterShardID
+	directionLabel string
+	streamID       string
+	streamTracker  *StreamTracker
 	// sendMsgChan carries replication messages to be sent to the remote side.
 	sendMsgChan chan RoutedMessage
 
@@ -239,11 +239,11 @@ func (s *proxyStreamSender) Run(
 	// Register remote send channel for this shard so receiver can forward tasks locally
 	s.sendMsgChan = make(chan RoutedMessage, 100)
 
-	s.clusterConnection.SetRemoteSendChan(s.targetShardID, s.sendMsgChan)
-	defer s.clusterConnection.RemoveRemoteSendChan(s.targetShardID, s.sendMsgChan)
+	s.shardManager.SetRemoteSendChan(s.targetShardID, s.sendMsgChan)
+	defer s.shardManager.RemoveRemoteSendChan(s.targetShardID, s.sendMsgChan)
 
-	registeredAt := s.clusterConnection.shardManager.RegisterShard(s.targetShardID)
-	defer s.clusterConnection.shardManager.UnregisterShard(s.targetShardID, registeredAt)
+	registeredAt := s.shardManager.RegisterShard(s.targetShardID)
+	defer s.shardManager.UnregisterShard(s.targetShardID, registeredAt)
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -333,7 +333,7 @@ func (s *proxyStreamSender) recvAck(
 
 						s.logger.Info("Sender forwarding ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", originalAck))
 
-						if s.clusterConnection.shardManager.DeliverAckToShardOwner(srcShard, routedAck, s.clusterConnection, shutdownChan, s.logger, originalAck, true) {
+						if s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, shutdownChan, s.logger, originalAck, true) {
 							sent[srcShard] = true
 							numRemaining--
 							progress = true
@@ -395,7 +395,7 @@ func (s *proxyStreamSender) recvAck(
 						}
 						// Log fallback ACK for this source shard
 						s.logger.Info("Sender forwarding fallback ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", prev))
-						if s.clusterConnection.shardManager.DeliverAckToShardOwner(srcShard, routedAck, s.clusterConnection, shutdownChan, s.logger, prev, true) {
+						if s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, shutdownChan, s.logger, prev, true) {
 							sent[srcShard] = true
 							numRemaining--
 							progress = true
@@ -554,14 +554,14 @@ func (s *proxyStreamSender) sendReplicationMessages(
 // proxyStreamReceiver receives replication messages from a local/remote server and
 // produces ACKs destined for the original sender.
 type proxyStreamReceiver struct {
-	logger            log.Logger
-	clusterConnection *ClusterConnection
-	adminClient       adminservice.AdminServiceClient
-	localShardCount   int32
-	targetShardID     history.ClusterShardID
-	sourceShardID     history.ClusterShardID
-	directionLabel    string
-	ackChan           chan RoutedAck
+	logger          log.Logger
+	shardManager    ShardManager
+	adminClient     adminservice.AdminServiceClient
+	localShardCount int32
+	targetShardID   history.ClusterShardID
+	sourceShardID   history.ClusterShardID
+	directionLabel  string
+	ackChan         chan RoutedAck
 	// ack aggregation across target shards
 	ackByTarget map[history.ClusterShardID]int64
 	lastSentMin int64
@@ -597,7 +597,9 @@ func (r *proxyStreamReceiver) Run(
 	shutdownChan channel.ShutdownOnce,
 ) {
 	// Terminate any previous local receiver for this shard
-	r.clusterConnection.TerminatePreviousLocalReceiver(r.sourceShardID)
+	if r.shardManager != nil {
+		r.shardManager.TerminatePreviousLocalReceiver(r.sourceShardID, r.logger)
+	}
 
 	r.streamID = BuildReceiverStreamID(r.sourceShardID, r.targetShardID)
 	r.logger = log.With(r.logger,
@@ -635,15 +637,17 @@ func (r *proxyStreamReceiver) Run(
 
 	// Setup ack channel and cancel func bookkeeping
 	r.ackChan = make(chan RoutedAck, 100)
-	r.clusterConnection.SetLocalAckChan(r.sourceShardID, r.ackChan)
-	r.clusterConnection.SetLocalReceiverCancelFunc(r.sourceShardID, cancel)
-	// Register receiver for watermark propagation to late-registering shards
-	r.clusterConnection.RegisterActiveReceiver(r.sourceShardID, r)
-	defer func() {
-		r.clusterConnection.RemoveLocalAckChan(r.sourceShardID, r.ackChan)
-		r.clusterConnection.RemoveLocalReceiverCancelFunc(r.sourceShardID)
-		r.clusterConnection.UnregisterActiveReceiver(r.sourceShardID)
-	}()
+	if r.shardManager != nil {
+		r.shardManager.SetLocalAckChan(r.sourceShardID, r.ackChan)
+		r.shardManager.SetLocalReceiverCancelFunc(r.sourceShardID, cancel)
+		// Register receiver for watermark propagation to late-registering shards
+		r.shardManager.RegisterActiveReceiver(r.sourceShardID, r)
+		defer func() {
+			r.shardManager.RemoveLocalAckChan(r.sourceShardID, r.ackChan)
+			r.shardManager.RemoveLocalReceiverCancelFunc(r.sourceShardID)
+			r.shardManager.UnregisterActiveReceiver(r.sourceShardID)
+		}()
+	}
 
 	// init aggregation state
 	r.ackByTarget = make(map[history.ClusterShardID]int64)
@@ -752,7 +756,7 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 						},
 					},
 				}
-				localShardsToSend := r.clusterConnection.GetRemoteSendChansByCluster(r.targetShardID.ClusterID)
+				localShardsToSend := r.shardManager.GetRemoteSendChansByCluster(r.targetShardID.ClusterID)
 				r.logger.Info("Going to broadcast high watermark to local shards", tag.NewStringTag("localShardsToSend", fmt.Sprintf("%v", localShardsToSend)))
 				for targetShardID, sendChan := range localShardsToSend {
 					// Clone the message for each recipient to prevent shared mutation
@@ -784,7 +788,7 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 					}()
 				}
 				// send to all remote shards on other nodes as well
-				remoteShards, err := r.clusterConnection.shardManager.GetRemoteShardsForPeer("")
+				remoteShards, err := r.shardManager.GetRemoteShardsForPeer("")
 				if err != nil {
 					r.logger.Error("Failed to get remote shards", tag.Error(err))
 					return err
@@ -801,7 +805,7 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 							SourceShard: msg.SourceShard,
 							Resp:        clonedResp,
 						}
-						if !r.clusterConnection.shardManager.DeliverMessagesToShardOwner(shard.ID, &clonedMsg, r.clusterConnection, shutdownChan, r.logger) {
+						if !r.shardManager.DeliverMessagesToShardOwner(shard.ID, &clonedMsg, shutdownChan, r.logger) {
 							r.logger.Warn("Failed to send ReplicationTasks to remote shard", tag.NewStringTag("shard", ClusterShardIDtoString(shard.ID)))
 						}
 					}
@@ -841,7 +845,7 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 							},
 						},
 					}
-					if r.clusterConnection.shardManager.DeliverMessagesToShardOwner(targetShardID, &msg, r.clusterConnection, shutdownChan, r.logger) {
+					if r.shardManager.DeliverMessagesToShardOwner(targetShardID, &msg, shutdownChan, r.logger) {
 						sentByTarget[targetShardID] = true
 						numRemaining--
 						progress = true
@@ -868,7 +872,7 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 
 // sendPendingWatermarkToShard sends the last known watermark to a newly registered target shard
 // This ensures late-registering shards receive watermarks that were sent before they registered
-func (r *proxyStreamReceiver) sendPendingWatermarkToShard(targetShardID history.ClusterShardID, clusterConnection *ClusterConnection) {
+func (r *proxyStreamReceiver) sendPendingWatermarkToShard(targetShardID history.ClusterShardID) {
 	r.lastWatermarkMu.RLock()
 	lastWatermark := r.lastWatermark
 	r.lastWatermarkMu.RUnlock()
@@ -895,7 +899,7 @@ func (r *proxyStreamReceiver) sendPendingWatermarkToShard(targetShardID history.
 	}
 
 	// Try to send to local shard first
-	if sendChan, exists := clusterConnection.GetRemoteSendChan(targetShardID); exists {
+	if sendChan, exists := r.shardManager.GetRemoteSendChan(targetShardID); exists {
 		clonedResp := proto.Clone(msg.Resp).(*adminservice.StreamWorkflowReplicationMessagesResponse)
 		clonedMsg := RoutedMessage{
 			SourceShard: msg.SourceShard,
@@ -913,14 +917,14 @@ func (r *proxyStreamReceiver) sendPendingWatermarkToShard(targetShardID history.
 	}
 
 	// If not local, try to send to remote shard
-	if clusterConnection.shardManager != nil {
+	if r.shardManager != nil {
 		shutdownChan := channel.NewShutdownOnce()
 		clonedResp := proto.Clone(msg.Resp).(*adminservice.StreamWorkflowReplicationMessagesResponse)
 		clonedMsg := RoutedMessage{
 			SourceShard: msg.SourceShard,
 			Resp:        clonedResp,
 		}
-		if clusterConnection.shardManager.DeliverMessagesToShardOwner(targetShardID, &clonedMsg, clusterConnection, shutdownChan, r.logger) {
+		if r.shardManager.DeliverMessagesToShardOwner(targetShardID, &clonedMsg, shutdownChan, r.logger) {
 			r.logger.Info("Sent pending watermark to remote shard",
 				tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
 		} else {

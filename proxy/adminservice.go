@@ -391,11 +391,11 @@ func (s *adminServiceProxyServer) streamIntraProxyRouting(
 
 	// Sender: handle ACKs coming from peer and forward to original owner
 	sender := &intraProxyStreamSender{
-		logger:            logger,
-		clusterConnection: s.clusterConnection,
-		peerNodeName:      peerNodeName,
-		sourceShardID:     sourceShardID,
-		targetShardID:     targetShardID,
+		logger:        logger,
+		shardManager:  s.clusterConnection.shardManager,
+		peerNodeName:  peerNodeName,
+		sourceShardID: sourceShardID,
+		targetShardID: targetShardID,
 	}
 
 	shutdownChan := channel.NewShutdownOnce()
@@ -420,21 +420,21 @@ func (s *adminServiceProxyServer) streamRouting(
 	// client: stream receiver
 	// server: stream sender
 	proxyStreamSender := &proxyStreamSender{
-		logger:            logger,
-		clusterConnection: s.clusterConnection,
-		sourceShardID:     sourceShardID,
-		targetShardID:     targetShardID,
-		directionLabel:    s.routingParameters.DirectionLabel,
+		logger:         logger,
+		shardManager:   s.clusterConnection.shardManager,
+		sourceShardID:  sourceShardID,
+		targetShardID:  targetShardID,
+		directionLabel: s.routingParameters.DirectionLabel,
 	}
 
 	proxyStreamReceiver := &proxyStreamReceiver{
-		logger:            s.logger,
-		clusterConnection: s.clusterConnection,
-		adminClient:       s.adminClientReverse,
-		localShardCount:   s.routingParameters.RoutingLocalShardCount,
-		sourceShardID:     targetShardID, // reverse direction
-		targetShardID:     sourceShardID, // reverse direction
-		directionLabel:    s.routingParameters.DirectionLabel,
+		logger:          s.logger,
+		shardManager:    s.clusterConnection.shardManager,
+		adminClient:     s.adminClientReverse,
+		localShardCount: s.routingParameters.RoutingLocalShardCount,
+		sourceShardID:   targetShardID, // reverse direction
+		targetShardID:   sourceShardID, // reverse direction
+		directionLabel:  s.routingParameters.DirectionLabel,
 	}
 
 	shutdownChan := channel.NewShutdownOnce()

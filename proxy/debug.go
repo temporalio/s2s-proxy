@@ -102,8 +102,10 @@ func HandleDebugInfo(w http.ResponseWriter, r *http.Request, proxyInstance *Prox
 	activeStreams = streamTracker.GetActiveStreams()
 	streamCount = streamTracker.GetStreamCount()
 	for _, clusterConnection := range proxyInstance.clusterConnections {
-		shardInfos = append(shardInfos, clusterConnection.GetShardInfos()...)
-		channelInfos = append(channelInfos, clusterConnection.GetChannelInfo())
+		if clusterConnection.shardManager != nil {
+			shardInfos = append(shardInfos, clusterConnection.shardManager.GetShardInfos()...)
+			channelInfos = append(channelInfos, clusterConnection.shardManager.GetChannelInfo())
+		}
 	}
 
 	response := DebugResponse{
