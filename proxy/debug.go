@@ -8,6 +8,9 @@ import (
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
+
+	"github.com/temporalio/s2s-proxy/transport/mux"
+	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
 type (
@@ -80,12 +83,31 @@ type (
 		TotalAckChannels   int            `json:"total_ack_channels"`
 	}
 
+	// MuxConnectionInfo holds debug information about a mux connection
+	MuxConnectionInfo struct {
+		ID         string `json:"id"`
+		LocalAddr  string `json:"local_addr"`
+		RemoteAddr string `json:"remote_addr"`
+		State      string `json:"state"`
+		IsClosed   bool   `json:"is_closed"`
+	}
+
+	// MuxConnectionsDebugInfo holds debug information about mux connections for a cluster connection
+	MuxConnectionsDebugInfo struct {
+		ConnectionName  string              `json:"connection_name"`
+		Direction       string              `json:"direction"`
+		Address         string              `json:"address"`
+		Connections     []MuxConnectionInfo `json:"connections"`
+		ConnectionCount int                 `json:"connection_count"`
+	}
+
 	DebugResponse struct {
-		Timestamp     time.Time          `json:"timestamp"`
-		ActiveStreams []StreamInfo       `json:"active_streams"`
-		StreamCount   int                `json:"stream_count"`
-		ShardInfos    []ShardDebugInfo   `json:"shard_infos"`
-		ChannelInfos  []ChannelDebugInfo `json:"channel_infos"`
+		Timestamp      time.Time                 `json:"timestamp"`
+		ActiveStreams  []StreamInfo              `json:"active_streams"`
+		StreamCount    int                       `json:"stream_count"`
+		ShardInfos     []ShardDebugInfo          `json:"shard_infos"`
+		ChannelInfos   []ChannelDebugInfo        `json:"channel_infos"`
+		MuxConnections []MuxConnectionsDebugInfo `json:"mux_connections"`
 	}
 )
 
@@ -96,6 +118,7 @@ func HandleDebugInfo(w http.ResponseWriter, r *http.Request, proxyInstance *Prox
 	var streamCount int
 	var shardInfos []ShardDebugInfo
 	var channelInfos []ChannelDebugInfo
+	var muxConnections []MuxConnectionsDebugInfo
 
 	// Get active streams information
 	streamTracker := GetGlobalStreamTracker()
@@ -106,18 +129,79 @@ func HandleDebugInfo(w http.ResponseWriter, r *http.Request, proxyInstance *Prox
 			shardInfos = append(shardInfos, clusterConnection.shardManager.GetShardInfos()...)
 			channelInfos = append(channelInfos, clusterConnection.shardManager.GetChannelInfo())
 		}
+
+		// Collect mux connection info from inbound and outbound servers
+		muxConnections = append(muxConnections, getMuxConnectionsInfo(clusterConnection.inboundServer, "inbound")...)
+		muxConnections = append(muxConnections, getMuxConnectionsInfo(clusterConnection.outboundServer, "outbound")...)
 	}
 
 	response := DebugResponse{
-		Timestamp:     time.Now(),
-		ActiveStreams: activeStreams,
-		StreamCount:   streamCount,
-		ShardInfos:    shardInfos,
-		ChannelInfos:  channelInfos,
+		Timestamp:      time.Now(),
+		ActiveStreams:  activeStreams,
+		StreamCount:    streamCount,
+		ShardInfos:     shardInfos,
+		ChannelInfos:   channelInfos,
+		MuxConnections: muxConnections,
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		logger.Error("Failed to encode debug response", tag.Error(err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+func getMuxConnectionsInfo(server contextAwareServer, direction string) []MuxConnectionsDebugInfo {
+	muxMgr, ok := server.(mux.MultiMuxManager)
+	if !ok {
+		return nil
+	}
+
+	connections := muxMgr.GetMuxConnections()
+	if len(connections) == 0 {
+		return nil
+	}
+
+	var connInfos []MuxConnectionInfo
+	for id, muxSession := range connections {
+		localAddr, remoteAddr := muxSession.GetConnectionInfo()
+		state := muxSession.State()
+		stateStr := "unknown"
+		if state != nil {
+			switch state.State {
+			case session.Connected:
+				stateStr = "connected"
+			case session.Closed:
+				stateStr = "closed"
+			case session.Error:
+				stateStr = "error"
+			}
+		}
+
+		localAddrStr := ""
+		if localAddr != nil {
+			localAddrStr = localAddr.String()
+		}
+		remoteAddrStr := ""
+		if remoteAddr != nil {
+			remoteAddrStr = remoteAddr.String()
+		}
+
+		connInfos = append(connInfos, MuxConnectionInfo{
+			ID:         id,
+			LocalAddr:  localAddrStr,
+			RemoteAddr: remoteAddrStr,
+			State:      stateStr,
+			IsClosed:   muxSession.IsClosed(),
+		})
+	}
+
+	return []MuxConnectionsDebugInfo{
+		{
+			ConnectionName:  muxMgr.Name(),
+			Direction:       direction,
+			Address:         muxMgr.Address(),
+			Connections:     connInfos,
+			ConnectionCount: len(connInfos),
+		},
 	}
 }

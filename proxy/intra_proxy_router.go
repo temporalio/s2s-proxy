@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"sync"
@@ -17,6 +18,9 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/metrics"
+	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
 // intraProxyManager maintains long-lived intra-proxy streams to peer proxies and
@@ -375,59 +379,62 @@ func (m *intraProxyManager) ensurePeer(
 	ctx context.Context,
 	peerNodeName string,
 ) (*peerState, error) {
+	logger := log.With(m.logger, tag.NewStringTag("peerNodeName", peerNodeName))
+	logger.Info("ensurePeer started")
+	defer logger.Info("ensurePeer finished")
+
 	m.streamsMu.RLock()
 	if ps, ok := m.peers[peerNodeName]; ok && ps != nil && ps.conn != nil {
 		m.streamsMu.RUnlock()
+		logger.Info("ensurePeer found existing peer with connection")
 		return ps, nil
 	}
 	m.streamsMu.RUnlock()
 
-	// Build TLS from this proxy's outbound client TLS config if available
-	var dialOpts []grpc.DialOption
+	logger.Info("ensurePeer creating new peer connection")
 
-	// TODO: FIX this for new config format
-	// var tlsCfg *config.ClientTLSConfig
-	// if p.outboundServer != nil {
-	// 	t := p.outboundServer.config.Client.TLS
-	// 	tlsCfg = &t
-	// } else if p.inboundServer != nil {
-	// 	t := p.inboundServer.config.Client.TLS
-	// 	tlsCfg = &t
-	// }
-	// if tlsCfg != nil && tlsCfg.IsEnabled() {
-	// 	cfg, e := encryption.GetClientTLSConfig(*tlsCfg)
-	// 	if e != nil {
-	// 		return nil, e
-	// 	}
-	// 	dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(cfg)))
-	// } else {
-	// 	dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	// }
-	// // Reuse default grpc options from transport
-	// dialOpts = append(dialOpts,
-	// 	grpc.WithDefaultServiceConfig(transport.DefaultServiceConfig),
-	// 	grpc.WithDisableServiceConfig(),
-	// )
+	// Build TLS from this proxy's outbound client TLS config if available
+	tlsCfg := m.shardManager.GetIntraProxyTLSConfig()
+	var parsedTLSCfg *tls.Config
+	if tlsCfg.IsEnabled() {
+		logger.Info("ensurePeer TLS enabled, building TLS config")
+		var err error
+		parsedTLSCfg, err = encryption.GetClientTLSConfig(tlsCfg)
+		if err != nil {
+			logger.Error("ensurePeer failed to create TLS config", tag.Error(err))
+			return nil, fmt.Errorf("config error when creating tls config: %w", err)
+		}
+	} else {
+		logger.Info("ensurePeer TLS disabled")
+	}
+	dialOpts := grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics("intra_proxy"))
 
 	proxyAddresses, ok := m.shardManager.GetProxyAddress(peerNodeName)
 	if !ok {
+		logger.Error("ensurePeer proxy address not found")
 		return nil, fmt.Errorf("proxy address not found")
 	}
+	logger.Info("ensurePeer dialing peer", tag.NewStringTag("proxyAddresses", proxyAddresses))
 
-	cc, err := grpc.DialContext(ctx, proxyAddresses, dialOpts...) //nolint:staticcheck // acceptable here
+	cc, err := grpc.NewClient(proxyAddresses, dialOpts...)
 	if err != nil {
+		logger.Error("ensurePeer failed to dial peer", tag.Error(err))
 		return nil, err
 	}
+	logger.Info("ensurePeer successfully dialed peer")
 
 	m.streamsMu.Lock()
 	ps := m.peers[peerNodeName]
 	if ps == nil {
+		logger.Info("ensurePeer creating new peer state")
 		ps = &peerState{conn: cc, receivers: make(map[peerStreamKey]*intraProxyStreamReceiver), senders: make(map[peerStreamKey]*intraProxyStreamSender), recvShutdown: make(map[peerStreamKey]channel.ShutdownOnce)}
 		m.peers[peerNodeName] = ps
 	} else {
+		logger.Info("ensurePeer updating existing peer state with new connection")
 		old := ps.conn
 		ps.conn = cc
 		if old != nil {
+			logger.Info("ensurePeer closing old connection")
 			_ = old.Close()
 		}
 		if ps.receivers == nil {

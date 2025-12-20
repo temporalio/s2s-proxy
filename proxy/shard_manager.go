@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/server/common/log/tag"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
 )
 
 type (
@@ -52,6 +53,8 @@ type (
 		TerminatePreviousLocalReceiver(shardID history.ClusterShardID, logger log.Logger)
 		// GetIntraProxyManager returns the intra-proxy manager if it exists
 		GetIntraProxyManager() *intraProxyManager
+		// GetIntraProxyTLSConfig returns the TLS config for intra-proxy connections
+		GetIntraProxyTLSConfig() encryption.TLSConfig
 		// DeliverAckToShardOwner routes an ACK request to the appropriate shard owner (local or remote)
 		DeliverAckToShardOwner(srcShard history.ClusterShardID, routedAck *RoutedAck, shutdownChan channel.ShutdownOnce, logger log.Logger, ack int64, allowForward bool) bool
 		// DeliverMessagesToShardOwner routes replication messages to the appropriate shard owner (local or remote)
@@ -110,8 +113,9 @@ type (
 		onLocalShardChange  func(shard history.ClusterShardID, added bool)
 		onRemoteShardChange func(peer string, shard history.ClusterShardID, added bool)
 		// Local shards owned by this node, keyed by short id
-		localShards map[string]ShardInfo
-		intraMgr    *intraProxyManager
+		localShards         map[string]ShardInfo
+		intraMgr            *intraProxyManager
+		intraProxyTLSConfig encryption.TLSConfig
 		// Join retry control
 		stopJoinRetry   chan struct{}
 		joinWg          sync.WaitGroup
@@ -159,7 +163,7 @@ type (
 )
 
 // NewShardManager creates a new shard manager instance
-func NewShardManager(memberlistConfig *config.MemberlistConfig, shardCountConfig config.ShardCountConfig, logger log.Logger) ShardManager {
+func NewShardManager(memberlistConfig *config.MemberlistConfig, shardCountConfig config.ShardCountConfig, intraProxyTLSConfig encryption.TLSConfig, logger log.Logger) ShardManager {
 	delegate := &shardDelegate{
 		logger: logger,
 	}
@@ -170,6 +174,7 @@ func NewShardManager(memberlistConfig *config.MemberlistConfig, shardCountConfig
 		delegate:                 delegate,
 		localShards:              make(map[string]ShardInfo),
 		intraMgr:                 nil,
+		intraProxyTLSConfig:      intraProxyTLSConfig,
 		stopJoinRetry:            make(chan struct{}),
 		activeReceivers:          make(map[history.ClusterShardID]*proxyStreamReceiver),
 		remoteSendChannels:       make(map[history.ClusterShardID]chan RoutedMessage),
@@ -875,6 +880,10 @@ func (sm *shardManagerImpl) SetupCallbacks() {
 
 func (sm *shardManagerImpl) GetIntraProxyManager() *intraProxyManager {
 	return sm.intraMgr
+}
+
+func (sm *shardManagerImpl) GetIntraProxyTLSConfig() encryption.TLSConfig {
+	return sm.intraProxyTLSConfig
 }
 
 func (sm *shardManagerImpl) broadcastShardChange(msgType string, shard history.ClusterShardID) {

@@ -381,7 +381,7 @@ func (s *adminServiceProxyServer) streamIntraProxyRouting(
 	// Only allow intra-proxy when at least one shard is local to this proxy instance
 	isLocalSource := s.shardManager.IsLocalShard(sourceShardID)
 	isLocalTarget := s.shardManager.IsLocalShard(targetShardID)
-	if isLocalSource || !isLocalTarget {
+	if isLocalTarget || !isLocalSource {
 		logger.Info("Skipping intra-proxy between two local shards or two remote shards. Client may use outdated shard info.",
 			tag.NewBoolTag("isLocalSource", isLocalSource),
 			tag.NewBoolTag("isLocalTarget", isLocalTarget),
