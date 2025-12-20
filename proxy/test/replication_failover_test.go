@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"net"
 	"sync"
 	"testing"
 	"time"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
+	"github.com/temporalio/s2s-proxy/testutil"
 )
 
 type (
@@ -136,19 +136,6 @@ func TestReplicationFailoverTestSuite(t *testing.T) {
 	}
 }
 
-func getFreePort() int {
-	l, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		panic(fmt.Sprintf("failed to get free port: %v", err))
-	}
-	defer func() {
-		if err := l.Close(); err != nil {
-			fmt.Printf("Failed to close listener: %v\n", err)
-		}
-	}()
-	return l.Addr().(*net.TCPAddr).Port
-}
-
 func (s *ReplicationTestSuite) SetupSuite() {
 	s.Assertions = require.New(s.T())
 	s.logger = log.NewTestLogger()
@@ -162,11 +149,11 @@ func (s *ReplicationTestSuite) SetupSuite() {
 	s.clusterA = s.createCluster("cluster-a", s.shardCountA, 1)
 	s.clusterB = s.createCluster("cluster-b", s.shardCountB, 2)
 
-	s.proxyAAddress = fmt.Sprintf("localhost:%d", getFreePort())
-	proxyAOutbound := fmt.Sprintf("localhost:%d", getFreePort())
-	s.proxyBAddress = fmt.Sprintf("localhost:%d", getFreePort())
-	proxyBOutbound := fmt.Sprintf("localhost:%d", getFreePort())
-	muxServerAddress := fmt.Sprintf("localhost:%d", getFreePort())
+	s.proxyAAddress = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	proxyAOutbound := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	s.proxyBAddress = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	proxyBOutbound := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	muxServerAddress := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
 
 	proxyBShardConfig := s.shardCountConfigB
 	if proxyBShardConfig.Mode == config.ShardCountLCM || proxyBShardConfig.Mode == config.ShardCountRouting {
