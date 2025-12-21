@@ -23,6 +23,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/endtoendtest"
+	"github.com/temporalio/s2s-proxy/testutil"
 )
 
 func init() {
@@ -41,31 +42,36 @@ type (
 )
 
 var (
-	// Create some believable echo server configs
-	echoServerInfo = endtoendtest.ClusterInfo{
-		ServerAddress:  echoServerAddress,
-		ClusterShardID: serverClusterShard,
-		S2sProxyConfig: makeS2SConfig(s2sAddresses{
-			echoServer:  "localhost:7266",
-			inbound:     "localhost:7366",
-			outbound:    "localhost:7466",
-			prometheus:  "localhost:7468",
-			healthCheck: "localhost:7479",
-		}),
-	}
-	echoClientInfo = endtoendtest.ClusterInfo{
-		ServerAddress:  echoClientAddress,
-		ClusterShardID: clientClusterShard,
-		S2sProxyConfig: makeS2SConfig(s2sAddresses{
-			echoServer:  "localhost:8266",
-			inbound:     "localhost:8366",
-			outbound:    "localhost:8466",
-			prometheus:  "localhost:7467",
-			healthCheck: "localhost:7478",
-		}),
-	}
 	logger log.Logger
 )
+
+func getEchoServerInfo() endtoendtest.ClusterInfo {
+	return endtoendtest.ClusterInfo{
+		ServerAddress:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+		ClusterShardID: serverClusterShard,
+		S2sProxyConfig: makeS2SConfig(s2sAddresses{
+			echoServer:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+			inbound:     fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+			outbound:    fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+			prometheus:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+			healthCheck: fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+		}),
+	}
+}
+
+func getEchoClientInfo() endtoendtest.ClusterInfo {
+	return endtoendtest.ClusterInfo{
+		ServerAddress:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+		ClusterShardID: clientClusterShard,
+		S2sProxyConfig: makeS2SConfig(s2sAddresses{
+			echoServer:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+			inbound:     fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+			outbound:    fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+			prometheus:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+			healthCheck: fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+		}),
+	}
+}
 
 type hangupAdminServer struct {
 	adminservice.UnimplementedAdminServiceServer
@@ -129,6 +135,12 @@ func TestEOFFromServer(t *testing.T) {
 }
 
 func TestWiringWithEchoService(t *testing.T) {
+	echoServerInfo := getEchoServerInfo()
+	echoClientInfo := getEchoClientInfo()
+	// Update outbound client address to point to the other proxy's inbound
+	echoServerInfo.S2sProxyConfig.Outbound.Client.ServerAddress = echoClientInfo.S2sProxyConfig.Inbound.Server.ListenAddress
+	echoClientInfo.S2sProxyConfig.Outbound.Client.ServerAddress = echoServerInfo.S2sProxyConfig.Inbound.Server.ListenAddress
+
 	echoServer := endtoendtest.NewEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
 	echoClient := endtoendtest.NewEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
 	echoServer.Start()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,11 +15,8 @@ import (
 	replicationpb "go.temporal.io/api/replication/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/api/historyservice/v1"
 	"go.temporal.io/server/common"
-	"go.temporal.io/server/common/cluster"
-	"go.temporal.io/server/common/dynamicconfig"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"go.temporal.io/server/common/namespace"
@@ -28,6 +26,13 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 	"github.com/temporalio/s2s-proxy/testutil"
+)
+
+type SetupMode string
+
+const (
+	SetupModeSimple     SetupMode = "simple"     // Case B: Two proxies, direct connection, no load balancer, no memberlist
+	SetupModeMultiProxy SetupMode = "multiproxy" // Case A: Multi-proxy with load balancers and memberlist
 )
 
 type (
@@ -41,11 +46,41 @@ type (
 		clusterA *testcore.TestCluster
 		clusterB *testcore.TestCluster
 
+		// Case B: Simple setup
 		proxyA *s2sproxy.Proxy
 		proxyB *s2sproxy.Proxy
 
-		proxyAAddress string
-		proxyBAddress string
+		proxyAOutbound string
+		proxyBOutbound string
+
+		// Case A: Multi-proxy setup
+		proxyA1 *s2sproxy.Proxy
+		proxyA2 *s2sproxy.Proxy
+		proxyB1 *s2sproxy.Proxy
+		proxyB2 *s2sproxy.Proxy
+
+		proxyA1Outbound string
+		proxyA2Outbound string
+		proxyB1Outbound string
+		proxyB2Outbound string
+
+		proxyB1Mux string
+		proxyB2Mux string
+
+		proxyA1MemberlistPort int
+		proxyA2MemberlistPort int
+		proxyB1MemberlistPort int
+		proxyB2MemberlistPort int
+
+		loadBalancerA *trackingTCPProxy
+		loadBalancerB *trackingTCPProxy
+		loadBalancerC *trackingTCPProxy
+
+		loadBalancerAPort string
+		loadBalancerBPort string
+		loadBalancerCPort string
+
+		setupMode SetupMode
 
 		shardCountA       int
 		shardCountB       int
@@ -74,51 +109,108 @@ type (
 		ShardCountB       int
 		WorkflowsPerPair  int
 		ShardCountConfigB config.ShardCountConfig
+		SetupMode         SetupMode
 	}
 )
 
 var testConfigs = []TestConfig{
+	// Case B: Simple setup tests
 	{
-		Name:             "SingleShard",
+		Name:             "Simple_SingleShard",
 		ShardCountA:      1,
 		ShardCountB:      1,
 		WorkflowsPerPair: 1,
+		SetupMode:        SetupModeSimple,
 	},
 	{
-		Name:             "FourShards",
+		Name:             "Simple_FourShards",
 		ShardCountA:      4,
 		ShardCountB:      4,
 		WorkflowsPerPair: 1,
+		SetupMode:        SetupModeSimple,
 	},
 	{
-		Name:             "AsymmetricShards_4to2",
+		Name:             "Simple_AsymmetricShards_4to2",
 		ShardCountA:      4,
 		ShardCountB:      2,
 		WorkflowsPerPair: 1,
+		SetupMode:        SetupModeSimple,
 	},
 	{
-		Name:             "AsymmetricShards_2to4",
+		Name:             "Simple_AsymmetricShards_2to4",
 		ShardCountA:      2,
 		ShardCountB:      4,
 		WorkflowsPerPair: 1,
+		SetupMode:        SetupModeSimple,
 	},
 	{
-		Name:             "ArbitraryShards_2to3_LCM",
+		Name:             "Simple_ArbitraryShards_2to3_LCM",
 		ShardCountA:      2,
 		ShardCountB:      3,
 		WorkflowsPerPair: 1,
 		ShardCountConfigB: config.ShardCountConfig{
 			Mode: config.ShardCountLCM,
 		},
+		SetupMode: SetupModeSimple,
 	},
 	{
-		Name:             "ArbitraryShards_2to3_Routing",
+		Name:             "Simple_ArbitraryShards_2to3_Routing",
 		ShardCountA:      2,
 		ShardCountB:      3,
 		WorkflowsPerPair: 1,
 		ShardCountConfigB: config.ShardCountConfig{
 			Mode: config.ShardCountRouting,
 		},
+		SetupMode: SetupModeSimple,
+	},
+	// Case A: Multi-proxy setup tests
+	{
+		Name:             "MultiProxy_SingleShard",
+		ShardCountA:      1,
+		ShardCountB:      1,
+		WorkflowsPerPair: 1,
+		SetupMode:        SetupModeMultiProxy,
+	},
+	{
+		Name:             "MultiProxy_FourShards",
+		ShardCountA:      4,
+		ShardCountB:      4,
+		WorkflowsPerPair: 1,
+		SetupMode:        SetupModeMultiProxy,
+	},
+	{
+		Name:             "MultiProxy_AsymmetricShards_4to2",
+		ShardCountA:      4,
+		ShardCountB:      2,
+		WorkflowsPerPair: 1,
+		SetupMode:        SetupModeMultiProxy,
+	},
+	{
+		Name:             "MultiProxy_AsymmetricShards_2to4",
+		ShardCountA:      2,
+		ShardCountB:      4,
+		WorkflowsPerPair: 1,
+		SetupMode:        SetupModeMultiProxy,
+	},
+	{
+		Name:             "MultiProxy_ArbitraryShards_2to3_LCM",
+		ShardCountA:      2,
+		ShardCountB:      3,
+		WorkflowsPerPair: 1,
+		ShardCountConfigB: config.ShardCountConfig{
+			Mode: config.ShardCountLCM,
+		},
+		SetupMode: SetupModeMultiProxy,
+	},
+	{
+		Name:             "MultiProxy_ArbitraryShards_2to3_Routing",
+		ShardCountA:      2,
+		ShardCountB:      3,
+		WorkflowsPerPair: 1,
+		ShardCountConfigB: config.ShardCountConfig{
+			Mode: config.ShardCountRouting,
+		},
+		SetupMode: SetupModeMultiProxy,
 	},
 }
 
@@ -130,6 +222,7 @@ func TestReplicationFailoverTestSuite(t *testing.T) {
 				shardCountB:       tc.ShardCountB,
 				shardCountConfigB: tc.ShardCountConfigB,
 				workflowsPerPair:  tc.WorkflowsPerPair,
+				setupMode:         tc.SetupMode,
 			}
 			suite.Run(t, s)
 		})
@@ -144,16 +237,45 @@ func (s *ReplicationTestSuite) SetupSuite() {
 	s.logger.Info("Setting up replication test suite",
 		tag.NewInt("shardCountA", s.shardCountA),
 		tag.NewInt("shardCountB", s.shardCountB),
+		tag.NewStringTag("setupMode", string(s.setupMode)),
 	)
 
-	s.clusterA = s.createCluster("cluster-a", s.shardCountA, 1)
-	s.clusterB = s.createCluster("cluster-b", s.shardCountB, 2)
+	s.clusterA = createCluster(s.logger, s.T(), "cluster-a", s.shardCountA, 1, 1)
+	s.clusterB = createCluster(s.logger, s.T(), "cluster-b", s.shardCountB, 2, 1)
 
-	s.proxyAAddress = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	if s.setupMode == SetupModeSimple {
+		s.setupSimple()
+	} else {
+		s.setupMultiProxy()
+	}
+
+	s.logger.Info("Waiting for proxies to start and connect")
+	time.Sleep(10 * time.Second)
+
+	s.logger.Info("Configuring remote clusters")
+	if s.setupMode == SetupModeSimple {
+		configureRemoteCluster(s.logger, s.T(), s.clusterA, s.clusterB.ClusterName(), s.proxyAOutbound)
+		configureRemoteCluster(s.logger, s.T(), s.clusterB, s.clusterA.ClusterName(), s.proxyBOutbound)
+	} else {
+		configureRemoteCluster(s.logger, s.T(), s.clusterA, s.clusterB.ClusterName(), fmt.Sprintf("localhost:%s", s.loadBalancerAPort))
+		configureRemoteCluster(s.logger, s.T(), s.clusterB, s.clusterA.ClusterName(), fmt.Sprintf("localhost:%s", s.loadBalancerCPort))
+	}
+
+	waitForReplicationReady(s.logger, s.T(), s.clusterA, s.clusterB)
+
+	s.namespace = s.createGlobalNamespace()
+	s.waitForClusterSynced()
+}
+
+func (s *ReplicationTestSuite) setupSimple() {
+	s.logger.Info("Setting up simple two-proxy configuration")
+
 	proxyAOutbound := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.proxyBAddress = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
 	proxyBOutbound := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
 	muxServerAddress := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+
+	s.proxyAOutbound = proxyAOutbound
+	s.proxyBOutbound = proxyBOutbound
 
 	proxyBShardConfig := s.shardCountConfigB
 	if proxyBShardConfig.Mode == config.ShardCountLCM || proxyBShardConfig.Mode == config.ShardCountRouting {
@@ -161,19 +283,70 @@ func (s *ReplicationTestSuite) SetupSuite() {
 		proxyBShardConfig.RemoteShardCount = int32(s.shardCountA)
 	}
 
-	s.proxyA = s.createProxy("proxy-a", s.proxyAAddress, proxyAOutbound, muxServerAddress, s.clusterA, config.ClientMode, config.ShardCountConfig{})
-	s.proxyB = s.createProxy("proxy-b", s.proxyBAddress, proxyBOutbound, muxServerAddress, s.clusterB, config.ServerMode, proxyBShardConfig)
+	s.proxyA = createProxy(s.logger, s.T(), "proxy-a", "", proxyAOutbound, muxServerAddress, s.clusterA, config.ClientMode, config.ShardCountConfig{}, "", "", 0, nil, nil)
+	s.proxyB = createProxy(s.logger, s.T(), "proxy-b", "", proxyBOutbound, muxServerAddress, s.clusterB, config.ServerMode, proxyBShardConfig, "", "", 0, nil, nil)
+}
 
-	s.logger.Info("Waiting for proxies to start and connect")
-	time.Sleep(10 * time.Second) // TODO: remove this once we have a better way to wait for proxies to start and connect
+func (s *ReplicationTestSuite) setupMultiProxy() {
+	s.logger.Info("Setting up multi-proxy configuration with load balancers")
 
-	s.logger.Info("Configuring remote clusters")
-	s.configureRemoteCluster(s.clusterA, s.clusterB.ClusterName(), proxyAOutbound)
-	s.configureRemoteCluster(s.clusterB, s.clusterA.ClusterName(), proxyBOutbound)
-	s.waitForReplicationReady()
+	s.proxyA1Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	s.proxyA2Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	s.proxyB1Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	s.proxyB2Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
 
-	s.namespace = s.createGlobalNamespace()
-	s.waitForClusterSynced()
+	s.proxyB1Mux = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	s.proxyB2Mux = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+
+	loadBalancerAPort := fmt.Sprintf("%d", testutil.GetFreePort())
+	loadBalancerBPort := fmt.Sprintf("%d", testutil.GetFreePort())
+	loadBalancerCPort := fmt.Sprintf("%d", testutil.GetFreePort())
+
+	s.loadBalancerAPort = loadBalancerAPort
+	s.loadBalancerBPort = loadBalancerBPort
+	s.loadBalancerCPort = loadBalancerCPort
+
+	proxyA1Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	proxyA2Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	proxyB1Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	proxyB2Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+
+	proxyAddressesA := map[string]string{
+		"proxy-node-a-1": proxyA1Address,
+		"proxy-node-a-2": proxyA2Address,
+	}
+	proxyAddressesB := map[string]string{
+		"proxy-node-b-1": proxyB1Address,
+		"proxy-node-b-2": proxyB2Address,
+	}
+
+	s.proxyA1MemberlistPort = testutil.GetFreePort()
+	s.proxyA2MemberlistPort = testutil.GetFreePort()
+	s.proxyB1MemberlistPort = testutil.GetFreePort()
+	s.proxyB2MemberlistPort = testutil.GetFreePort()
+
+	proxyBShardConfig := s.shardCountConfigB
+	if proxyBShardConfig.Mode == config.ShardCountLCM || proxyBShardConfig.Mode == config.ShardCountRouting {
+		proxyBShardConfig.LocalShardCount = int32(s.shardCountB)
+		proxyBShardConfig.RemoteShardCount = int32(s.shardCountA)
+	}
+
+	s.proxyB1 = createProxy(s.logger, s.T(), "proxy-b-1", proxyB1Address, s.proxyB1Outbound, s.proxyB1Mux, s.clusterB, config.ServerMode, proxyBShardConfig, "proxy-node-b-1", "127.0.0.1", s.proxyB1MemberlistPort, nil, proxyAddressesB)
+	s.proxyB2 = createProxy(s.logger, s.T(), "proxy-b-2", proxyB2Address, s.proxyB2Outbound, s.proxyB2Mux, s.clusterB, config.ServerMode, proxyBShardConfig, "proxy-node-b-2", "127.0.0.1", s.proxyB2MemberlistPort, []string{fmt.Sprintf("127.0.0.1:%d", s.proxyB1MemberlistPort)}, proxyAddressesB)
+
+	var countA1, countA2, countB1, countB2, countPA1, countPA2 atomic.Int64
+
+	var err error
+	s.loadBalancerA, err = createLoadBalancer(s.logger, loadBalancerAPort, []string{s.proxyA1Outbound, s.proxyA2Outbound}, &countA1, &countA2)
+	s.NoError(err, "Failed to start load balancer A")
+	s.loadBalancerB, err = createLoadBalancer(s.logger, loadBalancerBPort, []string{s.proxyB1Mux, s.proxyB2Mux}, &countPA1, &countPA2)
+	s.NoError(err, "Failed to start load balancer B")
+	s.loadBalancerC, err = createLoadBalancer(s.logger, loadBalancerCPort, []string{s.proxyB1Outbound, s.proxyB2Outbound}, &countB1, &countB2)
+	s.NoError(err, "Failed to start load balancer C")
+
+	muxLoadBalancerBAddress := fmt.Sprintf("localhost:%s", loadBalancerBPort)
+	s.proxyA1 = createProxy(s.logger, s.T(), "proxy-a-1", proxyA1Address, s.proxyA1Outbound, muxLoadBalancerBAddress, s.clusterA, config.ClientMode, config.ShardCountConfig{}, "proxy-node-a-1", "127.0.0.1", s.proxyA1MemberlistPort, nil, proxyAddressesA)
+	s.proxyA2 = createProxy(s.logger, s.T(), "proxy-a-2", proxyA2Address, s.proxyA2Outbound, muxLoadBalancerBAddress, s.clusterA, config.ClientMode, config.ShardCountConfig{}, "proxy-node-a-2", "127.0.0.1", s.proxyA2MemberlistPort, []string{fmt.Sprintf("127.0.0.1:%d", s.proxyA1MemberlistPort)}, proxyAddressesA)
 }
 
 func (s *ReplicationTestSuite) TearDownSuite() {
@@ -182,8 +355,8 @@ func (s *ReplicationTestSuite) TearDownSuite() {
 	}
 
 	if s.clusterA != nil && s.clusterB != nil {
-		s.removeRemoteCluster(s.clusterA, s.clusterB.ClusterName())
-		s.removeRemoteCluster(s.clusterB, s.clusterA.ClusterName())
+		removeRemoteCluster(s.logger, s.T(), s.clusterA, s.clusterB.ClusterName())
+		removeRemoteCluster(s.logger, s.T(), s.clusterB, s.clusterA.ClusterName())
 	}
 	if s.clusterA != nil {
 		s.NoError(s.clusterA.TearDownCluster())
@@ -191,13 +364,37 @@ func (s *ReplicationTestSuite) TearDownSuite() {
 	if s.clusterB != nil {
 		s.NoError(s.clusterB.TearDownCluster())
 	}
-	if s.proxyA != nil {
-		s.proxyA.Stop()
-	}
-	if s.proxyB != nil {
-		s.proxyB.Stop()
-	}
 
+	if s.setupMode == SetupModeSimple {
+		if s.proxyA != nil {
+			s.proxyA.Stop()
+		}
+		if s.proxyB != nil {
+			s.proxyB.Stop()
+		}
+	} else {
+		if s.loadBalancerA != nil {
+			s.loadBalancerA.Stop()
+		}
+		if s.loadBalancerB != nil {
+			s.loadBalancerB.Stop()
+		}
+		if s.loadBalancerC != nil {
+			s.loadBalancerC.Stop()
+		}
+		if s.proxyA1 != nil {
+			s.proxyA1.Stop()
+		}
+		if s.proxyA2 != nil {
+			s.proxyA2.Stop()
+		}
+		if s.proxyB1 != nil {
+			s.proxyB1.Stop()
+		}
+		if s.proxyB2 != nil {
+			s.proxyB2.Stop()
+		}
+	}
 }
 
 func (s *ReplicationTestSuite) SetupTest() {
@@ -206,206 +403,6 @@ func (s *ReplicationTestSuite) SetupTest() {
 	if s.namespace != "" {
 		s.ensureNamespaceActive(s.clusterA.ClusterName())
 	}
-}
-
-func (s *ReplicationTestSuite) createCluster(
-	clusterName string,
-	numShards int,
-	initialFailoverVersion int64,
-) *testcore.TestCluster {
-	clusterSuffix := common.GenerateRandomString(8)
-	fullClusterName := fmt.Sprintf("%s-%s", clusterName, clusterSuffix)
-
-	clusterConfig := &testcore.TestClusterConfig{
-		ClusterMetadata: cluster.Config{
-			EnableGlobalNamespace:    true,
-			FailoverVersionIncrement: 10,
-			MasterClusterName:        fullClusterName,
-			CurrentClusterName:       fullClusterName,
-			ClusterInformation: map[string]cluster.ClusterInformation{
-				fullClusterName: {
-					Enabled:                true,
-					InitialFailoverVersion: initialFailoverVersion,
-				},
-			},
-		},
-		HistoryConfig: testcore.HistoryConfig{
-			NumHistoryShards: int32(numShards),
-			NumHistoryHosts:  1,
-		},
-		DynamicConfigOverrides: map[dynamicconfig.Key]interface{}{
-			dynamicconfig.NamespaceCacheRefreshInterval.Key(): time.Second,
-			dynamicconfig.EnableReplicationStream.Key():       true,
-			dynamicconfig.EnableReplicationTaskBatching.Key(): true,
-		},
-	}
-
-	testClusterFactory := testcore.NewTestClusterFactory()
-	logger := log.With(s.logger, tag.NewStringTag("clusterName", clusterName))
-	cluster, err := testClusterFactory.NewCluster(s.T(), clusterConfig, logger)
-	s.NoError(err, "Failed to create cluster %s", clusterName)
-	s.NotNil(cluster)
-
-	return cluster
-}
-
-func (s *ReplicationTestSuite) createProxy(
-	name string,
-	inboundAddress string,
-	outboundAddress string,
-	muxAddress string,
-	cluster *testcore.TestCluster,
-	muxMode config.MuxMode,
-	shardCountConfig config.ShardCountConfig,
-) *s2sproxy.Proxy {
-	var muxConnectionType config.ConnectionType
-	var muxAddressInfo config.TCPTLSInfo
-	if muxMode == config.ServerMode {
-		muxConnectionType = config.ConnTypeMuxServer
-		muxAddressInfo = config.TCPTLSInfo{
-			ConnectionString: muxAddress,
-		}
-	} else {
-		muxConnectionType = config.ConnTypeMuxClient
-		muxAddressInfo = config.TCPTLSInfo{
-			ConnectionString: muxAddress,
-		}
-	}
-
-	cfg := &config.S2SProxyConfig{
-		ClusterConnections: []config.ClusterConnConfig{
-			{
-				Name: name,
-				LocalServer: config.ClusterDefinition{
-					Connection: config.TransportInfo{
-						ConnectionType: config.ConnTypeTCP,
-						TcpClient: config.TCPTLSInfo{
-							ConnectionString: cluster.Host().FrontendGRPCAddress(),
-						},
-						TcpServer: config.TCPTLSInfo{
-							ConnectionString: outboundAddress,
-						},
-					},
-				},
-				RemoteServer: config.ClusterDefinition{
-					Connection: config.TransportInfo{
-						ConnectionType: muxConnectionType,
-						MuxCount:       1,
-						MuxAddressInfo: muxAddressInfo,
-					},
-				},
-				ShardCountConfig: shardCountConfig,
-			},
-		},
-	}
-
-	configProvider := &simpleConfigProvider{cfg: *cfg}
-	proxy := s2sproxy.NewProxy(configProvider, s.logger)
-	s.NotNil(proxy)
-
-	err := proxy.Start()
-	s.NoError(err, "Failed to start proxy %s", name)
-
-	s.logger.Info("Started proxy", tag.NewStringTag("name", name),
-		tag.NewStringTag("inboundAddress", inboundAddress),
-		tag.NewStringTag("outboundAddress", outboundAddress),
-		tag.NewStringTag("muxAddress", muxAddress),
-		tag.NewStringTag("muxMode", string(muxMode)),
-	)
-
-	return proxy
-}
-
-type simpleConfigProvider struct {
-	cfg config.S2SProxyConfig
-}
-
-func (p *simpleConfigProvider) GetS2SProxyConfig() config.S2SProxyConfig {
-	return p.cfg
-}
-
-func (s *ReplicationTestSuite) configureRemoteCluster(
-	cluster *testcore.TestCluster,
-	remoteClusterName string,
-	proxyAddress string,
-) {
-	_, err := cluster.AdminClient().AddOrUpdateRemoteCluster(
-		context.Background(),
-		&adminservice.AddOrUpdateRemoteClusterRequest{
-			FrontendAddress:               proxyAddress,
-			EnableRemoteClusterConnection: true,
-		},
-	)
-	s.NoError(err, "Failed to configure remote cluster %s", remoteClusterName)
-	s.logger.Info("Configured remote cluster",
-		tag.NewStringTag("remoteClusterName", remoteClusterName),
-		tag.NewStringTag("proxyAddress", proxyAddress),
-		tag.NewStringTag("clusterName", cluster.ClusterName()),
-	)
-}
-
-func (s *ReplicationTestSuite) deglobalizeNamespace(namespaceName string) {
-	if s.clusterA == nil {
-		return
-	}
-
-	ctx := context.Background()
-	updateReq := &workflowservice.UpdateNamespaceRequest{
-		Namespace: namespaceName,
-		ReplicationConfig: &replicationpb.NamespaceReplicationConfig{
-			ActiveClusterName: s.clusterA.ClusterName(),
-			Clusters: []*replicationpb.ClusterReplicationConfig{
-				{ClusterName: s.clusterA.ClusterName()},
-			},
-		},
-	}
-
-	_, err := s.clusterA.FrontendClient().UpdateNamespace(ctx, updateReq)
-	if err != nil {
-		s.logger.Warn("Failed to deglobalize namespace", tag.NewStringTag("namespace", namespaceName), tag.Error(err))
-		return
-	}
-
-	s.Eventually(func() bool {
-		for _, c := range []*testcore.TestCluster{s.clusterA, s.clusterB} {
-			if c == nil {
-				continue
-			}
-			descResp, err := c.FrontendClient().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
-				Namespace: namespaceName,
-			})
-			if err != nil || descResp == nil {
-				return false
-			}
-			clusters := descResp.ReplicationConfig.GetClusters()
-			if len(clusters) != 1 {
-				return false
-			}
-			if clusters[0].GetClusterName() != s.clusterA.ClusterName() {
-				return false
-			}
-		}
-		return true
-	}, 10*time.Second, 200*time.Millisecond, "Namespace deglobalization not propagated")
-
-	s.logger.Info("Deglobalized namespace", tag.NewStringTag("namespace", namespaceName))
-}
-
-func (s *ReplicationTestSuite) removeRemoteCluster(
-	cluster *testcore.TestCluster,
-	remoteClusterName string,
-) {
-	_, err := cluster.AdminClient().RemoveRemoteCluster(
-		context.Background(),
-		&adminservice.RemoveRemoteClusterRequest{
-			ClusterName: remoteClusterName,
-		},
-	)
-	s.NoError(err, "Failed to remove remote cluster %s", remoteClusterName)
-	s.logger.Info("Removed remote cluster",
-		tag.NewStringTag("remoteClusterName", remoteClusterName),
-		tag.NewStringTag("clusterName", cluster.ClusterName()),
-	)
 }
 
 func (s *ReplicationTestSuite) createGlobalNamespace() string {
@@ -517,31 +514,22 @@ func (s *ReplicationTestSuite) generateWorkflowsWithLoad(workflowsPerPair int) [
 //   - sourceShard 1 (0-based: 0) can only map to targetShard 1 or 3 (0-based: 0 or 2)
 //   - sourceShard 2 (0-based: 1) can only map to targetShard 2 or 4 (0-based: 1 or 3)
 func (s *ReplicationTestSuite) isValidShardPair(sourceShard int32, targetShard int32) bool {
-	// If shard counts are equal, source and target shards must match
-	// (same hash function with same shard count produces identical shard assignment)
 	if s.shardCountA == s.shardCountB {
 		return sourceShard == targetShard
 	}
 
-	// Convert to 0-based for modulo arithmetic
 	sourceShard0 := sourceShard - 1
 	targetShard0 := targetShard - 1
 
-	// Case 1: targetShardCount divides sourceShardCount (e.g., 4 -> 2)
-	// Source shard x maps to target shard (x % targetShardCount)
 	if s.shardCountA%s.shardCountB == 0 {
 		expectedTarget := sourceShard0 % int32(s.shardCountB)
 		return targetShard0 == expectedTarget
 	}
 
-	// Case 2: sourceShardCount divides targetShardCount (e.g., 2 -> 4)
-	// Source shard x can map to target shards in set {x, x+sourceShardCount, x+2*sourceShardCount, ...}
-	// where all values are < targetShardCount
 	if s.shardCountB%s.shardCountA == 0 {
 		return targetShard0%int32(s.shardCountA) == sourceShard0
 	}
 
-	// No divisibility relationship, all pairs are possible (though may be hard to find)
 	return true
 }
 
@@ -572,25 +560,6 @@ func (s *ReplicationTestSuite) findWorkflowIDForShardPairWithIndex(sourceShard i
 	return ""
 }
 
-func (s *ReplicationTestSuite) waitForReplicationReady() {
-	time.Sleep(1 * time.Second)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	for _, cluster := range []*testcore.TestCluster{s.clusterA, s.clusterB} {
-		s.Eventually(func() bool {
-			_, err := cluster.HistoryClient().GetReplicationStatus(
-				ctx,
-				&historyservice.GetReplicationStatusRequest{},
-			)
-			return err == nil
-		}, 5*time.Second, 200*time.Millisecond, "Replication infrastructure not ready")
-	}
-
-	time.Sleep(1 * time.Second)
-}
-
 func (s *ReplicationTestSuite) waitForClusterSynced() {
 	s.waitForClusterConnected(s.clusterA, s.clusterB.ClusterName())
 	s.waitForClusterConnected(s.clusterB, s.clusterA.ClusterName())
@@ -614,28 +583,13 @@ func (s *ReplicationTestSuite) waitForClusterConnected(
 			s.logger.Debug("GetReplicationStatus failed", tag.Error(err))
 			return false
 		}
-		s.logger.Info("GetReplicationStatus response",
-			tag.NewStringTag("response", fmt.Sprintf("%+v", resp)),
-			tag.NewStringTag("source", sourceCluster.ClusterName()),
-			tag.NewStringTag("target", targetClusterName),
-		)
 
 		if len(resp.Shards) == 0 {
 			return false
 		}
 
 		for _, shard := range resp.Shards {
-			s.logger.Info("Replication status",
-				tag.NewStringTag("shard", fmt.Sprintf("%d", shard.ShardId)),
-				tag.NewInt64("maxTaskId", shard.MaxReplicationTaskId),
-				tag.NewStringTag("remoteClusters", fmt.Sprintf("%+v", shard.RemoteClusters)),
-			)
-
 			if shard.MaxReplicationTaskId <= 0 {
-				s.logger.Info("Max replication task id is 0",
-					tag.NewStringTag("shard", fmt.Sprintf("%d", shard.ShardId)),
-					tag.NewInt64("maxTaskId", shard.MaxReplicationTaskId),
-				)
 				continue
 			}
 
@@ -644,19 +598,10 @@ func (s *ReplicationTestSuite) waitForClusterConnected(
 
 			remoteInfo, ok := shard.RemoteClusters[targetClusterName]
 			if !ok || remoteInfo == nil {
-				s.logger.Info("Remote cluster not found",
-					tag.NewStringTag("shard", fmt.Sprintf("%d", shard.ShardId)),
-					tag.NewStringTag("targetClusterName", targetClusterName),
-				)
 				return false
 			}
 
 			if remoteInfo.AckedTaskId < shard.MaxReplicationTaskId {
-				s.logger.Debug("Replication not synced",
-					tag.ShardID(shard.ShardId),
-					tag.NewInt64("maxTaskId", shard.MaxReplicationTaskId),
-					tag.NewInt64("ackedTaskId", remoteInfo.AckedTaskId),
-				)
 				return false
 			}
 		}
@@ -708,8 +653,6 @@ func (s *ReplicationTestSuite) TestReplication() {
 		}
 	}
 
-	// TODO: make some progress on the workflows
-
 	s.waitForClusterSynced()
 
 	clientB := s.clusterB.FrontendClient()
@@ -720,7 +663,6 @@ func (s *ReplicationTestSuite) TestReplication() {
 	s.failoverNamespace(ctx, s.namespace, s.clusterB.ClusterName())
 
 	for _, wf := range s.workflows {
-		// TODO: continue the workflows instead of just terminating them
 		s.completeWorkflow(ctx, clientB, wf)
 	}
 
@@ -848,6 +790,53 @@ func (s *ReplicationTestSuite) failoverNamespace(
 	s.waitForClusterSynced()
 
 	s.logger.Info("Namespace failover completed", tag.NewStringTag("namespace", namespaceName), tag.NewStringTag("targetCluster", targetCluster))
+}
+
+func (s *ReplicationTestSuite) deglobalizeNamespace(namespaceName string) {
+	if s.clusterA == nil {
+		return
+	}
+
+	ctx := context.Background()
+	updateReq := &workflowservice.UpdateNamespaceRequest{
+		Namespace: namespaceName,
+		ReplicationConfig: &replicationpb.NamespaceReplicationConfig{
+			ActiveClusterName: s.clusterA.ClusterName(),
+			Clusters: []*replicationpb.ClusterReplicationConfig{
+				{ClusterName: s.clusterA.ClusterName()},
+			},
+		},
+	}
+
+	_, err := s.clusterA.FrontendClient().UpdateNamespace(ctx, updateReq)
+	if err != nil {
+		s.logger.Warn("Failed to deglobalize namespace", tag.NewStringTag("namespace", namespaceName), tag.Error(err))
+		return
+	}
+
+	s.Eventually(func() bool {
+		for _, c := range []*testcore.TestCluster{s.clusterA, s.clusterB} {
+			if c == nil {
+				continue
+			}
+			descResp, err := c.FrontendClient().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+				Namespace: namespaceName,
+			})
+			if err != nil || descResp == nil {
+				return false
+			}
+			clusters := descResp.ReplicationConfig.GetClusters()
+			if len(clusters) != 1 {
+				return false
+			}
+			if clusters[0].GetClusterName() != s.clusterA.ClusterName() {
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second, 200*time.Millisecond, "Namespace deglobalization not propagated")
+
+	s.logger.Info("Deglobalized namespace", tag.NewStringTag("namespace", namespaceName))
 }
 
 func (s *ReplicationTestSuite) ensureNamespaceActive(targetCluster string) {
