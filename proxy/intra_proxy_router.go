@@ -16,6 +16,7 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/encryption"
@@ -87,6 +88,28 @@ func (s *intraProxyStreamSender) Run(
 	// register this sender so sendMessages can use it
 	s.shardManager.GetIntraProxyManager().RegisterSender(s.peerNodeName, s.targetShardID, s.sourceShardID, s)
 	defer s.shardManager.GetIntraProxyManager().UnregisterSender(s.peerNodeName, s.targetShardID, s.sourceShardID)
+
+	// Send pending watermarks to late-registering shards
+	// When a sender is registered, check if there's an active receiver for the source shard
+	// that has a pending watermark, and send it immediately to the peer
+	if receiver, ok := s.shardManager.GetActiveReceiver(s.sourceShardID); ok {
+		if lastWatermark := receiver.GetLastWatermark(); lastWatermark != nil && lastWatermark.ExclusiveHighWatermark > 0 {
+			s.logger.Info("Sending pending watermark to peer on sender registration",
+				tag.NewInt64("exclusive_high", lastWatermark.ExclusiveHighWatermark),
+				tag.NewStringTag("peer", s.peerNodeName))
+			resp := &adminservice.StreamWorkflowReplicationMessagesResponse{
+				Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
+					Messages: &replicationv1.WorkflowReplicationMessages{
+						ExclusiveHighWatermark: lastWatermark.ExclusiveHighWatermark,
+						Priority:               lastWatermark.Priority,
+					},
+				},
+			}
+			if err := s.sendReplicationMessages(resp); err != nil {
+				s.logger.Warn("Failed to send pending watermark to peer on sender registration", tag.Error(err))
+			}
+		}
+	}
 
 	// recv ACKs from peer and route to original source shard owner
 	return s.recvAck(shutdownChan)
@@ -175,6 +198,9 @@ type intraProxyStreamReceiver struct {
 	streamID      string
 	shutdown      channel.ShutdownOnce
 	cancel        context.CancelFunc
+	// lastWatermark tracks the last watermark received from source shard for late-registering target shards
+	lastWatermarkMu sync.RWMutex
+	lastWatermark   *replicationv1.WorkflowReplicationMessages
 }
 
 // Run opens the client stream with metadata, registers tracking, and starts receiver goroutines.
@@ -199,14 +225,17 @@ func (r *intraProxyStreamReceiver) Run(ctx context.Context, shardManager ShardMa
 	r.cancel = cancel
 
 	client := adminservice.NewAdminServiceClient(conn)
-	stream, err := client.StreamWorkflowReplicationMessages(ctx)
+	streamClient, err := client.StreamWorkflowReplicationMessages(ctx)
 	if err != nil {
 		if r.cancel != nil {
 			r.cancel()
 		}
 		return err
 	}
-	r.streamClient = stream
+	r.streamClient = streamClient
+
+	r.shardManager.RegisterActiveReceiver(r.sourceShardID, r)
+	defer r.shardManager.UnregisterActiveReceiver(r.sourceShardID)
 
 	// Register client-side intra-proxy stream in tracker
 	st := GetGlobalStreamTracker()
@@ -245,6 +274,14 @@ func (r *intraProxyStreamReceiver) recvReplicationMessages() error {
 			st.UpdateStreamLastTaskIDs(r.streamID, ids)
 			st.UpdateStreamReplicationMessages(r.streamID, msgs.Messages.ExclusiveHighWatermark)
 			st.UpdateStream(r.streamID)
+
+			// Track last watermark for late-registering shards
+			r.lastWatermarkMu.Lock()
+			r.lastWatermark = &replicationv1.WorkflowReplicationMessages{
+				ExclusiveHighWatermark: msgs.Messages.ExclusiveHighWatermark,
+				Priority:               msgs.Messages.Priority,
+			}
+			r.lastWatermarkMu.Unlock()
 
 			r.logger.Info(fmt.Sprintf("Receiver received ReplicationTasks: exclusive_high=%d ids=%v", msgs.Messages.ExclusiveHighWatermark, ids))
 
@@ -303,6 +340,92 @@ func (r *intraProxyStreamReceiver) sendAck(req *adminservice.StreamWorkflowRepli
 		st.UpdateStream(r.streamID)
 	}
 	return nil
+}
+
+// GetTargetShardID returns the target shard ID for this receiver
+func (r *intraProxyStreamReceiver) GetTargetShardID() history.ClusterShardID {
+	return r.targetShardID
+}
+
+// GetSourceShardID returns the source shard ID for this receiver
+func (r *intraProxyStreamReceiver) GetSourceShardID() history.ClusterShardID {
+	return r.sourceShardID
+}
+
+// GetLastWatermark returns the last watermark received from the source shard
+func (r *intraProxyStreamReceiver) GetLastWatermark() *replicationv1.WorkflowReplicationMessages {
+	r.lastWatermarkMu.RLock()
+	defer r.lastWatermarkMu.RUnlock()
+	return r.lastWatermark
+}
+
+// NotifyNewTargetShard notifies the receiver about a newly registered target shard
+func (r *intraProxyStreamReceiver) NotifyNewTargetShard(targetShardID history.ClusterShardID) {
+	r.sendPendingWatermarkToShard(targetShardID)
+}
+
+// sendPendingWatermarkToShard sends the last known watermark to a newly registered target shard
+// This ensures late-registering shards receive watermarks that were sent before they registered
+func (r *intraProxyStreamReceiver) sendPendingWatermarkToShard(targetShardID history.ClusterShardID) {
+	r.lastWatermarkMu.RLock()
+	lastWatermark := r.lastWatermark
+	r.lastWatermarkMu.RUnlock()
+
+	if lastWatermark == nil || lastWatermark.ExclusiveHighWatermark == 0 {
+		// No pending watermark to send
+		return
+	}
+
+	r.logger.Info("Sending pending watermark to newly registered shard",
+		tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)),
+		tag.NewInt64("exclusive_high", lastWatermark.ExclusiveHighWatermark))
+
+	msg := RoutedMessage{
+		SourceShard: r.sourceShardID,
+		Resp: &adminservice.StreamWorkflowReplicationMessagesResponse{
+			Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
+				Messages: &replicationv1.WorkflowReplicationMessages{
+					ExclusiveHighWatermark: lastWatermark.ExclusiveHighWatermark,
+					Priority:               lastWatermark.Priority,
+				},
+			},
+		},
+	}
+
+	// Try to send to local shard first
+	if sendChan, exists := r.shardManager.GetRemoteSendChan(targetShardID); exists {
+		clonedResp := proto.Clone(msg.Resp).(*adminservice.StreamWorkflowReplicationMessagesResponse)
+		clonedMsg := RoutedMessage{
+			SourceShard: msg.SourceShard,
+			Resp:        clonedResp,
+		}
+		select {
+		case sendChan <- clonedMsg:
+			r.logger.Info("Sent pending watermark to local shard",
+				tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
+		default:
+			r.logger.Warn("Failed to send pending watermark to local shard (channel full)",
+				tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
+		}
+		return
+	}
+
+	// If not local, try to send to remote shard
+	if r.shardManager != nil {
+		shutdownChan := channel.NewShutdownOnce()
+		clonedResp := proto.Clone(msg.Resp).(*adminservice.StreamWorkflowReplicationMessagesResponse)
+		clonedMsg := RoutedMessage{
+			SourceShard: msg.SourceShard,
+			Resp:        clonedResp,
+		}
+		if r.shardManager.DeliverMessagesToShardOwner(targetShardID, &clonedMsg, shutdownChan, r.logger) {
+			r.logger.Info("Sent pending watermark to remote shard",
+				tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
+		} else {
+			r.logger.Warn("Failed to send pending watermark to remote shard",
+				tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
+		}
+	}
 }
 
 func (m *intraProxyManager) RegisterSender(
@@ -691,7 +814,7 @@ func (m *intraProxyManager) Notify() {
 // for a given peer and closes any sender/receiver not in the desired set.
 // This mirrors the Temporal StreamReceiverMonitor approach.
 func (m *intraProxyManager) ReconcilePeerStreams(peerNodeName string) {
-	m.logger.Info("ReconcilePeerStreams", tag.NewStringTag("peerNodeName", peerNodeName))
+	m.logger.Info("ReconcilePeerStreams started", tag.NewStringTag("peerNodeName", peerNodeName))
 	defer m.logger.Info("ReconcilePeerStreams done", tag.NewStringTag("peerNodeName", peerNodeName))
 
 	localShards := m.shardManager.GetLocalShards()
@@ -700,7 +823,7 @@ func (m *intraProxyManager) ReconcilePeerStreams(peerNodeName string) {
 		m.logger.Error("Failed to get remote shards for peer", tag.Error(err))
 		return
 	}
-	m.logger.Info("ReconcilePeerStreams",
+	m.logger.Info("ReconcilePeerStreams remote and local shards",
 		tag.NewStringTag("peerNodeName", peerNodeName),
 		tag.NewStringTag("remoteShards", fmt.Sprintf("%v", remoteShards)),
 		tag.NewStringTag("localShards", fmt.Sprintf("%v", localShards)),
@@ -733,7 +856,7 @@ func (m *intraProxyManager) ReconcilePeerStreams(peerNodeName string) {
 		}
 	}
 
-	m.logger.Info("ReconcilePeerStreams", tag.NewStringTag("desiredReceivers", fmt.Sprintf("%v", desiredReceivers)), tag.NewStringTag("desiredSenders", fmt.Sprintf("%v", desiredSenders)))
+	m.logger.Info("ReconcilePeerStreams desired receivers and senders", tag.NewStringTag("desiredReceivers", fmt.Sprintf("%v", desiredReceivers)), tag.NewStringTag("desiredSenders", fmt.Sprintf("%v", desiredSenders)))
 
 	// Ensure all desired receivers exist
 	for key := range desiredReceivers {

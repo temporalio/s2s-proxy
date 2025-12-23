@@ -311,13 +311,14 @@ func (s *ReplicationTestSuite) setupMultiProxy() {
 	proxyB1Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
 	proxyB2Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
 
+	// For intra-proxy communication, use outbound addresses where proxies listen
 	proxyAddressesA := map[string]string{
-		"proxy-node-a-1": proxyA1Address,
-		"proxy-node-a-2": proxyA2Address,
+		"proxy-node-a-1": s.proxyA1Outbound,
+		"proxy-node-a-2": s.proxyA2Outbound,
 	}
 	proxyAddressesB := map[string]string{
-		"proxy-node-b-1": proxyB1Address,
-		"proxy-node-b-2": proxyB2Address,
+		"proxy-node-b-1": s.proxyB1Outbound,
+		"proxy-node-b-2": s.proxyB2Outbound,
 	}
 
 	s.proxyA1MemberlistPort = testutil.GetFreePort()
@@ -513,7 +514,14 @@ func (s *ReplicationTestSuite) generateWorkflowsWithLoad(workflowsPerPair int) [
 // Vice versa: if sourceShardCount=2 and targetShardCount=4:
 //   - sourceShard 1 (0-based: 0) can only map to targetShard 1 or 3 (0-based: 0 or 2)
 //   - sourceShard 2 (0-based: 1) can only map to targetShard 2 or 4 (0-based: 1 or 3)
+//
+// When using routing mode, all pairs are valid because intra-proxy routing can handle arbitrary mappings.
 func (s *ReplicationTestSuite) isValidShardPair(sourceShard int32, targetShard int32) bool {
+	// In routing mode, all pairs are valid because intra-proxy routing can handle arbitrary mappings
+	if s.shardCountConfigB.Mode == config.ShardCountRouting {
+		return true
+	}
+
 	if s.shardCountA == s.shardCountB {
 		return sourceShard == targetShard
 	}
@@ -575,6 +583,11 @@ func (s *ReplicationTestSuite) waitForClusterConnected(
 	)
 
 	s.Eventually(func() bool {
+		s.logger.Info("Checking replication status for clusters to sync",
+			tag.NewStringTag("source", sourceCluster.ClusterName()),
+			tag.NewStringTag("target", targetClusterName),
+		)
+
 		resp, err := sourceCluster.HistoryClient().GetReplicationStatus(
 			context.Background(),
 			&historyservice.GetReplicationStatusRequest{},
@@ -583,12 +596,23 @@ func (s *ReplicationTestSuite) waitForClusterConnected(
 			s.logger.Debug("GetReplicationStatus failed", tag.Error(err))
 			return false
 		}
+		s.logger.Info("GetReplicationStatus succeeded",
+			tag.NewStringTag("source", sourceCluster.ClusterName()),
+			tag.NewStringTag("target", targetClusterName),
+			tag.NewStringTag("resp", fmt.Sprintf("%v", resp)),
+		)
 
 		if len(resp.Shards) == 0 {
 			return false
 		}
 
 		for _, shard := range resp.Shards {
+			s.logger.Info("Checking shard",
+				tag.NewInt32("shardId", shard.ShardId),
+				tag.NewInt64("maxReplicationTaskId", shard.MaxReplicationTaskId),
+				tag.NewStringTag("shardLocalTime", fmt.Sprintf("%v", shard.ShardLocalTime.AsTime())),
+				tag.NewStringTag("remoteClusters", fmt.Sprintf("%v", shard.RemoteClusters)),
+			)
 			if shard.MaxReplicationTaskId <= 0 {
 				continue
 			}

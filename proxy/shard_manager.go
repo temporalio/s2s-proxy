@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
+	replicationv1 "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
@@ -19,6 +20,14 @@ import (
 )
 
 type (
+	// ActiveReceiver is an interface for receivers that can be notified of new target shards
+	ActiveReceiver interface {
+		GetTargetShardID() history.ClusterShardID
+		GetSourceShardID() history.ClusterShardID
+		NotifyNewTargetShard(targetShardID history.ClusterShardID)
+		GetLastWatermark() *replicationv1.WorkflowReplicationMessages
+	}
+
 	// ShardManager manages distributed shard ownership across proxy instances
 	ShardManager interface {
 		// Start initializes the memberlist cluster and starts the manager
@@ -68,9 +77,11 @@ type (
 		// New: notify when remote shard set changes for a peer
 		SetOnRemoteShardChange(handler func(peer string, shard history.ClusterShardID, added bool))
 		// RegisterActiveReceiver registers an active receiver for watermark propagation
-		RegisterActiveReceiver(sourceShardID history.ClusterShardID, receiver *proxyStreamReceiver)
+		RegisterActiveReceiver(sourceShardID history.ClusterShardID, receiver ActiveReceiver)
 		// UnregisterActiveReceiver removes an active receiver
 		UnregisterActiveReceiver(sourceShardID history.ClusterShardID)
+		// GetActiveReceiver returns the active receiver for the given source shard
+		GetActiveReceiver(sourceShardID history.ClusterShardID) (ActiveReceiver, bool)
 		// SetRemoteSendChan registers a send channel for a specific shard ID
 		SetRemoteSendChan(shardID history.ClusterShardID, sendChan chan RoutedMessage)
 		// GetRemoteSendChan retrieves the send channel for a specific shard ID
@@ -120,8 +131,8 @@ type (
 		stopJoinRetry   chan struct{}
 		joinWg          sync.WaitGroup
 		joinLoopRunning bool
-		// activeReceivers tracks active proxyStreamReceiver instances by source shard for watermark propagation
-		activeReceivers   map[history.ClusterShardID]*proxyStreamReceiver
+		// activeReceivers tracks active receiver instances by source shard for watermark propagation
+		activeReceivers   map[history.ClusterShardID]ActiveReceiver
 		activeReceiversMu sync.RWMutex
 		// remoteSendChannels maps shard IDs to send channels for replication message routing
 		remoteSendChannels   map[history.ClusterShardID]chan RoutedMessage
@@ -176,7 +187,7 @@ func NewShardManager(memberlistConfig *config.MemberlistConfig, shardCountConfig
 		intraMgr:                 nil,
 		intraProxyTLSConfig:      intraProxyTLSConfig,
 		stopJoinRetry:            make(chan struct{}),
-		activeReceivers:          make(map[history.ClusterShardID]*proxyStreamReceiver),
+		activeReceivers:          make(map[history.ClusterShardID]ActiveReceiver),
 		remoteSendChannels:       make(map[history.ClusterShardID]chan RoutedMessage),
 		localAckChannels:         make(map[history.ClusterShardID]chan RoutedAck),
 		localReceiverCancelFuncs: make(map[history.ClusterShardID]context.CancelFunc),
@@ -1030,7 +1041,7 @@ func (sm *shardManagerImpl) removeLocalShard(shard history.ClusterShardID) {
 }
 
 // RegisterActiveReceiver registers an active receiver for watermark propagation
-func (sm *shardManagerImpl) RegisterActiveReceiver(sourceShardID history.ClusterShardID, receiver *proxyStreamReceiver) {
+func (sm *shardManagerImpl) RegisterActiveReceiver(sourceShardID history.ClusterShardID, receiver ActiveReceiver) {
 	sm.activeReceiversMu.Lock()
 	defer sm.activeReceiversMu.Unlock()
 	sm.activeReceivers[sourceShardID] = receiver
@@ -1043,11 +1054,19 @@ func (sm *shardManagerImpl) UnregisterActiveReceiver(sourceShardID history.Clust
 	delete(sm.activeReceivers, sourceShardID)
 }
 
+// GetActiveReceiver returns the active receiver for the given source shard
+func (sm *shardManagerImpl) GetActiveReceiver(sourceShardID history.ClusterShardID) (ActiveReceiver, bool) {
+	sm.activeReceiversMu.RLock()
+	defer sm.activeReceiversMu.RUnlock()
+	receiver, ok := sm.activeReceivers[sourceShardID]
+	return receiver, ok
+}
+
 // notifyReceiversOfNewShard notifies all receivers about a newly registered target shard
 // so they can send pending watermarks if available
 func (sm *shardManagerImpl) notifyReceiversOfNewShard(targetShardID history.ClusterShardID) {
 	sm.activeReceiversMu.RLock()
-	receivers := make([]*proxyStreamReceiver, 0, len(sm.activeReceivers))
+	receivers := make([]ActiveReceiver, 0, len(sm.activeReceivers))
 	for _, receiver := range sm.activeReceivers {
 		receivers = append(receivers, receiver)
 	}
@@ -1055,8 +1074,8 @@ func (sm *shardManagerImpl) notifyReceiversOfNewShard(targetShardID history.Clus
 
 	for _, receiver := range receivers {
 		// Only notify receivers that route to the same cluster as the newly registered shard
-		if receiver.targetShardID.ClusterID == targetShardID.ClusterID {
-			receiver.sendPendingWatermarkToShard(targetShardID)
+		if receiver.GetTargetShardID().ClusterID == targetShardID.ClusterID {
+			receiver.NotifyNewTargetShard(targetShardID)
 		}
 	}
 }

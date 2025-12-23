@@ -726,14 +726,6 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 			// record last source exclusive high watermark (original id space)
 			r.lastExclusiveHighOriginal = attr.Messages.ExclusiveHighWatermark
 
-			// Track last watermark for late-registering shards
-			r.lastWatermarkMu.Lock()
-			r.lastWatermark = &replicationv1.WorkflowReplicationMessages{
-				ExclusiveHighWatermark: attr.Messages.ExclusiveHighWatermark,
-				Priority:               attr.Messages.Priority,
-			}
-			r.lastWatermarkMu.Unlock()
-
 			// update tracker for incoming messages
 			if r.streamTracker != nil && r.streamID != "" {
 				r.streamTracker.UpdateStreamLastTaskIDs(r.streamID, ids)
@@ -745,6 +737,15 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 			// If replication tasks are empty, still log the empty batch and send watermark
 			if len(attr.Messages.ReplicationTasks) == 0 {
 				r.logger.Info("Receiver received empty replication batch", tag.NewInt64("exclusive_high", attr.Messages.ExclusiveHighWatermark))
+
+				// Track last watermark for late-registering shards
+				r.lastWatermarkMu.Lock()
+				r.lastWatermark = &replicationv1.WorkflowReplicationMessages{
+					ExclusiveHighWatermark: attr.Messages.ExclusiveHighWatermark,
+					Priority:               attr.Messages.Priority,
+				}
+				r.lastWatermarkMu.Unlock()
+
 				msg := RoutedMessage{
 					SourceShard: r.sourceShardID,
 					Resp: &adminservice.StreamWorkflowReplicationMessagesResponse{
@@ -868,6 +869,28 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 		}
 	}
 	return nil
+}
+
+// GetTargetShardID returns the target shard ID for this receiver
+func (r *proxyStreamReceiver) GetTargetShardID() history.ClusterShardID {
+	return r.targetShardID
+}
+
+// GetSourceShardID returns the source shard ID for this receiver
+func (r *proxyStreamReceiver) GetSourceShardID() history.ClusterShardID {
+	return r.sourceShardID
+}
+
+// GetLastWatermark returns the last watermark received from the source shard
+func (r *proxyStreamReceiver) GetLastWatermark() *replicationv1.WorkflowReplicationMessages {
+	r.lastWatermarkMu.RLock()
+	defer r.lastWatermarkMu.RUnlock()
+	return r.lastWatermark
+}
+
+// NotifyNewTargetShard notifies the receiver about a newly registered target shard
+func (r *proxyStreamReceiver) NotifyNewTargetShard(targetShardID history.ClusterShardID) {
+	r.sendPendingWatermarkToShard(targetShardID)
 }
 
 // sendPendingWatermarkToShard sends the last known watermark to a newly registered target shard
