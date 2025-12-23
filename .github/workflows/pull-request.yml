@@ -59,7 +59,7 @@ jobs:
           cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
 
       - name: Run go build
-        run: go build ./...
+        run: make bins
 
       - name: Run go unittest
         run: make test
