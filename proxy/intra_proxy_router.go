@@ -265,6 +265,10 @@ func (r *intraProxyStreamReceiver) recvReplicationMessages() error {
 			return err
 		}
 		if msgs, ok := resp.GetAttributes().(*adminservice.StreamWorkflowReplicationMessagesResponse_Messages); ok && msgs.Messages != nil {
+			// Capture watermark value immediately to avoid data race with sender
+			exclusiveHighWatermark := msgs.Messages.ExclusiveHighWatermark
+			priority := msgs.Messages.Priority
+
 			// Update client-side intra-proxy tracker for received messages
 			st := GetGlobalStreamTracker()
 			ids := make([]int64, 0, len(msgs.Messages.ReplicationTasks))
@@ -272,18 +276,18 @@ func (r *intraProxyStreamReceiver) recvReplicationMessages() error {
 				ids = append(ids, t.SourceTaskId)
 			}
 			st.UpdateStreamLastTaskIDs(r.streamID, ids)
-			st.UpdateStreamReplicationMessages(r.streamID, msgs.Messages.ExclusiveHighWatermark)
+			st.UpdateStreamReplicationMessages(r.streamID, exclusiveHighWatermark)
 			st.UpdateStream(r.streamID)
 
 			// Track last watermark for late-registering shards
 			r.lastWatermarkMu.Lock()
 			r.lastWatermark = &replicationv1.WorkflowReplicationMessages{
-				ExclusiveHighWatermark: msgs.Messages.ExclusiveHighWatermark,
-				Priority:               msgs.Messages.Priority,
+				ExclusiveHighWatermark: exclusiveHighWatermark,
+				Priority:               priority,
 			}
 			r.lastWatermarkMu.Unlock()
 
-			r.logger.Info(fmt.Sprintf("Receiver received ReplicationTasks: exclusive_high=%d ids=%v", msgs.Messages.ExclusiveHighWatermark, ids))
+			r.logger.Info(fmt.Sprintf("Receiver received ReplicationTasks: exclusive_high=%d ids=%v", exclusiveHighWatermark, ids))
 
 			msg := RoutedMessage{SourceShard: r.sourceShardID, Resp: resp}
 			sent := false
@@ -300,7 +304,7 @@ func (r *intraProxyStreamReceiver) recvReplicationMessages() error {
 						select {
 						case ch <- msg:
 							sent = true
-							r.logger.Info("Receiver sent ReplicationTasks to local target shard", tag.NewStringTag("targetShard", ClusterShardIDtoString(r.targetShardID)), tag.NewInt64("exclusive_high", msgs.Messages.ExclusiveHighWatermark))
+							r.logger.Info("Receiver sent ReplicationTasks to local target shard", tag.NewStringTag("targetShard", ClusterShardIDtoString(r.targetShardID)), tag.NewInt64("exclusive_high", exclusiveHighWatermark))
 						case <-shutdown.Channel():
 							// Will be handled outside the func
 						}

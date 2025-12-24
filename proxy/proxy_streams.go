@@ -474,6 +474,7 @@ func (s *proxyStreamSender) sendReplicationMessages(
 			originalHigh := m.Messages.ExclusiveHighWatermark
 			s.logger.Info(fmt.Sprintf("Sender received ReplicationTasks: exclusive_high=%d original_high=%d", m.Messages.ExclusiveHighWatermark, originalHigh))
 			// Ensure exclusive high watermark is in proxy task ID space
+			var proxyExclusiveHigh int64
 			if len(m.Messages.ReplicationTasks) > 0 {
 				for _, t := range m.Messages.ReplicationTasks {
 					// allocate proxy task id
@@ -490,7 +491,8 @@ func (s *proxyStreamSender) sendReplicationMessages(
 					originalIDs = append(originalIDs, original)
 					proxyIDs = append(proxyIDs, proxyID)
 				}
-				m.Messages.ExclusiveHighWatermark = m.Messages.ReplicationTasks[len(m.Messages.ReplicationTasks)-1].SourceTaskId + 1
+				proxyExclusiveHigh = m.Messages.ReplicationTasks[len(m.Messages.ReplicationTasks)-1].SourceTaskId + 1
+				m.Messages.ExclusiveHighWatermark = proxyExclusiveHigh
 			} else {
 				// No tasks in this batch: allocate a synthetic proxy task id mapping
 				s.nextProxyTaskID++
@@ -498,17 +500,18 @@ func (s *proxyStreamSender) sendReplicationMessages(
 				s.idRing.Append(proxyHigh, routed.SourceShard, originalHigh)
 				originalIDs = append(originalIDs, originalHigh)
 				proxyIDs = append(proxyIDs, proxyHigh)
-				m.Messages.ExclusiveHighWatermark = proxyHigh
-				s.logger.Info(fmt.Sprintf("Sender received ReplicationTasks: exclusive_high=%d original_high=%d proxy_high=%d original", m.Messages.ExclusiveHighWatermark, originalHigh, proxyHigh))
+				proxyExclusiveHigh = proxyHigh
+				m.Messages.ExclusiveHighWatermark = proxyExclusiveHigh
+				s.logger.Info(fmt.Sprintf("Sender received ReplicationTasks: exclusive_high=%d original_high=%d proxy_high=%d original", proxyExclusiveHigh, originalHigh, proxyHigh))
 			}
 			s.mu.Unlock()
-			// Log mapping from original -> proxy IDs
-			s.logger.Info(fmt.Sprintf("Sender sending ReplicationTasks from shard %s: original=%v proxy=%v", ClusterShardIDtoString(routed.SourceShard), originalIDs, proxyIDs), tag.NewInt64("exclusive_high", m.Messages.ExclusiveHighWatermark))
+			// Log mapping from original -> proxy IDs (use captured value to avoid data race)
+			s.logger.Info(fmt.Sprintf("Sender sending ReplicationTasks from shard %s: original=%v proxy=%v", ClusterShardIDtoString(routed.SourceShard), originalIDs, proxyIDs), tag.NewInt64("exclusive_high", proxyExclusiveHigh))
 
 			if err := sourceStreamServer.Send(resp); err != nil {
 				return err
 			}
-			s.logger.Info("Sender sent ReplicationTasks", tag.NewStringTag("sourceShard", ClusterShardIDtoString(routed.SourceShard)), tag.NewInt64("exclusive_high", m.Messages.ExclusiveHighWatermark))
+			s.logger.Info("Sender sent ReplicationTasks", tag.NewStringTag("sourceShard", ClusterShardIDtoString(routed.SourceShard)), tag.NewInt64("exclusive_high", proxyExclusiveHigh))
 
 			// Update keepalive state
 			s.mu.Lock()
