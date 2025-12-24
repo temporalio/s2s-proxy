@@ -25,7 +25,6 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
-	"github.com/temporalio/s2s-proxy/testutil"
 )
 
 type SetupMode string
@@ -270,9 +269,9 @@ func (s *ReplicationTestSuite) SetupSuite() {
 func (s *ReplicationTestSuite) setupSimple() {
 	s.logger.Info("Setting up simple two-proxy configuration")
 
-	proxyAOutbound := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	proxyBOutbound := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	muxServerAddress := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	proxyAOutbound := GetLocalhostAddress()
+	proxyBOutbound := GetLocalhostAddress()
+	muxServerAddress := GetLocalhostAddress()
 
 	s.proxyAOutbound = proxyAOutbound
 	s.proxyBOutbound = proxyBOutbound
@@ -290,26 +289,26 @@ func (s *ReplicationTestSuite) setupSimple() {
 func (s *ReplicationTestSuite) setupMultiProxy() {
 	s.logger.Info("Setting up multi-proxy configuration with load balancers")
 
-	s.proxyA1Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.proxyA2Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.proxyB1Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.proxyB2Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	s.proxyA1Outbound = GetLocalhostAddress()
+	s.proxyA2Outbound = GetLocalhostAddress()
+	s.proxyB1Outbound = GetLocalhostAddress()
+	s.proxyB2Outbound = GetLocalhostAddress()
 
-	s.proxyB1Mux = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.proxyB2Mux = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	s.proxyB1Mux = GetLocalhostAddress()
+	s.proxyB2Mux = GetLocalhostAddress()
 
-	loadBalancerAPort := fmt.Sprintf("%d", testutil.GetFreePort())
-	loadBalancerBPort := fmt.Sprintf("%d", testutil.GetFreePort())
-	loadBalancerCPort := fmt.Sprintf("%d", testutil.GetFreePort())
+	loadBalancerAPort := fmt.Sprintf("%d", GetFreePort())
+	loadBalancerBPort := fmt.Sprintf("%d", GetFreePort())
+	loadBalancerCPort := fmt.Sprintf("%d", GetFreePort())
 
 	s.loadBalancerAPort = loadBalancerAPort
 	s.loadBalancerBPort = loadBalancerBPort
 	s.loadBalancerCPort = loadBalancerCPort
 
-	proxyA1Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	proxyA2Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	proxyB1Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	proxyB2Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	proxyA1Address := GetLocalhostAddress()
+	proxyA2Address := GetLocalhostAddress()
+	proxyB1Address := GetLocalhostAddress()
+	proxyB2Address := GetLocalhostAddress()
 
 	// For intra-proxy communication, use outbound addresses where proxies listen
 	proxyAddressesA := map[string]string{
@@ -321,10 +320,10 @@ func (s *ReplicationTestSuite) setupMultiProxy() {
 		"proxy-node-b-2": s.proxyB2Outbound,
 	}
 
-	s.proxyA1MemberlistPort = testutil.GetFreePort()
-	s.proxyA2MemberlistPort = testutil.GetFreePort()
-	s.proxyB1MemberlistPort = testutil.GetFreePort()
-	s.proxyB2MemberlistPort = testutil.GetFreePort()
+	s.proxyA1MemberlistPort = GetFreePort()
+	s.proxyA2MemberlistPort = GetFreePort()
+	s.proxyB1MemberlistPort = GetFreePort()
+	s.proxyB2MemberlistPort = GetFreePort()
 
 	proxyBShardConfig := s.shardCountConfigB
 	if proxyBShardConfig.Mode == config.ShardCountLCM || proxyBShardConfig.Mode == config.ShardCountRouting {

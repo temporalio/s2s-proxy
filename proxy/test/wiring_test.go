@@ -23,7 +23,6 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/endtoendtest"
-	"github.com/temporalio/s2s-proxy/testutil"
 )
 
 func init() {
@@ -46,29 +45,39 @@ var (
 )
 
 func getEchoServerInfo() endtoendtest.ClusterInfo {
+	echoServerAddress := GetLocalhostAddress()
+	serverProxyInboundAddress := GetLocalhostAddress()
+	serverProxyOutboundAddress := GetLocalhostAddress()
+	prometheusAddress := GetLocalhostAddress()
+	healthCheckAddress := GetLocalhostAddress()
 	return endtoendtest.ClusterInfo{
-		ServerAddress:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+		ServerAddress:  echoServerAddress,
 		ClusterShardID: serverClusterShard,
 		S2sProxyConfig: makeS2SConfig(s2sAddresses{
-			echoServer:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
-			inbound:     fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
-			outbound:    fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
-			prometheus:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
-			healthCheck: fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+			echoServer:  echoServerAddress,
+			inbound:     serverProxyInboundAddress,
+			outbound:    serverProxyOutboundAddress,
+			prometheus:  prometheusAddress,
+			healthCheck: healthCheckAddress,
 		}),
 	}
 }
 
 func getEchoClientInfo() endtoendtest.ClusterInfo {
+	echoClientAddress := GetLocalhostAddress()
+	clientProxyInboundAddress := GetLocalhostAddress()
+	clientProxyOutboundAddress := GetLocalhostAddress()
+	prometheusAddress := GetLocalhostAddress()
+	healthCheckAddress := GetLocalhostAddress()
 	return endtoendtest.ClusterInfo{
-		ServerAddress:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+		ServerAddress:  echoClientAddress,
 		ClusterShardID: clientClusterShard,
 		S2sProxyConfig: makeS2SConfig(s2sAddresses{
-			echoServer:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
-			inbound:     fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
-			outbound:    fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
-			prometheus:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
-			healthCheck: fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+			echoServer:  echoClientAddress,
+			inbound:     clientProxyInboundAddress,
+			outbound:    clientProxyOutboundAddress,
+			prometheus:  prometheusAddress,
+			healthCheck: healthCheckAddress,
 		}),
 	}
 }
@@ -137,9 +146,6 @@ func TestEOFFromServer(t *testing.T) {
 func TestWiringWithEchoService(t *testing.T) {
 	echoServerInfo := getEchoServerInfo()
 	echoClientInfo := getEchoClientInfo()
-	// Update outbound client address to point to the other proxy's inbound
-	echoServerInfo.S2sProxyConfig.Outbound.Client.ServerAddress = echoClientInfo.S2sProxyConfig.Inbound.Server.ListenAddress
-	echoClientInfo.S2sProxyConfig.Outbound.Client.ServerAddress = echoServerInfo.S2sProxyConfig.Inbound.Server.ListenAddress
 
 	echoServer := endtoendtest.NewEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
 	echoClient := endtoendtest.NewEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)

@@ -724,7 +724,9 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 			r.logger.Info(fmt.Sprintf("Receiver received ReplicationTasks: exclusive_high=%d ids=%v", attr.Messages.ExclusiveHighWatermark, ids))
 
 			// record last source exclusive high watermark (original id space)
+			r.ackMu.Lock()
 			r.lastExclusiveHighOriginal = attr.Messages.ExclusiveHighWatermark
+			r.ackMu.Unlock()
 
 			// update tracker for incoming messages
 			if r.streamTracker != nil && r.streamID != "" {
@@ -986,14 +988,15 @@ func (r *proxyStreamReceiver) sendAck(
 					}
 				}
 				lastSentMin := r.lastSentMin
+				lastExclusiveHighOriginal := r.lastExclusiveHighOriginal
 				r.ackMu.Unlock()
 				if !first && min >= lastSentMin {
 					// Clamp ACK to last known exclusive high watermark from source
-					if r.lastExclusiveHighOriginal > 0 && min > r.lastExclusiveHighOriginal {
+					if lastExclusiveHighOriginal > 0 && min > lastExclusiveHighOriginal {
 						r.logger.Warn("Aggregated ACK exceeds last source high watermark; clamping",
 							tag.NewInt64("ack_min", min),
-							tag.NewInt64("source_exclusive_high", r.lastExclusiveHighOriginal))
-						min = r.lastExclusiveHighOriginal
+							tag.NewInt64("source_exclusive_high", lastExclusiveHighOriginal))
+						min = lastExclusiveHighOriginal
 					}
 					// Send aggregated minimal ack upstream
 					aggregated := &adminservice.StreamWorkflowReplicationMessagesRequest{

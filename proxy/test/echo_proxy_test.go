@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/endtoendtest"
-	"github.com/temporalio/s2s-proxy/testutil"
 	"github.com/temporalio/s2s-proxy/transport/mux"
 )
 
@@ -252,12 +250,12 @@ func (s *proxyTestSuite) SetupTest() {
 	s.NoError(err)
 
 	// Allocate free ports for each test
-	s.echoServerAddress = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.serverProxyInboundAddress = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.serverProxyOutboundAddress = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.echoClientAddress = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.clientProxyInboundAddress = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.clientProxyOutboundAddress = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	s.echoServerAddress = GetLocalhostAddress()
+	s.serverProxyInboundAddress = GetLocalhostAddress()
+	s.serverProxyOutboundAddress = GetLocalhostAddress()
+	s.echoClientAddress = GetLocalhostAddress()
+	s.clientProxyInboundAddress = GetLocalhostAddress()
+	s.clientProxyOutboundAddress = GetLocalhostAddress()
 }
 
 func (s *proxyTestSuite) TearDownTest() {

@@ -1,4 +1,4 @@
-package endtoendtest
+package proxy
 
 import (
 	"context"

@@ -17,7 +17,6 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
-	"github.com/temporalio/s2s-proxy/testutil"
 )
 
 type (
@@ -79,26 +78,26 @@ func (s *IntraProxyRoutingTestSuite) SetupSuite() {
 	s.clusterA = createCluster(s.logger, s.T(), "cluster-a", 2, 1, 1)
 	s.clusterB = createCluster(s.logger, s.T(), "cluster-b", 2, 2, 1)
 
-	s.proxyA1Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.proxyA2Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.proxyB1Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.proxyB2Outbound = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	s.proxyA1Outbound = GetLocalhostAddress()
+	s.proxyA2Outbound = GetLocalhostAddress()
+	s.proxyB1Outbound = GetLocalhostAddress()
+	s.proxyB2Outbound = GetLocalhostAddress()
 
-	s.proxyB1Mux = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	s.proxyB2Mux = fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	s.proxyB1Mux = GetLocalhostAddress()
+	s.proxyB2Mux = GetLocalhostAddress()
 
-	loadBalancerAPort := fmt.Sprintf("%d", testutil.GetFreePort())
-	loadBalancerBPort := fmt.Sprintf("%d", testutil.GetFreePort())
-	loadBalancerCPort := fmt.Sprintf("%d", testutil.GetFreePort())
+	loadBalancerAPort := fmt.Sprintf("%d", GetFreePort())
+	loadBalancerBPort := fmt.Sprintf("%d", GetFreePort())
+	loadBalancerCPort := fmt.Sprintf("%d", GetFreePort())
 
 	s.loadBalancerAPort = loadBalancerAPort
 	s.loadBalancerBPort = loadBalancerBPort
 	s.loadBalancerCPort = loadBalancerCPort
 
-	proxyA1Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	proxyA2Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	proxyB1Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	proxyB2Address := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	proxyA1Address := GetLocalhostAddress()
+	proxyA2Address := GetLocalhostAddress()
+	proxyB1Address := GetLocalhostAddress()
+	proxyB2Address := GetLocalhostAddress()
 
 	proxyAddressesA := map[string]string{
 		"proxy-node-a-1": proxyA1Address,
@@ -109,10 +108,10 @@ func (s *IntraProxyRoutingTestSuite) SetupSuite() {
 		"proxy-node-b-2": proxyB2Address,
 	}
 
-	s.proxyA1MemberlistPort = testutil.GetFreePort()
-	s.proxyA2MemberlistPort = testutil.GetFreePort()
-	s.proxyB1MemberlistPort = testutil.GetFreePort()
-	s.proxyB2MemberlistPort = testutil.GetFreePort()
+	s.proxyA1MemberlistPort = GetFreePort()
+	s.proxyA2MemberlistPort = GetFreePort()
+	s.proxyB1MemberlistPort = GetFreePort()
+	s.proxyB2MemberlistPort = GetFreePort()
 
 	s.proxyB1 = createProxy(s.logger, s.T(), "proxy-b-1", proxyB1Address, s.proxyB1Outbound, s.proxyB1Mux, s.clusterB, config.ServerMode, config.ShardCountConfig{}, "proxy-node-b-1", "127.0.0.1", s.proxyB1MemberlistPort, nil, proxyAddressesB)
 	s.proxyB2 = createProxy(s.logger, s.T(), "proxy-b-2", proxyB2Address, s.proxyB2Outbound, s.proxyB2Mux, s.clusterB, config.ServerMode, config.ShardCountConfig{}, "proxy-node-b-2", "127.0.0.1", s.proxyB2MemberlistPort, []string{fmt.Sprintf("127.0.0.1:%d", s.proxyB1MemberlistPort)}, proxyAddressesB)

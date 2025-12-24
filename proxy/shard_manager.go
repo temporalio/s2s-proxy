@@ -116,6 +116,7 @@ type (
 		ml               *memberlist.Memberlist
 		delegate         *shardDelegate
 		mutex            sync.RWMutex
+		mlMutex          sync.RWMutex // Protects memberlist operations (Members, NumMembers, UpdateNode, etc.)
 		localAddr        string
 		started          bool
 		onPeerJoin       func(nodeName string)
@@ -143,6 +144,10 @@ type (
 		// localReceiverCancelFuncs maps shard IDs to context cancel functions for local receiver termination
 		localReceiverCancelFuncs   map[history.ClusterShardID]context.CancelFunc
 		localReceiverCancelFuncsMu sync.RWMutex
+		// remoteNodeStates stores remote node shard states (from MergeRemoteState)
+		// keyed by node name, includes the meta (shard state) information
+		remoteNodeStates   map[string]NodeShardState
+		remoteNodeStatesMu sync.RWMutex
 	}
 
 	// shardDelegate implements memberlist.Delegate for shard state management
@@ -171,7 +176,38 @@ type (
 		Shards   map[string]ShardInfo `json:"shards"`
 		Updated  time.Time            `json:"updated"`
 	}
+
+	// memberSnapshot is a thread-safe copy of memberlist node data
+	memberSnapshot struct {
+		Name string
+		Meta []byte
+	}
 )
+
+// getMembersSnapshot returns a thread-safe snapshot of remote node states.
+// Uses the remoteNodeStates map instead of ml.Members() to avoid data races.
+func (sm *shardManagerImpl) getMembersSnapshot() []memberSnapshot {
+	sm.remoteNodeStatesMu.RLock()
+	defer sm.remoteNodeStatesMu.RUnlock()
+
+	snapshots := make([]memberSnapshot, 0, len(sm.remoteNodeStates))
+	for nodeName, state := range sm.remoteNodeStates {
+		// Marshal the state to get the meta bytes
+		metaBytes, err := json.Marshal(state)
+		if err != nil {
+			sm.logger.Warn("Failed to marshal node state for snapshot",
+				tag.NewStringTag("node", nodeName),
+				tag.Error(err))
+			continue
+		}
+		snapshot := memberSnapshot{
+			Name: nodeName,
+			Meta: metaBytes,
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots
+}
 
 // NewShardManager creates a new shard manager instance
 func NewShardManager(memberlistConfig *config.MemberlistConfig, shardCountConfig config.ShardCountConfig, intraProxyTLSConfig encryption.TLSConfig, logger log.Logger) ShardManager {
@@ -191,6 +227,7 @@ func NewShardManager(memberlistConfig *config.MemberlistConfig, shardCountConfig
 		remoteSendChannels:       make(map[history.ClusterShardID]chan RoutedMessage),
 		localAckChannels:         make(map[history.ClusterShardID]chan RoutedAck),
 		localReceiverCancelFuncs: make(map[history.ClusterShardID]context.CancelFunc),
+		remoteNodeStates:         make(map[string]NodeShardState),
 	}
 
 	delegate.manager = sm
@@ -368,7 +405,11 @@ func (sm *shardManagerImpl) Stop() {
 }
 
 func (sm *shardManagerImpl) shutdownMemberlist() {
-	if sm.ml == nil {
+	sm.mutex.RLock()
+	ml := sm.ml
+	sm.mutex.RUnlock()
+
+	if ml == nil {
 		return
 	}
 
@@ -377,16 +418,22 @@ func (sm *shardManagerImpl) shutdownMemberlist() {
 	sm.joinWg.Wait()
 
 	// Leave the cluster gracefully
-	err := sm.ml.Leave(5 * time.Second)
+	sm.mlMutex.Lock()
+	err := ml.Leave(5 * time.Second)
 	if err != nil {
 		sm.logger.Error("Error leaving memberlist cluster", tag.Error(err))
 	}
 
-	err = sm.ml.Shutdown()
+	err = ml.Shutdown()
 	if err != nil {
 		sm.logger.Error("Error shutting down memberlist", tag.Error(err))
 	}
+	sm.mlMutex.Unlock()
+
+	// Clear pointer under main mutex
+	sm.mutex.Lock()
 	sm.ml = nil
+	sm.mutex.Unlock()
 }
 
 // startJoinLoop starts the join retry loop if not already running
@@ -442,7 +489,10 @@ func (sm *shardManagerImpl) retryJoinCluster() {
 			tag.NewStringTag("attempt", strconv.Itoa(attempt)),
 			tag.NewStringTag("joinAddrs", fmt.Sprintf("%v", joinAddrs)))
 
+		// Serialize Join with other memberlist operations
+		sm.mlMutex.Lock()
 		num, err := ml.Join(joinAddrs)
+		sm.mlMutex.Unlock()
 		if err != nil {
 			sm.logger.Warn("Failed to join cluster", tag.Error(err))
 
@@ -472,10 +522,20 @@ func (sm *shardManagerImpl) RegisterShard(clientShardID history.ClusterShardID) 
 	sm.broadcastShardChange("register", clientShardID)
 
 	// Trigger memberlist metadata update to propagate NodeMeta to other nodes
-	if sm.ml != nil {
-		if err := sm.ml.UpdateNode(0); err != nil { // 0 timeout means immediate update
-			sm.logger.Warn("Failed to update memberlist node metadata", tag.Error(err))
-		}
+	// Run asynchronously to avoid blocking callers
+	sm.mutex.RLock()
+	ml := sm.ml
+	sm.mutex.RUnlock()
+	if ml != nil {
+		go func() {
+			// Use mlMutex to serialize with getMembersSnapshot and other memberlist operations
+			sm.mlMutex.Lock()
+			err := ml.UpdateNode(0) // 0 timeout means immediate update
+			sm.mlMutex.Unlock()
+			if err != nil {
+				sm.logger.Warn("Failed to update memberlist node metadata", tag.Error(err))
+			}
+		}()
 	}
 	// Notify listeners
 	if sm.onLocalShardChange != nil {
@@ -499,10 +559,20 @@ func (sm *shardManagerImpl) UnregisterShard(clientShardID history.ClusterShardID
 		sm.broadcastShardChange("unregister", clientShardID)
 
 		// Trigger memberlist metadata update to propagate NodeMeta to other nodes
-		if sm.ml != nil {
-			if err := sm.ml.UpdateNode(0); err != nil { // 0 timeout means immediate update
-				sm.logger.Warn("Failed to update memberlist node metadata", tag.Error(err))
-			}
+		// Run asynchronously to avoid blocking callers
+		sm.mutex.RLock()
+		ml := sm.ml
+		sm.mutex.RUnlock()
+		if ml != nil {
+			go func() {
+				// Use mlMutex to serialize with getMembersSnapshot and other memberlist operations
+				sm.mlMutex.Lock()
+				err := ml.UpdateNode(0) // 0 timeout means immediate update
+				sm.mlMutex.Unlock()
+				if err != nil {
+					sm.logger.Warn("Failed to update memberlist node metadata", tag.Error(err))
+				}
+			}()
 		}
 		// Notify listeners
 		if sm.onLocalShardChange != nil {
@@ -549,14 +619,14 @@ func (sm *shardManagerImpl) GetMemberNodes() []string {
 	}
 
 	// Use a timeout to prevent deadlocks when memberlist is busy
-	membersChan := make(chan []*memberlist.Node, 1)
+	membersChan := make(chan []memberSnapshot, 1)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				sm.logger.Error("Panic in GetMemberNodes", tag.NewStringTag("error", fmt.Sprintf("%v", r)))
 			}
 		}()
-		membersChan <- sm.ml.Members()
+		membersChan <- sm.getMembersSnapshot()
 	}()
 
 	select {
@@ -683,45 +753,21 @@ func (sm *shardManagerImpl) GetShardOwner(shard history.ClusterShardID) (string,
 }
 
 // GetRemoteShardsForPeer returns all shards owned by the specified peer node.
-// Non-blocking: uses memberlist metadata and tolerates timeouts by returning a best-effort set.
+// Uses the remoteNodeStates map instead of ml.Members() to avoid data races.
 func (sm *shardManagerImpl) GetRemoteShardsForPeer(peerNodeName string) (map[string]NodeShardState, error) {
 	result := make(map[string]NodeShardState)
-	if sm.ml == nil {
-		return result, nil
-	}
 
-	// Read members with a short timeout to avoid blocking debug paths
-	membersChan := make(chan []*memberlist.Node, 1)
-	go func() {
-		defer func() { _ = recover() }()
-		sm.mutex.RLock()
-		defer sm.mutex.RUnlock()
-		membersChan <- sm.ml.Members()
-	}()
+	sm.remoteNodeStatesMu.RLock()
+	defer sm.remoteNodeStatesMu.RUnlock()
 
-	var members []*memberlist.Node
-	select {
-	case members = <-membersChan:
-	case <-time.After(100 * time.Millisecond):
-		sm.logger.Warn("GetRemoteShardsForPeer timeout")
-		return result, fmt.Errorf("timeout")
-	}
-
-	for _, member := range members {
-		if member == nil || len(member.Meta) == 0 {
+	for nodeName, state := range sm.remoteNodeStates {
+		if nodeName == sm.GetNodeName() {
 			continue
 		}
-		if member.Name == sm.GetNodeName() {
+		if peerNodeName != "" && nodeName != peerNodeName {
 			continue
 		}
-		if peerNodeName != "" && member.Name != peerNodeName {
-			continue
-		}
-		var nodeState NodeShardState
-		if err := json.Unmarshal(member.Meta, &nodeState); err != nil {
-			continue
-		}
-		result[member.Name] = nodeState
+		result[nodeName] = state
 	}
 
 	return result, nil
@@ -915,21 +961,58 @@ func (sm *shardManagerImpl) broadcastShardChange(msgType string, shard history.C
 		return
 	}
 
-	for _, member := range sm.ml.Members() {
+	// Use remoteNodeStates map to get list of nodes to send to
+	sm.remoteNodeStatesMu.RLock()
+	nodeNames := make([]string, 0, len(sm.remoteNodeStates))
+	for nodeName := range sm.remoteNodeStates {
 		// Skip sending to self node
-		if member.Name == sm.GetNodeName() {
+		if nodeName == sm.GetNodeName() {
 			continue
 		}
+		nodeNames = append(nodeNames, nodeName)
+	}
+	sm.remoteNodeStatesMu.RUnlock()
 
+	for _, nodeName := range nodeNames {
 		// Send in goroutine to make it non-blocking
-		go func(m *memberlist.Node) {
-			err := sm.ml.SendReliable(m, data)
+		// Look up fresh node pointer when sending to avoid race with memberlist updates
+		go func(targetNodeName string) {
+			sm.mutex.RLock()
+			ml := sm.ml
+			sm.mutex.RUnlock()
+
+			if ml == nil {
+				return
+			}
+
+			// Find the node by name from current members list
+			// Serialize memberlist operations to prevent races with UpdateNode
+			sm.mlMutex.RLock()
+			var targetNode *memberlist.Node
+			for _, n := range ml.Members() {
+				if n != nil && n.Name == targetNodeName {
+					targetNode = n
+					break
+				}
+			}
+			if targetNode == nil {
+				sm.mlMutex.RUnlock()
+				sm.logger.Warn("Node not found for broadcast",
+					tag.NewStringTag("target_node", targetNodeName))
+				return
+			}
+			// SendReliable reads node fields (via FullAddress()), so we must hold the lock
+			// to prevent races with memberlist's internal updates.
+			// Note: This is a blocking network call, but we need the lock to prevent
+			// memberlist from modifying the node while SendReliable reads its fields.
+			err := ml.SendReliable(targetNode, data)
+			sm.mlMutex.RUnlock()
 			if err != nil {
 				sm.logger.Error("Failed to broadcast shard change",
 					tag.Error(err),
-					tag.NewStringTag("target_node", m.Name))
+					tag.NewStringTag("target_node", targetNodeName))
 			}
-		}(member)
+		}(nodeName)
 	}
 }
 
@@ -986,7 +1069,10 @@ func (sd *shardDelegate) NotifyMsg(data []byte) {
 		// if shard is previously registered as local shard, but now is registered as remote shard,
 		// check if the remote shard is newer than the local shard. If so, unregister the local shard.
 		if added {
+			// Lock when reading localShards to prevent race with concurrent writes
+			sd.manager.mutex.RLock()
 			localShard, ok := sd.manager.localShards[ClusterShardIDtoShortString(msg.ClientShard)]
+			sd.manager.mutex.RUnlock()
 			if ok {
 				if localShard.Created.Before(msg.Timestamp) {
 					// Force unregister the local shard by passing its own timestamp
@@ -1013,6 +1099,13 @@ func (sd *shardDelegate) MergeRemoteState(buf []byte, join bool) {
 	if err := json.Unmarshal(buf, &state); err != nil {
 		sd.logger.Error("Failed to unmarshal remote state", tag.Error(err))
 		return
+	}
+
+	// Save the remote state to local map
+	if sd.manager != nil {
+		sd.manager.remoteNodeStatesMu.Lock()
+		sd.manager.remoteNodeStates[state.NodeName] = state
+		sd.manager.remoteNodeStatesMu.Unlock()
 	}
 
 	sd.logger.Info("Merged remote shard state",
@@ -1225,9 +1318,18 @@ func (sed *shardEventDelegate) NotifyLeave(node *memberlist.Node) {
 		tag.NewStringTag("node", node.Name),
 		tag.NewStringTag("addr", node.Addr.String()))
 
+	// Remove the node from remoteNodeStates map
+	if sed.manager != nil {
+		sed.manager.remoteNodeStatesMu.Lock()
+		delete(sed.manager.remoteNodeStates, node.Name)
+		sed.manager.remoteNodeStatesMu.Unlock()
+	}
+
 	// If we're now isolated and have join addresses configured, restart join loop
 	if sed.manager != nil && sed.manager.ml != nil && sed.manager.memberlistConfig != nil {
+		sed.manager.mlMutex.RLock()
 		numMembers := sed.manager.ml.NumMembers()
+		sed.manager.mlMutex.RUnlock()
 		if numMembers == 1 && len(sed.manager.memberlistConfig.JoinAddrs) > 0 {
 			sed.logger.Info("Node is now isolated, restarting join loop",
 				tag.NewStringTag("numMembers", strconv.Itoa(numMembers)))

@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"fmt"
 	"testing"
 
 	"go.temporal.io/server/api/adminservice/v1"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/endtoendtest"
-	"github.com/temporalio/s2s-proxy/testutil"
 )
 
 func createEchoServerConfigWithPorts(
@@ -88,12 +86,12 @@ func createEchoClientConfigWithPorts(
 
 func benchmarkStreamSendRecvWithoutProxy(b *testing.B, payloadSize int) {
 	echoServerInfo := endtoendtest.ClusterInfo{
-		ServerAddress:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+		ServerAddress:  GetLocalhostAddress(),
 		ClusterShardID: serverClusterShard,
 	}
 
 	echoClientInfo := endtoendtest.ClusterInfo{
-		ServerAddress:  fmt.Sprintf("localhost:%d", testutil.GetFreePort()),
+		ServerAddress:  GetLocalhostAddress(),
 		ClusterShardID: clientClusterShard,
 	}
 
@@ -105,12 +103,12 @@ func benchmarkStreamSendRecvWithMuxProxy(b *testing.B, payloadSize int) {
 	muxTransportName := "muxed"
 
 	// Allocate ports dynamically
-	echoServerAddress := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	serverProxyInboundAddress := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	serverProxyOutboundAddress := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	echoClientAddress := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	clientProxyInboundAddress := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
-	clientProxyOutboundAddress := fmt.Sprintf("localhost:%d", testutil.GetFreePort())
+	echoServerAddress := GetLocalhostAddress()
+	serverProxyInboundAddress := GetLocalhostAddress()
+	serverProxyOutboundAddress := GetLocalhostAddress()
+	echoClientAddress := GetLocalhostAddress()
+	clientProxyInboundAddress := GetLocalhostAddress()
+	clientProxyOutboundAddress := GetLocalhostAddress()
 
 	echoServerConfig := createEchoServerConfigWithPorts(
 		echoServerAddress,
