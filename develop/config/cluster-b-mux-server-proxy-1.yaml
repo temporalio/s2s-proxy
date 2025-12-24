@@ -1,0 +1,46 @@
+inbound:
+  name: "b-inbound-server"
+  server:
+    type: "mux"
+    mux: "muxed"
+  client:
+    tcp:
+      serverAddress: "localhost:8233"
+outbound:
+  name: "b-outbound-server"
+  server:
+    tcp:
+      listenAddress: "0.0.0.0:6333"
+  client:
+    type: "mux"
+    mux: "muxed"
+mux:
+  - name: "muxed"
+    mode: "server"
+    server:
+      listenAddress: "0.0.0.0:6334"
+# shardCount:
+#   mode: "lcm"
+#   localShardCount: 3
+#   remoteShardCount: 2
+shardCount:
+  mode: "routing"
+  localShardCount: 3
+  remoteShardCount: 2
+profiling:
+  pprofAddress: "localhost:6070"
+memberlist:
+  enabled: true
+  nodeName: "proxy-node-b-1"
+  bindAddr: "127.0.0.1"
+  bindPort: 6335
+  # joinAddrs:
+  #   - "localhost:6435"
+  proxyAddresses:
+    "proxy-node-b-1": "localhost:6333"
+    "proxy-node-b-2": "localhost:6433"
+  # # TCP-only configuration for restricted networks
+  tcpOnly: true           # Use TCP transport only, disable UDP
+  # disableTCPPings: true   # Disable TCP pings for faster convergence
+  # probeTimeoutMs: 1000    # Longer timeout for network latency
+  # probeIntervalMs: 2000   # Less frequent probes to reduce network noise

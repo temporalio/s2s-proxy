@@ -36,8 +36,9 @@ var (
 	GRPCServerStarted = DefaultCounterVec("grpc_server_started", "Emits when the grpc server is started", "service_name")
 	GRPCServerStopped = DefaultCounterVec("grpc_server_stopped", "Emits when the grpc server is stopped", "service_name", "error")
 
-	GRPCOutboundClientMetrics = GetStandardGRPCClientInterceptor("outbound")
-	GRPCInboundClientMetrics  = GetStandardGRPCClientInterceptor("inbound")
+	GRPCOutboundClientMetrics   = GetStandardGRPCClientInterceptor("outbound")
+	GRPCInboundClientMetrics    = GetStandardGRPCClientInterceptor("inbound")
+	GRPCIntraProxyClientMetrics = GetStandardGRPCClientInterceptor("intra_proxy")
 
 	// /transport/mux
 
@@ -86,6 +87,8 @@ func GetGRPCClientMetrics(directionLabel string) *grpcprom.ClientMetrics {
 		return GRPCOutboundClientMetrics
 	case "inbound":
 		return GRPCInboundClientMetrics
+	case "intra_proxy":
+		return GRPCIntraProxyClientMetrics
 	}
 	panic("unknown direction label: " + directionLabel)
 }

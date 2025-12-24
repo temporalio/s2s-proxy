@@ -38,6 +38,8 @@ type (
 		Open() (net.Conn, error)
 		State() *MuxSessionInfo
 		Describe() string
+		// GetConnectionInfo returns the local and remote addresses of the underlying connection
+		GetConnectionInfo() (localAddr, remoteAddr net.Addr)
 	}
 )
 
@@ -141,4 +143,14 @@ func (s *muxSession) Addr() net.Addr {
 }
 func (s *muxSession) Describe() string {
 	return fmt.Sprintf("[muxSession %s, state=%v, address=%s]", s.id, s.state.Load(), s.conn.RemoteAddr().String())
+}
+
+func (s *muxSession) GetConnectionInfo() (localAddr, remoteAddr net.Addr) {
+	if s.session != nil {
+		return s.session.LocalAddr(), s.session.RemoteAddr()
+	}
+	if s.conn != nil {
+		return s.conn.LocalAddr(), s.conn.RemoteAddr()
+	}
+	return nil, nil
 }

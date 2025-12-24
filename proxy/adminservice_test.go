@@ -45,7 +45,8 @@ type adminProxyServerInput struct {
 
 func (s *adminserviceSuite) newAdminServiceProxyServer(in adminProxyServerInput, observer *ReplicationStreamObserver) adminservice.AdminServiceServer {
 	return NewAdminServiceProxyServer("test-service-name", s.adminClientMock,
-		in.apiOverrides, in.metricLabels, observer.ReportStreamValue, config.ShardCountConfig{}, LCMParameters{}, log.NewTestLogger())
+		s.adminClientMock,
+		in.apiOverrides, in.metricLabels, observer.ReportStreamValue, config.ShardCountConfig{}, LCMParameters{}, RoutingParameters{}, log.NewTestLogger(), nil)
 }
 
 func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
@@ -234,7 +235,7 @@ func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
 			s.adminClientMock.EXPECT().DescribeCluster(ctx, gomock.Any()).Return(c.mockResp, nil)
 			resp, err := server.DescribeCluster(ctx, req)
 			s.NoError(err)
-			s.Equal(c.expResp, resp)
+			s.Equal(c.expResp.FailoverVersionIncrement, resp.FailoverVersionIncrement)
 			s.Equal("[]", observer.PrintActiveStreams())
 		})
 	}

@@ -53,6 +53,8 @@ type (
 		CanAcceptConnections() bool
 		Describe() string
 		Name() string
+		// GetMuxConnections returns a snapshot of active mux connections
+		GetMuxConnections() map[string]session.ManagedMuxSession
 	}
 	MuxProviderBuilder func(AddNewMux, context.Context) (MuxProvider, error)
 )
@@ -201,4 +203,15 @@ func (m *multiMuxManager) Describe() string {
 }
 func (m *multiMuxManager) Name() string {
 	return m.name
+}
+
+func (m *multiMuxManager) GetMuxConnections() map[string]session.ManagedMuxSession {
+	m.muxesLock.RLock()
+	defer m.muxesLock.RUnlock()
+	// Return a copy to avoid holding the lock
+	result := make(map[string]session.ManagedMuxSession, len(m.muxes))
+	for k, v := range m.muxes {
+		result[k] = v
+	}
+	return result
 }
