@@ -251,10 +251,10 @@ type (
 
 func FromServerTLSConfig(cfg ServerTLSConfig) encryption.TLSConfig {
 	return encryption.TLSConfig{
-		CertificatePath:  cfg.CertificatePath,
-		KeyPath:          cfg.KeyPath,
-		RemoteCAPath:     cfg.ClientCAPath,
-		ValidateClientCA: cfg.RequireClientAuth,
+		CertificatePath: cfg.CertificatePath,
+		KeyPath:         cfg.KeyPath,
+		RemoteCAPath:    cfg.ClientCAPath,
+		VerifyCA:        cfg.RequireClientAuth,
 	}
 }
 func FromClientTLSConfig(cfg ClientTLSConfig) encryption.TLSConfig {

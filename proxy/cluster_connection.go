@@ -404,10 +404,11 @@ func (s *simpleGRPCServer) Start() {
 			err := s.server.Serve(s.listener)
 			if s.lifetime.Err() != nil {
 				// Cluster is closing, just exit.
-				return
+				break
 			}
 			if err != nil {
-				s.logger.Warn("GRPC server failed", tag.NewStringTag("direction", "outbound"), tag.Address(s.listener.Addr().String()), tag.Error(err))
+				s.logger.Warn("GRPC server failed", tag.NewStringTag("direction", "outbound"),
+					tag.Address(s.listener.Addr().String()), tag.Error(err))
 				if err == io.EOF {
 					metrics.GRPCServerStopped.WithLabelValues(s.name, "eof").Inc()
 				} else if !errors.Is(err, grpc.ErrServerStopped) {
@@ -416,6 +417,7 @@ func (s *simpleGRPCServer) Start() {
 			}
 			time.Sleep(1 * time.Second)
 		}
+		s.logger.Info("TCP-TLS gRPC server closed as requested", tag.Name(s.name), tag.Address(s.listener.Addr().String()))
 	}()
 	// The basic net.Listen, grpc.Server, and ClientConn are not context-aware, so make sure they clean up on context close.
 	context.AfterFunc(s.lifetime, func() {

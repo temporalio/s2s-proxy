@@ -30,7 +30,7 @@ func TestBasic(t *testing.T) {
 	require.Equal(t, "127.0.0.1:9004", proxyConfig.ClusterConnections[0].RemoteServer.Connection.MuxAddressInfo.ConnectionString)
 	require.Equal(t, "", proxyConfig.ClusterConnections[0].RemoteServer.Connection.TcpServer.ConnectionString)
 	require.Equal(t, "", proxyConfig.ClusterConnections[0].RemoteServer.Connection.TcpClient.ConnectionString)
-	require.Equal(t, false, proxyConfig.ClusterConnections[0].RemoteServer.Connection.MuxAddressInfo.TLSConfig.ValidateClientCA)
+	require.Equal(t, false, proxyConfig.ClusterConnections[0].RemoteServer.Connection.MuxAddressInfo.TLSConfig.VerifyCA)
 	nsTranslation, err := proxyConfig.ClusterConnections[0].NamespaceTranslation.AsLocalToRemoteBiMap()
 	require.NoError(t, err)
 	require.Equal(t, "remoteName", nsTranslation.Get("localName"))
@@ -55,9 +55,26 @@ func TestConversion(t *testing.T) {
 	require.Nil(t, converted.Inbound)
 	require.Nil(t, converted.Outbound)
 	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].RemoteServer.Connection.ConnectionType)
-	require.True(t, converted.ClusterConnections[0].RemoteServer.Connection.TcpServer.TLSConfig.ValidateClientCA)
+	require.True(t, converted.ClusterConnections[0].RemoteServer.Connection.TcpServer.TLSConfig.VerifyCA)
 	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].LocalServer.Connection.ConnectionType)
 	require.Equal(t, "AddOrUpdateRemoteCluster", converted.ClusterConnections[0].LocalServer.ACLPolicy.AllowedMethods.AdminService[0])
 	require.Equal(t, "namespace1", converted.ClusterConnections[0].LocalServer.ACLPolicy.AllowedNamespaces[0])
 	require.Equal(t, int64(100), *converted.ClusterConnections[0].LocalServer.APIOverrides.AdminService.DescribeCluster.Response.FailoverVersionIncrement)
+}
+
+func TestConversionWithTLS(t *testing.T) {
+	samplePath := filepath.Join("..", "develop", "old-config-with-TLS.yaml")
+
+	proxyConfig, err := LoadConfig[S2SProxyConfig](samplePath)
+	require.NoError(t, err)
+	converted := ToClusterConnConfig(proxyConfig)
+	require.Equal(t, 1, len(converted.ClusterConnections))
+	require.Nil(t, converted.Inbound)
+	require.Nil(t, converted.Outbound)
+	require.Equal(t, ConnTypeMuxClient, converted.ClusterConnections[0].RemoteServer.Connection.ConnectionType)
+	require.False(t, converted.ClusterConnections[0].RemoteServer.Connection.TcpServer.TLSConfig.VerifyCA)
+	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].LocalServer.Connection.ConnectionType)
+	require.Equal(t, "AddOrUpdateRemoteCluster", converted.ClusterConnections[0].LocalServer.ACLPolicy.AllowedMethods.AdminService[0])
+	require.Equal(t, 0, len(converted.ClusterConnections[0].LocalServer.ACLPolicy.AllowedNamespaces))
+	require.Nil(t, converted.ClusterConnections[0].LocalServer.APIOverrides)
 }

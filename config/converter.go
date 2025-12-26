@@ -119,11 +119,11 @@ func translateClientTCPTLSInfo(cfg TCPClientSetting) TCPTLSInfo {
 	return TCPTLSInfo{
 		ConnectionString: cfg.ServerAddress,
 		TLSConfig: encryption.TLSConfig{
-			CertificatePath:  cfg.TLS.CertificatePath,
-			KeyPath:          cfg.TLS.KeyPath,
-			RemoteCAPath:     cfg.TLS.ServerCAPath,
-			CAServerName:     cfg.TLS.ServerName,
-			ValidateClientCA: false,
+			CertificatePath: cfg.TLS.CertificatePath,
+			KeyPath:         cfg.TLS.KeyPath,
+			RemoteCAPath:    cfg.TLS.ServerCAPath,
+			CAServerName:    cfg.TLS.ServerName,
+			VerifyCA:        cfg.TLS.ServerName != "" && cfg.TLS.ServerCAPath != "",
 		},
 	}
 }
@@ -131,10 +131,10 @@ func translateServerTCPTLSInfo(cfg TCPServerSetting) TCPTLSInfo {
 	return TCPTLSInfo{
 		ConnectionString: cfg.ListenAddress,
 		TLSConfig: encryption.TLSConfig{
-			CertificatePath:  cfg.TLS.CertificatePath,
-			KeyPath:          cfg.TLS.KeyPath,
-			RemoteCAPath:     cfg.TLS.ClientCAPath,
-			ValidateClientCA: cfg.TLS.RequireClientAuth,
+			CertificatePath: cfg.TLS.CertificatePath,
+			KeyPath:         cfg.TLS.KeyPath,
+			RemoteCAPath:    cfg.TLS.ClientCAPath,
+			VerifyCA:        cfg.TLS.RequireClientAuth,
 		},
 	}
 }
