@@ -190,7 +190,7 @@ func (f *StreamForwarder) forwardReplicationMessages(wg *sync.WaitGroup) {
 			for i, task := range attr.Messages.ReplicationTasks {
 				msg = append(msg, fmt.Sprintf("[%d]: %v", i, task.SourceTaskId))
 			}
-			f.logger.Info(fmt.Sprintf("forwarding ReplicationMessages: exclusive %v, tasks: %v", attr.Messages.ExclusiveHighWatermark, strings.Join(msg, ", ")))
+			f.logger.Debug(fmt.Sprintf("forwarding ReplicationMessages: exclusive %v, tasks: %v", attr.Messages.ExclusiveHighWatermark, strings.Join(msg, ", ")))
 
 			streamTracker := GetGlobalStreamTracker()
 			streamTracker.UpdateStreamReplicationMessages(f.streamID, attr.Messages.ExclusiveHighWatermark)
@@ -264,7 +264,7 @@ func (f *StreamForwarder) forwardAcks(wg *sync.WaitGroup) {
 
 		switch attr := req.GetAttributes().(type) {
 		case *adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState:
-			f.logger.Info(fmt.Sprintf("forwarding SyncReplicationState: inclusive %v, attr: %v", attr.SyncReplicationState.InclusiveLowWatermark, attr))
+			f.logger.Debug(fmt.Sprintf("forwarding SyncReplicationState: inclusive %v, attr: %v", attr.SyncReplicationState.InclusiveLowWatermark, attr))
 
 			var watermarkTime *time.Time
 			if attr.SyncReplicationState.InclusiveLowWatermarkTime != nil {

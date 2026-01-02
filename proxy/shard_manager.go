@@ -793,7 +793,7 @@ func (sm *shardManagerImpl) DeliverAckToShardOwner(
 			}()
 			select {
 			case ackCh <- *routedAck:
-				logger.Info("Delivered ACK to local shard owner")
+				logger.Debug("Delivered ACK to local shard owner")
 				delivered = true
 			case <-shutdownChan.Channel():
 				// Shutdown signal received
@@ -822,7 +822,7 @@ func (sm *shardManagerImpl) DeliverAckToShardOwner(
 					logger.Error("Failed to forward ACK to shard owner via intra-proxy", tag.Error(err), tag.NewStringTag("owner", owner), tag.NewStringTag("addr", addr))
 					return false
 				}
-				logger.Info("Forwarded ACK to shard owner via intra-proxy", tag.NewStringTag("owner", owner), tag.NewStringTag("addr", addr))
+				logger.Debug("Forwarded ACK to shard owner via intra-proxy", tag.NewStringTag("owner", owner), tag.NewStringTag("addr", addr))
 				return true
 			}
 			logger.Warn("Owner proxy address not found for shard")
@@ -855,7 +855,7 @@ func (sm *shardManagerImpl) DeliverMessagesToShardOwner(
 			}()
 			select {
 			case ch <- *routedMsg:
-				logger.Info("Delivered messages to local shard owner")
+				logger.Debug("Delivered messages to local shard owner")
 				delivered = true
 			case <-shutdownChan.Channel():
 				// Shutdown signal received
@@ -1057,7 +1057,7 @@ func (sd *shardDelegate) NotifyMsg(data []byte) {
 		return
 	}
 
-	sd.logger.Info("Received shard message",
+	sd.logger.Debug("Received shard message",
 		tag.NewStringTag("type", msg.Type),
 		tag.NewStringTag("node", msg.NodeName),
 		tag.NewStringTag("shard", ClusterShardIDtoString(msg.ClientShard)))
@@ -1108,7 +1108,7 @@ func (sd *shardDelegate) MergeRemoteState(buf []byte, join bool) {
 		sd.manager.remoteNodeStatesMu.Unlock()
 	}
 
-	sd.logger.Info("Merged remote shard state",
+	sd.logger.Debug("Merged remote shard state",
 		tag.NewStringTag("node", state.NodeName),
 		tag.NewStringTag("shards", strconv.Itoa(len(state.Shards))),
 		tag.NewStringTag("state", fmt.Sprintf("%+v", state)))

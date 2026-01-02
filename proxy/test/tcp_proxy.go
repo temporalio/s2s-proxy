@@ -29,6 +29,8 @@ type (
 		Upstream   *Upstream
 	}
 
+	// TCPProxy is a simple TCP proxy that distributes connections to the least-used upstream server.
+	// It is used to test the connections and replication streams across multiple s2s-proxy instances.
 	TCPProxy struct {
 		rules   []*ProxyRule
 		logger  log.Logger

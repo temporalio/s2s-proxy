@@ -354,46 +354,22 @@ func (s *ReplicationTestSuite) TearDownSuite() {
 		s.deglobalizeNamespace(s.namespace)
 	}
 
-	if s.clusterA != nil && s.clusterB != nil {
-		removeRemoteCluster(s.logger, s.T(), s.clusterA, s.clusterB.ClusterName())
-		removeRemoteCluster(s.logger, s.T(), s.clusterB, s.clusterA.ClusterName())
-	}
-	if s.clusterA != nil {
-		s.NoError(s.clusterA.TearDownCluster())
-	}
-	if s.clusterB != nil {
-		s.NoError(s.clusterB.TearDownCluster())
-	}
+	removeRemoteCluster(s.logger, s.T(), s.clusterA, s.clusterB.ClusterName())
+	removeRemoteCluster(s.logger, s.T(), s.clusterB, s.clusterA.ClusterName())
+	s.NoError(s.clusterA.TearDownCluster())
+	s.NoError(s.clusterB.TearDownCluster())
 
 	if s.setupMode == SetupModeSimple {
-		if s.proxyA != nil {
-			s.proxyA.Stop()
-		}
-		if s.proxyB != nil {
-			s.proxyB.Stop()
-		}
+		s.proxyA.Stop()
+		s.proxyB.Stop()
 	} else {
-		if s.loadBalancerA != nil {
-			s.loadBalancerA.Stop()
-		}
-		if s.loadBalancerB != nil {
-			s.loadBalancerB.Stop()
-		}
-		if s.loadBalancerC != nil {
-			s.loadBalancerC.Stop()
-		}
-		if s.proxyA1 != nil {
-			s.proxyA1.Stop()
-		}
-		if s.proxyA2 != nil {
-			s.proxyA2.Stop()
-		}
-		if s.proxyB1 != nil {
-			s.proxyB1.Stop()
-		}
-		if s.proxyB2 != nil {
-			s.proxyB2.Stop()
-		}
+		s.loadBalancerA.Stop()
+		s.loadBalancerB.Stop()
+		s.loadBalancerC.Stop()
+		s.proxyA1.Stop()
+		s.proxyA2.Stop()
+		s.proxyB1.Stop()
+		s.proxyB2.Stop()
 	}
 }
 

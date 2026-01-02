@@ -275,9 +275,9 @@ func (s *proxyStreamSender) recvAck(
 	sourceStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	shutdownChan channel.ShutdownOnce,
 ) error {
-	s.logger.Info("proxyStreamSender recvAck started")
+	s.logger.Debug("proxyStreamSender recvAck started")
 	defer func() {
-		s.logger.Info("proxyStreamSender recvAck finished")
+		s.logger.Debug("proxyStreamSender recvAck finished")
 		shutdownChan.Shutdown()
 	}()
 	for !shutdownChan.IsShutdown() {
@@ -301,7 +301,7 @@ func (s *proxyStreamSender) recvAck(
 			shardToAck, pendingDiscard := s.idRing.AggregateUpTo(proxyAckWatermark)
 			s.mu.Unlock()
 
-			s.logger.Info("Sender received upstream ACK", tag.NewInt64("inclusive_low", proxyAckWatermark), tag.NewStringTag("shardToAck", fmt.Sprintf("%v", shardToAck)), tag.NewInt("pendingDiscard", pendingDiscard))
+			s.logger.Debug("Sender received upstream ACK", tag.NewInt64("inclusive_low", proxyAckWatermark), tag.NewStringTag("shardToAck", fmt.Sprintf("%v", shardToAck)), tag.NewInt("pendingDiscard", pendingDiscard))
 
 			if len(shardToAck) > 0 {
 				sent := make(map[history.ClusterShardID]bool, len(shardToAck))
@@ -331,7 +331,7 @@ func (s *proxyStreamSender) recvAck(
 							},
 						}
 
-						s.logger.Info("Sender forwarding ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", originalAck))
+						s.logger.Debug("Sender forwarding ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", originalAck))
 
 						if s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, shutdownChan, s.logger, originalAck, true) {
 							sent[srcShard] = true
@@ -394,7 +394,7 @@ func (s *proxyStreamSender) recvAck(
 							},
 						}
 						// Log fallback ACK for this source shard
-						s.logger.Info("Sender forwarding fallback ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", prev))
+						s.logger.Debug("Sender forwarding fallback ACK to source shard", tag.NewStringTag("sourceShard", ClusterShardIDtoString(srcShard)), tag.NewInt64("ack", prev))
 						if s.shardManager.DeliverAckToShardOwner(srcShard, routedAck, shutdownChan, s.logger, prev, true) {
 							sent[srcShard] = true
 							numRemaining--
@@ -435,9 +435,9 @@ func (s *proxyStreamSender) sendReplicationMessages(
 	sourceStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 	shutdownChan channel.ShutdownOnce,
 ) error {
-	s.logger.Info("proxyStreamSender sendReplicationMessages started")
+	s.logger.Debug("proxyStreamSender sendReplicationMessages started")
 	defer func() {
-		s.logger.Info("proxyStreamSender sendReplicationMessages finished")
+		s.logger.Debug("proxyStreamSender sendReplicationMessages finished")
 		shutdownChan.Shutdown()
 	}()
 
@@ -453,7 +453,7 @@ func (s *proxyStreamSender) sendReplicationMessages(
 			if !ok {
 				return nil
 			}
-			s.logger.Info(fmt.Sprintf("Sender received ReplicationTasks: routed.Resp=%p", routed.Resp), tag.NewStringTag("routed", fmt.Sprintf("%v", routed)))
+			s.logger.Debug(fmt.Sprintf("Sender received ReplicationTasks: routed.Resp=%p", routed.Resp), tag.NewStringTag("routed", fmt.Sprintf("%v", routed)))
 			resp := routed.Resp
 			m, ok := resp.Attributes.(*adminservice.StreamWorkflowReplicationMessagesResponse_Messages)
 			if !ok || m.Messages == nil {
@@ -464,7 +464,7 @@ func (s *proxyStreamSender) sendReplicationMessages(
 			for _, t := range m.Messages.ReplicationTasks {
 				sourceTaskIds = append(sourceTaskIds, t.SourceTaskId)
 			}
-			s.logger.Info(fmt.Sprintf("Sender received ReplicationTasks: exclusive_high=%d ids=%v", m.Messages.ExclusiveHighWatermark, sourceTaskIds))
+			s.logger.Debug(fmt.Sprintf("Sender received ReplicationTasks: exclusive_high=%d ids=%v", m.Messages.ExclusiveHighWatermark, sourceTaskIds))
 
 			// rewrite task ids
 			s.mu.Lock()
@@ -472,7 +472,7 @@ func (s *proxyStreamSender) sendReplicationMessages(
 			var proxyIDs []int64
 			// capture original exclusive high watermark before rewriting
 			originalHigh := m.Messages.ExclusiveHighWatermark
-			s.logger.Info(fmt.Sprintf("Sender received ReplicationTasks: exclusive_high=%d original_high=%d", m.Messages.ExclusiveHighWatermark, originalHigh))
+			s.logger.Debug(fmt.Sprintf("Sender received ReplicationTasks: exclusive_high=%d original_high=%d", m.Messages.ExclusiveHighWatermark, originalHigh))
 			// Ensure exclusive high watermark is in proxy task ID space
 			var proxyExclusiveHigh int64
 			if len(m.Messages.ReplicationTasks) > 0 {
@@ -502,16 +502,16 @@ func (s *proxyStreamSender) sendReplicationMessages(
 				proxyIDs = append(proxyIDs, proxyHigh)
 				proxyExclusiveHigh = proxyHigh
 				m.Messages.ExclusiveHighWatermark = proxyExclusiveHigh
-				s.logger.Info(fmt.Sprintf("Sender received ReplicationTasks: exclusive_high=%d original_high=%d proxy_high=%d original", proxyExclusiveHigh, originalHigh, proxyHigh))
+				s.logger.Debug(fmt.Sprintf("Sender received ReplicationTasks: exclusive_high=%d original_high=%d proxy_high=%d original", proxyExclusiveHigh, originalHigh, proxyHigh))
 			}
 			s.mu.Unlock()
 			// Log mapping from original -> proxy IDs (use captured value to avoid data race)
-			s.logger.Info(fmt.Sprintf("Sender sending ReplicationTasks from shard %s: original=%v proxy=%v", ClusterShardIDtoString(routed.SourceShard), originalIDs, proxyIDs), tag.NewInt64("exclusive_high", proxyExclusiveHigh))
+			s.logger.Debug(fmt.Sprintf("Sender sending ReplicationTasks from shard %s: original=%v proxy=%v", ClusterShardIDtoString(routed.SourceShard), originalIDs, proxyIDs), tag.NewInt64("exclusive_high", proxyExclusiveHigh))
 
 			if err := sourceStreamServer.Send(resp); err != nil {
 				return err
 			}
-			s.logger.Info("Sender sent ReplicationTasks", tag.NewStringTag("sourceShard", ClusterShardIDtoString(routed.SourceShard)), tag.NewInt64("exclusive_high", proxyExclusiveHigh))
+			s.logger.Debug("Sender sent ReplicationTasks", tag.NewStringTag("sourceShard", ClusterShardIDtoString(routed.SourceShard)), tag.NewInt64("exclusive_high", proxyExclusiveHigh))
 
 			// Update keepalive state
 			s.mu.Lock()
@@ -539,7 +539,7 @@ func (s *proxyStreamSender) sendReplicationMessages(
 						},
 					},
 				}
-				s.logger.Info("Sender sending keepalive message", tag.NewInt64("watermark", watermark))
+				s.logger.Debug("Sender sending keepalive message", tag.NewInt64("watermark", watermark))
 				if err := sourceStreamServer.Send(keepaliveResp); err != nil {
 					return err
 				}
@@ -696,13 +696,13 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 	sourceStreamClient adminservice.AdminService_StreamWorkflowReplicationMessagesClient,
 	shutdownChan channel.ShutdownOnce,
 ) error {
-	r.logger.Info("proxyStreamReceiver recvReplicationMessages started")
-	defer r.logger.Info("proxyStreamReceiver recvReplicationMessages finished")
+	r.logger.Debug("proxyStreamReceiver recvReplicationMessages started")
+	defer r.logger.Debug("proxyStreamReceiver recvReplicationMessages finished")
 
 	for !shutdownChan.IsShutdown() {
 		resp, err := sourceStreamClient.Recv()
 		if err == io.EOF {
-			r.logger.Info("sourceStreamClient.Recv encountered EOF", tag.Error(err))
+			r.logger.Debug("sourceStreamClient.Recv encountered EOF", tag.Error(err))
 			return nil
 		}
 		if err != nil {
@@ -724,7 +724,7 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 			}
 
 			// Log every replication task id received at receiver
-			r.logger.Info(fmt.Sprintf("Receiver received ReplicationTasks: exclusive_high=%d ids=%v", attr.Messages.ExclusiveHighWatermark, ids))
+			r.logger.Debug(fmt.Sprintf("Receiver received ReplicationTasks: exclusive_high=%d ids=%v", attr.Messages.ExclusiveHighWatermark, ids))
 
 			// record last source exclusive high watermark (original id space)
 			r.ackMu.Lock()
@@ -741,7 +741,7 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 
 			// If replication tasks are empty, still log the empty batch and send watermark
 			if len(attr.Messages.ReplicationTasks) == 0 {
-				r.logger.Info("Receiver received empty replication batch", tag.NewInt64("exclusive_high", attr.Messages.ExclusiveHighWatermark))
+				r.logger.Debug("Receiver received empty replication batch", tag.NewInt64("exclusive_high", attr.Messages.ExclusiveHighWatermark))
 
 				// Track last watermark for late-registering shards
 				r.lastWatermarkMu.Lock()
@@ -763,7 +763,7 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 					},
 				}
 				localShardsToSend := r.shardManager.GetRemoteSendChansByCluster(r.targetShardID.ClusterID)
-				r.logger.Info("Going to broadcast high watermark to local shards", tag.NewStringTag("localShardsToSend", fmt.Sprintf("%v", localShardsToSend)))
+				r.logger.Debug("Going to broadcast high watermark to local shards", tag.NewStringTag("localShardsToSend", fmt.Sprintf("%v", localShardsToSend)))
 				for targetShardID, sendChan := range localShardsToSend {
 					// Clone the message for each recipient to prevent shared mutation
 					clonedResp := proto.Clone(msg.Resp).(*adminservice.StreamWorkflowReplicationMessagesResponse)
@@ -771,7 +771,7 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 						SourceShard: msg.SourceShard,
 						Resp:        clonedResp,
 					}
-					r.logger.Info(fmt.Sprintf("Sending high watermark to target shard, msg.Resp=%p", clonedMsg.Resp), tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)), tag.NewInt64("exclusive_high", attr.Messages.ExclusiveHighWatermark), tag.NewStringTag("msg", fmt.Sprintf("%v", clonedMsg)))
+					r.logger.Debug(fmt.Sprintf("Sending high watermark to target shard, msg.Resp=%p", clonedMsg.Resp), tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)), tag.NewInt64("exclusive_high", attr.Messages.ExclusiveHighWatermark), tag.NewStringTag("msg", fmt.Sprintf("%v", clonedMsg)))
 					// Use non-blocking send with recover to handle closed channels
 					func() {
 						defer func() {
@@ -799,7 +799,7 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 					r.logger.Error("Failed to get remote shards", tag.Error(err))
 					return err
 				}
-				r.logger.Info("Going to broadcast high watermark to remote shards", tag.NewStringTag("remoteShards", fmt.Sprintf("%v", remoteShards)))
+				r.logger.Debug("Going to broadcast high watermark to remote shards", tag.NewStringTag("remoteShards", fmt.Sprintf("%v", remoteShards)))
 				for _, shards := range remoteShards {
 					for _, shard := range shards.Shards {
 						if shard.ID.ClusterID != r.targetShardID.ClusterID {
@@ -825,7 +825,7 @@ func (r *proxyStreamReceiver) recvReplicationMessages(
 			for targetShardID := range tasksByTargetShard {
 				sentByTarget[targetShardID] = false
 			}
-			r.logger.Info("Going to broadcast ReplicationTasks to target shards", tag.NewStringTag("tasksByTargetShard", fmt.Sprintf("%v", tasksByTargetShard)))
+			r.logger.Debug("Going to broadcast ReplicationTasks to target shards", tag.NewStringTag("tasksByTargetShard", fmt.Sprintf("%v", tasksByTargetShard)))
 			numRemaining := len(tasksByTargetShard)
 			backoff := 10 * time.Millisecond
 			for numRemaining > 0 {
@@ -910,7 +910,7 @@ func (r *proxyStreamReceiver) sendPendingWatermarkToShard(targetShardID history.
 		return
 	}
 
-	r.logger.Info("Sending pending watermark to newly registered shard",
+	r.logger.Debug("Sending pending watermark to newly registered shard",
 		tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)),
 		tag.NewInt64("exclusive_high", lastWatermark.ExclusiveHighWatermark))
 
@@ -935,7 +935,7 @@ func (r *proxyStreamReceiver) sendPendingWatermarkToShard(targetShardID history.
 		}
 		select {
 		case sendChan <- clonedMsg:
-			r.logger.Info("Sent pending watermark to local shard",
+			r.logger.Debug("Sent pending watermark to local shard",
 				tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
 		default:
 			r.logger.Warn("Failed to send pending watermark to local shard (channel full)",
@@ -953,7 +953,7 @@ func (r *proxyStreamReceiver) sendPendingWatermarkToShard(targetShardID history.
 			Resp:        clonedResp,
 		}
 		if r.shardManager.DeliverMessagesToShardOwner(targetShardID, &clonedMsg, shutdownChan, r.logger) {
-			r.logger.Info("Sent pending watermark to remote shard",
+			r.logger.Debug("Sent pending watermark to remote shard",
 				tag.NewStringTag("targetShard", ClusterShardIDtoString(targetShardID)))
 		} else {
 			r.logger.Warn("Failed to send pending watermark to remote shard",
@@ -967,8 +967,8 @@ func (r *proxyStreamReceiver) sendAck(
 	sourceStreamClient adminservice.AdminService_StreamWorkflowReplicationMessagesClient,
 	shutdownChan channel.ShutdownOnce,
 ) error {
-	r.logger.Info("proxyStreamReceiver sendAck started")
-	defer r.logger.Info("proxyStreamReceiver sendAck finished")
+	r.logger.Debug("proxyStreamReceiver sendAck started")
+	defer r.logger.Debug("proxyStreamReceiver sendAck finished")
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -978,7 +978,7 @@ func (r *proxyStreamReceiver) sendAck(
 		case routed := <-r.ackChan:
 			// Update per-target watermark
 			if attr, ok := routed.Req.GetAttributes().(*adminservice.StreamWorkflowReplicationMessagesRequest_SyncReplicationState); ok && attr.SyncReplicationState != nil {
-				r.logger.Info("Receiver received upstream ACK", tag.NewInt64("inclusive_low", attr.SyncReplicationState.InclusiveLowWatermark), tag.NewStringTag("targetShard", ClusterShardIDtoString(routed.TargetShard)))
+				r.logger.Debug("Receiver received upstream ACK", tag.NewInt64("inclusive_low", attr.SyncReplicationState.InclusiveLowWatermark), tag.NewStringTag("targetShard", ClusterShardIDtoString(routed.TargetShard)))
 				r.ackMu.Lock()
 				r.ackByTarget[routed.TargetShard] = attr.SyncReplicationState.InclusiveLowWatermark
 				// Compute minimal watermark across targets
@@ -1009,12 +1009,12 @@ func (r *proxyStreamReceiver) sendAck(
 							},
 						},
 					}
-					r.logger.Info("Receiver sending aggregated ACK upstream", tag.NewInt64("inclusive_low", min))
+					r.logger.Debug("Receiver sending aggregated ACK upstream", tag.NewInt64("inclusive_low", min))
 					if err := sourceStreamClient.Send(aggregated); err != nil {
 						if err != io.EOF {
 							r.logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
 						} else {
-							r.logger.Info("sourceStreamClient.Send encountered EOF", tag.Error(err))
+							r.logger.Debug("sourceStreamClient.Send encountered EOF", tag.Error(err))
 						}
 						return err
 					}
@@ -1042,7 +1042,7 @@ func (r *proxyStreamReceiver) sendAck(
 			r.ackMu.RUnlock()
 
 			if shouldSendKeepalive {
-				r.logger.Info("Receiver sending keepalive ACK")
+				r.logger.Debug("Receiver sending keepalive ACK")
 				if err := sourceStreamClient.Send(lastAck); err != nil {
 					if err != io.EOF {
 						r.logger.Error("sourceStreamClient.Send keepalive encountered error", tag.Error(err))
