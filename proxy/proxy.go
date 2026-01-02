@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"go.temporal.io/server/api/adminservice/v1"
-	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
@@ -21,18 +19,6 @@ type (
 		name string
 		// Needs some config revision before uncommenting:
 		//accountId string
-	}
-
-	// RoutedAck wraps an ACK with the target shard it originated from
-	RoutedAck struct {
-		TargetShard history.ClusterShardID
-		Req         *adminservice.StreamWorkflowReplicationMessagesRequest
-	}
-
-	// RoutedMessage wraps a replication response with originating client shard info
-	RoutedMessage struct {
-		SourceShard history.ClusterShardID
-		Resp        *adminservice.StreamWorkflowReplicationMessagesResponse
 	}
 
 	Proxy struct {

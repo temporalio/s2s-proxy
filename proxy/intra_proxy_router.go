@@ -25,6 +25,18 @@ import (
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
+// RoutedAck wraps an ACK with the target shard it originated from
+type RoutedAck struct {
+	TargetShard history.ClusterShardID
+	Req         *adminservice.StreamWorkflowReplicationMessagesRequest
+}
+
+// RoutedMessage wraps a replication response with originating client shard info
+type RoutedMessage struct {
+	SourceShard history.ClusterShardID
+	Resp        *adminservice.StreamWorkflowReplicationMessagesResponse
+}
+
 // intraProxyManager maintains long-lived intra-proxy streams to peer proxies and
 // provides simple send helpers (e.g., forwarding ACKs).
 type intraProxyManager struct {
