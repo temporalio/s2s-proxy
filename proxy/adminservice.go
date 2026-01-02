@@ -3,14 +3,10 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"sync"
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
-	servercommon "go.temporal.io/server/common"
-	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -291,9 +287,6 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		return err
 	}
 
-	// Detect intra-proxy streams early for logging/behavior toggles
-	isIntraProxy := common.IsIntraProxy(streamServer.Context())
-
 	logger := log.With(s.logger,
 		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
 		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
@@ -305,159 +298,24 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	streamsActiveGauge.Inc()
 	defer streamsActiveGauge.Dec()
 
-	if s.shardCountConfig.Mode == config.ShardCountLCM {
-		// Arbitrary shard count support.
-		//
-		// Temporal only supports shard counts where one shard count is an even multiple of the other.
-		// The trick in this mode is the proxy will present the Least Common Multiple of both cluster shard counts.
-		// Temporal establishes outbound replication streams to the proxy for all unique shard id pairs between
-		// itself and the proxy's shard count. Then the proxy directly forwards those streams along to the target
-		// cluster, remapping proxy stream shard ids to the target cluster shard ids.
-		newTargetShardID := history.ClusterShardID{
-			ClusterID: targetClusterShardID.ClusterID,
-			ShardID:   sourceClusterShardID.ShardID, // proxy fake shard id
-		}
-		newSourceShardID := history.ClusterShardID{
-			ClusterID: sourceClusterShardID.ClusterID,
-		}
-		// Remap shard id using the pre-calculated target shard count.
-		newSourceShardID.ShardID = mapShardIDUnique(s.lcmParameters.LCM, s.lcmParameters.TargetShardCount, sourceClusterShardID.ShardID)
-
-		logger = log.With(logger,
-			tag.NewStringTag("newTarget", ClusterShardIDtoString(newTargetShardID)),
-			tag.NewStringTag("newSource", ClusterShardIDtoString(newSourceShardID)))
-
-		// Maybe there's a cleaner way. Trying to preserve any other metadata.
-		targetMetadata.Set(history.MetadataKeyClientClusterID, strconv.Itoa(int(newTargetShardID.ClusterID)))
-		targetMetadata.Set(history.MetadataKeyClientShardID, strconv.Itoa(int(newTargetShardID.ShardID)))
-		targetMetadata.Set(history.MetadataKeyServerClusterID, strconv.Itoa(int(newSourceShardID.ClusterID)))
-		targetMetadata.Set(history.MetadataKeyServerShardID, strconv.Itoa(int(newSourceShardID.ShardID)))
-	}
-
-	if isIntraProxy {
-		return s.streamIntraProxyRouting(logger, streamServer, sourceClusterShardID, targetClusterShardID)
-	}
-
-	if s.shardCountConfig.Mode == config.ShardCountRouting {
-		return s.streamRouting(logger, streamServer, sourceClusterShardID, targetClusterShardID)
-	}
-
-	forwarder := newStreamForwarder(
-		s.adminClient,
+	err = handleStream(
 		streamServer,
 		targetMetadata,
 		sourceClusterShardID,
 		targetClusterShardID,
-		s.metricLabelValues,
 		logger,
+		s.shardCountConfig,
+		s.lcmParameters,
+		s.routingParameters,
+		s.adminClient,
+		s.adminClientReverse,
+		s.shardManager,
+		s.metricLabelValues,
 	)
-	err = forwarder.Run()
 	if err != nil {
 		return err
 	}
 	// Do not try to transfer EOF from the source here. Just returning "nil" is sufficient to terminate the stream
 	// to the client.
 	return nil
-}
-
-func (s *adminServiceProxyServer) streamIntraProxyRouting(
-	logger log.Logger,
-	streamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
-	sourceShardID history.ClusterShardID,
-	targetShardID history.ClusterShardID,
-) error {
-	logger.Info("streamIntraProxyRouting started")
-	defer logger.Info("streamIntraProxyRouting finished")
-
-	// Determine remote peer identity from intra-proxy headers
-	peerNodeName := ""
-	if md, ok := metadata.FromIncomingContext(streamServer.Context()); ok {
-		vals := md.Get(common.IntraProxyOriginProxyIDHeader)
-		if len(vals) > 0 {
-			peerNodeName = vals[0]
-		}
-	}
-
-	// Only allow intra-proxy when at least one shard is local to this proxy instance
-	isLocalSource := s.shardManager.IsLocalShard(sourceShardID)
-	isLocalTarget := s.shardManager.IsLocalShard(targetShardID)
-	if isLocalTarget || !isLocalSource {
-		logger.Info("Skipping intra-proxy between two local shards or two remote shards. Client may use outdated shard info.",
-			tag.NewBoolTag("isLocalSource", isLocalSource),
-			tag.NewBoolTag("isLocalTarget", isLocalTarget),
-		)
-		return nil
-	}
-
-	// Sender: handle ACKs coming from peer and forward to original owner
-	sender := &intraProxyStreamSender{
-		logger:        logger,
-		shardManager:  s.shardManager,
-		peerNodeName:  peerNodeName,
-		sourceShardID: sourceShardID,
-		targetShardID: targetShardID,
-	}
-
-	shutdownChan := channel.NewShutdownOnce()
-	go func() {
-		if err := sender.Run(streamServer, shutdownChan); err != nil {
-			logger.Error("intraProxyStreamSender.Run error", tag.Error(err))
-		}
-	}()
-	<-shutdownChan.Channel()
-	return nil
-}
-
-func (s *adminServiceProxyServer) streamRouting(
-	logger log.Logger,
-	streamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
-	sourceShardID history.ClusterShardID,
-	targetShardID history.ClusterShardID,
-) error {
-	logger.Info("streamRouting started")
-	defer logger.Info("streamRouting stopped")
-
-	// client: stream receiver
-	// server: stream sender
-	proxyStreamSender := &proxyStreamSender{
-		logger:         logger,
-		shardManager:   s.shardManager,
-		sourceShardID:  sourceShardID,
-		targetShardID:  targetShardID,
-		directionLabel: s.routingParameters.DirectionLabel,
-	}
-
-	proxyStreamReceiver := &proxyStreamReceiver{
-		logger:          s.logger,
-		shardManager:    s.shardManager,
-		adminClient:     s.adminClientReverse,
-		localShardCount: s.routingParameters.RoutingLocalShardCount,
-		sourceShardID:   targetShardID, // reverse direction
-		targetShardID:   sourceShardID, // reverse direction
-		directionLabel:  s.routingParameters.DirectionLabel,
-	}
-
-	shutdownChan := channel.NewShutdownOnce()
-	wg := sync.WaitGroup{}
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		proxyStreamSender.Run(streamServer, shutdownChan)
-	}()
-	go func() {
-		defer wg.Done()
-		proxyStreamReceiver.Run(shutdownChan)
-	}()
-	wg.Wait()
-
-	return nil
-}
-
-func mapShardIDUnique(sourceShardCount, targetShardCount, sourceShardID int32) int32 {
-	targetShardID := servercommon.MapShardID(sourceShardCount, targetShardCount, sourceShardID)
-	if len(targetShardID) != 1 {
-		panic(fmt.Sprintf("remapping shard count error: sourceShardCount=%d targetShardCount=%d sourceShardID=%d targetShardID=%v\n",
-			sourceShardCount, targetShardCount, sourceShardID, targetShardID))
-	}
-	return targetShardID[0]
 }
