@@ -95,7 +95,7 @@ type (
 		shardCountConfig config.ShardCountConfig
 		logger           log.Logger
 
-		clusterConnection *ClusterConnection
+		shardManager      ShardManager
 		lcmParameters     LCMParameters
 		routingParameters RoutingParameters
 	}
@@ -178,7 +178,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		saTranslations:    saTranslations.Inverse(),
 		shardCountConfig:  connConfig.ShardCountConfig,
 		logger:            cc.logger,
-		clusterConnection: cc,
+		shardManager:      cc.shardManager,
 		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, true),
 		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, true, "inbound"),
 	})
@@ -196,7 +196,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		saTranslations:    saTranslations,
 		shardCountConfig:  connConfig.ShardCountConfig,
 		logger:            cc.logger,
-		clusterConnection: cc,
+		shardManager:      cc.shardManager,
 		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, false),
 		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
 	})
@@ -330,7 +330,7 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		c.lcmParameters,
 		c.routingParameters,
 		c.logger,
-		c.clusterConnection.shardManager,
+		c.shardManager,
 	)
 	var accessControl *auth.AccessControl
 	if c.clusterDefinition.ACLPolicy != nil {

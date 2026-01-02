@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.temporal.io/server/api/adminservice/v1"
@@ -199,8 +200,7 @@ type intraProxyStreamReceiver struct {
 	shutdown      channel.ShutdownOnce
 	cancel        context.CancelFunc
 	// lastWatermark tracks the last watermark received from source shard for late-registering target shards
-	lastWatermarkMu sync.RWMutex
-	lastWatermark   *replicationv1.WorkflowReplicationMessages
+	lastWatermark atomic.Pointer[replicationv1.WorkflowReplicationMessages]
 }
 
 // Run opens the client stream with metadata, registers tracking, and starts receiver goroutines.
@@ -280,12 +280,10 @@ func (r *intraProxyStreamReceiver) recvReplicationMessages() error {
 			st.UpdateStream(r.streamID)
 
 			// Track last watermark for late-registering shards
-			r.lastWatermarkMu.Lock()
-			r.lastWatermark = &replicationv1.WorkflowReplicationMessages{
+			r.lastWatermark.Store(&replicationv1.WorkflowReplicationMessages{
 				ExclusiveHighWatermark: exclusiveHighWatermark,
 				Priority:               priority,
-			}
-			r.lastWatermarkMu.Unlock()
+			})
 
 			r.logger.Debug(fmt.Sprintf("Receiver received ReplicationTasks: exclusive_high=%d ids=%v", exclusiveHighWatermark, ids))
 
@@ -358,9 +356,7 @@ func (r *intraProxyStreamReceiver) GetSourceShardID() history.ClusterShardID {
 
 // GetLastWatermark returns the last watermark received from the source shard
 func (r *intraProxyStreamReceiver) GetLastWatermark() *replicationv1.WorkflowReplicationMessages {
-	r.lastWatermarkMu.RLock()
-	defer r.lastWatermarkMu.RUnlock()
-	return r.lastWatermark
+	return r.lastWatermark.Load()
 }
 
 // NotifyNewTargetShard notifies the receiver about a newly registered target shard
@@ -371,9 +367,7 @@ func (r *intraProxyStreamReceiver) NotifyNewTargetShard(targetShardID history.Cl
 // sendPendingWatermarkToShard sends the last known watermark to a newly registered target shard
 // This ensures late-registering shards receive watermarks that were sent before they registered
 func (r *intraProxyStreamReceiver) sendPendingWatermarkToShard(targetShardID history.ClusterShardID) {
-	r.lastWatermarkMu.RLock()
-	lastWatermark := r.lastWatermark
-	r.lastWatermarkMu.RUnlock()
+	lastWatermark := r.GetLastWatermark()
 
 	if lastWatermark == nil || lastWatermark.ExclusiveHighWatermark == 0 {
 		// No pending watermark to send

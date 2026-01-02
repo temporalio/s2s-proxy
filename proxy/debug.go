@@ -13,6 +13,10 @@ import (
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
+// HandleDebugInfo is the HTTP handler for the proxy debug endpoint.
+// It returns JSON-encoded debug information including active streams, shard distribution,
+// channel states, and mux connection details.
+
 type (
 
 	// ProxyIDEntry is a preview of a ring buffer entry
