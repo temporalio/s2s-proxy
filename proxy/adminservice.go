@@ -3,12 +3,10 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
-	servercommon "go.temporal.io/server/common"
 	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -21,19 +19,29 @@ import (
 
 type (
 	LCMParameters struct {
-		LCM              int32 `yaml:"lcm"`
-		TargetShardCount int32 `yaml:"targetShardCount"`
+		LCM              int32
+		TargetShardCount int32
+	}
+
+	RoutingParameters struct {
+		OverrideShardCount     int32
+		RoutingLocalShardCount int32
+		DirectionLabel         string
 	}
 
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		adminClient       adminservice.AdminServiceClient
-		logger            log.Logger
-		apiOverrides      *config.APIOverridesConfig
-		metricLabelValues []string
-		reportStreamValue func(idx int32, value int32)
-		shardCountConfig  config.ShardCountConfig
-		lcmParameters     LCMParameters
+		shardManager       ShardManager
+		adminClient        adminservice.AdminServiceClient
+		adminClientReverse adminservice.AdminServiceClient
+		logger             log.Logger
+		apiOverrides       *config.APIOverridesConfig
+		metricLabelValues  []string
+		reportStreamValue  func(idx int32, value int32)
+		shardCountConfig   config.ShardCountConfig
+		lcmParameters      LCMParameters
+		routingParameters  RoutingParameters
+		lifetime           context.Context
 	}
 )
 
@@ -41,25 +49,33 @@ type (
 func NewAdminServiceProxyServer(
 	serviceName string,
 	adminClient adminservice.AdminServiceClient,
+	adminClientReverse adminservice.AdminServiceClient,
 	apiOverrides *config.APIOverridesConfig,
 	metricLabelValues []string,
 	reportStreamValue func(idx int32, value int32),
 	shardCountConfig config.ShardCountConfig,
 	lcmParameters LCMParameters,
+	routingParameters RoutingParameters,
 	logger log.Logger,
+	shardManager ShardManager,
+	lifetime context.Context,
 ) adminservice.AdminServiceServer {
 	// The AdminServiceStreams will duplicate the same output for an underlying connection issue hundreds of times.
 	// Limit their output to three times per minute
 	logger = log.NewThrottledLogger(log.With(logger, common.ServiceTag(serviceName)),
 		func() float64 { return 3.0 / 60.0 })
 	return &adminServiceProxyServer{
-		adminClient:       adminClient,
-		logger:            logger,
-		apiOverrides:      apiOverrides,
-		metricLabelValues: metricLabelValues,
-		reportStreamValue: reportStreamValue,
-		shardCountConfig:  shardCountConfig,
-		lcmParameters:     lcmParameters,
+		shardManager:       shardManager,
+		adminClient:        adminClient,
+		adminClientReverse: adminClientReverse,
+		logger:             logger,
+		apiOverrides:       apiOverrides,
+		metricLabelValues:  metricLabelValues,
+		reportStreamValue:  reportStreamValue,
+		shardCountConfig:   shardCountConfig,
+		lcmParameters:      lcmParameters,
+		routingParameters:  routingParameters,
+		lifetime:           lifetime,
 	}
 }
 
@@ -103,10 +119,15 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 		return resp, err
 	}
 
-	if s.shardCountConfig.Mode == config.ShardCountLCM {
+	switch s.shardCountConfig.Mode {
+	case config.ShardCountLCM:
 		// Present a fake number of shards. In LCM mode, we present the least
 		// common multiple of both cluster shard counts.
 		resp.HistoryShardCount = s.lcmParameters.LCM
+	case config.ShardCountRouting:
+		if s.routingParameters.OverrideShardCount > 0 {
+			resp.HistoryShardCount = s.routingParameters.OverrideShardCount
+		}
 	}
 
 	if s.apiOverrides != nil && s.apiOverrides.AdminService.DescribeCluster != nil {
@@ -115,6 +136,8 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 			resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
 		}
 	}
+
+	s.logger.Info("DescribeCluster response", tag.NewStringTag("response", fmt.Sprintf("%v", resp)))
 
 	return resp, err
 }
@@ -243,21 +266,25 @@ func ClusterShardIDtoString(sd history.ClusterShardID) string {
 	return fmt.Sprintf("(id: %d, shard: %d)", sd.ClusterID, sd.ShardID)
 }
 
+func ClusterShardIDtoShortString(sd history.ClusterShardID) string {
+	return fmt.Sprintf("%d:%d", sd.ClusterID, sd.ShardID)
+}
+
 // StreamWorkflowReplicationMessages establishes an HTTP/2 stream. gRPC passes us a stream that represents the initiating server,
 // and we can freely Send and Recv on that "server". Because this is a proxy, we also establish a bidirectional
 // stream using our configured adminClient. When we Recv on the initiator, we Send to the client.
 // When we Recv on the client, we Send to the initiator
 func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
-	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	streamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 ) (retError error) {
 	defer log.CapturePanic(s.logger, &retError)
 
-	targetMetadata, ok := metadata.FromIncomingContext(targetStreamServer.Context())
+	targetMetadata, ok := metadata.FromIncomingContext(streamServer.Context())
 	if !ok {
 		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
 	}
 	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(
-		headers.NewGRPCHeaderGetter(targetStreamServer.Context()),
+		headers.NewGRPCHeaderGetter(streamServer.Context()),
 	)
 	if err != nil {
 		return err
@@ -274,58 +301,25 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	streamsActiveGauge.Inc()
 	defer streamsActiveGauge.Dec()
 
-	if s.shardCountConfig.Mode == config.ShardCountLCM {
-		// Arbitrary shard count support.
-		//
-		// Temporal only supports shard counts where one shard count is an even multiple of the other.
-		// The trick in this mode is the proxy will present the Least Common Multiple of both cluster shard counts.
-		// Temporal establishes outbound replication streams to the proxy for all unique shard id pairs between
-		// itself and the proxy's shard count. Then the proxy directly forwards those streams along to the target
-		// cluster, remapping proxy stream shard ids to the target cluster shard ids.
-		newTargetShardID := history.ClusterShardID{
-			ClusterID: targetClusterShardID.ClusterID,
-			ShardID:   sourceClusterShardID.ShardID, // proxy fake shard id
-		}
-		newSourceShardID := history.ClusterShardID{
-			ClusterID: sourceClusterShardID.ClusterID,
-		}
-		// Remap shard id using the pre-calculated target shard count.
-		newSourceShardID.ShardID = mapShardIDUnique(s.lcmParameters.LCM, s.lcmParameters.TargetShardCount, sourceClusterShardID.ShardID)
-
-		logger = log.With(logger,
-			tag.NewStringTag("newTarget", ClusterShardIDtoString(newTargetShardID)),
-			tag.NewStringTag("newSource", ClusterShardIDtoString(newSourceShardID)))
-
-		// Maybe there's a cleaner way. Trying to preserve any other metadata.
-		targetMetadata.Set(history.MetadataKeyClientClusterID, strconv.Itoa(int(newTargetShardID.ClusterID)))
-		targetMetadata.Set(history.MetadataKeyClientShardID, strconv.Itoa(int(newTargetShardID.ShardID)))
-		targetMetadata.Set(history.MetadataKeyServerClusterID, strconv.Itoa(int(newSourceShardID.ClusterID)))
-		targetMetadata.Set(history.MetadataKeyServerShardID, strconv.Itoa(int(newSourceShardID.ShardID)))
-	}
-
-	forwarder := newStreamForwarder(
-		s.adminClient,
-		targetStreamServer,
+	err = handleStream(
+		streamServer,
 		targetMetadata,
 		sourceClusterShardID,
 		targetClusterShardID,
-		s.metricLabelValues,
 		logger,
+		s.shardCountConfig,
+		s.lcmParameters,
+		s.routingParameters,
+		s.adminClient,
+		s.adminClientReverse,
+		s.shardManager,
+		s.metricLabelValues,
+		s.lifetime,
 	)
-	err = forwarder.Run()
 	if err != nil {
 		return err
 	}
 	// Do not try to transfer EOF from the source here. Just returning "nil" is sufficient to terminate the stream
 	// to the client.
 	return nil
-}
-
-func mapShardIDUnique(sourceShardCount, targetShardCount, sourceShardID int32) int32 {
-	targetShardID := servercommon.MapShardID(sourceShardCount, targetShardCount, sourceShardID)
-	if len(targetShardID) != 1 {
-		panic(fmt.Sprintf("remapping shard count error: sourceShardCount=%d targetShardCount=%d sourceShardID=%d targetShardID=%v\n",
-			sourceShardCount, targetShardCount, sourceShardID, targetShardID))
-	}
-	return targetShardID[0]
 }

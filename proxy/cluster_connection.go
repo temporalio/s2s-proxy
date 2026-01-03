@@ -59,6 +59,7 @@ type (
 		inboundClient    closableClientConn
 		inboundObserver  *ReplicationStreamObserver
 		outboundObserver *ReplicationStreamObserver
+		shardManager     ShardManager
 		logger           log.Logger
 	}
 	// contextAwareServer represents a startable gRPC server used to provide the Temporal interface on some connection.
@@ -92,8 +93,11 @@ type (
 		nsTranslations   collect.StaticBiMap[string, string]
 		saTranslations   config.SearchAttributeTranslation
 		shardCountConfig config.ShardCountConfig
-		targetShardCount int32
 		logger           log.Logger
+
+		shardManager      ShardManager
+		lcmParameters     LCMParameters
+		routingParameters RoutingParameters
 	}
 )
 
@@ -128,6 +132,42 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		return nil, err
 	}
 
+	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, connConfig.ShardCountConfig, connConfig.LocalServer.Connection.TcpClient.TLSConfig, logger)
+
+	getLCMParameters := func(shardCountConfig config.ShardCountConfig, inverse bool) LCMParameters {
+		if shardCountConfig.Mode != config.ShardCountLCM {
+			return LCMParameters{}
+		}
+		lcm := common.LCM(shardCountConfig.LocalShardCount, shardCountConfig.RemoteShardCount)
+		if inverse {
+			return LCMParameters{
+				LCM:              lcm,
+				TargetShardCount: shardCountConfig.LocalShardCount,
+			}
+		}
+		return LCMParameters{
+			LCM:              lcm,
+			TargetShardCount: shardCountConfig.RemoteShardCount,
+		}
+	}
+	getRoutingParameters := func(shardCountConfig config.ShardCountConfig, inverse bool, directionLabel string) RoutingParameters {
+		if shardCountConfig.Mode != config.ShardCountRouting {
+			return RoutingParameters{}
+		}
+		if inverse {
+			return RoutingParameters{
+				OverrideShardCount:     shardCountConfig.RemoteShardCount,
+				RoutingLocalShardCount: shardCountConfig.LocalShardCount,
+				DirectionLabel:         directionLabel,
+			}
+		}
+		return RoutingParameters{
+			OverrideShardCount:     shardCountConfig.LocalShardCount,
+			RoutingLocalShardCount: shardCountConfig.RemoteShardCount,
+			DirectionLabel:         directionLabel,
+		}
+	}
+
 	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, serverConfiguration{
 		name:              sanitizedConnectionName,
 		clusterDefinition: connConfig.RemoteServer,
@@ -137,12 +177,15 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		nsTranslations:    nsTranslations.Inverse(),
 		saTranslations:    saTranslations.Inverse(),
 		shardCountConfig:  connConfig.ShardCountConfig,
-		targetShardCount:  connConfig.ShardCountConfig.LocalShardCount,
 		logger:            cc.logger,
+		shardManager:      cc.shardManager,
+		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, true),
+		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, true, "inbound"),
 	})
 	if err != nil {
 		return nil, err
 	}
+
 	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, serverConfiguration{
 		name:              sanitizedConnectionName,
 		clusterDefinition: connConfig.LocalServer,
@@ -152,12 +195,15 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		nsTranslations:    nsTranslations,
 		saTranslations:    saTranslations,
 		shardCountConfig:  connConfig.ShardCountConfig,
-		targetShardCount:  connConfig.ShardCountConfig.RemoteShardCount,
 		logger:            cc.logger,
+		shardManager:      cc.shardManager,
+		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, false),
+		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
 	})
 	if err != nil {
 		return nil, err
 	}
+
 	return cc, nil
 }
 
@@ -181,7 +227,7 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 		return createTCPServer(lifetime, c)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		observer := NewReplicationStreamObserver(c.logger)
-		grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.MuxAddressInfo.TLSConfig, observer.ReportStreamValue)
+		grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.MuxAddressInfo.TLSConfig, observer.ReportStreamValue, lifetime)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -202,7 +248,7 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid configuration for inbound server: %w", err)
 	}
-	grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.TcpServer.TLSConfig, observer.ReportStreamValue)
+	grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.TcpServer.TLSConfig, observer.ReportStreamValue, lifetime)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create inbound server: %w", err)
 	}
@@ -239,11 +285,18 @@ func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg en
 }
 
 func (c *ClusterConnection) Start() {
+	if c.shardManager != nil {
+		err := c.shardManager.Start(c.lifetime)
+		if err != nil {
+			c.logger.Error("Failed to start shard manager", tag.Error(err))
+		}
+	}
 	c.inboundServer.Start()
 	c.inboundObserver.Start(c.lifetime, c.inboundServer.Name(), "inbound")
 	c.outboundServer.Start()
 	c.outboundObserver.Start(c.lifetime, c.outboundServer.Name(), "outbound")
 }
+
 func (c *ClusterConnection) Describe() string {
 	return fmt.Sprintf("[ClusterConnection connects outbound server %s to outbound client %s, inbound server %s to inbound client %s]",
 		c.outboundServer.Describe(), c.outboundClient.Describe(), c.inboundServer.Describe(), c.inboundClient.Describe())
@@ -252,29 +305,34 @@ func (c *ClusterConnection) Describe() string {
 func (c *ClusterConnection) AcceptingInboundTraffic() bool {
 	return c.inboundClient.CanMakeCalls() && c.inboundServer.CanAcceptConnections()
 }
+
 func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
 	return c.outboundClient.CanMakeCalls() && c.outboundServer.CanAcceptConnections()
 }
 
 // buildProxyServer uses the provided grpc.ClientConnInterface and config.ProxyConfig to create a grpc.Server that proxies
 // the Temporal API across the ClientConnInterface.
-func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, observeFn func(int32, int32)) (*grpc.Server, error) {
+func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, observeFn func(int32, int32), lifetime context.Context) (*grpc.Server, error) {
 	serverOpts, err := makeServerOptions(c, tlsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse server options: %w", err)
 	}
 	server := grpc.NewServer(serverOpts...)
 
-	var lcmParameters LCMParameters
-	if c.shardCountConfig.Mode == config.ShardCountLCM {
-		lcmParameters = LCMParameters{
-			LCM:              common.LCM(c.shardCountConfig.LocalShardCount, c.shardCountConfig.RemoteShardCount),
-			TargetShardCount: c.targetShardCount,
-		}
-	}
-
-	adminServiceImpl := NewAdminServiceProxyServer(fmt.Sprintf("%sAdminService", c.directionLabel), adminservice.NewAdminServiceClient(c.client),
-		c.clusterDefinition.APIOverrides, []string{c.directionLabel}, observeFn, c.shardCountConfig, lcmParameters, c.logger)
+	adminServiceImpl := NewAdminServiceProxyServer(
+		fmt.Sprintf("%sAdminService", c.directionLabel),
+		adminservice.NewAdminServiceClient(c.client),
+		adminservice.NewAdminServiceClient(c.managedClient),
+		c.clusterDefinition.APIOverrides,
+		[]string{c.directionLabel},
+		observeFn,
+		c.shardCountConfig,
+		c.lcmParameters,
+		c.routingParameters,
+		c.logger,
+		c.shardManager,
+		lifetime,
+	)
 	var accessControl *auth.AccessControl
 	if c.clusterDefinition.ACLPolicy != nil {
 		accessControl = auth.NewAccesControl(c.clusterDefinition.ACLPolicy.AllowedNamespaces)

@@ -10,6 +10,7 @@ import (
 	"go.temporal.io/server/common/log"
 	gomock "go.uber.org/mock/gomock"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
@@ -45,7 +46,8 @@ type adminProxyServerInput struct {
 
 func (s *adminserviceSuite) newAdminServiceProxyServer(in adminProxyServerInput, observer *ReplicationStreamObserver) adminservice.AdminServiceServer {
 	return NewAdminServiceProxyServer("test-service-name", s.adminClientMock,
-		in.apiOverrides, in.metricLabels, observer.ReportStreamValue, config.ShardCountConfig{}, LCMParameters{}, log.NewTestLogger())
+		s.adminClientMock,
+		in.apiOverrides, in.metricLabels, observer.ReportStreamValue, config.ShardCountConfig{}, LCMParameters{}, RoutingParameters{}, log.NewTestLogger(), nil, context.Background())
 }
 
 func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
@@ -122,7 +124,7 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 			s.adminClientMock.EXPECT().AddOrUpdateRemoteCluster(ctx, c.expectedReq).Return(expResp, nil)
 			resp, err := server.AddOrUpdateRemoteCluster(ctx, makeOriginalReq())
 			s.NoError(err)
-			s.Equal(expResp, resp)
+			s.True(proto.Equal(expResp, resp))
 			s.Equal("[]", observer.PrintActiveStreams())
 		})
 	}
@@ -234,7 +236,7 @@ func (s *adminserviceSuite) TestAPIOverrides_FailoverVersionIncrement() {
 			s.adminClientMock.EXPECT().DescribeCluster(ctx, gomock.Any()).Return(c.mockResp, nil)
 			resp, err := server.DescribeCluster(ctx, req)
 			s.NoError(err)
-			s.Equal(c.expResp, resp)
+			s.True(proto.Equal(c.expResp, resp))
 			s.Equal("[]", observer.PrintActiveStreams())
 		})
 	}
