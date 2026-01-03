@@ -227,7 +227,7 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 		return createTCPServer(lifetime, c)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		observer := NewReplicationStreamObserver(c.logger)
-		grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.MuxAddressInfo.TLSConfig, observer.ReportStreamValue)
+		grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.MuxAddressInfo.TLSConfig, observer.ReportStreamValue, lifetime)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -248,7 +248,7 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid configuration for inbound server: %w", err)
 	}
-	grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.TcpServer.TLSConfig, observer.ReportStreamValue)
+	grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.TcpServer.TLSConfig, observer.ReportStreamValue, lifetime)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create inbound server: %w", err)
 	}
@@ -312,7 +312,7 @@ func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
 
 // buildProxyServer uses the provided grpc.ClientConnInterface and config.ProxyConfig to create a grpc.Server that proxies
 // the Temporal API across the ClientConnInterface.
-func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, observeFn func(int32, int32)) (*grpc.Server, error) {
+func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, observeFn func(int32, int32), lifetime context.Context) (*grpc.Server, error) {
 	serverOpts, err := makeServerOptions(c, tlsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse server options: %w", err)
@@ -331,6 +331,7 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		c.routingParameters,
 		c.logger,
 		c.shardManager,
+		lifetime,
 	)
 	var accessControl *auth.AccessControl
 	if c.clusterDefinition.ACLPolicy != nil {

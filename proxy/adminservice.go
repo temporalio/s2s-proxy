@@ -41,6 +41,7 @@ type (
 		shardCountConfig   config.ShardCountConfig
 		lcmParameters      LCMParameters
 		routingParameters  RoutingParameters
+		lifetime           context.Context
 	}
 )
 
@@ -57,6 +58,7 @@ func NewAdminServiceProxyServer(
 	routingParameters RoutingParameters,
 	logger log.Logger,
 	shardManager ShardManager,
+	lifetime context.Context,
 ) adminservice.AdminServiceServer {
 	// The AdminServiceStreams will duplicate the same output for an underlying connection issue hundreds of times.
 	// Limit their output to three times per minute
@@ -73,6 +75,7 @@ func NewAdminServiceProxyServer(
 		shardCountConfig:   shardCountConfig,
 		lcmParameters:      lcmParameters,
 		routingParameters:  routingParameters,
+		lifetime:           lifetime,
 	}
 }
 
@@ -311,6 +314,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		s.adminClientReverse,
 		s.shardManager,
 		s.metricLabelValues,
+		s.lifetime,
 	)
 	if err != nil {
 		return err

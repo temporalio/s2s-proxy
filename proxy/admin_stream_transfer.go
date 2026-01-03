@@ -310,6 +310,7 @@ func handleStream(
 	adminClientReverse adminservice.AdminServiceClient,
 	shardManager ShardManager,
 	metricLabelValues []string,
+	lifetime context.Context,
 ) error {
 	switch shardCountConfig.Mode {
 	case config.ShardCountLCM:
@@ -342,9 +343,9 @@ func handleStream(
 	case config.ShardCountRouting:
 		isIntraProxy := common.IsIntraProxy(streamServer.Context())
 		if isIntraProxy {
-			return streamIntraProxyRouting(logger, streamServer, sourceClusterShardID, targetClusterShardID, shardManager)
+			return streamIntraProxyRouting(logger, streamServer, sourceClusterShardID, targetClusterShardID, shardManager, lifetime)
 		}
-		return streamRouting(logger, streamServer, sourceClusterShardID, targetClusterShardID, shardManager, adminClientReverse, routingParameters)
+		return streamRouting(logger, streamServer, sourceClusterShardID, targetClusterShardID, shardManager, adminClientReverse, routingParameters, lifetime)
 	}
 
 	forwarder := newStreamForwarder(
@@ -365,6 +366,7 @@ func streamIntraProxyRouting(
 	sourceShardID history.ClusterShardID,
 	targetShardID history.ClusterShardID,
 	shardManager ShardManager,
+	lifetime context.Context,
 ) error {
 	logger.Info("streamIntraProxyRouting started")
 	defer logger.Info("streamIntraProxyRouting finished")
@@ -399,6 +401,10 @@ func streamIntraProxyRouting(
 	}
 
 	shutdownChan := channel.NewShutdownOnce()
+	// Wire lifetime context to shutdownChan so cluster connection termination closes the stream
+	context.AfterFunc(lifetime, func() {
+		shutdownChan.Shutdown()
+	})
 	go func() {
 		if err := sender.Run(streamServer, shutdownChan); err != nil {
 			logger.Error("intraProxyStreamSender.Run error", tag.Error(err))
@@ -416,6 +422,7 @@ func streamRouting(
 	shardManager ShardManager,
 	adminClientReverse adminservice.AdminServiceClient,
 	routingParameters RoutingParameters,
+	lifetime context.Context,
 ) error {
 	logger.Info("streamRouting started")
 	defer logger.Info("streamRouting stopped")
@@ -441,6 +448,10 @@ func streamRouting(
 	}
 
 	shutdownChan := channel.NewShutdownOnce()
+	// Wire lifetime context to shutdownChan so cluster connection termination closes the stream
+	context.AfterFunc(lifetime, func() {
+		shutdownChan.Shutdown()
+	})
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	go func() {
