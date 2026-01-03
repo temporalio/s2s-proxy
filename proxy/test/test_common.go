@@ -243,6 +243,10 @@ func createLoadBalancer(
 	return trackingProxy, nil
 }
 
+// clusterCreationMu serializes cluster creation to avoid data races in Temporal server's
+// test infrastructure which uses global cached values that aren't thread-safe.
+var clusterCreationMu sync.Mutex
+
 func createCluster(
 	logger log.Logger,
 	t testingT,
@@ -251,6 +255,8 @@ func createCluster(
 	initialFailoverVersion int64,
 	numHistoryHosts int,
 ) *testcore.TestCluster {
+	clusterCreationMu.Lock()
+	defer clusterCreationMu.Unlock()
 	clusterSuffix := common.GenerateRandomString(8)
 	fullClusterName := fmt.Sprintf("%s-%s", clusterName, clusterSuffix)
 

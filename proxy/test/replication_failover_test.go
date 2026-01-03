@@ -216,6 +216,7 @@ var testConfigs = []TestConfig{
 func TestReplicationFailoverTestSuite(t *testing.T) {
 	for _, tc := range testConfigs {
 		t.Run(tc.Name, func(t *testing.T) {
+			t.Parallel()
 			s := &ReplicationTestSuite{
 				shardCountA:       tc.ShardCountA,
 				shardCountB:       tc.ShardCountB,
