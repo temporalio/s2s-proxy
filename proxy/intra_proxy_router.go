@@ -228,8 +228,13 @@ func (r *intraProxyStreamReceiver) Run(ctx context.Context, shardManager ShardMa
 	md.Set(history.MetadataKeyServerClusterID, fmt.Sprintf("%d", r.sourceShardID.ClusterID))
 	md.Set(history.MetadataKeyServerShardID, fmt.Sprintf("%d", r.sourceShardID.ShardID))
 	ctx = metadata.NewOutgoingContext(ctx, md)
+	shardInfos := shardManager.GetShardInfos()
+	nodeName := ""
+	if len(shardInfos) > 0 {
+		nodeName = shardInfos[0].NodeName
+	}
 	ctx = common.WithIntraProxyHeaders(ctx, map[string]string{
-		common.IntraProxyOriginProxyIDHeader: shardManager.GetShardInfo().NodeName,
+		common.IntraProxyOriginProxyIDHeader: nodeName,
 	})
 
 	// Ensure we can cancel Recv() by canceling the context when tearing down

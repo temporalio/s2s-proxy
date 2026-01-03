@@ -30,64 +30,51 @@ type (
 
 	// ShardManager manages distributed shard ownership across proxy instances
 	ShardManager interface {
+		// Lifecycle
 		// Start initializes the memberlist cluster and starts the manager
 		Start(lifetime context.Context) error
 		// Stop shuts down the manager and leaves the cluster
 		Stop()
+
+		// Shard ownership
 		// RegisterShard registers a clientShardID as owned by this proxy instance and returns the registration timestamp
 		RegisterShard(clientShardID history.ClusterShardID) time.Time
 		// UnregisterShard removes a clientShardID from this proxy's ownership only if the timestamp matches
 		UnregisterShard(clientShardID history.ClusterShardID, expectedRegisteredAt time.Time)
-		// GetProxyAddress returns the proxy service address for the given node name
-		GetProxyAddress(nodeName string) (string, bool)
 		// IsLocalShard checks if this proxy instance owns the given shard
 		IsLocalShard(clientShardID history.ClusterShardID) bool
+
+		// Cluster information
 		// GetNodeName returns the name of this proxy instance
 		GetNodeName() string
-		// GetMemberNodes returns all active proxy nodes in the cluster
-		GetMemberNodes() []string
+		// GetProxyAddress returns the proxy service address for the given node name
+		GetProxyAddress(nodeName string) (string, bool)
 		// GetLocalShards returns all shards currently handled by this proxy instance, keyed by short id
 		GetLocalShards() map[string]history.ClusterShardID
 		// GetRemoteShardsForPeer returns all shards owned by the specified peer node, keyed by short id
 		GetRemoteShardsForPeer(peerNodeName string) (map[string]NodeShardState, error)
-		// GetShardInfo returns debug information about shard distribution
-		GetShardInfo() ShardDebugInfo
-		// GetShardInfos returns debug information about shard distribution as a slice
-		GetShardInfos() []ShardDebugInfo
-		// GetChannelInfo returns debug information about active channels
-		GetChannelInfo() ChannelDebugInfo
-		// GetShardOwner returns the node name that owns the given shard
-		GetShardOwner(shard history.ClusterShardID) (string, bool)
-		// TerminatePreviousLocalReceiver checks if there is a previous local receiver for this shard and terminates it if needed
-		TerminatePreviousLocalReceiver(shardID history.ClusterShardID, logger log.Logger)
-		// GetIntraProxyManager returns the intra-proxy manager if it exists
-		GetIntraProxyManager() *intraProxyManager
-		// GetIntraProxyTLSConfig returns the TLS config for intra-proxy connections
-		GetIntraProxyTLSConfig() encryption.TLSConfig
+
+		// Message routing
 		// DeliverAckToShardOwner routes an ACK request to the appropriate shard owner (local or remote)
 		DeliverAckToShardOwner(srcShard history.ClusterShardID, routedAck *RoutedAck, shutdownChan channel.ShutdownOnce, logger log.Logger, ack int64, allowForward bool) bool
 		// DeliverMessagesToShardOwner routes replication messages to the appropriate shard owner (local or remote)
 		DeliverMessagesToShardOwner(targetShard history.ClusterShardID, routedMsg *RoutedMessage, shutdownChan channel.ShutdownOnce, logger log.Logger) bool
-		// SetOnPeerJoin registers a callback invoked when a new peer joins
-		SetOnPeerJoin(handler func(nodeName string))
-		// SetOnPeerLeave registers a callback invoked when a peer leaves.
-		SetOnPeerLeave(handler func(nodeName string))
-		// New: notify when local shard set changes
-		SetOnLocalShardChange(handler func(shard history.ClusterShardID, added bool))
-		// New: notify when remote shard set changes for a peer
-		SetOnRemoteShardChange(handler func(peer string, shard history.ClusterShardID, added bool))
+
+		// Active receivers
 		// RegisterActiveReceiver registers an active receiver for watermark propagation
 		RegisterActiveReceiver(sourceShardID history.ClusterShardID, receiver ActiveReceiver)
 		// UnregisterActiveReceiver removes an active receiver
 		UnregisterActiveReceiver(sourceShardID history.ClusterShardID)
 		// GetActiveReceiver returns the active receiver for the given source shard
 		GetActiveReceiver(sourceShardID history.ClusterShardID) (ActiveReceiver, bool)
+		// TerminatePreviousLocalReceiver checks if there is a previous local receiver for this shard and terminates it if needed
+		TerminatePreviousLocalReceiver(shardID history.ClusterShardID, logger log.Logger)
+
+		// Channel management (used for message routing)
 		// SetRemoteSendChan registers a send channel for a specific shard ID
 		SetRemoteSendChan(shardID history.ClusterShardID, sendChan chan RoutedMessage)
 		// GetRemoteSendChan retrieves the send channel for a specific shard ID
 		GetRemoteSendChan(shardID history.ClusterShardID) (chan RoutedMessage, bool)
-		// GetAllRemoteSendChans returns a map of all remote send channels
-		GetAllRemoteSendChans() map[history.ClusterShardID]chan RoutedMessage
 		// GetRemoteSendChansByCluster returns a copy of remote send channels filtered by clusterID
 		GetRemoteSendChansByCluster(clusterID int32) map[history.ClusterShardID]chan RoutedMessage
 		// RemoveRemoteSendChan removes the send channel for a specific shard ID only if it matches the provided channel
@@ -96,18 +83,26 @@ type (
 		SetLocalAckChan(shardID history.ClusterShardID, ackChan chan RoutedAck)
 		// GetLocalAckChan retrieves the ack channel for a specific shard ID
 		GetLocalAckChan(shardID history.ClusterShardID) (chan RoutedAck, bool)
-		// GetAllLocalAckChans returns a map of all local ack channels
-		GetAllLocalAckChans() map[history.ClusterShardID]chan RoutedAck
 		// RemoveLocalAckChan removes the ack channel for a specific shard ID only if it matches the provided channel
 		RemoveLocalAckChan(shardID history.ClusterShardID, expectedChan chan RoutedAck)
-		// ForceRemoveLocalAckChan unconditionally removes the ack channel for a specific shard ID
-		ForceRemoveLocalAckChan(shardID history.ClusterShardID)
 		// SetLocalReceiverCancelFunc registers a cancel function for a local receiver for a specific shard ID
 		SetLocalReceiverCancelFunc(shardID history.ClusterShardID, cancelFunc context.CancelFunc)
 		// GetLocalReceiverCancelFunc retrieves the cancel function for a local receiver for a specific shard ID
 		GetLocalReceiverCancelFunc(shardID history.ClusterShardID) (context.CancelFunc, bool)
 		// RemoveLocalReceiverCancelFunc unconditionally removes the cancel function for a local receiver for a specific shard ID
 		RemoveLocalReceiverCancelFunc(shardID history.ClusterShardID)
+
+		// Intra-proxy
+		// GetIntraProxyManager returns the intra-proxy manager if it exists
+		GetIntraProxyManager() *intraProxyManager
+		// GetIntraProxyTLSConfig returns the TLS config for intra-proxy connections
+		GetIntraProxyTLSConfig() encryption.TLSConfig
+
+		// Debug
+		// GetShardInfos returns debug information about shard distribution as a slice
+		GetShardInfos() []ShardDebugInfo
+		// GetChannelInfo returns debug information about active channels
+		GetChannelInfo() ChannelDebugInfo
 	}
 
 	shardManagerImpl struct {
@@ -176,38 +171,7 @@ type (
 		Shards   map[string]ShardInfo `json:"shards"`
 		Updated  time.Time            `json:"updated"`
 	}
-
-	// memberSnapshot is a thread-safe copy of memberlist node data
-	memberSnapshot struct {
-		Name string
-		Meta []byte
-	}
 )
-
-// getMembersSnapshot returns a thread-safe snapshot of remote node states.
-// Uses the remoteNodeStates map instead of ml.Members() to avoid data races.
-func (sm *shardManagerImpl) getMembersSnapshot() []memberSnapshot {
-	sm.remoteNodeStatesMu.RLock()
-	defer sm.remoteNodeStatesMu.RUnlock()
-
-	snapshots := make([]memberSnapshot, 0, len(sm.remoteNodeStates))
-	for nodeName, state := range sm.remoteNodeStates {
-		// Marshal the state to get the meta bytes
-		metaBytes, err := json.Marshal(state)
-		if err != nil {
-			sm.logger.Warn("Failed to marshal node state for snapshot",
-				tag.NewStringTag("node", nodeName),
-				tag.Error(err))
-			continue
-		}
-		snapshot := memberSnapshot{
-			Name: nodeName,
-			Meta: metaBytes,
-		}
-		snapshots = append(snapshots, snapshot)
-	}
-	return snapshots
-}
 
 // NewShardManager creates a new shard manager instance
 func NewShardManager(memberlistConfig *config.MemberlistConfig, shardCountConfig config.ShardCountConfig, intraProxyTLSConfig encryption.TLSConfig, logger log.Logger) ShardManager {
@@ -239,29 +203,29 @@ func NewShardManager(memberlistConfig *config.MemberlistConfig, shardCountConfig
 	return sm
 }
 
-// SetOnPeerJoin registers a callback invoked on new peer joins.
-func (sm *shardManagerImpl) SetOnPeerJoin(handler func(nodeName string)) {
+// setOnPeerJoin registers a callback invoked on new peer joins.
+func (sm *shardManagerImpl) setOnPeerJoin(handler func(nodeName string)) {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	sm.onPeerJoin = handler
 }
 
-// SetOnPeerLeave registers a callback invoked when a peer leaves.
-func (sm *shardManagerImpl) SetOnPeerLeave(handler func(nodeName string)) {
+// setOnPeerLeave registers a callback invoked when a peer leaves.
+func (sm *shardManagerImpl) setOnPeerLeave(handler func(nodeName string)) {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	sm.onPeerLeave = handler
 }
 
-// SetOnLocalShardChange registers local shard change callback.
-func (sm *shardManagerImpl) SetOnLocalShardChange(handler func(shard history.ClusterShardID, added bool)) {
+// setOnLocalShardChange registers local shard change callback.
+func (sm *shardManagerImpl) setOnLocalShardChange(handler func(shard history.ClusterShardID, added bool)) {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	sm.onLocalShardChange = handler
 }
 
-// SetOnRemoteShardChange registers remote shard change callback.
-func (sm *shardManagerImpl) SetOnRemoteShardChange(handler func(peer string, shard history.ClusterShardID, added bool)) {
+// setOnRemoteShardChange registers remote shard change callback.
+func (sm *shardManagerImpl) setOnRemoteShardChange(handler func(peer string, shard history.ClusterShardID, added bool)) {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 	sm.onRemoteShardChange = handler
@@ -613,37 +577,6 @@ func (sm *shardManagerImpl) GetNodeName() string {
 	return sm.memberlistConfig.NodeName
 }
 
-func (sm *shardManagerImpl) GetMemberNodes() []string {
-	if !sm.started || sm.ml == nil {
-		return []string{sm.GetNodeName()}
-	}
-
-	// Use a timeout to prevent deadlocks when memberlist is busy
-	membersChan := make(chan []memberSnapshot, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				sm.logger.Error("Panic in GetMemberNodes", tag.NewStringTag("error", fmt.Sprintf("%v", r)))
-			}
-		}()
-		membersChan <- sm.getMembersSnapshot()
-	}()
-
-	select {
-	case members := <-membersChan:
-		nodes := make([]string, len(members))
-		for i, member := range members {
-			nodes[i] = member.Name
-		}
-		return nodes
-	case <-time.After(100 * time.Millisecond):
-		// Timeout: return cached node name to prevent hanging
-		sm.logger.Warn("GetMemberNodes timeout, returning self node",
-			tag.NewStringTag("node", sm.GetNodeName()))
-		return []string{sm.GetNodeName()}
-	}
-}
-
 func (sm *shardManagerImpl) GetLocalShards() map[string]history.ClusterShardID {
 	sm.mutex.RLock()
 	defer sm.mutex.RUnlock()
@@ -654,7 +587,7 @@ func (sm *shardManagerImpl) GetLocalShards() map[string]history.ClusterShardID {
 	return shards
 }
 
-func (sm *shardManagerImpl) GetShardInfo() ShardDebugInfo {
+func (sm *shardManagerImpl) getShardInfo() ShardDebugInfo {
 	localShardMap := sm.GetLocalShards()
 	remoteShards, err := sm.GetRemoteShardsForPeer("")
 	if err != nil {
@@ -687,7 +620,7 @@ func (sm *shardManagerImpl) GetShardInfos() []ShardDebugInfo {
 	if sm.memberlistConfig == nil {
 		return []ShardDebugInfo{}
 	}
-	return []ShardDebugInfo{sm.GetShardInfo()}
+	return []ShardDebugInfo{sm.getShardInfo()}
 }
 
 // GetChannelInfo returns debug information about active channels
@@ -696,7 +629,7 @@ func (sm *shardManagerImpl) GetChannelInfo() ChannelDebugInfo {
 	var totalSendChannels int
 
 	// Collect remote send channel info first
-	allSendChans := sm.GetAllRemoteSendChans()
+	allSendChans := sm.getAllRemoteSendChans()
 	for shardID, ch := range allSendChans {
 		shardKey := ClusterShardIDtoString(shardID)
 		remoteSendChannels[shardKey] = len(ch)
@@ -707,7 +640,7 @@ func (sm *shardManagerImpl) GetChannelInfo() ChannelDebugInfo {
 	var totalAckChannels int
 
 	// Collect local ack channel info separately
-	allAckChans := sm.GetAllLocalAckChans()
+	allAckChans := sm.getAllLocalAckChans()
 	for shardID, ch := range allAckChans {
 		shardKey := ClusterShardIDtoString(shardID)
 		localAckChannels[shardKey] = len(ch)
@@ -733,11 +666,11 @@ func (sm *shardManagerImpl) TerminatePreviousLocalReceiver(shardID history.Clust
 
 		// Force remove the cancel function and ack channel from tracking
 		sm.RemoveLocalReceiverCancelFunc(shardID)
-		sm.ForceRemoveLocalAckChan(shardID)
+		sm.forceRemoveLocalAckChan(shardID)
 	}
 }
 
-func (sm *shardManagerImpl) GetShardOwner(shard history.ClusterShardID) (string, bool) {
+func (sm *shardManagerImpl) getShardOwner(shard history.ClusterShardID) (string, bool) {
 	remoteShards, err := sm.GetRemoteShardsForPeer("")
 	if err != nil {
 		sm.logger.Error("Failed to get remote shards", tag.Error(err))
@@ -813,7 +746,7 @@ func (sm *shardManagerImpl) DeliverAckToShardOwner(
 
 	// Attempt remote delivery via intra-proxy when enabled and shard is remote
 	if sm.memberlistConfig != nil {
-		if owner, ok := sm.GetShardOwner(sourceShard); ok && owner != sm.GetNodeName() {
+		if owner, ok := sm.getShardOwner(sourceShard); ok && owner != sm.GetNodeName() {
 			if addr, found := sm.GetProxyAddress(owner); found {
 				clientShard := routedAck.TargetShard
 				serverShard := sourceShard
@@ -871,7 +804,7 @@ func (sm *shardManagerImpl) DeliverMessagesToShardOwner(
 
 	// Attempt remote delivery via intra-proxy when enabled and shard is remote
 	if sm.memberlistConfig != nil {
-		if owner, ok := sm.GetShardOwner(targetShard); ok && owner != sm.GetNodeName() {
+		if owner, ok := sm.getShardOwner(targetShard); ok && owner != sm.GetNodeName() {
 			if addr, found := sm.GetProxyAddress(owner); found {
 				if mgr := sm.GetIntraProxyManager(); mgr != nil {
 					resp := routedMsg.Resp
@@ -893,7 +826,7 @@ func (sm *shardManagerImpl) DeliverMessagesToShardOwner(
 
 func (sm *shardManagerImpl) SetupCallbacks() {
 	// Wire memberlist peer-join callback to reconcile intra-proxy receivers for local/remote pairs
-	sm.SetOnPeerJoin(func(nodeName string) {
+	sm.setOnPeerJoin(func(nodeName string) {
 		sm.logger.Info("OnPeerJoin", tag.NewStringTag("nodeName", nodeName))
 		defer sm.logger.Info("OnPeerJoin done", tag.NewStringTag("nodeName", nodeName))
 		if sm.intraMgr != nil {
@@ -902,7 +835,7 @@ func (sm *shardManagerImpl) SetupCallbacks() {
 	})
 
 	// Wire peer-leave to cleanup intra-proxy resources for that peer
-	sm.SetOnPeerLeave(func(nodeName string) {
+	sm.setOnPeerLeave(func(nodeName string) {
 		sm.logger.Info("OnPeerLeave", tag.NewStringTag("nodeName", nodeName))
 		defer sm.logger.Info("OnPeerLeave done", tag.NewStringTag("nodeName", nodeName))
 		if sm.intraMgr != nil {
@@ -911,7 +844,7 @@ func (sm *shardManagerImpl) SetupCallbacks() {
 	})
 
 	// Wire local shard changes to reconcile intra-proxy receivers
-	sm.SetOnLocalShardChange(func(shard history.ClusterShardID, added bool) {
+	sm.setOnLocalShardChange(func(shard history.ClusterShardID, added bool) {
 		sm.logger.Info("OnLocalShardChange", tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
 		defer sm.logger.Info("OnLocalShardChange done", tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
 		if added {
@@ -923,7 +856,7 @@ func (sm *shardManagerImpl) SetupCallbacks() {
 	})
 
 	// Wire remote shard changes to reconcile intra-proxy receivers
-	sm.SetOnRemoteShardChange(func(peer string, shard history.ClusterShardID, added bool) {
+	sm.setOnRemoteShardChange(func(peer string, shard history.ClusterShardID, added bool) {
 		sm.logger.Info("OnRemoteShardChange", tag.NewStringTag("peer", peer), tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
 		defer sm.logger.Info("OnRemoteShardChange done", tag.NewStringTag("peer", peer), tag.NewStringTag("shard", ClusterShardIDtoString(shard)), tag.NewStringTag("added", strconv.FormatBool(added)))
 		if added {
@@ -1189,8 +1122,8 @@ func (sm *shardManagerImpl) GetRemoteSendChan(shardID history.ClusterShardID) (c
 	return ch, exists
 }
 
-// GetAllRemoteSendChans returns a map of all remote send channels
-func (sm *shardManagerImpl) GetAllRemoteSendChans() map[history.ClusterShardID]chan RoutedMessage {
+// getAllRemoteSendChans returns a map of all remote send channels
+func (sm *shardManagerImpl) getAllRemoteSendChans() map[history.ClusterShardID]chan RoutedMessage {
 	sm.remoteSendChannelsMu.RLock()
 	defer sm.remoteSendChannelsMu.RUnlock()
 
@@ -1244,8 +1177,8 @@ func (sm *shardManagerImpl) GetLocalAckChan(shardID history.ClusterShardID) (cha
 	return ch, exists
 }
 
-// GetAllLocalAckChans returns a map of all local ack channels
-func (sm *shardManagerImpl) GetAllLocalAckChans() map[history.ClusterShardID]chan RoutedAck {
+// getAllLocalAckChans returns a map of all local ack channels
+func (sm *shardManagerImpl) getAllLocalAckChans() map[history.ClusterShardID]chan RoutedAck {
 	sm.localAckChannelsMu.RLock()
 	defer sm.localAckChannelsMu.RUnlock()
 
@@ -1269,8 +1202,8 @@ func (sm *shardManagerImpl) RemoveLocalAckChan(shardID history.ClusterShardID, e
 	}
 }
 
-// ForceRemoveLocalAckChan unconditionally removes the ack channel for a specific shard ID
-func (sm *shardManagerImpl) ForceRemoveLocalAckChan(shardID history.ClusterShardID) {
+// forceRemoveLocalAckChan unconditionally removes the ack channel for a specific shard ID
+func (sm *shardManagerImpl) forceRemoveLocalAckChan(shardID history.ClusterShardID) {
 	sm.logger.Info("Force remove local ack channel for shard", tag.NewStringTag("shardID", ClusterShardIDtoString(shardID)))
 	sm.localAckChannelsMu.Lock()
 	defer sm.localAckChannelsMu.Unlock()
