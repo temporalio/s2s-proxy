@@ -10,7 +10,7 @@ clusterConnections:
             keyPath: ""
             remoteCAPath: ""
             caServerName: ""
-            validateClientCA: false
+            verifyCA: false
         tcpServer:
           address: "127.0.0.1:9002"
           tls:
@@ -18,7 +18,7 @@ clusterConnections:
             keyPath: ""
             remoteCAPath: ""
             caServerName: ""
-            validateClientCA: false
+            verifyCA: false
       clusterInfo:
         serverVersion: "over 9000"
         shardCount: 42
@@ -53,7 +53,7 @@ clusterConnections:
             keyPath: ""
             remoteCAPath: ""
             caServerName: ""
-            validateClientCA: false
+            verifyCA: false
       clusterInfo:
         shardCount: 42
         serverVersion: "v1.22"

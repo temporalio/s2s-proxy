@@ -34,7 +34,8 @@ type (
 		shardManager       ShardManager
 		adminClient        adminservice.AdminServiceClient
 		adminClientReverse adminservice.AdminServiceClient
-		logger             log.Logger
+		verboseLogger      log.Logger
+		replicationLogger  log.Logger
 		apiOverrides       *config.APIOverridesConfig
 		metricLabelValues  []string
 		reportStreamValue  func(idx int32, value int32)
@@ -60,15 +61,19 @@ func NewAdminServiceProxyServer(
 	shardManager ShardManager,
 	lifetime context.Context,
 ) adminservice.AdminServiceServer {
-	// The AdminServiceStreams will duplicate the same output for an underlying connection issue hundreds of times.
-	// Limit their output to three times per minute
-	logger = log.NewThrottledLogger(log.With(logger, common.ServiceTag(serviceName)),
+	// Replication streams / APIs will run many hundreds of times per second. Throttle their output
+	// to 3 / min
+	replicationLogger := log.NewThrottledLogger(log.With(logger, common.ServiceTag(serviceName)),
 		func() float64 { return 3.0 / 60.0 })
+	// For config operations, allow most logs so that we can see all the info without putting disk at risk
+	verboseLogger := log.NewThrottledLogger(log.With(logger, common.ServiceTag(serviceName)),
+		func() float64 { return 3.0 })
 	return &adminServiceProxyServer{
 		shardManager:       shardManager,
 		adminClient:        adminClient,
 		adminClientReverse: adminClientReverse,
-		logger:             logger,
+		verboseLogger:      verboseLogger,
+		replicationLogger:  replicationLogger,
 		apiOverrides:       apiOverrides,
 		metricLabelValues:  metricLabelValues,
 		reportStreamValue:  reportStreamValue,
@@ -79,7 +84,8 @@ func NewAdminServiceProxyServer(
 	}
 }
 
-func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
+func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (resp *adminservice.AddOrUpdateRemoteClusterResponse, err error) {
+	s.verboseLogger.Info("Received AddOrUpdateRemoteCluster", tag.Address(in0.FrontendAddress), tag.NewBoolTag("Enabled", in0.GetEnableRemoteClusterConnection()), tag.NewStringsTag("configTags", s.metricLabelValues))
 	if !common.IsRequestTranslationDisabled(ctx) && s.apiOverrides != nil {
 		reqOverride := s.apiOverrides.AdminService.AddOrUpdateRemoteCluster
 		if reqOverride != nil && len(reqOverride.Request.FrontendAddress) > 0 {
@@ -88,9 +94,15 @@ func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, 
 			// from the local temporal server, or the proxy may be deployed behind a load balancer.
 			// Only used in single-proxy scenarios, i.e. Temporal <> Proxy <> Temporal
 			in0.FrontendAddress = reqOverride.Request.FrontendAddress
+			s.verboseLogger.Info("Overwrote outbound address", tag.Address(in0.FrontendAddress), tag.NewStringsTag("configTags", s.metricLabelValues))
 		}
 	}
-	return s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
+	resp, err = s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
+	if err != nil {
+		s.verboseLogger.Error("Error when adding remote cluster", tag.Error(err), tag.Operation("AddOrUpdateRemoteCluster"),
+			tag.NewStringTag("FrontendAddress", in0.GetFrontendAddress()))
+	}
+	return
 }
 
 func (s *adminServiceProxyServer) AddSearchAttributes(ctx context.Context, in0 *adminservice.AddSearchAttributesRequest) (*adminservice.AddSearchAttributesResponse, error) {
@@ -114,8 +126,16 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 }
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
+	s.verboseLogger.Info("Received DescribeClusterRequest")
 	resp, err := s.adminClient.DescribeCluster(ctx, in0)
+	if resp != nil {
+		s.verboseLogger.Info("Raw DescribeClusterResponse", tag.NewStringTag("clusterID", resp.ClusterId),
+			tag.NewStringTag("clusterName", resp.ClusterName), tag.NewStringTag("version", resp.ServerVersion),
+			tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement), tag.NewInt64("initialFailoverVersion", resp.InitialFailoverVersion),
+			tag.NewBoolTag("isGlobalNamespaceEnabled", resp.IsGlobalNamespaceEnabled), tag.NewStringsTag("configTags", s.metricLabelValues))
+	}
 	if common.IsRequestTranslationDisabled(ctx) {
+		s.verboseLogger.Info("Request translation disabled. Returning as-is")
 		return resp, err
 	}
 
@@ -134,11 +154,20 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 		responseOverride := s.apiOverrides.AdminService.DescribeCluster.Response
 		if resp != nil && responseOverride.FailoverVersionIncrement != nil {
 			resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
+			s.verboseLogger.Info("Overwrite FailoverVersionIncrement", tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement),
+				tag.NewStringsTag("configTags", s.metricLabelValues))
 		}
 	}
 
-	s.logger.Info("DescribeCluster response", tag.NewStringTag("response", fmt.Sprintf("%v", resp)))
-
+	if resp != nil {
+		s.verboseLogger.Info("Translated DescribeClusterResponse", tag.NewStringTag("clusterID", resp.ClusterId),
+			tag.NewStringTag("clusterName", resp.ClusterName), tag.NewStringTag("version", resp.ServerVersion),
+			tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement), tag.NewInt64("initialFailoverVersion", resp.InitialFailoverVersion),
+			tag.NewBoolTag("isGlobalNamespaceEnabled", resp.IsGlobalNamespaceEnabled), tag.NewStringsTag("configTags", s.metricLabelValues))
+	}
+	if err != nil {
+		s.verboseLogger.Info("Got error when calling DescribeCluster!", tag.Error(err), tag.NewStringsTag("configTags", s.metricLabelValues))
+	}
 	return resp, err
 }
 
@@ -150,8 +179,17 @@ func (s *adminServiceProxyServer) DescribeHistoryHost(ctx context.Context, in0 *
 	return s.adminClient.DescribeHistoryHost(ctx, in0)
 }
 
-func (s *adminServiceProxyServer) DescribeMutableState(ctx context.Context, in0 *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
-	return s.adminClient.DescribeMutableState(ctx, in0)
+func (s *adminServiceProxyServer) DescribeMutableState(ctx context.Context, in0 *adminservice.DescribeMutableStateRequest) (resp *adminservice.DescribeMutableStateResponse, err error) {
+	resp, err = s.adminClient.DescribeMutableState(ctx, in0)
+	if err != nil {
+		// This is a duplicate of the grpc client metrics, but not everyone has metrics set up
+		s.replicationLogger.Error("Failed to describe workflow",
+			tag.NewStringTag("WorkflowId", in0.GetExecution().GetWorkflowId()),
+			tag.NewStringTag("RunId", in0.GetExecution().GetRunId()),
+			tag.NewStringTag("Namespace", in0.GetNamespace()),
+			tag.Error(err), tag.Operation("DescribeMutableState"))
+	}
+	return
 }
 
 func (s *adminServiceProxyServer) GetDLQMessages(ctx context.Context, in0 *adminservice.GetDLQMessagesRequest) (*adminservice.GetDLQMessagesResponse, error) {
@@ -170,12 +208,23 @@ func (s *adminServiceProxyServer) GetNamespace(ctx context.Context, in0 *adminse
 	return s.adminClient.GetNamespace(ctx, in0)
 }
 
-func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Context, in0 *adminservice.GetNamespaceReplicationMessagesRequest) (*adminservice.GetNamespaceReplicationMessagesResponse, error) {
-	return s.adminClient.GetNamespaceReplicationMessages(ctx, in0)
+func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Context, in0 *adminservice.GetNamespaceReplicationMessagesRequest) (resp *adminservice.GetNamespaceReplicationMessagesResponse, err error) {
+	resp, err = s.adminClient.GetNamespaceReplicationMessages(ctx, in0)
+	if err != nil {
+		// This is a duplicate of the grpc client metrics, but not everyone has metrics set up
+		s.replicationLogger.Error("Failed to get namespace replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
+			tag.Error(err), tag.Operation("GetNamespaceReplicationMessages"))
+	}
+	return
 }
 
-func (s *adminServiceProxyServer) GetReplicationMessages(ctx context.Context, in0 *adminservice.GetReplicationMessagesRequest) (*adminservice.GetReplicationMessagesResponse, error) {
-	return s.adminClient.GetReplicationMessages(ctx, in0)
+func (s *adminServiceProxyServer) GetReplicationMessages(ctx context.Context, in0 *adminservice.GetReplicationMessagesRequest) (resp *adminservice.GetReplicationMessagesResponse, err error) {
+	resp, err = s.adminClient.GetReplicationMessages(ctx, in0)
+	if err != nil {
+		s.replicationLogger.Error("Failed to get replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
+			tag.Error(err), tag.Operation("GetReplicationMessages"))
+	}
+	return
 }
 
 func (s *adminServiceProxyServer) GetSearchAttributes(ctx context.Context, in0 *adminservice.GetSearchAttributesRequest) (*adminservice.GetSearchAttributesResponse, error) {
@@ -277,7 +326,7 @@ func ClusterShardIDtoShortString(sd history.ClusterShardID) string {
 func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	streamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 ) (retError error) {
-	defer log.CapturePanic(s.logger, &retError)
+	defer log.CapturePanic(s.replicationLogger, &retError)
 
 	targetMetadata, ok := metadata.FromIncomingContext(streamServer.Context())
 	if !ok {
@@ -290,7 +339,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		return err
 	}
 
-	logger := log.With(s.logger,
+	logger := log.With(s.replicationLogger,
 		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
 		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
 
