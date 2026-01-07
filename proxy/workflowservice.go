@@ -9,9 +9,11 @@ import (
 
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/logging"
 )
 
 const DCRedirectionContextHeaderName = "xdc-redirection" // https://github.com/temporalio/temporal/blob/9a1060c4162ff62576cb899d7e5b1bae179af814/common/rpc/interceptor/redirection.go#L27
+const LogWorkflowService = "workflowService"
 
 type (
 	workflowServiceProxyServer struct {
@@ -29,9 +31,9 @@ func NewWorkflowServiceProxyServer(
 	serviceName string,
 	workflowServiceClient workflowservice.WorkflowServiceClient,
 	namespaceAccess *auth.AccessControl,
-	logger log.Logger,
+	loggers logging.LoggerProvider,
 ) workflowservice.WorkflowServiceServer {
-	logger = log.With(logger, common.ServiceTag(serviceName))
+	logger := log.With(loggers.Get(LogWorkflowService), common.ServiceTag(serviceName))
 	return &workflowServiceProxyServer{
 		workflowServiceClient: workflowServiceClient,
 		namespaceAccess:       namespaceAccess,

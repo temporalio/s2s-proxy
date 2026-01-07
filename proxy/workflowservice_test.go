@@ -17,6 +17,8 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/temporalio/s2s-proxy/auth"
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/logging"
 )
 
 var (
@@ -80,8 +82,9 @@ func (s *workflowServiceTestSuite) SetupTest() {
 // a predefined set of namespaces to the proxy layer. Then we check to make sure the proxy kept the allowed namespace
 // and rejected the disallowed namespace.
 func (s *workflowServiceTestSuite) TestNamespaceFiltering() {
+	loggerProvider := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
 	wfProxy := NewWorkflowServiceProxyServer("My cool test server", s.clientMock,
-		auth.NewAccesControl([]string{"Bob Ross's Paint Shop"}), log.NewTestLogger())
+		auth.NewAccesControl([]string{"Bob Ross's Paint Shop"}), loggerProvider)
 
 	s.clientMock.EXPECT().ListNamespaces(gomock.Any(), gomock.Any()).Return(listNamespacesResponse, nil)
 	res, _ := wfProxy.ListNamespaces(metadata.NewIncomingContext(context.Background(), metadata.New(map[string]string{})),
@@ -105,7 +108,8 @@ func (s *workflowServiceTestSuite) TestNamespaceFiltering() {
 }
 
 func (s *workflowServiceTestSuite) TestPreserveRedirectionHeader() {
-	wfProxy := NewWorkflowServiceProxyServer("My cool test server", s.clientMock, nil, log.NewTestLogger())
+	loggerProvider := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	wfProxy := NewWorkflowServiceProxyServer("My cool test server", s.clientMock, nil, loggerProvider)
 
 	// Client should be called with xdc-redirection=false header
 	for _, headerValue := range []string{"true", "false", ""} {

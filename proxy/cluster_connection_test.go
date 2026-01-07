@@ -16,6 +16,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/endtoendtest/testservices"
+	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"github.com/temporalio/s2s-proxy/transport/mux"
@@ -159,11 +160,11 @@ func makeEchoServer(name string, listenAddress string, logger log.Logger) *tests
 		nil, listenAddress, logger)
 }
 
-func newPairedLocalClusterConnection(t *testing.T, isMux bool, logger log.Logger) *pairedLocalClusterConnection {
+func newPairedLocalClusterConnection(t *testing.T, isMux bool, loggers logging.LoggerProvider) *pairedLocalClusterConnection {
 	a := getDynamicPlccAddresses(t)
 
-	localTemporal := makeEchoServer("local", a.localTemporalAddr, logger)
-	remoteTemporal := makeEchoServer("remote", a.remoteTemporalAddr, logger)
+	localTemporal := makeEchoServer("local", a.localTemporalAddr, loggers.Get("root"))
+	remoteTemporal := makeEchoServer("remote", a.remoteTemporalAddr, loggers.Get("root"))
 
 	var localCC, remoteCC *ClusterConnection
 	var cancelLocalCC, cancelRemoteCC context.CancelFunc
@@ -172,25 +173,25 @@ func newPairedLocalClusterConnection(t *testing.T, isMux bool, logger log.Logger
 		var localCtx context.Context
 		localCtx, cancelLocalCC = context.WithCancel(t.Context())
 		localCC, err = NewClusterConnection(localCtx, makeTCPClusterConfig("TCP-only Connection Local Proxy",
-			a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound), logger)
+			a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound), loggers)
 		require.NoError(t, err)
 
 		var remoteCtx context.Context
 		remoteCtx, cancelRemoteCC = context.WithCancel(t.Context())
 		remoteCC, err = NewClusterConnection(remoteCtx, makeTCPClusterConfig("TCP-only Connection Remote Proxy",
-			a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound), logger)
+			a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound), loggers)
 		require.NoError(t, err)
 	} else {
 		var localCtx context.Context
 		localCtx, cancelLocalCC = context.WithCancel(t.Context())
 		localCC, err = NewClusterConnection(localCtx, makeMuxClusterConfig("Mux Connection Local Establishing Proxy",
-			config.ConnTypeMuxClient, a.localTemporalAddr, a.localProxyOutbound, a.remoteProxyInbound), logger)
+			config.ConnTypeMuxClient, a.localTemporalAddr, a.localProxyOutbound, a.remoteProxyInbound), loggers)
 		require.NoError(t, err)
 
 		var remoteCtx context.Context
 		remoteCtx, cancelRemoteCC = context.WithCancel(t.Context())
 		remoteCC, err = NewClusterConnection(remoteCtx, makeMuxClusterConfig("Mux Connection Remote Receiving Proxy",
-			config.ConnTypeMuxServer, a.remoteTemporalAddr, a.remoteProxyOutbound, a.remoteProxyInbound), logger)
+			config.ConnTypeMuxServer, a.remoteTemporalAddr, a.remoteProxyOutbound, a.remoteProxyInbound), loggers)
 		require.NoError(t, err)
 	}
 	clientFromLocal, err := grpc.NewClient(a.localProxyOutbound, grpcutil.MakeDialOptions(nil, metrics.GetStandardGRPCClientInterceptor("outbound-local"))...)
@@ -211,8 +212,8 @@ func newPairedLocalClusterConnection(t *testing.T, isMux bool, logger log.Logger
 }
 
 func TestTCPClusterConnection(t *testing.T) {
-	logger := log.NewTestLogger()
-	plcc := newPairedLocalClusterConnection(t, false, logger)
+	loggerProvider := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	plcc := newPairedLocalClusterConnection(t, false, loggerProvider)
 	plcc.StartAll(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -228,8 +229,8 @@ func TestTCPClusterConnection(t *testing.T) {
 }
 
 func TestMuxClusterConnection(t *testing.T) {
-	logger := log.NewTestLogger()
-	plcc := newPairedLocalClusterConnection(t, true, logger)
+	loggerProvider := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	plcc := newPairedLocalClusterConnection(t, true, loggerProvider)
 	plcc.StartAll(t)
 	t.Log("Started plcc")
 
@@ -248,8 +249,8 @@ func TestMuxClusterConnection(t *testing.T) {
 }
 
 func TestMuxCCFailover(t *testing.T) {
-	logger := log.NewTestLogger()
-	plcc := newPairedLocalClusterConnection(t, true, logger)
+	loggerProvider := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	plcc := newPairedLocalClusterConnection(t, true, loggerProvider)
 	plcc.StartAll(t)
 
 	plcc.cancelRemoteCC()
@@ -259,7 +260,7 @@ func TestMuxCCFailover(t *testing.T) {
 	cancel()
 	newConnection, err := NewClusterConnection(t.Context(),
 		makeMuxClusterConfig("newRemoteMux", config.ConnTypeMuxServer, plcc.addresses.remoteTemporalAddr, plcc.addresses.remoteProxyOutbound, plcc.addresses.remoteProxyInbound,
-			func(cc *config.ClusterConnConfig) { cc.RemoteServer.Connection.MuxCount = 5 }), logger)
+			func(cc *config.ClusterConnConfig) { cc.RemoteServer.Connection.MuxCount = 5 }), loggerProvider)
 	require.NoError(t, err)
 	newConnection.Start()
 	// Wait for localCC's client retry...

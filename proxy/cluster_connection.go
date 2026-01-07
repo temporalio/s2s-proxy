@@ -24,9 +24,19 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
+	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"github.com/temporalio/s2s-proxy/transport/mux"
+)
+
+const (
+	LogStreamObserver    = "streamObserver"
+	LogMuxManager        = "muxManager"
+	LogTCPServer         = "tcpServer"
+	LogClusterConnection = "clusterConnection"
+	LogInterceptor       = "interceptor"
+	LogTLSHandshake      = "tlsHandshake"
 )
 
 type (
@@ -60,7 +70,7 @@ type (
 		inboundObserver  *ReplicationStreamObserver
 		outboundObserver *ReplicationStreamObserver
 		shardManager     ShardManager
-		logger           log.Logger
+		loggers          logging.LoggerProvider
 	}
 	// contextAwareServer represents a startable gRPC server used to provide the Temporal interface on some connection.
 	// IsUsable and Describe allow the caller to know and log the current state of the server.
@@ -93,7 +103,7 @@ type (
 		nsTranslations   collect.StaticBiMap[string, string]
 		saTranslations   config.SearchAttributeTranslation
 		shardCountConfig config.ShardCountConfig
-		logger           log.Logger
+		loggers          logging.LoggerProvider
 
 		shardManager      ShardManager
 		lcmParameters     LCMParameters
@@ -107,12 +117,12 @@ func sanitizeConnectionName(name string) string {
 }
 
 // NewClusterConnection unpacks the connConfig and creates the inbound and outbound clients and servers.
-func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logger log.Logger) (*ClusterConnection, error) {
+func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logProvider logging.LoggerProvider) (*ClusterConnection, error) {
 	// The name is used in metrics and in the protocol for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
 	sanitizedConnectionName := sanitizeConnectionName(connConfig.Name)
 	cc := &ClusterConnection{
 		lifetime: lifetime,
-		logger:   log.With(logger, tag.NewStringTag("clusterConn", sanitizedConnectionName)),
+		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
 	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.LocalServer.Connection, "inbound")
@@ -132,7 +142,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		return nil, err
 	}
 
-	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, connConfig.ShardCountConfig, connConfig.LocalServer.Connection.TcpClient.TLSConfig, logger)
+	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, connConfig.ShardCountConfig, connConfig.LocalServer.Connection.TcpClient.TLSConfig, logProvider)
 
 	getLCMParameters := func(shardCountConfig config.ShardCountConfig, inverse bool) LCMParameters {
 		if shardCountConfig.Mode != config.ShardCountLCM {
@@ -177,7 +187,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		nsTranslations:    nsTranslations.Inverse(),
 		saTranslations:    saTranslations.Inverse(),
 		shardCountConfig:  connConfig.ShardCountConfig,
-		logger:            cc.logger,
+		loggers:           cc.loggers,
 		shardManager:      cc.shardManager,
 		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, true),
 		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, true, "inbound"),
@@ -195,7 +205,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		nsTranslations:    nsTranslations,
 		saTranslations:    saTranslations,
 		shardCountConfig:  connConfig.ShardCountConfig,
-		logger:            cc.logger,
+		loggers:           cc.loggers,
 		shardManager:      cc.shardManager,
 		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, false),
 		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
@@ -226,13 +236,14 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 		// No special logic required for managedClient
 		return createTCPServer(lifetime, c)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
-		observer := NewReplicationStreamObserver(c.logger)
+		observer := NewReplicationStreamObserver(c.loggers.Get(LogStreamObserver))
 		grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.MuxAddressInfo.TLSConfig, observer.ReportStreamValue, lifetime)
 		if err != nil {
 			return nil, nil, err
 		}
 		// The Mux manager needs to update its associated client
-		muxMgr, err := mux.NewGRPCMuxManager(lifetime, c.name, c.clusterDefinition, c.managedClient.(*grpcutil.MultiClientConn), grpcServer, c.logger)
+		muxMgr, err := mux.NewGRPCMuxManager(lifetime, c.name, c.clusterDefinition,
+			c.managedClient.(*grpcutil.MultiClientConn), grpcServer, c.loggers.Get(LogMuxManager))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -243,7 +254,7 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 }
 
 func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAwareServer, *ReplicationStreamObserver, error) {
-	observer := NewReplicationStreamObserver(c.logger)
+	observer := NewReplicationStreamObserver(c.loggers.Get(LogStreamObserver))
 	listener, err := net.Listen("tcp", c.clusterDefinition.Connection.TcpServer.ConnectionString)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid configuration for inbound server: %w", err)
@@ -257,7 +268,7 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 		lifetime: lifetime,
 		listener: listener,
 		server:   grpcServer,
-		logger:   c.logger,
+		logger:   log.With(c.loggers.Get(LogTCPServer), tag.NewStringTag("direction", c.directionLabel), tag.Address(listener.Addr().String())),
 	}
 	return server, observer, nil
 }
@@ -288,7 +299,7 @@ func (c *ClusterConnection) Start() {
 	if c.shardManager != nil {
 		err := c.shardManager.Start(c.lifetime)
 		if err != nil {
-			c.logger.Error("Failed to start shard manager", tag.Error(err))
+			c.loggers.Get(LogClusterConnection).Error("Failed to start shard manager", tag.Error(err))
 		}
 	}
 	c.inboundServer.Start()
@@ -329,7 +340,7 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		c.shardCountConfig,
 		c.lcmParameters,
 		c.routingParameters,
-		c.logger,
+		c.loggers,
 		c.shardManager,
 		lifetime,
 	)
@@ -338,7 +349,7 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		accessControl = auth.NewAccesControl(c.clusterDefinition.ACLPolicy.AllowedNamespaces)
 	}
 	workflowServiceImpl := NewWorkflowServiceProxyServer("inboundWorkflowService", workflowservice.NewWorkflowServiceClient(c.client),
-		accessControl, c.logger)
+		accessControl, c.loggers)
 	adminservice.RegisterAdminServiceServer(server, adminServiceImpl)
 	workflowservice.RegisterWorkflowServiceServer(server, workflowServiceImpl)
 	return server, nil
@@ -357,25 +368,28 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 
 	var translators []interceptor.Translator
 	if c.nsTranslations.Len() > 0 {
-		translators = append(translators, interceptor.NewNamespaceNameTranslator(c.logger, c.nsTranslations.AsMap(), c.nsTranslations.Inverse().AsMap()))
+		translators = append(translators, interceptor.NewNamespaceNameTranslator(c.loggers.Get(LogInterceptor),
+			c.nsTranslations.AsMap(), c.nsTranslations.Inverse().AsMap()))
 	}
 
 	if c.saTranslations.LenNamespaces() > 0 {
-		c.logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", c.saTranslations))
+		c.loggers.Get(LogClusterConnection).Info("search attribute translation enabled", tag.NewAnyTag("mappings", c.saTranslations))
 		if c.saTranslations.LenNamespaces() > 1 {
 			panic("multiple namespace search attribute mappings are not supported")
 		}
-		translators = append(translators, interceptor.NewSearchAttributeTranslator(c.logger, c.saTranslations.FlattenMaps(), c.saTranslations.Inverse().FlattenMaps()))
+		translators = append(translators, interceptor.NewSearchAttributeTranslator(c.loggers.Get(LogInterceptor),
+			c.saTranslations.FlattenMaps(), c.saTranslations.Inverse().FlattenMaps()))
 	}
 
 	if len(translators) > 0 {
-		tr := interceptor.NewTranslationInterceptor(c.logger, translators)
+		tr := interceptor.NewTranslationInterceptor(c.loggers.Get(LogInterceptor), translators)
 		unaryInterceptors = append(unaryInterceptors, tr.Intercept)
 		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
 	}
 
 	if c.clusterDefinition.ACLPolicy != nil {
-		aclInterceptor := interceptor.NewAccessControlInterceptor(c.logger, c.clusterDefinition.ACLPolicy.AllowedMethods.AdminService, c.clusterDefinition.ACLPolicy.AllowedNamespaces)
+		aclInterceptor := interceptor.NewAccessControlInterceptor(c.loggers.Get(LogInterceptor),
+			c.clusterDefinition.ACLPolicy.AllowedMethods.AdminService, c.clusterDefinition.ACLPolicy.AllowedNamespaces)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
 		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
 	}
@@ -386,7 +400,7 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	}
 
 	if tlsConfig.IsEnabled() {
-		tlsConfig, err := encryption.GetServerTLSConfig(tlsConfig, c.logger)
+		tlsConfig, err := encryption.GetServerTLSConfig(tlsConfig, c.loggers.Get(LogTLSHandshake))
 		if err != nil {
 			return opts, err
 		}
@@ -400,11 +414,12 @@ func (s *simpleGRPCServer) Start() {
 	metrics.GRPCServerStarted.WithLabelValues(s.name).Inc()
 	go func() {
 		s.logger.Info("Starting TCP-TLS gRPC server", tag.Name(s.name), tag.Address(s.listener.Addr().String()))
+		defer s.logger.Info("TCP-TLS gRPC server closed as requested", tag.Name(s.name), tag.Address(s.listener.Addr().String()))
 		for s.lifetime.Err() == nil {
 			err := s.server.Serve(s.listener)
 			if s.lifetime.Err() != nil {
 				// Cluster is closing, just exit.
-				break
+				return
 			}
 			if err != nil {
 				s.logger.Warn("GRPC server failed", tag.NewStringTag("direction", "outbound"),
@@ -417,7 +432,6 @@ func (s *simpleGRPCServer) Start() {
 			}
 			time.Sleep(1 * time.Second)
 		}
-		s.logger.Info("TCP-TLS gRPC server closed as requested", tag.Name(s.name), tag.Address(s.listener.Addr().String()))
 	}()
 	// The basic net.Listen, grpc.Server, and ClientConn are not context-aware, so make sure they clean up on context close.
 	context.AfterFunc(s.lifetime, func() {

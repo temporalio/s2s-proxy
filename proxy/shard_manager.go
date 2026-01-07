@@ -17,7 +17,10 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/logging"
 )
+
+const LogShardManager = "shardManager"
 
 type (
 	// ActiveReceiver is an interface for receivers that can be notified of new target shards
@@ -174,14 +177,14 @@ type (
 )
 
 // NewShardManager creates a new shard manager instance
-func NewShardManager(memberlistConfig *config.MemberlistConfig, shardCountConfig config.ShardCountConfig, intraProxyTLSConfig encryption.TLSConfig, logger log.Logger) ShardManager {
+func NewShardManager(memberlistConfig *config.MemberlistConfig, shardCountConfig config.ShardCountConfig, intraProxyTLSConfig encryption.TLSConfig, loggers logging.LoggerProvider) ShardManager {
 	delegate := &shardDelegate{
-		logger: logger,
+		logger: loggers.Get(LogShardManager),
 	}
 
 	sm := &shardManagerImpl{
 		memberlistConfig:         memberlistConfig,
-		logger:                   logger,
+		logger:                   loggers.Get(LogShardManager),
 		delegate:                 delegate,
 		localShards:              make(map[string]ShardInfo),
 		intraMgr:                 nil,
@@ -197,7 +200,7 @@ func NewShardManager(memberlistConfig *config.MemberlistConfig, shardCountConfig
 	delegate.manager = sm
 
 	if memberlistConfig != nil && shardCountConfig.Mode == config.ShardCountRouting {
-		sm.intraMgr = newIntraProxyManager(logger, sm)
+		sm.intraMgr = newIntraProxyManager(loggers, sm)
 	}
 
 	return sm
