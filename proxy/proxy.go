@@ -54,7 +54,7 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 	for _, clusterCfg := range s2sConfig.ClusterConnections {
 		cc, err := NewClusterConnection(ctx, clusterCfg, logProvider)
 		if err != nil {
-			logProvider.Get("root").Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", clusterCfg.Name))
+			logProvider.Get("init").Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", clusterCfg.Name))
 			continue
 		}
 		migrationId := migrationId{clusterCfg.Name}

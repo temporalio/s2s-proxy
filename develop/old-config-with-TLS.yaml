@@ -75,10 +75,10 @@ metrics:
 profiling: {}
 logConfigs:
   adminservice:
-    throttleMaxRPS: 10
+    throttleMaxRPS: 0.10
   testexample:
     throttleMaxRPS: 11
   adminstreams:
-    throttleMaxRPS: 12
+    throttleMaxRPS: 0.12
   testdisabled:
     disabled: true

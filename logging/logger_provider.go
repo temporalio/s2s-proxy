@@ -7,6 +7,14 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 )
 
+const (
+	AdminService       = "adminService"
+	WorkflowService    = "workflowService"
+	ReplicationStreams = "replicationStreams"
+	ShardManager       = "shardManager"
+	ShardRouting       = "shardRouting"
+)
+
 type (
 	LogComponentName string
 	// LoggerProvider provides customized loggers for different components.
@@ -25,21 +33,34 @@ type (
 	}
 )
 
+var defaultLoggers = map[LogComponentName]config.LoggingConfig{
+	AdminService:       {ThrottleMaxRPS: 3.0},
+	ReplicationStreams: {ThrottleMaxRPS: 3.0 / 60.0},
+	ShardManager:       {ThrottleMaxRPS: 3.0},
+	ShardRouting:       {ThrottleMaxRPS: 3.0 / 60.0},
+}
+
 func NewLoggerProvider(root log.Logger, config config.ConfigProvider) LoggerProvider {
 	logConfigs := config.GetS2SProxyConfig().LogConfigs
-	globalRootThrottle := log.NewThrottledLogger(root, config.GetS2SProxyConfig().Logging.GetThrottleMaxRPS)
-	loggersByComponent := make(map[LogComponentName]log.Logger, len(logConfigs))
+	throttledRootLog := log.NewThrottledLogger(root, config.GetS2SProxyConfig().Logging.GetThrottleMaxRPS)
+	loggersByComponent := make(map[LogComponentName]log.Logger, max(len(logConfigs), len(defaultLoggers)))
+	for component, defaultConfig := range defaultLoggers {
+		loggersByComponent[component] = loggerForConfig(throttledRootLog, defaultConfig)
+	}
 	for component, logConfig := range logConfigs {
-		if logConfig.Disabled {
-			loggersByComponent[LogComponentName(component)] = log.NewNoopLogger()
-		} else {
-			loggersByComponent[LogComponentName(component)] = log.NewThrottledLogger(globalRootThrottle, logConfig.GetThrottleMaxRPS)
-		}
+		loggersByComponent[LogComponentName(component)] = loggerForConfig(throttledRootLog, logConfig)
 	}
 	return &loggerProvider{
 		root:    root,
 		loggers: loggersByComponent,
 	}
+}
+
+func loggerForConfig(logger log.Logger, config config.LoggingConfig) log.Logger {
+	if config.Disabled {
+		return log.NewNoopLogger()
+	}
+	return log.NewThrottledLogger(logger, config.GetThrottleMaxRPS)
 }
 
 func (l *loggerProvider) Get(component LogComponentName) log.Logger {
