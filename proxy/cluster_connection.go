@@ -244,9 +244,9 @@ func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
 // the Temporal API across the ClientConnInterface.
 func buildProxyServer(client grpc.ClientConnInterface, isInbound bool, serverCfg config.ProxyConfig, overrideExternalAddress string,
 	namespaceTranslation config.NameTranslationConfig, searchAttrTranslation config.SATranslationConfig, observer *ReplicationStreamObserver, logger log.Logger) (*grpc.Server, error) {
-	directionLabel := "inbound"
+	directionLabel := "outbound"
 	if isInbound {
-		directionLabel = "outbound"
+		directionLabel = "inbound"
 	}
 	serverOpts, err := MakeServerOptions(logger, isInbound, serverCfg.Server.TLS, serverCfg.ACLPolicy, namespaceTranslation, searchAttrTranslation)
 	if err != nil {
