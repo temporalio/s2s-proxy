@@ -25,7 +25,6 @@ import (
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 )
 
-
 // RoutedAck wraps an ACK with the target shard it originated from
 type RoutedAck struct {
 	TargetShard history.ClusterShardID
