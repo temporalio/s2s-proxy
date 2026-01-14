@@ -31,7 +31,7 @@ func NewGRPCMuxManager(ctx context.Context, name string, cd config.ClusterDefini
 	connectionTypeName := string(cd.Connection.ConnectionType)
 	metricLabels := []string{cd.Connection.MuxAddressInfo.ConnectionString, connectionTypeName, name}
 	var muxProviderBuilder MuxProviderBuilder
-	logger.Info(fmt.Sprintf("Applying %s mux provider from config: %v", connectionTypeName, cd))
+	logger.Info(fmt.Sprintf("Applying %s mux provider from config: %+v", connectionTypeName, cd))
 	switch cd.Connection.ConnectionType {
 	case config.ConnTypeMuxClient:
 		muxProviderBuilder = func(cb AddNewMux, lifetime context.Context) (MuxProvider, error) {

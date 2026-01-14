@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 
@@ -36,7 +37,7 @@ func NewMuxReceiverProvider(lifetime context.Context, name string, transportFn A
 	logger := log.With(upstreamLog, tag.NewStringTag("component", "receivingMux"), tag.NewStringTag("listenAddr", setting.ConnectionString))
 	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
 	if tlsCfg := setting.TLSConfig; tlsCfg.IsEnabled() {
-		tlsConfig, err := encryption.GetServerTLSConfig(tlsCfg, logger)
+		tlsConfig, err := encryption.GetServerTLSConfig(fmt.Sprintf("tls for provider %s", name), tlsCfg, logger)
 		if err != nil {
 			return nil, err
 		}

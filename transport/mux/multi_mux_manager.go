@@ -18,7 +18,7 @@ import (
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
-var MuxManagerStartDelay = time.Minute
+var MuxManagerStartDelay = time.Second * 5
 
 type (
 	multiMuxManager struct {

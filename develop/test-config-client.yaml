@@ -1,24 +1,30 @@
+# Temporal-left:7233
+# proxy-outbound-server-left: 38233
+# proxy-mux: 11000
+# proxy-outbound-server-right: 37233
+# Temporal-right: 8233
 clusterConnections:
-  - name: "myCoolCluster"
+  - name: "myCoolCluster-client"
     localServer:
       connection:
         connectionType: "tcp" # TCP type must define both inbound and outbound
         tcpClient:
-          address: "127.0.0.1:9001"
-          tls:
-            certificatePath: ""
-            keyPath: ""
-            remoteCAPath: ""
-            caServerName: ""
-            skipCAVerification: true
+          address: "127.0.0.1:7233"
+#          tls:
+#            certificatePath: "./proxycerts/client-internal.pem"
+#            keyPath: "./proxycerts/client-internal.key"
+#            remoteCAPath: ""
+#            caServerName: ""
+#            skipCAVerification: false
         tcpServer:
-          address: "127.0.0.1:9002"
+          # Connects to "remote" temporal via proxy
+          address: "127.0.0.1:38233"
           tls:
-            certificatePath: ""
-            keyPath: ""
-            remoteCAPath: ""
-            caServerName: ""
-            skipCAVerification: true
+            certificatePath: "./proxycerts/client-internal.pem"
+            keyPath: "./proxycerts/client-internal.key"
+            remoteCAPath: "./proxycerts/client-internal.pem"
+            caServerName: "localhost"
+            skipCAVerification: false
       clusterInfo:
         serverVersion: "over 9000"
         shardCount: 42
@@ -44,16 +50,16 @@ clusterConnections:
               failover_version_increment: 100
     remoteServer:
       connection:
-        connectionType: "mux-server" # One mux represents both inbound and outbound
+        connectionType: "mux-client" # One mux represents both inbound and outbound
         muxCount: 10
         muxAddressInfo:
-          address: "127.0.0.1:9004"
+          address: "127.0.0.1:11000"
           tls:
-            certificatePath: ""
-            keyPath: ""
-            remoteCAPath: ""
+            certificatePath: "./proxycerts/clientowned.pem"
+            keyPath: "./proxycerts/clientowned.key"
+            remoteCAPath: "./proxycerts/client-account-cert.pem"
             caServerName: ""
-            skipCAVerification: true
+            skipCAVerification: false
       clusterInfo:
         shardCount: 42
         serverVersion: "v1.22"
@@ -61,21 +67,18 @@ clusterConnections:
         initialFailoverVersion: 1
     namespaceTranslation:
       mappings:
-        - localString: "localName"
-          remoteString: "remoteName"
+        - localString: "leftName"
+          remoteString: "rightName"
     searchAttributeTranslation:
       namespaceMappings:
-        - name: "namespace1"
-          namespaceId: "namespace-id-1"
+        - name: "leftName"
+          namespaceId: "leftName"
           mappings:
             - localFieldName: "localSearchAttribute"
               remoteFieldName: "remoteSearchAttribute"
     outboundHealthCheck:
       protocol: "http"
-      listenAddress: "127.0.0.1:911"
-    inboundHealthCheck:
-      protocol: "http"
-      listenAddress: "127.0.0.1:912"
+      listenAddress: "127.0.0.1:4911"
 metrics:
   prometheus:
     listenAddress: "0.0.0.0:9090"

@@ -178,7 +178,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		}
 	}
 
-	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, serverConfiguration{
+	inboundCfg := serverConfiguration{
 		name:              sanitizedConnectionName,
 		clusterDefinition: connConfig.RemoteServer,
 		directionLabel:    "inbound",
@@ -191,12 +191,13 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		shardManager:      cc.shardManager,
 		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, true),
 		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, true, "inbound"),
-	})
+	}
+	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, inboundCfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create inbound server: %w\nConfig:%+v", err, inboundCfg)
 	}
 
-	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, serverConfiguration{
+	outboundCfg := serverConfiguration{
 		name:              sanitizedConnectionName,
 		clusterDefinition: connConfig.LocalServer,
 		directionLabel:    "outbound",
@@ -209,9 +210,10 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		shardManager:      cc.shardManager,
 		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, false),
 		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
-	})
+	}
+	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, outboundCfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create outbound server: %w\nConfig:%v", err, outboundCfg)
 	}
 
 	return cc, nil
@@ -237,7 +239,7 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 		return createTCPServer(lifetime, c)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		observer := NewReplicationStreamObserver(c.loggers.Get(LogStreamObserver))
-		grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.MuxAddressInfo.TLSConfig, observer.ReportStreamValue, lifetime)
+		grpcServer, err := buildProxyServer(c, encryption.TLSConfig{}, observer.ReportStreamValue, lifetime)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -382,12 +384,16 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	}
 
 	if len(translators) > 0 {
+		c.loggers.Get("init").Info("Translators enabled", tag.NewAnyTag("translators", translators))
 		tr := interceptor.NewTranslationInterceptor(c.loggers.Get(LogInterceptor), translators)
 		unaryInterceptors = append(unaryInterceptors, tr.Intercept)
 		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
 	}
 
 	if c.clusterDefinition.ACLPolicy != nil {
+		c.loggers.Get("init").Info("ACL policy enabled",
+			tag.NewAnyTag("policy", c.clusterDefinition.ACLPolicy),
+			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
 		aclInterceptor := interceptor.NewAccessControlInterceptor(c.loggers.Get(LogInterceptor),
 			c.clusterDefinition.ACLPolicy.AllowedMethods.AdminService, c.clusterDefinition.ACLPolicy.AllowedNamespaces)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
@@ -400,11 +406,17 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	}
 
 	if tlsConfig.IsEnabled() {
-		tlsConfig, err := encryption.GetServerTLSConfig(tlsConfig, c.loggers.Get(LogTLSHandshake))
+		c.loggers.Get(LogTLSHandshake).Info("TLS is enabled", tag.NewStringTag("direction", c.directionLabel),
+			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
+		tlsConfig, err := encryption.GetServerTLSConfig(fmt.Sprintf("Server %s-%s", c.name, c.directionLabel),
+			tlsConfig, c.loggers.Get(LogTLSHandshake))
 		if err != nil {
 			return opts, err
 		}
 		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	} else {
+		c.loggers.Get(LogTLSHandshake).Warn("TLS is disabled", tag.NewStringTag("direction", c.directionLabel),
+			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
 	}
 
 	return opts, nil
