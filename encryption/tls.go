@@ -58,7 +58,6 @@ func GetServerTLSConfig(name string, serverConfig TLSConfig, logger log.Logger) 
 			return nil, fmt.Errorf("failed to read CACert from %s: %w", serverConfig.RemoteCAPath, err)
 		}
 	} else {
-		tlsConfig.InsecureSkipVerify = true
 		tlsConfig.ClientAuth = tls.NoClientCert
 	}
 

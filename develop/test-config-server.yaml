@@ -15,7 +15,7 @@ clusterConnections:
             # keyPath: "./proxycerts/temporal-internal.key"
             # remoteCAPath: "./proxycerts/temporal-internal.pem"
             # caServerName: "testhost"
-            skipCAVerification: false
+            # skipCAVerification: true
         tcpServer:
           # Connects to "remote" temporal via proxy
           address: "127.0.0.1:37233"
@@ -59,7 +59,7 @@ clusterConnections:
             keyPath: "./proxycerts/client-account-cert.key"
             remoteCAPath: "./proxycerts/clientowned.pem"
             caServerName: ""
-            skipCAVerification: false
+            skipCAVerification: true
       clusterInfo:
         shardCount: 42
         serverVersion: "v1.22"
@@ -76,9 +76,12 @@ clusterConnections:
 #          mappings:
 #            - localFieldName: "localSearchAttribute"
 #              remoteFieldName: "remoteSearchAttribute"
-    outboundHealthCheck:
-      protocol: "http"
-      listenAddress: "127.0.0.1:4911"
+#    outboundHealthCheck:
+#      protocol: "http"
+#      listenAddress: "127.0.0.1:4911"
+#    inboundHealthCheck:
+#      protocol: "http"
+#      listenAddress: "127.0.0.1:4912"
 metrics:
   prometheus:
     listenAddress: "0.0.0.0:9091"

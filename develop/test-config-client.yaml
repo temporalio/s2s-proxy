@@ -10,12 +10,12 @@ clusterConnections:
         connectionType: "tcp" # TCP type must define both inbound and outbound
         tcpClient:
           address: "127.0.0.1:7233"
-#          tls:
-#            certificatePath: "./proxycerts/client-internal.pem"
-#            keyPath: "./proxycerts/client-internal.key"
-#            remoteCAPath: ""
-#            caServerName: ""
-#            skipCAVerification: false
+          tls:
+            # certificatePath: "./proxycerts/client-internal.pem"
+            # keyPath: "./proxycerts/client-internal.key"
+            # remoteCAPath: ""
+            # caServerName: ""
+            # skipCAVerification: true
         tcpServer:
           # Connects to "remote" temporal via proxy
           address: "127.0.0.1:38233"
@@ -59,7 +59,7 @@ clusterConnections:
             keyPath: "./proxycerts/clientowned.key"
             remoteCAPath: "./proxycerts/client-account-cert.pem"
             caServerName: ""
-            skipCAVerification: false
+            skipCAVerification: true
       clusterInfo:
         shardCount: 42
         serverVersion: "v1.22"
@@ -76,9 +76,12 @@ clusterConnections:
           mappings:
             - localFieldName: "localSearchAttribute"
               remoteFieldName: "remoteSearchAttribute"
-    outboundHealthCheck:
-      protocol: "http"
-      listenAddress: "127.0.0.1:4911"
+#    outboundHealthCheck:
+#      protocol: "http"
+#      listenAddress: "127.0.0.1:4911"
+#    inboundHealthCheck:
+#      protocol: "http"
+#      listenAddress: "127.0.0.1:4912"
 metrics:
   prometheus:
     listenAddress: "0.0.0.0:9090"
