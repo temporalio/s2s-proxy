@@ -408,8 +408,8 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	if tlsConfig.IsEnabled() {
 		c.loggers.Get(LogTLSHandshake).Info("TLS is enabled", tag.NewStringTag("direction", c.directionLabel),
 			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
-		tlsConfig, err := encryption.GetServerTLSConfig(fmt.Sprintf("Server %s-%s", c.name, c.directionLabel),
-			tlsConfig, c.loggers.Get(LogTLSHandshake))
+		tlsConfig, err := encryption.GetServerTLSConfig(tlsConfig, log.With(c.loggers.Get(LogTLSHandshake),
+			tag.NewStringTag("name", fmt.Sprintf("Server %s-%s", c.name, c.directionLabel))))
 		if err != nil {
 			return opts, err
 		}

@@ -44,9 +44,9 @@ var netClient HttpGetter = &http.Client{
 	Timeout: time.Second * 10,
 }
 
-func GetServerTLSConfig(name string, serverConfig TLSConfig, logger log.Logger) (tlsConfig *tls.Config, err error) {
+func GetServerTLSConfig(serverConfig TLSConfig, logger log.Logger) (tlsConfig *tls.Config, err error) {
 	if !serverConfig.IsEnabled() {
-		logger.Info(fmt.Sprintf("TLS disabled for %s", name))
+		logger.Info("TLS disabled")
 		return
 	}
 
@@ -120,7 +120,7 @@ func GetClientTLSConfig(clientConfig TLSConfig) (tlsConfig *tls.Config, err erro
 	tlsConfig.InsecureSkipVerify = clientConfig.SkipCAVerification
 	if !clientConfig.SkipCAVerification {
 		if clientConfig.CAServerName == "" || clientConfig.RemoteCAPath == "" {
-			return nil, errors.New("CAServerName and RemoteCAPath must be set when SkipCAVerification is true")
+			return nil, errors.New("CAServerName and RemoteCAPath must be set when SkipCAVerification is false")
 		}
 		tlsConfig.ServerName = clientConfig.CAServerName
 	}
