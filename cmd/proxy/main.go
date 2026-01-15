@@ -13,6 +13,7 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/proto/compat"
 	"github.com/temporalio/s2s-proxy/proxy"
 )
@@ -95,6 +96,7 @@ func startProxy(c *cli.Context) error {
 		fx.Provide(func() log.Logger {
 			return log.NewZapLogger(log.BuildZapLogger(logCfg))
 		}),
+		logging.Module,
 		config.Module,
 		proxy.Module,
 		fx.Populate(&proxyParams),

@@ -48,6 +48,7 @@ func ToClusterConnConfig(config S2SProxyConfig) S2SProxyConfig {
 		Metrics:         config.Metrics,
 		ProfilingConfig: config.ProfilingConfig,
 		Logging:         config.Logging,
+		LogConfigs:      config.LogConfigs,
 	}
 }
 

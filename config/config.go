@@ -158,13 +158,14 @@ type (
 		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
 		ShardCountConfig ShardCountConfig `yaml:"shardCount"`
 		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
-		MemberlistConfig           *MemberlistConfig     `yaml:"memberlist"`
-		NamespaceNameTranslation   NameTranslationConfig `yaml:"namespaceNameTranslation"`
-		SearchAttributeTranslation SATranslationConfig   `yaml:"searchAttributeTranslation"`
-		Metrics                    *MetricsConfig        `yaml:"metrics"`
-		ProfilingConfig            ProfilingConfig       `yaml:"profiling"`
-		Logging                    LoggingConfig         `yaml:"logging"`
-		ClusterConnections         []ClusterConnConfig   `yaml:"clusterConnections"`
+		MemberlistConfig           *MemberlistConfig        `yaml:"memberlist"`
+		NamespaceNameTranslation   NameTranslationConfig    `yaml:"namespaceNameTranslation"`
+		SearchAttributeTranslation SATranslationConfig      `yaml:"searchAttributeTranslation"`
+		Metrics                    *MetricsConfig           `yaml:"metrics"`
+		ProfilingConfig            ProfilingConfig          `yaml:"profiling"`
+		Logging                    LoggingConfig            `yaml:"logging"`
+		LogConfigs                 map[string]LoggingConfig `yaml:"logConfigs"`
+		ClusterConnections         []ClusterConnConfig      `yaml:"clusterConnections"`
 	}
 
 	SATranslationConfig struct {
@@ -221,6 +222,7 @@ type (
 
 	LoggingConfig struct {
 		ThrottleMaxRPS float64 `yaml:"throttleMaxRPS"`
+		Disabled       bool    `yaml:"disabled"`
 	}
 
 	MemberlistConfig struct {

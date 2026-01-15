@@ -73,3 +73,12 @@ metrics:
     listenAddress: "0.0.0.0:9090"
 # This enables profiling with the default config and port
 profiling: {}
+logConfigs:
+  adminservice:
+    throttleMaxRPS: 0.10
+  testexample:
+    throttleMaxRPS: 11
+  adminstreams:
+    throttleMaxRPS: 0.12
+  testdisabled:
+    disabled: true
