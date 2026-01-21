@@ -1,0 +1,111 @@
+package mux
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+
+	"github.com/hashicorp/yamux"
+	"go.temporal.io/server/common/channel"
+	"go.temporal.io/server/common/log"
+	"go.temporal.io/server/common/log/tag"
+
+	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/metrics"
+)
+
+// This file contains implementation details for the "receiving" MuxProvider. It uses a TCP server to establish
+// a yamux session in response to an inbound TCP call.
+// This file contains logic only, goroutine and control flow is handled in provider.go
+
+type receivingConnProvider struct {
+	listener     net.Listener
+	tlsWrapper   func(net.Conn) net.Conn
+	logger       log.Logger
+	metricLabels []string
+	lifetime     context.Context
+	hasCleanedUp channel.ShutdownOnce
+}
+
+// NewMuxReceiverProvider runs a TCP server and waits for a client to connect. Once a connection is established and
+// authenticated with the TLS config, it starts a yamux session and returns the details using transportFn
+func NewMuxReceiverProvider(lifetime context.Context, name string, transportFn AddNewMux, connectionCapacity int64, setting config.TCPTLSInfo, metricLabels []string, upstreamLog log.Logger) (MuxProvider, error) {
+	logger := log.With(upstreamLog, tag.NewStringTag("component", "receivingMux"),
+		tag.NewStringTag("listenAddr", setting.ConnectionString), tag.NewStringTag("name", fmt.Sprintf("MuxReceiver-%s", name)))
+	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
+	if tlsCfg := setting.TLSConfig; tlsCfg.IsEnabled() {
+		tlsConfig, err := encryption.GetServerTLSConfig(tlsCfg, logger)
+		if err != nil {
+			return nil, err
+		}
+		if tlsConfig == nil {
+			return nil, errors.New("tls config was nil even though TLS is enabled")
+		}
+		tlsWrapper = func(conn net.Conn) net.Conn { return tls.Server(conn, tlsConfig) }
+	}
+	listener, err := net.Listen("tcp", setting.ConnectionString)
+	if err != nil {
+		return nil, err
+	}
+	connPv := &receivingConnProvider{
+		listener:     listener,
+		tlsWrapper:   tlsWrapper,
+		logger:       logger,
+		metricLabels: metricLabels,
+		lifetime:     lifetime,
+		hasCleanedUp: channel.NewShutdownOnce(),
+	}
+	go func() {
+		<-lifetime.Done()
+		err := listener.Close()
+		if err != nil {
+			logger.Fatal("listener.Close failed", tag.Error(err))
+		}
+		connPv.hasCleanedUp.Shutdown()
+	}()
+	sessionFn := func(conn net.Conn) (*yamux.Session, error) {
+		cfg := yamux.DefaultConfig()
+		cfg.Logger = wrapLoggerForYamux{logger: logger}
+		cfg.LogOutput = nil
+		return yamux.Server(conn, cfg)
+	}
+	return NewMuxProvider(lifetime, name, connPv, sessionFn, connectionCapacity, transportFn, metricLabels, logger), nil
+}
+
+// NewConnection waits on the TCP server for a connection, then provides it
+func (r *receivingConnProvider) NewConnection() (net.Conn, error) {
+	conn, err := r.listener.Accept()
+	// Log a nicer message when shutting down normally
+	if r.lifetime.Err() != nil {
+		r.logger.Info("Listener cancelled due to shutdown")
+		return nil, r.lifetime.Err()
+	}
+	if err != nil {
+		r.logger.Fatal("listener.Accept failed", tag.Error(err))
+		metrics.MuxErrors.WithLabelValues(append(r.metricLabels, classifyError(err))...).Inc()
+		return nil, err
+	}
+	r.logger.Info("Accept new connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
+	return r.tlsWrapper(conn), nil
+}
+
+// classifyError reduces the cardinality of errors thrown from listener.Accept so that our metrics don't grow unbounded
+func classifyError(err error) string {
+	if err == io.EOF {
+		return "eof"
+	} else {
+		return "unclassified error"
+	}
+}
+
+func (r *receivingConnProvider) CloseCh() <-chan struct{} {
+	return r.hasCleanedUp.Channel()
+}
+
+func (r *receivingConnProvider) Address() string {
+	return r.listener.Addr().String()
+}

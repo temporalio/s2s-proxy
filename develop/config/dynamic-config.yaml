@@ -20,10 +20,14 @@ history.ReplicationEnableUpdateWithNewTaskMerge:
 history.enableWorkflowExecutionTimeoutTimer:
   - value: true
 history.EnableReplicationTaskTieredProcessing:
-  - value: true
+  - value: false
 history.persistenceMaxQPS:
   - value: 100000
     constraints: {}
 frontend.persistenceMaxQPS:
   - value: 100000
     constraints: {}
+history.shardUpdateMinInterval:
+  - value: 1s
+history.ReplicationStreamSendEmptyTaskDuration:
+  - value: 10s

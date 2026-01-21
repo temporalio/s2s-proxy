@@ -9,18 +9,90 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/endtoendtest"
 )
 
-func benchmarkStreamSendRecvWithoutProxy(b *testing.B, payloadSize int) {
+func createEchoServerConfigWithPorts(
+	echoServerAddress string,
+	serverProxyInboundAddress string,
+	serverProxyOutboundAddress string,
+	opts ...cfgOption,
+) *config.S2SProxyConfig {
+	return createS2SProxyConfig(&config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy1-inbound-server",
+			Server: config.ProxyServerConfig{
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: serverProxyInboundAddress,
+				},
+			},
+			Client: config.ProxyClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: echoServerAddress,
+				},
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy1-outbound-server",
+			Server: config.ProxyServerConfig{
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: serverProxyOutboundAddress,
+				},
+			},
+			Client: config.ProxyClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: "to-be-added",
+				},
+			},
+		},
+	}, opts)
+}
 
-	echoServerInfo := clusterInfo{
-		serverAddress:  echoServerAddress,
-		clusterShardID: serverClusterShard,
+func createEchoClientConfigWithPorts(
+	echoClientAddress string,
+	clientProxyInboundAddress string,
+	clientProxyOutboundAddress string,
+	opts ...cfgOption,
+) *config.S2SProxyConfig {
+	return createS2SProxyConfig(&config.S2SProxyConfig{
+		Inbound: &config.ProxyConfig{
+			Name: "proxy2-inbound-server",
+			Server: config.ProxyServerConfig{
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: clientProxyInboundAddress,
+				},
+			},
+			Client: config.ProxyClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: echoClientAddress,
+				},
+			},
+		},
+		Outbound: &config.ProxyConfig{
+			Name: "proxy2-outbound-server",
+			Server: config.ProxyServerConfig{
+				TCPServerSetting: config.TCPServerSetting{
+					ListenAddress: clientProxyOutboundAddress,
+				},
+			},
+			Client: config.ProxyClientConfig{
+				TCPClientSetting: config.TCPClientSetting{
+					ServerAddress: "to-be-added",
+				},
+			},
+		},
+	}, opts)
+}
+
+func benchmarkStreamSendRecvWithoutProxy(b *testing.B, payloadSize int) {
+	echoServerInfo := endtoendtest.ClusterInfo{
+		ServerAddress:  GetLocalhostAddress(),
+		ClusterShardID: serverClusterShard,
 	}
 
-	echoClientInfo := clusterInfo{
-		serverAddress:  echoClientAddress,
-		clusterShardID: clientClusterShard,
+	echoClientInfo := endtoendtest.ClusterInfo{
+		ServerAddress:  GetLocalhostAddress(),
+		ClusterShardID: clientClusterShard,
 	}
 
 	runSendRecvBench(b, echoServerInfo, echoClientInfo, payloadSize)
@@ -30,7 +102,18 @@ func benchmarkStreamSendRecvWithMuxProxy(b *testing.B, payloadSize int) {
 	b.Log("Start BenchmarkStreamSendRecv")
 	muxTransportName := "muxed"
 
-	echoServerConfig := createEchoServerConfig(
+	// Allocate ports dynamically
+	echoServerAddress := GetLocalhostAddress()
+	serverProxyInboundAddress := GetLocalhostAddress()
+	serverProxyOutboundAddress := GetLocalhostAddress()
+	echoClientAddress := GetLocalhostAddress()
+	clientProxyInboundAddress := GetLocalhostAddress()
+	clientProxyOutboundAddress := GetLocalhostAddress()
+
+	echoServerConfig := createEchoServerConfigWithPorts(
+		echoServerAddress,
+		serverProxyInboundAddress,
+		serverProxyOutboundAddress,
 		withMux(
 			config.MuxTransportConfig{
 				Name: muxTransportName,
@@ -53,7 +136,10 @@ func benchmarkStreamSendRecvWithMuxProxy(b *testing.B, payloadSize int) {
 			}, false),
 	)
 
-	echoClientConfig := createEchoClientConfig(
+	echoClientConfig := createEchoClientConfigWithPorts(
+		echoClientAddress,
+		clientProxyInboundAddress,
+		clientProxyOutboundAddress,
 		withMux(
 			config.MuxTransportConfig{
 				Name: muxTransportName,
@@ -76,33 +162,33 @@ func benchmarkStreamSendRecvWithMuxProxy(b *testing.B, payloadSize int) {
 			}, false),
 	)
 
-	echoServerInfo := clusterInfo{
-		serverAddress:  echoServerAddress,
-		clusterShardID: serverClusterShard,
-		s2sProxyConfig: echoServerConfig,
+	echoServerInfo := endtoendtest.ClusterInfo{
+		ServerAddress:  echoServerAddress,
+		ClusterShardID: serverClusterShard,
+		S2sProxyConfig: echoServerConfig,
 	}
-	echoClientInfo := clusterInfo{
-		serverAddress:  echoClientAddress,
-		clusterShardID: clientClusterShard,
-		s2sProxyConfig: echoClientConfig,
+	echoClientInfo := endtoendtest.ClusterInfo{
+		ServerAddress:  echoClientAddress,
+		ClusterShardID: clientClusterShard,
+		S2sProxyConfig: echoClientConfig,
 	}
 
 	runSendRecvBench(b, echoServerInfo, echoClientInfo, payloadSize)
 }
 
-func runSendRecvBench(b *testing.B, echoServerInfo clusterInfo, echoClientInfo clusterInfo, payloadSize int) {
+func runSendRecvBench(b *testing.B, echoServerInfo endtoendtest.ClusterInfo, echoClientInfo endtoendtest.ClusterInfo, payloadSize int) {
 	logger := log.NewTestLogger()
-	echoServer := newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
-	echoClient := newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
+	echoServer := endtoendtest.NewEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
+	echoClient := endtoendtest.NewEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
 
-	echoServer.setPayloadSize(payloadSize)
+	echoServer.SetPayloadSize(payloadSize)
 
-	echoClient.start()
-	echoServer.start()
+	echoClient.Start()
+	echoServer.Start()
 
 	defer func() {
-		echoClient.stop()
-		echoServer.stop()
+		echoClient.Stop()
+		echoServer.Stop()
 	}()
 
 	streamClient, err := echoClient.CreateStreamClient()
@@ -120,7 +206,7 @@ func runSendRecvBench(b *testing.B, echoServerInfo clusterInfo, echoClientInfo c
 	errCh := make(chan error, 1)
 	go func() {
 		for i := 0; i < b.N; i++ {
-			highWatermarkInfo := &watermarkInfo{
+			highWatermarkInfo := &endtoendtest.WatermarkInfo{
 				Watermark: int64(i),
 			}
 

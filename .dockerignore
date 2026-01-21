@@ -1,0 +1,58 @@
+# Version control
+.git
+.gitignore
+
+# Documentation
+*.md
+README*
+docs/
+
+# Tests
+*_test.go
+**/*testutil.go
+endtoendtest/
+mocks/
+
+# Development
+.env
+.env.*
+*.log
+go.work
+go.work.sum
+
+# Build artifacts
+bins/
+build/
+*.out
+*.test
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# CI/CD
+.github/
+.golangci.yml
+
+# Security
+*.pem
+*.key
+
+# Helm charts
+charts/
+
+# Development scripts
+develop/
+CONTRIBUTING.md
+LICENSE
+
+# Config files
+*.yaml
+*.yml
+!.golangci.yml

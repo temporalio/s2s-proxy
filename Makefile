@@ -11,13 +11,13 @@ GO_GET_TOOL    = go get -tool -modfile=$(TOOLS_MOD_FILE)
 
 # Disable cgo by default.
 CGO_ENABLED ?= 0
-TEST_ARG ?= -race -timeout=5m
+TEST_ARG ?= -race -timeout=5m -tags test_dep -count=1
 BENCH_ARG ?= -benchtime=5000x
 
 ALL_SRC         := $(shell find . -name "*.go")
 ALL_SRC         += go.mod
 
-all: bins lint
+all: bins fmt lint
 bins: s2s-proxy
 clean:  clean-bins clean-tests
 
@@ -33,7 +33,8 @@ s2s-proxy: $(ALL_SRC)
 update-tools:
 # When changing the golangci-lint version, update the version in .github/workflows/pull-request.yml
 	$(GO_GET_TOOL) github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1
-	go mod tidy --modfile=$(TOOLS_MOD_FILE)
+	$(GO_GET_TOOL) go.uber.org/mock/mockgen@v0.5.0
+	-go mod tidy --modfile=$(TOOLS_MOD_FILE) 2>/dev/null
 
 # Refer to .golangci.yml for configuration options
 fmt:
@@ -42,25 +43,25 @@ fmt:
 # Refer to .golangci.yml for configuration options
 lint:
 	@printf $(COLOR) "Running golangci-lint...\n"
-	$(GO_TOOL) golangci-lint run
+	$(GO_TOOL) golangci-lint run --build-tags=test_dep
 
 bench:
 	@go test -run '^$$' -benchmem -bench=. ./... $(BENCH_ARG)
+
+.PHONY: genvisitor
+GENVISITOR_FLAGS ?= # -debug -dump-tre
+genvisitor:
+	go run ./cmd/tools/genvisitor/ $(GENVISITOR_FLAGS) > proto/compat/repair_utf8_gen.go
+	go fmt proto/compat/repair_utf8_gen.go
+	make fmt
 
 # Mocks
 clean-mocks:
 	@find . -name '*_mock.go' -delete
 
-MOCKGEN_VER = v0.4.0
-mocks: clean-mocks
-	@if [ "$$(mockgen -version)" != "$(MOCKGEN_VER)" ]; then \
-		echo -e "ERROR: mockgen is not version $(MOCKGEN_VER)\n"; \
-		echo -e "  Run go install go.uber.org/mock/mockgen@$(MOCKGEN_VER)\n"; \
-		echo -e "  Or, bump MOCKGEN_VER in the Makefile\n"; \
-		exit 1; \
-	fi;
-	@mockgen -source config/config.go -destination mocks/config/config_mock.go -package config
-	@mockgen -source client/temporal_client.go -destination mocks/client/temporal_client_mock.go -package client
+mocks: clean-mocks update-tools
+	$(GO_TOOL) mockgen -source config/config.go -destination mocks/config/config_mock.go -package config
+	$(GO_TOOL) mockgen -source client/temporal_client.go -destination mocks/client/temporal_client_mock.go -package client
 
 # Tests
 clean-tests:
@@ -79,16 +80,18 @@ generate-rpcwrappers:
 	rm -rf $(GENRPCWRAPPERS_DIR)/*_gen.go
 	cd $(GENRPCWRAPPERS_DIR); go run .  -service frontend -license_file ../../../LICENSE
 	cp $(GENRPCWRAPPERS_DIR)/lazy_client_gen.go client/frontend/lazy_client_gen.go
+	mkdir -p proto/compat
+	cp $(GENRPCWRAPPERS_DIR)/conversion_gen.go proto/compat/frontend_conversion_gen.go
 
 	rm -rf ./cmd/tools/genrpcwrappers/*_gen.go
 	cd $(GENRPCWRAPPERS_DIR); go run .  -service admin -license_file ../../../LICENSE
 	cp ./cmd/tools/genrpcwrappers/lazy_client_gen.go client/admin/lazy_client_gen.go
+	cp $(GENRPCWRAPPERS_DIR)/conversion_gen.go proto/compat/admin_conversion_gen.go
 
 	rm -rf ./cmd/tools/genrpcwrappers/*_gen.go
+	go fmt ./client/... ./proto/compat/...
 
-	go fmt ./client/...
-
-test: generate-test-certs
+test: fmt lint generate-test-certs
 	go test $(TEST_ARG) ./...
 
 cover:
@@ -104,7 +107,12 @@ clean-builds:
 	@printf $(COLOR) "Delete old builds...\n"
 	@rm -rf ./build/*
 
-build: clean-builds amd64-build
+build: clean-builds amd64-build arm64-build
+
+.PHONY: vendor-protos
+vendor-protos:
+	@if ! comby --version &> /dev/null ; then brew install comby; fi
+	./develop/vendor-protos.sh
 
 # Docker
 AWS_ECR_REGION ?=

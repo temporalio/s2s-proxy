@@ -7,6 +7,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  actions: write
+
 # this ensures that the old run is abandoned when we have a new push to the PR branch
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -37,6 +41,7 @@ jobs:
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.1
+          args: --build-tags=test_dep
 
   build:
     runs-on: ubuntu-latest
@@ -54,7 +59,7 @@ jobs:
           cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
 
       - name: Run go build
-        run: go build ./...
+        run: make bins
 
       - name: Run go unittest
         run: make test
@@ -62,7 +67,7 @@ jobs:
       - name: Install helm
         uses: azure/setup-helm@v4.3.0
         with:
-          version: v3.17.3
+          version: v3.19.4
 
       - name: Install helm-unittest
         run: helm plugin install https://github.com/helm-unittest/helm-unittest.git

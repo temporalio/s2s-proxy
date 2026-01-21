@@ -1,0 +1,156 @@
+package session
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"sync/atomic"
+	"time"
+
+	"github.com/hashicorp/yamux"
+)
+
+type (
+	// StartManagedComponentFn describes a function that can start a GoRoutine with the provided Session. The component
+	// is expected to monitor shutdown and exit when requested.
+	StartManagedComponentFn func(context.Context, string, *yamux.Session)
+
+	MuxSessionState int
+	MuxSessionInfo  struct {
+		State MuxSessionState
+		Err   error
+	}
+
+	muxSession struct {
+		lifetime context.Context
+		cancel   context.CancelFunc
+		id       string
+		state    atomic.Pointer[MuxSessionInfo]
+		session  *yamux.Session
+		conn     net.Conn
+	}
+	ManagedMuxSession interface {
+		IsClosed() bool
+		// Close will ensure the underlying transports and components are closed too
+		Close()
+		CloseChan() <-chan struct{}
+		Open() (net.Conn, error)
+		State() *MuxSessionInfo
+		Describe() string
+		// GetConnectionInfo returns the local and remote addresses of the underlying connection
+		GetConnectionInfo() (localAddr, remoteAddr net.Addr)
+	}
+)
+
+const (
+	Connected MuxSessionState = iota
+	Closed
+	Error
+)
+
+var ErrClosedSession = errors.New("session closed")
+
+// NewManagedMuxSession creates a new ManagedMuxSession. When parentLifetime closes, the underlying yamux session and
+// all components built by builders will also close. The id will be passed to every component builder, and afterFunc
+// will be executed when the ManagedMuxSession exits, either from the underlying transport closing or from context cancellation.
+func NewManagedMuxSession(parentLifetime context.Context, id string, session *yamux.Session, conn net.Conn, builders []StartManagedComponentFn, afterShutdown func()) ManagedMuxSession {
+	lifetime, cancel := context.WithCancel(parentLifetime)
+	s := &muxSession{
+		lifetime: lifetime,
+		cancel:   cancel,
+		id:       id,
+		session:  session,
+		state:    atomic.Pointer[MuxSessionInfo]{},
+		conn:     conn,
+	}
+	s.state.Store(&MuxSessionInfo{State: Connected})
+	go healthCheck(s)
+	for i := range builders {
+		builders[i](s.lifetime, s.id, s.session)
+	}
+	// The provided context can close, or the underlying mux can die. If either of these happen, make sure everything
+	// closes together
+	go waitAndCleanup(s, afterShutdown)
+	return s
+}
+
+// waitAndCleanup ensures that the context lifetime and the session close state are in sync. If one closes, the other
+// must cancel as well. After closing, the session state is permanently marked as Closed.
+func waitAndCleanup(s *muxSession, afterShutdown func()) {
+	select {
+	case <-s.session.CloseChan():
+	case <-s.lifetime.Done():
+	}
+	s.cancel()
+	_ = s.session.Close()
+	_ = s.conn.Close()
+	s.state.Store(&MuxSessionInfo{State: Closed, Err: s.state.Load().Err})
+	afterShutdown()
+}
+
+// healthCheck periodically pings the underlying yamux session and checks if it's still healthy and connected.
+func healthCheck(s *muxSession) {
+	for !s.session.IsClosed() {
+		old := s.state.Load()
+		_, err := s.session.Ping()
+		state := Connected
+		if err != nil {
+			state = Error
+		}
+		// Ignore update if something else updated the state (i.e. connection closed)
+		s.state.CompareAndSwap(old, &MuxSessionInfo{State: state, Err: err})
+		select {
+		case <-s.session.CloseChan():
+		case <-time.After(time.Minute):
+		}
+	}
+}
+
+func (s *muxSession) IsClosed() bool {
+	return s.lifetime.Err() != nil
+}
+
+func (s *muxSession) Close() {
+	s.cancel()
+}
+
+func (s *muxSession) CloseChan() <-chan struct{} {
+	return s.lifetime.Done()
+}
+
+func (s *muxSession) Open() (net.Conn, error) {
+	if s.lifetime.Err() != nil {
+		return nil, ErrClosedSession
+	}
+	return s.session.Open()
+}
+
+func (s *muxSession) State() *MuxSessionInfo {
+	return s.state.Load()
+}
+
+// net.Listener
+
+func (s *muxSession) Accept() (net.Conn, error) {
+	if s.lifetime.Err() != nil {
+		return nil, ErrClosedSession
+	}
+	return s.session.Accept()
+}
+func (s *muxSession) Addr() net.Addr {
+	return s.session.Addr()
+}
+func (s *muxSession) Describe() string {
+	return fmt.Sprintf("[muxSession %s, state=%v, address=%s]", s.id, s.state.Load(), s.conn.RemoteAddr().String())
+}
+
+func (s *muxSession) GetConnectionInfo() (localAddr, remoteAddr net.Addr) {
+	if s.session != nil {
+		return s.session.LocalAddr(), s.session.RemoteAddr()
+	}
+	if s.conn != nil {
+		return s.conn.LocalAddr(), s.conn.RemoteAddr()
+	}
+	return nil, nil
+}

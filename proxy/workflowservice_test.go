@@ -6,19 +6,19 @@ import (
 	"testing"
 
 	gomockold "github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/suite"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/server/common/log"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
-	clientmock "github.com/temporalio/s2s-proxy/mocks/client"
+	"github.com/temporalio/s2s-proxy/logging"
 )
 
 var (
@@ -60,27 +60,33 @@ var (
 	}
 )
 
+type workflowServiceTestSuite struct {
+	suite.Suite
+
+	ctrl       *gomock.Controller
+	ctrlold    *gomockold.Controller
+	clientMock *workflowservicemock.MockWorkflowServiceClient
+}
+
+func TestWorkflowService(t *testing.T) {
+	suite.Run(t, new(workflowServiceTestSuite))
+}
+
+func (s *workflowServiceTestSuite) SetupTest() {
+	s.ctrl = gomock.NewController(s.T())
+	s.ctrlold = gomockold.NewController(s.T())
+	s.clientMock = workflowservicemock.NewMockWorkflowServiceClient(s.ctrlold)
+}
+
 // Simple test for the workflow client filtering: This mocks out the underlying WorkflowServiceClient and returns
 // a predefined set of namespaces to the proxy layer. Then we check to make sure the proxy kept the allowed namespace
 // and rejected the disallowed namespace.
-func TestNamespaceFiltering(t *testing.T) {
-	clientFactoryController := gomock.NewController(t)
-	// workflowservicemock is still using golang-mock and not uber-mock, so we get to have two controllers here
-	wfServiceController := gomockold.NewController(t)
-	mockServiceClient := workflowservicemock.NewMockWorkflowServiceClient(wfServiceController)
-	mockServiceClient.EXPECT().ListNamespaces(gomock.Any(), gomock.Any()).Return(listNamespacesResponse, nil)
+func (s *workflowServiceTestSuite) TestNamespaceFiltering() {
+	loggerProvider := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	wfProxy := NewWorkflowServiceProxyServer("My cool test server", s.clientMock,
+		auth.NewAccesControl([]string{"Bob Ross's Paint Shop"}), loggerProvider)
 
-	mockClientFactory := clientmock.NewMockClientFactory(clientFactoryController)
-	clientConfig := config.ProxyClientConfig{
-		TCPClientSetting: config.TCPClientSetting{
-			ServerAddress: "fake-forward-address",
-			TLS:           encryption.ClientTLSConfig{},
-		},
-	}
-	mockClientFactory.EXPECT().NewRemoteWorkflowServiceClient(clientConfig).Return(mockServiceClient, nil).Times(1)
-	wfProxy := NewWorkflowServiceProxyServer("My cool test server", clientConfig, mockClientFactory,
-		auth.NewAccesControl([]string{"Bob Ross's Paint Shop"}), log.NewTestLogger())
-
+	s.clientMock.EXPECT().ListNamespaces(gomock.Any(), gomock.Any()).Return(listNamespacesResponse, nil)
 	res, _ := wfProxy.ListNamespaces(metadata.NewIncomingContext(context.Background(), metadata.New(map[string]string{})),
 		&workflowservice.ListNamespacesRequest{
 			PageSize:        10,
@@ -88,7 +94,7 @@ func TestNamespaceFiltering(t *testing.T) {
 			NamespaceFilter: &namespace.NamespaceFilter{IncludeDeleted: true},
 		})
 
-	assert.NotEqualf(t, -1, slices.IndexFunc(res.Namespaces, func(ns *workflowservice.DescribeNamespaceResponse) bool {
+	s.NotEqualf(-1, slices.IndexFunc(res.Namespaces, func(ns *workflowservice.DescribeNamespaceResponse) bool {
 		return ns.NamespaceInfo.Name == "Bob Ross's Paint Shop"
 	}), "Couldn't find \"%s\" in the response! It should have matched the ACL.\nResponse: %s", "Bob Ross's Paint Shop", res.Namespaces)
 	steveIndex := slices.IndexFunc(res.Namespaces, func(ns *workflowservice.DescribeNamespaceResponse) bool {
@@ -98,5 +104,28 @@ func TestNamespaceFiltering(t *testing.T) {
 	if steveIndex > 0 {
 		matchingNS = res.Namespaces[steveIndex].NamespaceInfo
 	}
-	assert.Equalf(t, -1, steveIndex, "Shouldn't have found namespace %s\n in list response: %s", matchingNS, res.Namespaces)
+	s.Equalf(-1, steveIndex, "Shouldn't have found namespace %s\n in list response: %s", matchingNS, res.Namespaces)
+}
+
+func (s *workflowServiceTestSuite) TestPreserveRedirectionHeader() {
+	loggerProvider := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	wfProxy := NewWorkflowServiceProxyServer("My cool test server", s.clientMock, nil, loggerProvider)
+
+	// Client should be called with xdc-redirection=false header
+	for _, headerValue := range []string{"true", "false", ""} {
+		s.clientMock.EXPECT().DescribeWorkflowExecution(gomockold.Any(), gomockold.Any()).DoAndReturn(
+			func(ctx context.Context, request *workflowservice.DescribeWorkflowExecutionRequest, opts ...grpc.CallOption) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
+				md, ok := metadata.FromOutgoingContext(ctx)
+				s.True(ok)
+				s.Equal(md.Get(DCRedirectionContextHeaderName), []string{headerValue})
+				return &workflowservice.DescribeWorkflowExecutionResponse{}, nil
+			},
+		).Times(1)
+
+		// API is passed xdc-redirection=false header
+		ctx := metadata.NewIncomingContext(context.Background(), metadata.New(map[string]string{DCRedirectionContextHeaderName: headerValue}))
+		res, err := wfProxy.DescribeWorkflowExecution(ctx, &workflowservice.DescribeWorkflowExecutionRequest{})
+		s.NoError(err)
+		s.NotNil(res)
+	}
 }

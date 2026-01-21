@@ -1,12 +1,15 @@
 package interceptor
 
 import (
+	"bytes"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/command/v1"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/replication/v1"
@@ -15,6 +18,7 @@ import (
 	enumsspb "go.temporal.io/server/api/enums/v1"
 	"go.temporal.io/server/api/persistence/v1"
 	replicationspb "go.temporal.io/server/api/replication/v1"
+	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/persistence/serialization"
 )
 
@@ -46,7 +50,10 @@ type (
 		objName     string
 		containsObj bool
 		makeType    func(ns string) any
-		expError    string
+		// optional override for the expected value after translation.
+		// if not set, makeType(outputName) is used for the expected value.
+		makeExpected func(ns string) any
+		expError     string
 	}
 )
 
@@ -184,6 +191,32 @@ func generateNamespaceObjCases() []objCase {
 					HistoryBatches: []*common.DataBlob{
 						makeHistoryEventsBlobWithNamespaceField(ns),
 						makeHistoryEventsBlobWithNamespaceField(ns),
+					},
+					HistoryNodeIds: []int64{123},
+				}
+			},
+		},
+		{
+			objName:     "GetWorkflowExecutionRawHistoryV2Response with invalid utf8",
+			containsObj: true,
+			makeType: func(ns string) any {
+				invalid := "\xff\xff"
+				return &adminservice.GetWorkflowExecutionRawHistoryV2Response{
+					NextPageToken: []byte("some-token"),
+					HistoryBatches: []*common.DataBlob{
+						makeHistoryEventsBlobWithNamespaceField(ns),
+						makeHistoryEventsBlobWithUTF8(invalid),
+					},
+					HistoryNodeIds: []int64{123},
+				}
+			},
+			makeExpected: func(ns string) any {
+				fixed := []rune{utf8.RuneError}
+				return &adminservice.GetWorkflowExecutionRawHistoryV2Response{
+					NextPageToken: []byte("some-token"),
+					HistoryBatches: []*common.DataBlob{
+						makeHistoryEventsBlobWithNamespaceField(ns),
+						makeHistoryEventsBlobWithUTF8(string(fixed)),
 					},
 					HistoryNodeIds: []int64{123},
 				}
@@ -501,6 +534,7 @@ func testTranslateObj(
 	objCases []objCase,
 	equalityAssertion func(t require.TestingT, exp, actual any, extra ...any),
 ) {
+	logger := log.NewTestLogger()
 	testcases := []struct {
 		testName   string
 		inputName  string
@@ -537,10 +571,15 @@ func testTranslateObj(
 			for _, ts := range testcases {
 				t.Run(ts.testName, func(t *testing.T) {
 					input := c.makeType(ts.inputName)
-					expOutput := c.makeType(ts.outputName)
+					var expOutput any
+					if c.makeExpected != nil {
+						expOutput = c.makeExpected(ts.outputName)
+					} else {
+						expOutput = c.makeType(ts.outputName)
+					}
 					expChanged := ts.inputName != ts.outputName
 
-					changed, err := visitor(input, createStringMatcher(ts.mapping))
+					changed, err := visitor(logger, input, createStringMatcher(ts.mapping))
 					if len(c.expError) != 0 {
 						require.ErrorContains(t, err, c.expError)
 					} else {
@@ -564,7 +603,7 @@ func makeHistoryEventsBlobWithNamespaceField(ns string) *common.DataBlob {
 	evts := []*history.HistoryEvent{
 		{
 			EventId:   1,
-			EventType: enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
+			EventType: enums.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 			Version:   1,
 			TaskId:    100,
 			Attributes: &history.HistoryEvent_SignalExternalWorkflowExecutionInitiatedEventAttributes{
@@ -575,7 +614,7 @@ func makeHistoryEventsBlobWithNamespaceField(ns string) *common.DataBlob {
 		},
 		{
 			EventId:   2,
-			EventType: enums.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
+			EventType: enums.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 			Version:   1,
 			TaskId:    101,
 			Attributes: &history.HistoryEvent_RequestCancelExternalWorkflowExecutionInitiatedEventAttributes{
@@ -591,5 +630,56 @@ func makeHistoryEventsBlobWithNamespaceField(ns string) *common.DataBlob {
 	if err != nil {
 		panic(err)
 	}
+	return blob
+}
+
+func makeHistoryEventsBlobWithUTF8(utf string) *common.DataBlob {
+	// Because the serializer errors on invalid utf8, do a find/replace to construct
+	// a blob with invalid utf8 in it: "abcXX" -> "abc\xff\xff", for example.
+	src := []byte("abc")
+	for range []byte(utf) {
+		src = append(src, 'X')
+	}
+	dst := []byte("abc" + utf)
+
+	makeFailure := func() *failure.Failure {
+		return &failure.Failure{
+			Message: string(src),
+			Cause: &failure.Failure{
+				Message: string(src),
+			},
+		}
+	}
+
+	evts := []*history.HistoryEvent{
+		{
+			Attributes: &history.HistoryEvent_ActivityTaskStartedEventAttributes{
+				ActivityTaskStartedEventAttributes: &history.ActivityTaskStartedEventAttributes{
+					LastFailure: makeFailure(),
+				},
+			},
+		},
+		{
+			Attributes: &history.HistoryEvent_ActivityTaskFailedEventAttributes{
+				ActivityTaskFailedEventAttributes: &history.ActivityTaskFailedEventAttributes{
+					Failure: makeFailure(),
+				},
+			},
+		},
+		{
+			Attributes: &history.HistoryEvent_ActivityTaskTimedOutEventAttributes{
+				ActivityTaskTimedOutEventAttributes: &history.ActivityTaskTimedOutEventAttributes{
+					Failure: makeFailure(),
+				},
+			},
+		},
+	}
+
+	s := serialization.NewSerializer()
+	blob, err := s.SerializeEvents(evts, enums.ENCODING_TYPE_PROTO3)
+	if err != nil {
+		panic(err)
+	}
+	blob.Data = bytes.ReplaceAll(blob.Data, src, dst)
 	return blob
 }

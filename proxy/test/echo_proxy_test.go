@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -14,18 +15,15 @@ import (
 	"go.temporal.io/server/common/log"
 
 	"github.com/temporalio/s2s-proxy/config"
-	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/endtoendtest"
+	"github.com/temporalio/s2s-proxy/transport/mux"
 )
 
-const (
-	echoServerAddress          = "localhost:7266"
-	serverProxyInboundAddress  = "localhost:7366"
-	serverProxyOutboundAddress = "localhost:7466"
-	echoClientAddress          = "localhost:8266"
-	clientProxyInboundAddress  = "localhost:8366"
-	clientProxyOutboundAddress = "localhost:8466"
-	invalidAddress             = ""
-)
+func init() {
+	// silence info log spam
+	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
+	mux.MuxManagerStartDelay = 0
+}
 
 var (
 	serverClusterShard = history.ClusterShardID{
@@ -48,14 +46,20 @@ var (
 type (
 	proxyTestSuite struct {
 		suite.Suite
-		originalPath string
-		developPath  string
+		originalPath               string
+		developPath                string
+		echoServerAddress          string
+		serverProxyInboundAddress  string
+		serverProxyOutboundAddress string
+		echoClientAddress          string
+		clientProxyInboundAddress  string
+		clientProxyOutboundAddress string
 	}
 
 	cfgOption func(c *config.S2SProxyConfig)
 )
 
-func withServerTLS(tls encryption.ServerTLSConfig, inbound bool) cfgOption {
+func withServerTLS(tls config.ServerTLSConfig, inbound bool) cfgOption {
 	return func(c *config.S2SProxyConfig) {
 		if inbound {
 			c.Inbound.Server.TLS = tls
@@ -65,7 +69,7 @@ func withServerTLS(tls encryption.ServerTLSConfig, inbound bool) cfgOption {
 	}
 }
 
-func withClientTLS(tls encryption.ClientTLSConfig, inbound bool) cfgOption {
+func withClientTLS(tls config.ClientTLSConfig, inbound bool) cfgOption {
 	return func(c *config.S2SProxyConfig) {
 		if inbound {
 			c.Inbound.Client.TLS = tls
@@ -120,7 +124,7 @@ func withNamespaceTranslation(mapping []config.NameMappingConfig, _ bool) cfgOpt
 func EchoServerTLSOptions() []cfgOption {
 	return []cfgOption{
 		withServerTLS(
-			encryption.ServerTLSConfig{
+			config.ServerTLSConfig{
 				CertificatePath:   filepath.Join("certificates", "proxy1.pem"),
 				KeyPath:           filepath.Join("certificates", "proxy1.key"),
 				ClientCAPath:      filepath.Join("certificates", "proxy2.pem"),
@@ -129,7 +133,7 @@ func EchoServerTLSOptions() []cfgOption {
 			true,
 		),
 		withClientTLS(
-			encryption.ClientTLSConfig{
+			config.ClientTLSConfig{
 				CertificatePath: filepath.Join("certificates", "proxy1.pem"),
 				KeyPath:         filepath.Join("certificates", "proxy1.key"),
 				ServerName:      "onebox-proxy2.cluster.tmprl.cloud",
@@ -148,18 +152,18 @@ func createS2SProxyConfig(cfg *config.S2SProxyConfig, opts []cfgOption) *config.
 	return cfg
 }
 
-func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
+func (s *proxyTestSuite) createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 	return createS2SProxyConfig(&config.S2SProxyConfig{
 		Inbound: &config.ProxyConfig{
 			Name: "proxy1-inbound-server",
 			Server: config.ProxyServerConfig{
 				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: serverProxyInboundAddress,
+					ListenAddress: s.serverProxyInboundAddress,
 				},
 			},
 			Client: config.ProxyClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: echoServerAddress,
+					ServerAddress: s.echoServerAddress,
 				},
 			},
 		},
@@ -167,7 +171,7 @@ func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 			Name: "proxy1-outbound-server",
 			Server: config.ProxyServerConfig{
 				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: serverProxyOutboundAddress,
+					ListenAddress: s.serverProxyOutboundAddress,
 				},
 			},
 			Client: config.ProxyClientConfig{
@@ -182,7 +186,7 @@ func createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 func EchoClientTLSOptions() []cfgOption {
 	return []cfgOption{
 		withServerTLS(
-			encryption.ServerTLSConfig{
+			config.ServerTLSConfig{
 				CertificatePath:   filepath.Join("certificates", "proxy2.pem"),
 				KeyPath:           filepath.Join("certificates", "proxy2.key"),
 				ClientCAPath:      filepath.Join("certificates", "proxy1.pem"),
@@ -191,7 +195,7 @@ func EchoClientTLSOptions() []cfgOption {
 			true,
 		),
 		withClientTLS(
-			encryption.ClientTLSConfig{
+			config.ClientTLSConfig{
 				CertificatePath: filepath.Join("certificates", "proxy2.pem"),
 				KeyPath:         filepath.Join("certificates", "proxy2.key"),
 				ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
@@ -202,18 +206,18 @@ func EchoClientTLSOptions() []cfgOption {
 	}
 }
 
-func createEchoClientConfig(opts ...cfgOption) *config.S2SProxyConfig {
+func (s *proxyTestSuite) createEchoClientConfig(opts ...cfgOption) *config.S2SProxyConfig {
 	return createS2SProxyConfig(&config.S2SProxyConfig{
 		Inbound: &config.ProxyConfig{
 			Name: "proxy2-inbound-server",
 			Server: config.ProxyServerConfig{
 				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: clientProxyInboundAddress,
+					ListenAddress: s.clientProxyInboundAddress,
 				},
 			},
 			Client: config.ProxyClientConfig{
 				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: echoClientAddress,
+					ServerAddress: s.echoClientAddress,
 				},
 			},
 		},
@@ -221,7 +225,7 @@ func createEchoClientConfig(opts ...cfgOption) *config.S2SProxyConfig {
 			Name: "proxy2-outbound-server",
 			Server: config.ProxyServerConfig{
 				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: clientProxyOutboundAddress,
+					ListenAddress: s.clientProxyOutboundAddress,
 				},
 			},
 			Client: config.ProxyClientConfig{
@@ -244,6 +248,14 @@ func (s *proxyTestSuite) SetupTest() {
 	s.developPath = filepath.Join("..", "..", "develop")
 	err = os.Chdir(s.developPath)
 	s.NoError(err)
+
+	// Allocate free ports for each test
+	s.echoServerAddress = GetLocalhostAddress()
+	s.serverProxyInboundAddress = GetLocalhostAddress()
+	s.serverProxyOutboundAddress = GetLocalhostAddress()
+	s.echoClientAddress = GetLocalhostAddress()
+	s.clientProxyInboundAddress = GetLocalhostAddress()
+	s.clientProxyOutboundAddress = GetLocalhostAddress()
 }
 
 func (s *proxyTestSuite) TearDownTest() {
@@ -285,81 +297,81 @@ func genSequence(initial int64, n int) []int64 {
 func (s *proxyTestSuite) Test_Echo_Success() {
 	tests := []struct {
 		name           string
-		echoServerInfo clusterInfo
-		echoClientInfo clusterInfo
+		echoServerInfo endtoendtest.ClusterInfo
+		echoClientInfo endtoendtest.ClusterInfo
 	}{
 		{
 			// echo_server <- - -> echo_client
 			name: "no-proxy",
-			echoServerInfo: clusterInfo{
-				serverAddress:  echoServerAddress,
-				clusterShardID: serverClusterShard,
+			echoServerInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoServerAddress,
+				ClusterShardID: serverClusterShard,
 			},
-			echoClientInfo: clusterInfo{
-				serverAddress:  echoClientAddress,
-				clusterShardID: clientClusterShard,
+			echoClientInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoClientAddress,
+				ClusterShardID: clientClusterShard,
 			},
 		},
 		{
 			// echo_server <-> proxy.inbound <- - -> echo_client
 			name: "server-side-only-proxy",
-			echoServerInfo: clusterInfo{
-				serverAddress:  echoServerAddress,
-				clusterShardID: serverClusterShard,
-				s2sProxyConfig: createEchoServerConfig(),
+			echoServerInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoServerAddress,
+				ClusterShardID: serverClusterShard,
+				S2sProxyConfig: s.createEchoServerConfig(),
 			},
-			echoClientInfo: clusterInfo{
-				serverAddress:  echoClientAddress,
-				clusterShardID: clientClusterShard,
+			echoClientInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoClientAddress,
+				ClusterShardID: clientClusterShard,
 			},
 		},
 		{
 			// echo_server <- - -> proxy.outbound <-> echo_client
 			name: "client-side-only-proxy",
-			echoServerInfo: clusterInfo{
-				serverAddress:  echoServerAddress,
-				clusterShardID: serverClusterShard,
+			echoServerInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoServerAddress,
+				ClusterShardID: serverClusterShard,
 			},
-			echoClientInfo: clusterInfo{
-				serverAddress:  echoClientAddress,
-				clusterShardID: clientClusterShard,
-				s2sProxyConfig: createEchoClientConfig(),
+			echoClientInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoClientAddress,
+				ClusterShardID: clientClusterShard,
+				S2sProxyConfig: s.createEchoClientConfig(),
 			},
 		},
 		{
 			// echo_server <-> proxy.inbound <- - -> proxy.outbound <-> echo_client
 			name: "server-and-client-side-proxy",
-			echoServerInfo: clusterInfo{
-				serverAddress:  echoServerAddress,
-				clusterShardID: serverClusterShard,
-				s2sProxyConfig: createEchoServerConfig(),
+			echoServerInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoServerAddress,
+				ClusterShardID: serverClusterShard,
+				S2sProxyConfig: s.createEchoServerConfig(),
 			},
-			echoClientInfo: clusterInfo{
-				serverAddress:  echoClientAddress,
-				clusterShardID: clientClusterShard,
-				s2sProxyConfig: createEchoClientConfig(),
+			echoClientInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoClientAddress,
+				ClusterShardID: clientClusterShard,
+				S2sProxyConfig: s.createEchoClientConfig(),
 			},
 		},
 		{
 			// echo_server <-> proxy.inbound <- mTLS -> proxy.outbound <-> echo_client
 			name: "server-and-client-side-proxy-mTLS",
-			echoServerInfo: clusterInfo{
-				serverAddress:  echoServerAddress,
-				clusterShardID: serverClusterShard,
-				s2sProxyConfig: createEchoServerConfig(EchoServerTLSOptions()...),
+			echoServerInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoServerAddress,
+				ClusterShardID: serverClusterShard,
+				S2sProxyConfig: s.createEchoServerConfig(EchoServerTLSOptions()...),
 			},
-			echoClientInfo: clusterInfo{
-				serverAddress:  echoClientAddress,
-				clusterShardID: clientClusterShard,
-				s2sProxyConfig: createEchoClientConfig(EchoClientTLSOptions()...),
+			echoClientInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoClientAddress,
+				ClusterShardID: clientClusterShard,
+				S2sProxyConfig: s.createEchoClientConfig(EchoClientTLSOptions()...),
 			},
 		},
 		{
 			name: "server-and-client-side-proxy-ACL",
-			echoServerInfo: clusterInfo{
-				serverAddress:  echoServerAddress,
-				clusterShardID: serverClusterShard,
-				s2sProxyConfig: createEchoServerConfig(withACLPolicy(
+			echoServerInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoServerAddress,
+				ClusterShardID: serverClusterShard,
+				S2sProxyConfig: s.createEchoServerConfig(withACLPolicy(
 					&config.ACLPolicy{
 						AllowedMethods: config.AllowedMethods{
 							AdminService: []string{
@@ -374,10 +386,10 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 					true,
 				)),
 			},
-			echoClientInfo: clusterInfo{
-				serverAddress:  echoClientAddress,
-				clusterShardID: clientClusterShard,
-				s2sProxyConfig: createEchoClientConfig(),
+			echoClientInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoClientAddress,
+				ClusterShardID: clientClusterShard,
+				S2sProxyConfig: s.createEchoClientConfig(),
 			},
 		},
 	}
@@ -385,23 +397,22 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 	sequence := genSequence(1, 100)
 	logger := log.NewTestLogger()
 	for _, ts := range tests {
-		echoServer := newEchoServer(ts.echoServerInfo, ts.echoClientInfo, "EchoServer", logger, nil)
-		echoClient := newEchoServer(ts.echoClientInfo, ts.echoServerInfo, "EchoClient", logger, nil)
-		echoServer.start()
-		echoClient.start()
-
 		s.Run(
 			ts.name,
 			func() {
+				echoServer := endtoendtest.NewEchoServer(ts.echoServerInfo, ts.echoClientInfo, "EchoServer", logger, nil)
+				echoClient := endtoendtest.NewEchoServer(ts.echoClientInfo, ts.echoServerInfo, "EchoClient", logger, nil)
+				echoServer.Start()
+				echoClient.Start()
 				defer func() {
-					echoClient.stop()
-					echoServer.stop()
+					echoClient.Stop()
+					echoServer.Stop()
 				}()
 				// Test adminservice unary method
-				r, err := retry(func() (*adminservice.DescribeClusterResponse, error) {
+				r, err := endtoendtest.Retry(func() (*adminservice.DescribeClusterResponse, error) {
 					return echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
 				}, 5, logger)
-				s.NoError(err)
+				require.NoErrorf(s.T(), err, "Couldn't describeCluster!\nserver:%s\nclient:%s", echoServer.Describe(), echoClient.Describe())
 				s.Equal("EchoServer", r.ClusterName)
 
 				// Test adminservice stream method
@@ -424,17 +435,17 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 	tests := []struct {
 		name            string
-		echoServerInfo  clusterInfo
-		echoClientInfo  clusterInfo
+		echoServerInfo  endtoendtest.ClusterInfo
+		echoClientInfo  endtoendtest.ClusterInfo
 		serverNamespace string
 		clientNamespace string
 	}{
 		{
 			name: "server-and-client-side-proxy-namespacetrans",
-			echoServerInfo: clusterInfo{
-				serverAddress:  echoServerAddress,
-				clusterShardID: serverClusterShard,
-				s2sProxyConfig: createEchoServerConfig(withNamespaceTranslation(
+			echoServerInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoServerAddress,
+				ClusterShardID: serverClusterShard,
+				S2sProxyConfig: s.createEchoServerConfig(withNamespaceTranslation(
 					[]config.NameMappingConfig{
 						{
 							LocalName:  "local",
@@ -444,20 +455,20 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 					true,
 				)),
 			},
-			echoClientInfo: clusterInfo{
-				serverAddress:  echoClientAddress,
-				clusterShardID: clientClusterShard,
-				s2sProxyConfig: createEchoClientConfig(),
+			echoClientInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoClientAddress,
+				ClusterShardID: clientClusterShard,
+				S2sProxyConfig: s.createEchoClientConfig(),
 			},
 			serverNamespace: "local",
 			clientNamespace: "remote",
 		},
 		{
 			name: "server-and-client-side-proxy-namespacetrans-acl",
-			echoServerInfo: clusterInfo{
-				serverAddress:  echoServerAddress,
-				clusterShardID: serverClusterShard,
-				s2sProxyConfig: createEchoServerConfig(
+			echoServerInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoServerAddress,
+				ClusterShardID: serverClusterShard,
+				S2sProxyConfig: s.createEchoServerConfig(
 					withNamespaceTranslation(
 						[]config.NameMappingConfig{
 							{
@@ -481,10 +492,10 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 						true,
 					),
 				)},
-			echoClientInfo: clusterInfo{
-				serverAddress:  echoClientAddress,
-				clusterShardID: clientClusterShard,
-				s2sProxyConfig: createEchoClientConfig(),
+			echoClientInfo: endtoendtest.ClusterInfo{
+				ServerAddress:  s.echoClientAddress,
+				ClusterShardID: clientClusterShard,
+				S2sProxyConfig: s.createEchoClientConfig(),
 			},
 			serverNamespace: "local",
 			clientNamespace: "remote",
@@ -493,25 +504,25 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 
 	logger := log.NewTestLogger()
 	for _, ts := range tests {
-		echoServer := newEchoServer(ts.echoServerInfo, ts.echoClientInfo, "EchoServer", logger, []string{ts.serverNamespace})
-		echoClient := newEchoServer(ts.echoClientInfo, ts.echoServerInfo, "EchoClient", logger, nil)
-		echoServer.start()
-		echoClient.start()
+		echoServer := endtoendtest.NewEchoServer(ts.echoServerInfo, ts.echoClientInfo, "EchoServer", logger, []string{ts.serverNamespace})
+		echoClient := endtoendtest.NewEchoServer(ts.echoClientInfo, ts.echoServerInfo, "EchoClient", logger, nil)
+		echoServer.Start()
+		echoClient.Start()
 
 		s.Run(
 			ts.name,
 			func() {
 				defer func() {
-					echoClient.stop()
-					echoServer.stop()
+					echoClient.Stop()
+					echoServer.Stop()
 				}()
 
-				resp, err := retry(func() (*adminservice.DescribeMutableStateResponse, error) {
+				resp, err := endtoendtest.Retry(func() (*adminservice.DescribeMutableStateResponse, error) {
 					return echoClient.DescribeMutableState(&adminservice.DescribeMutableStateRequest{
 						Namespace: ts.clientNamespace,
 					})
 				}, 5, logger)
-				s.NoError(err)
+				s.Require().NoError(err)
 				s.Require().NotNil(resp)
 			},
 		)
@@ -526,13 +537,13 @@ func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
 	//
 	// echoServer proxy1.inbound.Server(muxClient)  <- proxy2.outbound.Client(muxServer) echoClient
 	// echoServer proxy1.outbound.Client(muxClient) -> proxy2.inbound.Server(muxServer) echoClient
-	echoServerConfig := createEchoServerConfig(
+	echoServerConfig := s.createEchoServerConfig(
 		withMux(
 			config.MuxTransportConfig{
 				Name: muxTransportName,
 				Mode: config.ClientMode,
 				Client: config.TCPClientSetting{
-					ServerAddress: clientProxyInboundAddress,
+					ServerAddress: s.clientProxyInboundAddress,
 				},
 			}),
 		withServerConfig(
@@ -549,13 +560,13 @@ func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
 			}, false),
 	)
 
-	echoClientConfig := createEchoClientConfig(
+	echoClientConfig := s.createEchoClientConfig(
 		withMux(
 			config.MuxTransportConfig{
 				Name: muxTransportName,
 				Mode: config.ServerMode,
 				Server: config.TCPServerSetting{
-					ListenAddress: clientProxyInboundAddress,
+					ListenAddress: s.clientProxyInboundAddress,
 				},
 			}),
 		withServerConfig(
@@ -572,63 +583,67 @@ func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
 			}, false),
 	)
 
-	echoServerInfo := clusterInfo{
-		serverAddress:  echoServerAddress,
-		clusterShardID: serverClusterShard,
-		s2sProxyConfig: echoServerConfig,
+	echoServerInfo := endtoendtest.ClusterInfo{
+		ServerAddress:  s.echoServerAddress,
+		ClusterShardID: serverClusterShard,
+		S2sProxyConfig: echoServerConfig,
 	}
-	echoClientInfo := clusterInfo{
-		serverAddress:  echoClientAddress,
-		clusterShardID: clientClusterShard,
-		s2sProxyConfig: echoClientConfig,
+	echoClientInfo := endtoendtest.ClusterInfo{
+		ServerAddress:  s.echoClientAddress,
+		ClusterShardID: clientClusterShard,
+		S2sProxyConfig: echoClientConfig,
 	}
 
 	logger := log.NewTestLogger()
-	echoServer := newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
-	echoClient := newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
+	echoServer := endtoendtest.NewEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
+	echoClient := endtoendtest.NewEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
 
-	echoClient.start()
-	echoServer.start()
+	echoClient.Start()
+	echoServer.Start()
 
 	defer func() {
-		echoClient.stop()
-		echoServer.stop()
+		echoClient.Stop()
+		echoServer.Stop()
 	}()
 
-	r, err := retry(func() (*adminservice.DescribeClusterResponse, error) {
+	r, err := endtoendtest.Retry(func() (*adminservice.DescribeClusterResponse, error) {
 		return echoClient.DescribeCluster(&adminservice.DescribeClusterRequest{})
 	}, 5, logger)
 
-	s.NoError(err)
+	require.NoErrorf(s.T(), err, "Should have received a response from echo server!\nserver:%s\nclient:%s", echoServer.Describe(), echoClient.Describe())
 	s.Equal("EchoServer", r.ClusterName)
 }
 
 func (s *proxyTestSuite) Test_ForceStopSourceServer() {
 	logger := log.NewTestLogger()
 
-	echoServerInfo := clusterInfo{
-		serverAddress:  echoServerAddress,
-		clusterShardID: serverClusterShard,
+	echoServerInfo := endtoendtest.ClusterInfo{
+		ServerAddress:  s.echoServerAddress,
+		ClusterShardID: serverClusterShard,
 	}
 
-	echoClientInfo := clusterInfo{
-		serverAddress:  echoClientAddress,
-		clusterShardID: clientClusterShard,
-		s2sProxyConfig: createEchoClientConfig(),
+	echoClientInfo := endtoendtest.ClusterInfo{
+		ServerAddress:  s.echoClientAddress,
+		ClusterShardID: clientClusterShard,
+		S2sProxyConfig: s.createEchoClientConfig(),
 	}
 
-	echoServer := newEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
-	echoClient := newEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
+	echoServer := endtoendtest.NewEchoServer(echoServerInfo, echoClientInfo, "EchoServer", logger, nil)
+	echoClient := endtoendtest.NewEchoServer(echoClientInfo, echoServerInfo, "EchoClient", logger, nil)
 
-	echoServer.start()
-	echoClient.start()
+	echoServer.Start()
+	echoClient.Start()
+	defer func() {
+		echoClient.Stop()
+		echoServer.Stop()
+	}()
 
 	stream, err := echoClient.CreateStreamClient()
 	s.NoError(err)
-	_, err = sendRecv(stream, []int64{1})
+	_, err = endtoendtest.SendRecv(stream, []int64{1})
 	s.NoError(err)
 
-	echoServer.server.ForceStop()
+	echoServer.Temporal.ForceStop()
 
 	// ForceStop cause sourceStreamClient.Recv in Upstream loop within
 	// StreamWorkflowReplicationMessages handler to fail. Wait for
@@ -642,5 +657,4 @@ func (s *proxyTestSuite) Test_ForceStopSourceServer() {
 	s.ErrorContains(err, "EOF")
 
 	_ = stream.CloseSend()
-	echoClient.stop()
 }

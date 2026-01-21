@@ -2,13 +2,16 @@ package interceptor
 
 import (
 	"context"
-	"fmt"
 	"strings"
+	"time"
 
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/common"
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type (
@@ -42,12 +45,12 @@ func (i *TranslationInterceptor) Intercept(
 		strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
 
 		methodName := api.MethodName(info.FullMethod)
-		i.logger.Debug("intercepted request", tag.NewStringTag("method", methodName))
 
 		for _, tr := range i.translators {
 			if tr.MatchMethod(info.FullMethod) {
+				start := time.Now()
 				changed, trErr := tr.TranslateRequest(req)
-				logTranslateResult(i.logger, changed, trErr, methodName+"Request", req)
+				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Request", req, time.Since(start))
 			}
 		}
 
@@ -55,8 +58,9 @@ func (i *TranslationInterceptor) Intercept(
 
 		for _, tr := range i.translators {
 			if tr.MatchMethod(info.FullMethod) {
+				start := time.Now()
 				changed, trErr := tr.TranslateResponse(resp)
-				logTranslateResult(i.logger, changed, trErr, methodName+"Response", resp)
+				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Response", resp, time.Since(start))
 			}
 		}
 
@@ -72,12 +76,17 @@ func (i *TranslationInterceptor) InterceptStream(
 	info *grpc.StreamServerInfo,
 	handler grpc.StreamHandler,
 ) error {
+
 	i.logger.Debug("InterceptStream", tag.NewAnyTag("method", info.FullMethod))
-	err := handler(srv, newStreamTranslator(ss, i.logger, i.translators))
-	if err != nil {
-		i.logger.Error("grpc handler with error: %v", tag.Error(err))
+	// Skip translation for intra-proxy streams
+	if common.IsIntraProxy(ss.Context()) {
+		err := handler(srv, ss)
+		if err != nil {
+			i.logger.Error("grpc handler with error: %v", tag.Error(err))
+		}
+		return err
 	}
-	return err
+	return handler(srv, newStreamTranslator(ss, i.logger, i.translators))
 }
 
 type streamTranslator struct {
@@ -87,19 +96,19 @@ type streamTranslator struct {
 }
 
 func (w *streamTranslator) RecvMsg(m any) error {
-	w.logger.Debug("Intercept RecvMsg", tag.NewAnyTag("message", m))
 	for _, tr := range w.translators {
+		start := time.Now()
 		changed, trErr := tr.TranslateRequest(m)
-		logTranslateResult(w.logger, changed, trErr, "RecvMsg", m)
+		logTranslateResult(tr, w.logger, changed, trErr, "RecvMsg", m, time.Since(start))
 	}
 	return w.ServerStream.RecvMsg(m)
 }
 
 func (w *streamTranslator) SendMsg(m any) error {
-	w.logger.Debug("Intercept SendMsg", tag.NewStringTag("type", fmt.Sprintf("%T", m)), tag.NewAnyTag("message", m))
 	for _, tr := range w.translators {
+		start := time.Now()
 		changed, trErr := tr.TranslateResponse(m)
-		logTranslateResult(w.logger, changed, trErr, "SendMsg", m)
+		logTranslateResult(tr, w.logger, changed, trErr, "SendMsg", m, time.Since(start))
 	}
 	return w.ServerStream.SendMsg(m)
 }
@@ -116,17 +125,18 @@ func newStreamTranslator(
 	}
 }
 
-func logTranslateResult(logger log.Logger, changed bool, err error, methodName string, obj any) {
-	logger = log.With(
-		logger,
-		tag.NewStringTag("method", methodName),
-		tag.NewAnyTag("obj", obj),
-	)
+func logTranslateResult(tr Translator, logger log.Logger, changed bool, err error, methodName string, obj any, duration time.Duration) {
+	msgType := metrics.SanitizedTypeName(obj)
+	metrics.TranslationLatency.WithLabelValues(tr.Kind(), msgType).Observe(duration.Seconds())
+
+	methodTag := tag.NewStringTag("method", methodName)
 	if err != nil {
-		logger.Error("translation error", tag.Error(err))
+		logger.Error("translation error", methodTag, tag.Error(err), tag.NewStringTag("type", msgType))
+		metrics.TranslationErrors.WithLabelValues(tr.Kind(), msgType).Inc()
 	} else if changed {
-		logger.Debug("translation applied")
+		logger.Debug("translation applied", methodTag, tag.NewAnyTag("obj", obj))
+		metrics.TranslationCount.WithLabelValues(tr.Kind(), msgType).Inc()
 	} else {
-		logger.Debug("translation not applied")
+		logger.Debug("translation not applied", methodTag, tag.NewAnyTag("obj", obj))
 	}
 }

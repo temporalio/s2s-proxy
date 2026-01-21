@@ -25,22 +25,22 @@ func (s *tlsTestSuite) AfterTest(suiteName, testName string) {
 func (s *tlsTestSuite) Test_ClientTLSConfig() {
 	tests := []struct {
 		name      string
-		tlsConfig ClientTLSConfig
+		tlsConfig TLSConfig
 		isEnabled bool
 	}{
 		{
 			name: "client-auth-and-server-auth-enabled",
-			tlsConfig: ClientTLSConfig{
+			tlsConfig: TLSConfig{
 				CertificatePath: "path",
 				KeyPath:         "path",
-				ServerName:      "server",
-				ServerCAPath:    "path",
+				CAServerName:    "server",
+				RemoteCAPath:    "path",
 			},
 			isEnabled: true,
 		},
 		{
 			name: "client-auth-enabled",
-			tlsConfig: ClientTLSConfig{
+			tlsConfig: TLSConfig{
 				CertificatePath: "path",
 				KeyPath:         "path",
 			},
@@ -48,22 +48,22 @@ func (s *tlsTestSuite) Test_ClientTLSConfig() {
 		},
 		{
 			name: "server-auth-enabled",
-			tlsConfig: ClientTLSConfig{
-				ServerName:   "server",
-				ServerCAPath: "path",
+			tlsConfig: TLSConfig{
+				CAServerName: "server",
+				RemoteCAPath: "path",
 			},
 			isEnabled: true,
 		},
 		{
 			name:      "auth-disabled",
-			tlsConfig: ClientTLSConfig{},
+			tlsConfig: TLSConfig{},
 			isEnabled: false,
 		},
 		{
 			name: "partialauth-disabled",
-			tlsConfig: ClientTLSConfig{
+			tlsConfig: TLSConfig{
 				CertificatePath: "path",
-				ServerName:      "server",
+				CAServerName:    "server",
 			},
 			isEnabled: false,
 		},
