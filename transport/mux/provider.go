@@ -5,17 +5,16 @@ import (
 	"errors"
 	"io"
 	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/hashicorp/yamux"
-	"github.com/temporalio/s2s-proxy/common"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"golang.org/x/sync/semaphore"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/metrics"
 )
 
