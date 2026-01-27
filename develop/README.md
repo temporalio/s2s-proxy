@@ -1,3 +1,13 @@
+# Example files
+
+[Example prometheus metric output](prometheus-data-example.txt)
+
+[Example ClusterConfig configuration](sample-cluster-conn-config.yaml)
+
+[Example client configuration using legacy S2SProxyConfig](test-config-client.yaml)
+
+[Example server configuration using legacy S2SProxyConfig](test-config-server.yaml)
+
 # How-Tos
 
 ## Generate Lazy Client (hacky solution)

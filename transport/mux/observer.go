@@ -2,6 +2,7 @@ package mux
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/yamux"
@@ -23,10 +24,10 @@ func registerYamuxObserverBuilder(muxCategory string, logger log.Logger) session
 // emitYamuxMetrics creates a loop that pings the provided yamux session repeatedly and gathers its two
 // metrics: Whether the server is alive and how many streams it has open. Intended for use as a goroutine.
 func emitYamuxMetrics(lifetime context.Context, muxCategory string, id string, session *yamux.Session, logger log.Logger) {
-	logger.Info("mux session watcher starting", tag.NewStringTag("remote_addr", session.RemoteAddr().String()),
+	logger.Info("mux session watcher starting", tag.NewStringTag("remote_addr", strings.Split(session.RemoteAddr().String(), ":")[0]),
 		tag.NewStringTag("local_addr", session.LocalAddr().String()),
 		tag.NewStringTag("mux_id", id))
-	metricLabels := []string{session.LocalAddr().String(), session.RemoteAddr().String(), "muxed", muxCategory}
+	metricLabels := []string{session.LocalAddr().String(), strings.Split(session.RemoteAddr().String(), ":")[0], "muxed", muxCategory}
 	if session == nil {
 		// If we got a null session, we can't even generate tags to report
 		return

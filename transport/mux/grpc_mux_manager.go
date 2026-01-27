@@ -3,6 +3,7 @@ package mux
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/yamux"
 	"go.temporal.io/server/common/log"
@@ -59,7 +60,8 @@ func NewGRPCMuxManager(ctx context.Context, name string, cd config.ClusterDefini
 func registerGRPCServer(mode string, serverConfig *grpc.Server, metricLabels []string, logger log.Logger) session.StartManagedComponentFn {
 	return func(lifetime context.Context, id string, session *yamux.Session) {
 		go func() {
-			logger.Info("Starting inbound server for mux", tag.NewStringTag("remote_addr", session.RemoteAddr().String()),
+			logger.Info("Starting inbound server for mux",
+				tag.NewStringTag("remote_addr", strings.Split(session.RemoteAddr().String(), ":")[0]),
 				tag.NewStringTag("mode", mode), tag.NewStringTag("mux_id", id))
 			for lifetime.Err() == nil {
 				_ = serverConfig.Serve(session)
