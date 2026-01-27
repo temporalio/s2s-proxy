@@ -9,6 +9,7 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
@@ -59,7 +60,8 @@ func NewGRPCMuxManager(ctx context.Context, name string, cd config.ClusterDefini
 func registerGRPCServer(mode string, serverConfig *grpc.Server, metricLabels []string, logger log.Logger) session.StartManagedComponentFn {
 	return func(lifetime context.Context, id string, session *yamux.Session) {
 		go func() {
-			logger.Info("Starting inbound server for mux", tag.NewStringTag("remote_addr", session.RemoteAddr().String()),
+			logger.Info("Starting inbound server for mux",
+				tag.NewStringTag("remote_addr", common.GetHost(session.RemoteAddr().String())),
 				tag.NewStringTag("mode", mode), tag.NewStringTag("mux_id", id))
 			for lifetime.Err() == nil {
 				_ = serverConfig.Serve(session)

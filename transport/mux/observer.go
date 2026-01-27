@@ -8,6 +8,7 @@ import (
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
@@ -23,10 +24,10 @@ func registerYamuxObserverBuilder(muxCategory string, logger log.Logger) session
 // emitYamuxMetrics creates a loop that pings the provided yamux session repeatedly and gathers its two
 // metrics: Whether the server is alive and how many streams it has open. Intended for use as a goroutine.
 func emitYamuxMetrics(lifetime context.Context, muxCategory string, id string, session *yamux.Session, logger log.Logger) {
-	logger.Info("mux session watcher starting", tag.NewStringTag("remote_addr", session.RemoteAddr().String()),
+	logger.Info("mux session watcher starting", tag.NewStringTag("remote_addr", common.GetHost(session.RemoteAddr().String())),
 		tag.NewStringTag("local_addr", session.LocalAddr().String()),
 		tag.NewStringTag("mux_id", id))
-	metricLabels := []string{session.LocalAddr().String(), session.RemoteAddr().String(), "muxed", muxCategory}
+	metricLabels := []string{session.LocalAddr().String(), common.GetHost(session.RemoteAddr().String()), "muxed", muxCategory}
 	if session == nil {
 		// If we got a null session, we can't even generate tags to report
 		return

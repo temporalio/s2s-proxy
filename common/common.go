@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"net"
 	"strconv"
 	"strings"
 
@@ -65,4 +66,12 @@ func LCM(a, b int32) int32 {
 		return 0
 	}
 	return a * b / GCD(a, b)
+}
+
+func GetHost(addr string) string {
+	base, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return base
 }
