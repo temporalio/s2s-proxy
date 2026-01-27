@@ -3,13 +3,13 @@ package mux
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/yamux"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
@@ -61,7 +61,7 @@ func registerGRPCServer(mode string, serverConfig *grpc.Server, metricLabels []s
 	return func(lifetime context.Context, id string, session *yamux.Session) {
 		go func() {
 			logger.Info("Starting inbound server for mux",
-				tag.NewStringTag("remote_addr", strings.Split(session.RemoteAddr().String(), ":")[0]),
+				tag.NewStringTag("remote_addr", common.GetHost(session.RemoteAddr().String())),
 				tag.NewStringTag("mode", mode), tag.NewStringTag("mux_id", id))
 			for lifetime.Err() == nil {
 				_ = serverConfig.Serve(session)

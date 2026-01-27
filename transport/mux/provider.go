@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/hashicorp/yamux"
+	"github.com/temporalio/s2s-proxy/common"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -137,14 +138,14 @@ func (m *muxProvider) Start() {
 						return
 					} else if errors.Is(err, yamux.ErrConnectionWriteTimeout) {
 						m.logger.Info("Timed out establishing mux", tag.Error(err),
-							tag.NewStringTag("remoteAddr", strings.Split(session.RemoteAddr().String(), ":")[0]))
+							tag.NewStringTag("remoteAddr", common.GetHost(session.RemoteAddr().String())))
 						metrics.MuxErrors.WithLabelValues(append(m.metricLabels, "timeout")...).Inc()
 					} else if err == io.EOF {
 						m.logger.Info("Remote immediately disconnected. This usually means the listener had queued connections", tag.Error(err),
-							tag.NewStringTag("remoteAddr", strings.Split(session.RemoteAddr().String(), ":")[0]))
+							tag.NewStringTag("remoteAddr", common.GetHost(session.RemoteAddr().String())))
 						metrics.MuxErrors.WithLabelValues(append(m.metricLabels, "disconnected")...).Inc()
 					} else {
-						m.logger.Warn("Unknown error", tag.Error(err), tag.NewStringTag("remoteAddr", strings.Split(session.RemoteAddr().String(), ":")[0]))
+						m.logger.Warn("Unknown error", tag.Error(err), tag.NewStringTag("remoteAddr", common.GetHost(session.RemoteAddr().String())))
 						metrics.MuxErrors.WithLabelValues(append(m.metricLabels, "unknown")...).Inc()
 					}
 					// Make sure session & conn close on error
