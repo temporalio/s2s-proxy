@@ -15,32 +15,27 @@ func ToClusterConnConfig(config S2SProxyConfig) S2SProxyConfig {
 		ClusterConnections: []ClusterConnConfig{
 			{
 				Name: fmt.Sprintf("%s/%s", config.Inbound.Name, config.Outbound.Name),
-				LocalServer: ClusterDefinition{
-					Connection: TransportInfo{
-						ConnectionType: determineConnectionType(config, true),
-						TcpClient:      translateClientTCPTLSInfo(config.Inbound.Client.TCPClientSetting),
-						TcpServer:      translateServerTCPTLSInfo(config.Outbound.Server.TCPServerSetting),
-						MuxCount:       getMuxConnectionCount(config, config.Inbound.Client.MuxTransportName),
-						MuxAddressInfo: getMuxAddressInfo(config, config.Inbound.Client.MuxTransportName),
-					},
-					ACLPolicy:    config.Inbound.ACLPolicy,
-					APIOverrides: config.Inbound.APIOverrides,
+				Local: ClusterDefinition{
+					ConnectionType: determineConnectionType(config, true),
+					TcpClient:      translateClientTCPTLSInfo(config.Inbound.Client.TCPClientSetting),
+					TcpServer:      translateServerTCPTLSInfo(config.Outbound.Server.TCPServerSetting),
+					MuxCount:       getMuxConnectionCount(config, config.Inbound.Client.MuxTransportName),
+					MuxAddressInfo: getMuxAddressInfo(config, config.Inbound.Client.MuxTransportName),
 				},
-				RemoteServer: ClusterDefinition{
-					Connection: TransportInfo{
-						ConnectionType: determineConnectionType(config, false),
-						TcpClient:      translateClientTCPTLSInfo(config.Outbound.Client.TCPClientSetting),
-						TcpServer:      translateServerTCPTLSInfo(config.Inbound.Server.TCPServerSetting),
-						MuxCount:       getMuxConnectionCount(config, config.Outbound.Client.MuxTransportName),
-						MuxAddressInfo: getMuxAddressInfo(config, config.Outbound.Client.MuxTransportName),
-					},
-					ACLPolicy:    config.Outbound.ACLPolicy,
-					APIOverrides: config.Outbound.APIOverrides,
+				Remote: ClusterDefinition{
+					ConnectionType: determineConnectionType(config, false),
+					TcpClient:      translateClientTCPTLSInfo(config.Outbound.Client.TCPClientSetting),
+					TcpServer:      translateServerTCPTLSInfo(config.Inbound.Server.TCPServerSetting),
+					MuxCount:       getMuxConnectionCount(config, config.Outbound.Client.MuxTransportName),
+					MuxAddressInfo: getMuxAddressInfo(config, config.Outbound.Client.MuxTransportName),
 				},
+				FVITranslation:             getFVIMapping(config.Inbound.APIOverrides, config.Outbound.APIOverrides),
+				ReplicationEndpoint:        getClusterEndpointOverride(config.Outbound.APIOverrides, config.Outbound.Server.ExternalAddress),
+				ACLPolicy:                  config.Inbound.ACLPolicy,
 				NamespaceTranslation:       nsTranslationToStringTranslator(config.NamespaceNameTranslation),
 				SearchAttributeTranslation: config.SearchAttributeTranslation,
-				OutboundHealthCheck:        flattenNilHealthCheck(config.OutboundHealthCheck),
-				InboundHealthCheck:         flattenNilHealthCheck(config.HealthCheck),
+				RemoteClusterHealthCheck:   flattenNilHealthCheck(config.OutboundHealthCheck),
+				LocalClusterHealthCheck:    flattenNilHealthCheck(config.HealthCheck),
 				ShardCountConfig:           config.ShardCountConfig,
 				MemberlistConfig:           config.MemberlistConfig,
 			},
@@ -50,6 +45,33 @@ func ToClusterConnConfig(config S2SProxyConfig) S2SProxyConfig {
 		Logging:         config.Logging,
 		LogConfigs:      config.LogConfigs,
 	}
+}
+
+func getFVIMapping(inboundOverrides *APIOverridesConfig, outboundOverrides *APIOverridesConfig) IntMapping {
+	var localFVI, remoteFVI int64
+	if inboundOverrides != nil && inboundOverrides.AdminService.DescribeCluster != nil {
+		if inboundOverrides.AdminService.DescribeCluster.Response.FailoverVersionIncrement != nil {
+			// Old config says, "When the remote cluster asks, return THIS value, which should match."
+			remoteFVI = *inboundOverrides.AdminService.DescribeCluster.Response.FailoverVersionIncrement
+		}
+	}
+	if outboundOverrides != nil && outboundOverrides.AdminService.DescribeCluster != nil {
+		if outboundOverrides.AdminService.DescribeCluster.Response.FailoverVersionIncrement != nil {
+			// Old config says, "When the local cluster asks, return THIS value, which should match."
+			localFVI = *outboundOverrides.AdminService.DescribeCluster.Response.FailoverVersionIncrement
+		}
+	}
+	return IntMapping{
+		Local:  localFVI,
+		Remote: remoteFVI,
+	}
+}
+
+func getClusterEndpointOverride(overrides *APIOverridesConfig, externalAddress string) string {
+	if overrides == nil || overrides.AdminService.AddOrUpdateRemoteCluster == nil {
+		return externalAddress
+	}
+	return overrides.AdminService.AddOrUpdateRemoteCluster.Request.FrontendAddress
 }
 
 func flattenNilHealthCheck(config *HealthCheckConfig) HealthCheckConfig {
