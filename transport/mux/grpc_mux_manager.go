@@ -26,21 +26,21 @@ type ConnListener interface {
 func NewGRPCMuxManager(ctx context.Context, name string, cd config.ClusterDefinition, listener ConnListener, serverDefinition *grpc.Server, logger log.Logger) (MultiMuxManager, error) {
 	// sane default for existing configs
 	muxCount := 10
-	if cd.Connection.MuxCount != 0 {
-		muxCount = cd.Connection.MuxCount
+	if cd.MuxCount != 0 {
+		muxCount = cd.MuxCount
 	}
-	connectionTypeName := string(cd.Connection.ConnectionType)
-	metricLabels := []string{cd.Connection.MuxAddressInfo.ConnectionString, connectionTypeName, name}
+	connectionTypeName := string(cd.ConnectionType)
+	metricLabels := []string{cd.MuxAddressInfo.ConnectionString, connectionTypeName, name}
 	var muxProviderBuilder MuxProviderBuilder
 	logger.Info(fmt.Sprintf("Applying %s mux provider from config: %+v", connectionTypeName, cd))
-	switch cd.Connection.ConnectionType {
+	switch cd.ConnectionType {
 	case config.ConnTypeMuxClient:
 		muxProviderBuilder = func(cb AddNewMux, lifetime context.Context) (MuxProvider, error) {
-			return NewMuxEstablisherProvider(lifetime, name, cb, int64(muxCount), cd.Connection.MuxAddressInfo, metricLabels, logger)
+			return NewMuxEstablisherProvider(lifetime, name, cb, int64(muxCount), cd.MuxAddressInfo, metricLabels, logger)
 		}
 	case config.ConnTypeMuxServer:
 		muxProviderBuilder = func(cb AddNewMux, lifetime context.Context) (MuxProvider, error) {
-			return NewMuxReceiverProvider(lifetime, name, cb, int64(muxCount), cd.Connection.MuxAddressInfo, metricLabels, logger)
+			return NewMuxReceiverProvider(lifetime, name, cb, int64(muxCount), cd.MuxAddressInfo, metricLabels, logger)
 		}
 	default:
 		return nil, fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s", name, connectionTypeName)

@@ -24,8 +24,8 @@ type (
 	Proxy struct {
 		lifetime                  context.Context
 		cancel                    context.CancelFunc
-		inboundHealthCheckConfig  *config.HealthCheckConfig
-		outboundHealthCheckConfig *config.HealthCheckConfig
+		localHealthCheckConfig    *config.HealthCheckConfig
+		remoteHealthCheckConfig   *config.HealthCheckConfig
 		metricsConfig             *config.MetricsConfig
 		clusterConnections        map[migrationId]*ClusterConnection
 		inboundHealthCheckServer  *http.Server
@@ -61,11 +61,11 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 		proxy.clusterConnections[migrationId] = cc
 	}
 	// TODO: correctly host multiple health checks
-	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].InboundHealthCheck.ListenAddress != "" {
-		proxy.inboundHealthCheckConfig = &s2sConfig.ClusterConnections[0].InboundHealthCheck
+	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].LocalClusterHealthCheck.ListenAddress != "" {
+		proxy.localHealthCheckConfig = &s2sConfig.ClusterConnections[0].LocalClusterHealthCheck
 	}
-	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].OutboundHealthCheck.ListenAddress != "" {
-		proxy.outboundHealthCheckConfig = &s2sConfig.ClusterConnections[0].OutboundHealthCheck
+	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].RemoteClusterHealthCheck.ListenAddress != "" {
+		proxy.remoteHealthCheckConfig = &s2sConfig.ClusterConnections[0].RemoteClusterHealthCheck
 	}
 
 	metrics.NewProxyCount.Inc()
@@ -120,13 +120,13 @@ func (s *Proxy) startMetricsHandler(lifetime context.Context, cfg config.Metrics
 }
 
 func (s *Proxy) Start() error {
-	if s.inboundHealthCheckConfig != nil {
+	if s.localHealthCheckConfig != nil {
 		var err error
 		healthFn := func() bool {
 			// TODO: Rethink health checks. The inbound/outbound traffic availability isn't quite right for a health check
 			return true
 		}
-		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.inboundHealthCheckConfig); err != nil {
+		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.localHealthCheckConfig); err != nil {
 			return err
 		}
 	} else {
@@ -134,13 +134,13 @@ func (s *Proxy) Start() error {
 			" it needs at least the following path: healthCheck.listenAddress")
 	}
 
-	if s.outboundHealthCheckConfig != nil {
+	if s.remoteHealthCheckConfig != nil {
 		healthFn := func() bool {
 			// TODO: Rethink health checks. The inbound/outbound traffic availability isn't quite right for a health check
 			return true
 		}
 		var err error
-		if s.outboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newOutboundHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.outboundHealthCheckConfig); err != nil {
+		if s.outboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newOutboundHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.remoteHealthCheckConfig); err != nil {
 			return err
 		}
 	} else {

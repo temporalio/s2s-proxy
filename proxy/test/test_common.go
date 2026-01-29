@@ -331,23 +331,19 @@ func createProxy(
 		ClusterConnections: []config.ClusterConnConfig{
 			{
 				Name: name,
-				LocalServer: config.ClusterDefinition{
-					Connection: config.TransportInfo{
-						ConnectionType: config.ConnTypeTCP,
-						TcpClient: config.TCPTLSInfo{
-							ConnectionString: cluster.Host().FrontendGRPCAddress(),
-						},
-						TcpServer: config.TCPTLSInfo{
-							ConnectionString: outboundAddress,
-						},
+				Local: config.ClusterDefinition{
+					ConnectionType: config.ConnTypeTCP,
+					TcpClient: config.TCPTLSInfo{
+						ConnectionString: cluster.Host().FrontendGRPCAddress(),
+					},
+					TcpServer: config.TCPTLSInfo{
+						ConnectionString: outboundAddress,
 					},
 				},
-				RemoteServer: config.ClusterDefinition{
-					Connection: config.TransportInfo{
-						ConnectionType: muxConnectionType,
-						MuxCount:       1,
-						MuxAddressInfo: muxAddressInfo,
-					},
+				Remote: config.ClusterDefinition{
+					ConnectionType: muxConnectionType,
+					MuxCount:       1,
+					MuxAddressInfo: muxAddressInfo,
 				},
 				ShardCountConfig: shardCountConfig,
 			},

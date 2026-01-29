@@ -100,10 +100,13 @@ type (
 		// managedClient is updated by the multi-mux-manager that also owns the server. Needs some more cleanup.
 		managedClient closableClientConn
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
-		nsTranslations   collect.StaticBiMap[string, string]
-		saTranslations   config.SearchAttributeTranslation
-		shardCountConfig config.ShardCountConfig
-		loggers          logging.LoggerProvider
+		nsTranslations    collect.StaticBiMap[string, string]
+		saTranslations    config.SearchAttributeTranslation
+		fviOverride       int64
+		feAddressOverride string
+		aclPolicy         *config.ACLPolicy
+		shardCountConfig  config.ShardCountConfig
+		loggers           logging.LoggerProvider
 
 		shardManager      ShardManager
 		lcmParameters     LCMParameters
@@ -125,11 +128,11 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
-	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.LocalServer.Connection, "inbound")
+	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound")
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.RemoteServer.Connection, "outbound")
+	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound")
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +145,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		return nil, err
 	}
 
-	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, connConfig.ShardCountConfig, connConfig.LocalServer.Connection.TcpClient.TLSConfig, logProvider)
+	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, connConfig.ShardCountConfig, connConfig.Local.TcpClient.TLSConfig, logProvider)
 
 	getLCMParameters := func(shardCountConfig config.ShardCountConfig, inverse bool) LCMParameters {
 		if shardCountConfig.Mode != config.ShardCountLCM {
@@ -180,12 +183,14 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 
 	inboundCfg := serverConfiguration{
 		name:              sanitizedConnectionName,
-		clusterDefinition: connConfig.RemoteServer,
+		clusterDefinition: connConfig.Remote,
 		directionLabel:    "inbound",
 		client:            cc.inboundClient,
 		managedClient:     cc.outboundClient,
 		nsTranslations:    nsTranslations.Inverse(),
 		saTranslations:    saTranslations.Inverse(),
+		fviOverride:       connConfig.FVITranslation.Local,
+		feAddressOverride: connConfig.ReplicationEndpoint,
 		shardCountConfig:  connConfig.ShardCountConfig,
 		loggers:           cc.loggers,
 		shardManager:      cc.shardManager,
@@ -199,12 +204,13 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 
 	outboundCfg := serverConfiguration{
 		name:              sanitizedConnectionName,
-		clusterDefinition: connConfig.LocalServer,
+		clusterDefinition: connConfig.Local,
 		directionLabel:    "outbound",
 		client:            cc.outboundClient,
 		managedClient:     cc.inboundClient,
 		nsTranslations:    nsTranslations,
 		saTranslations:    saTranslations,
+		fviOverride:       connConfig.FVITranslation.Remote,
 		shardCountConfig:  connConfig.ShardCountConfig,
 		loggers:           cc.loggers,
 		shardManager:      cc.shardManager,
@@ -219,7 +225,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	return cc, nil
 }
 
-func createClient(lifetime context.Context, connectionName string, transportCfg config.TransportInfo, directionLabel string) (closableClientConn, error) {
+func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string) (closableClientConn, error) {
 	switch transportCfg.ConnectionType {
 	case config.ConnTypeTCP:
 		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel)
@@ -233,7 +239,7 @@ func createClient(lifetime context.Context, connectionName string, transportCfg 
 }
 
 func createServer(lifetime context.Context, c serverConfiguration) (contextAwareServer, *ReplicationStreamObserver, error) {
-	switch c.clusterDefinition.Connection.ConnectionType {
+	switch c.clusterDefinition.ConnectionType {
 	case config.ConnTypeTCP:
 		// No special logic required for managedClient
 		return createTCPServer(lifetime, c)
@@ -257,11 +263,11 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 
 func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAwareServer, *ReplicationStreamObserver, error) {
 	observer := NewReplicationStreamObserver(c.loggers.Get(LogStreamObserver))
-	listener, err := net.Listen("tcp", c.clusterDefinition.Connection.TcpServer.ConnectionString)
+	listener, err := net.Listen("tcp", c.clusterDefinition.TcpServer.ConnectionString)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid configuration for inbound server: %w", err)
 	}
-	grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.TcpServer.TLSConfig, observer.ReportStreamValue, lifetime)
+	grpcServer, err := buildProxyServer(c, c.clusterDefinition.TcpServer.TLSConfig, observer.ReportStreamValue, lifetime)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create inbound server: %w", err)
 	}
@@ -336,7 +342,8 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		fmt.Sprintf("%sAdminService", c.directionLabel),
 		adminservice.NewAdminServiceClient(c.client),
 		adminservice.NewAdminServiceClient(c.managedClient),
-		c.clusterDefinition.APIOverrides,
+		c.fviOverride,
+		c.feAddressOverride,
 		[]string{c.directionLabel},
 		observeFn,
 		c.shardCountConfig,
@@ -347,8 +354,8 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		lifetime,
 	)
 	var accessControl *auth.AccessControl
-	if c.clusterDefinition.ACLPolicy != nil {
-		accessControl = auth.NewAccesControl(c.clusterDefinition.ACLPolicy.AllowedNamespaces)
+	if c.aclPolicy != nil {
+		accessControl = auth.NewAccesControl(c.aclPolicy.AllowedNamespaces)
 	}
 	workflowServiceImpl := NewWorkflowServiceProxyServer("inboundWorkflowService", workflowservice.NewWorkflowServiceClient(c.client),
 		accessControl, c.loggers)
@@ -390,12 +397,12 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
 	}
 
-	if c.clusterDefinition.ACLPolicy != nil {
+	if c.aclPolicy != nil {
 		c.loggers.Get("init").Info("ACL policy enabled",
-			tag.NewAnyTag("policy", c.clusterDefinition.ACLPolicy),
+			tag.NewAnyTag("policy", c.aclPolicy),
 			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
 		aclInterceptor := interceptor.NewAccessControlInterceptor(c.loggers.Get(LogInterceptor),
-			c.clusterDefinition.ACLPolicy.AllowedMethods.AdminService, c.clusterDefinition.ACLPolicy.AllowedNamespaces)
+			c.aclPolicy.AllowedMethods.AdminService, c.aclPolicy.AllowedNamespaces)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
 		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
 	}
