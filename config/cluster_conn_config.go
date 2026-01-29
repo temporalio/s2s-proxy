@@ -31,7 +31,10 @@ type (
 		ClusterInfo ClusterInfo   `yaml:"clusterInfo"`
 		// ACLPolicy has a meaningful nil value: it separates no-policy from deny-all
 		ACLPolicy *ACLPolicy `yaml:"aclPolicy"`
-		// APIOverrides has a meaningful nil value: it separates override-to-zero and no-override
+		// APIOverrides overwrites fields in requests and responses sent to the cluster. For example, if the local
+		// cluster should be seeing a specific FrontendAddress value in AddOrUpdateRemoteCluster,
+		// ClusterConnConfig.LocalServer.APIOverrides.AdminService.AddOrUpdateRemoteCluster.Request.FrontendAddress
+		// should be set
 		APIOverrides *APIOverridesConfig `yaml:"apiOverrides"`
 	}
 	ClusterInfo struct {

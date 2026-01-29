@@ -23,8 +23,8 @@ func ToClusterConnConfig(config S2SProxyConfig) S2SProxyConfig {
 						MuxCount:       getMuxConnectionCount(config, config.Inbound.Client.MuxTransportName),
 						MuxAddressInfo: getMuxAddressInfo(config, config.Inbound.Client.MuxTransportName),
 					},
-					ACLPolicy:    config.Inbound.ACLPolicy,
-					APIOverrides: config.Inbound.APIOverrides,
+					ACLPolicy:    config.Outbound.ACLPolicy,
+					APIOverrides: config.Outbound.APIOverrides,
 				},
 				RemoteServer: ClusterDefinition{
 					Connection: TransportInfo{
@@ -34,8 +34,8 @@ func ToClusterConnConfig(config S2SProxyConfig) S2SProxyConfig {
 						MuxCount:       getMuxConnectionCount(config, config.Outbound.Client.MuxTransportName),
 						MuxAddressInfo: getMuxAddressInfo(config, config.Outbound.Client.MuxTransportName),
 					},
-					ACLPolicy:    config.Outbound.ACLPolicy,
-					APIOverrides: config.Outbound.APIOverrides,
+					ACLPolicy:    config.Inbound.ACLPolicy,
+					APIOverrides: config.Inbound.APIOverrides,
 				},
 				NamespaceTranslation:       nsTranslationToStringTranslator(config.NamespaceNameTranslation),
 				SearchAttributeTranslation: config.SearchAttributeTranslation,
