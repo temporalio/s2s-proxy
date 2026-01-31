@@ -191,6 +191,8 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		saTranslations:    saTranslations.Inverse(),
 		fviOverride:       connConfig.FVITranslation.Local,
 		feAddressOverride: connConfig.ReplicationEndpoint,
+		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
+		aclPolicy:         connConfig.ACLPolicy,
 		shardCountConfig:  connConfig.ShardCountConfig,
 		loggers:           cc.loggers,
 		shardManager:      cc.shardManager,
