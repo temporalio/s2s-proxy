@@ -28,11 +28,9 @@ func TestGRPCMux(t *testing.T) {
 
 	// Receiving
 	serverConfig := config.ClusterDefinition{
-		Connection: config.TransportInfo{
-			ConnectionType: config.ConnTypeMuxServer,
-			MuxAddressInfo: config.TCPTLSInfo{
-				ConnectionString: "127.0.0.1:0",
-			},
+		ConnectionType: config.ConnTypeMuxServer,
+		MuxAddressInfo: config.TCPTLSInfo{
+			ConnectionString: "127.0.0.1:0",
 		},
 	}
 	receivingClient, err := grpcutil.NewMultiClientConn(t.Context(), "receivingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
@@ -59,11 +57,9 @@ func TestGRPCMux(t *testing.T) {
 
 	// Establishing
 	clientConfig := config.ClusterDefinition{
-		Connection: config.TransportInfo{
-			ConnectionType: config.ConnTypeMuxClient,
-			MuxAddressInfo: config.TCPTLSInfo{
-				ConnectionString: "127.0.0.1:0",
-			},
+		ConnectionType: config.ConnTypeMuxClient,
+		MuxAddressInfo: config.TCPTLSInfo{
+			ConnectionString: "127.0.0.1:0",
 		},
 	}
 	establishingClient, err := grpcutil.NewMultiClientConn(t.Context(), "establishingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)

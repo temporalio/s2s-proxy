@@ -32,17 +32,18 @@ type (
 
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		shardManager       ShardManager
-		adminClient        adminservice.AdminServiceClient
-		adminClientReverse adminservice.AdminServiceClient
-		loggers            logging.LoggerProvider
-		apiOverrides       *config.APIOverridesConfig
-		metricLabelValues  []string
-		reportStreamValue  func(idx int32, value int32)
-		shardCountConfig   config.ShardCountConfig
-		lcmParameters      LCMParameters
-		routingParameters  RoutingParameters
-		lifetime           context.Context
+		shardManager            ShardManager
+		adminClient             adminservice.AdminServiceClient
+		adminClientReverse      adminservice.AdminServiceClient
+		loggers                 logging.LoggerProvider
+		failoverVersionOverride int64
+		clusterEndpointOverride string
+		metricLabelValues       []string
+		reportStreamValue       func(idx int32, value int32)
+		shardCountConfig        config.ShardCountConfig
+		lcmParameters           LCMParameters
+		routingParameters       RoutingParameters
+		lifetime                context.Context
 	}
 )
 
@@ -51,7 +52,8 @@ func NewAdminServiceProxyServer(
 	serviceName string,
 	adminClient adminservice.AdminServiceClient,
 	adminClientReverse adminservice.AdminServiceClient,
-	apiOverrides *config.APIOverridesConfig,
+	failoverVersionOverride int64,
+	clusterEndpointOverride string,
 	metricLabelValues []string,
 	reportStreamValue func(idx int32, value int32),
 	shardCountConfig config.ShardCountConfig,
@@ -62,32 +64,30 @@ func NewAdminServiceProxyServer(
 	lifetime context.Context,
 ) adminservice.AdminServiceServer {
 	return &adminServiceProxyServer{
-		shardManager:       shardManager,
-		adminClient:        adminClient,
-		adminClientReverse: adminClientReverse,
-		loggers:            logProvider.With(common.ServiceTag(serviceName)),
-		apiOverrides:       apiOverrides,
-		metricLabelValues:  metricLabelValues,
-		reportStreamValue:  reportStreamValue,
-		shardCountConfig:   shardCountConfig,
-		lcmParameters:      lcmParameters,
-		routingParameters:  routingParameters,
-		lifetime:           lifetime,
+		shardManager:            shardManager,
+		adminClient:             adminClient,
+		adminClientReverse:      adminClientReverse,
+		loggers:                 logProvider.With(common.ServiceTag(serviceName)),
+		failoverVersionOverride: failoverVersionOverride,
+		clusterEndpointOverride: clusterEndpointOverride,
+		metricLabelValues:       metricLabelValues,
+		reportStreamValue:       reportStreamValue,
+		shardCountConfig:        shardCountConfig,
+		lcmParameters:           lcmParameters,
+		routingParameters:       routingParameters,
+		lifetime:                lifetime,
 	}
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (resp *adminservice.AddOrUpdateRemoteClusterResponse, err error) {
 	s.loggers.Get(logging.AdminService).Info("Received AddOrUpdateRemoteCluster", tag.Address(in0.FrontendAddress), tag.NewBoolTag("Enabled", in0.GetEnableRemoteClusterConnection()), tag.NewStringsTag("configTags", s.metricLabelValues))
-	if !common.IsRequestTranslationDisabled(ctx) && s.apiOverrides != nil {
-		reqOverride := s.apiOverrides.AdminService.AddOrUpdateRemoteCluster
-		if reqOverride != nil && len(reqOverride.Request.FrontendAddress) > 0 {
-			// Override this address so that cross-cluster connections flow through the proxy.
-			// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
-			// from the local temporal server, or the proxy may be deployed behind a load balancer.
-			// Only used in single-proxy scenarios, i.e. Temporal <> Proxy <> Temporal
-			in0.FrontendAddress = reqOverride.Request.FrontendAddress
-			s.loggers.Get(logging.AdminService).Info("Overwrote outbound address", tag.Address(in0.FrontendAddress), tag.NewStringsTag("configTags", s.metricLabelValues))
-		}
+	if !common.IsRequestTranslationDisabled(ctx) && len(s.clusterEndpointOverride) > 0 {
+		// Override this address so that cross-cluster connections flow through the proxy.
+		// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
+		// from the local temporal server, or the proxy may be deployed behind a load balancer.
+		// Only used in single-proxy scenarios, i.e. Temporal <> Proxy <> Temporal
+		in0.FrontendAddress = s.clusterEndpointOverride
+		s.loggers.Get(logging.AdminService).Info("Overwrote outbound address", tag.Address(in0.FrontendAddress), tag.NewStringsTag("configTags", s.metricLabelValues))
 	}
 	resp, err = s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
 	if err != nil {
@@ -120,12 +120,17 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
 	s.loggers.Get(logging.AdminService).Info("Received DescribeClusterRequest")
 	resp, err := s.adminClient.DescribeCluster(ctx, in0)
-	if resp != nil {
-		s.loggers.Get(logging.AdminService).Info("Raw DescribeClusterResponse", tag.NewStringTag("clusterID", resp.ClusterId),
-			tag.NewStringTag("clusterName", resp.ClusterName), tag.NewStringTag("version", resp.ServerVersion),
-			tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement), tag.NewInt64("initialFailoverVersion", resp.InitialFailoverVersion),
-			tag.NewBoolTag("isGlobalNamespaceEnabled", resp.IsGlobalNamespaceEnabled), tag.NewStringsTag("configTags", s.metricLabelValues))
+
+	// If err != nil, resp is always nil, but the linter doesn't know that. Check both so that we can skip all the warnings.
+	if err != nil || resp == nil {
+		s.loggers.Get(logging.AdminService).Info("Got error when calling DescribeCluster!", tag.Error(err), tag.NewStringsTag("configTags", s.metricLabelValues))
+		return resp, err
 	}
+	s.loggers.Get(logging.AdminService).Info("Raw DescribeClusterResponse", tag.NewStringTag("clusterID", resp.ClusterId),
+		tag.NewStringTag("clusterName", resp.ClusterName), tag.NewStringTag("version", resp.ServerVersion),
+		tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement), tag.NewInt64("initialFailoverVersion", resp.InitialFailoverVersion),
+		tag.NewBoolTag("isGlobalNamespaceEnabled", resp.IsGlobalNamespaceEnabled), tag.NewStringsTag("configTags", s.metricLabelValues))
+
 	if common.IsRequestTranslationDisabled(ctx) {
 		s.loggers.Get(logging.AdminService).Info("Request translation disabled. Returning as-is")
 		return resp, err
@@ -142,24 +147,16 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 		}
 	}
 
-	if s.apiOverrides != nil && s.apiOverrides.AdminService.DescribeCluster != nil {
-		responseOverride := s.apiOverrides.AdminService.DescribeCluster.Response
-		if resp != nil && responseOverride.FailoverVersionIncrement != nil {
-			resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
-			s.loggers.Get(logging.AdminService).Info("Overwrite FailoverVersionIncrement", tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement),
-				tag.NewStringsTag("configTags", s.metricLabelValues))
-		}
+	if s.failoverVersionOverride != 0 {
+		resp.FailoverVersionIncrement = s.failoverVersionOverride
+		s.loggers.Get(logging.AdminService).Info("Overwrite FailoverVersionIncrement", tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement),
+			tag.NewStringsTag("configTags", s.metricLabelValues))
 	}
 
-	if resp != nil {
-		s.loggers.Get(logging.AdminService).Info("Translated DescribeClusterResponse", tag.NewStringTag("clusterID", resp.ClusterId),
-			tag.NewStringTag("clusterName", resp.ClusterName), tag.NewStringTag("version", resp.ServerVersion),
-			tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement), tag.NewInt64("initialFailoverVersion", resp.InitialFailoverVersion),
-			tag.NewBoolTag("isGlobalNamespaceEnabled", resp.IsGlobalNamespaceEnabled), tag.NewStringsTag("configTags", s.metricLabelValues))
-	}
-	if err != nil {
-		s.loggers.Get(logging.AdminService).Info("Got error when calling DescribeCluster!", tag.Error(err), tag.NewStringsTag("configTags", s.metricLabelValues))
-	}
+	s.loggers.Get(logging.AdminService).Info("Sending translated DescribeClusterResponse", tag.NewStringTag("clusterID", resp.ClusterId),
+		tag.NewStringTag("clusterName", resp.ClusterName), tag.NewStringTag("version", resp.ServerVersion),
+		tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement), tag.NewInt64("initialFailoverVersion", resp.InitialFailoverVersion),
+		tag.NewBoolTag("isGlobalNamespaceEnabled", resp.IsGlobalNamespaceEnabled), tag.NewStringsTag("configTags", s.metricLabelValues))
 	return resp, err
 }
 

@@ -1,0 +1,48 @@
+outbound:
+  name: "outbound-server"
+  server:
+    tcp:
+      listenAddress: "0.0.0.0:6233"
+  client:
+    type: "mux"
+    mux: "muxed"
+  api_overrides:
+    adminService:
+      AddOrUpdateRemoteCluster:
+        request:
+          FrontendAddress : "127.0.0.1:6233"
+inbound:
+  name: "inbound-server"
+  server:
+    type: "mux"
+    mux: "muxed"
+  client:
+    tcp:
+      serverAddress: "localhost:7233"
+  aclPolicy:
+    allowedMethods:
+      adminService:
+        - AddOrUpdateRemoteCluster
+        - RemoveRemoteCluster
+        - DescribeCluster
+        - DescribeMutableState
+        - GetNamespaceReplicationMessages
+        - GetWorkflowExecutionRawHistoryV2
+        - ListClusters
+        - StreamWorkflowReplicationMessages
+        - ReapplyEvents
+        - GetNamespace
+mux:
+  - name: "muxed"
+    mode: "client"
+    client:
+      serverAddress: "s2s-proxy-haifeng-laptop-mg.temporal-dev.tmprl-test.cloud:8233"
+      tls:
+        certificatePath: "/Users/haifengh/workspace/s2c/secret/local-certs/ca.pem"
+        keyPath: "/Users/haifengh/workspace/s2c/secret/local-certs/ca.key"
+        serverCAPath: ""
+        serverName: ""
+namespaceNameTranslation:
+  mappings:
+    - localName: "default"
+      remoteName: "haifengh-gcp-us-central1-a.temporal-dev"
