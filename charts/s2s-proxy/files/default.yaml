@@ -66,10 +66,10 @@ clusterConnections:
     #         - localFieldName: "localBoolSearchAttribute"
     #           remoteFieldName: "Bool01"
 
-# Health checks aren't implemented yet. When they are, this is how you configure them
-#    remoteClusterHealthCheck:
-#      protocol: "http"
-#      listenAddress: "0.0.0.0:8234"
+    remoteClusterHealthCheck:
+      protocol: "http"
+      listenAddress: "0.0.0.0:8234"
+# Not implemented yet
 #    localClusterHealthCheck:
 #      protocol: "http"
 #      listenAddress: "0.0.0.0:8235"
