@@ -33,11 +33,7 @@ clusterConnections:
           keyPath: ""
           remoteCAPath: ""
     # This should be the routable address
-    replicationEndpoint: "example-s2s-proxy.svc.cluster.local:9233"
-    # Uncomment this block if your local Temporal cluster already has global namespaces enabled, and set "local" to your FVI
-    # failoverVersionIncrementTranslation:
-    #   local: 10
-    #   remote: 1000000
+    replicationEndpoint: "my-s2s-proxy.svc.cluster.local:9233"
     # This is what the remote cluster is allowed to access on your local cluster
     aclPolicy:
       allowedMethods:
@@ -70,12 +66,13 @@ clusterConnections:
     #         - localFieldName: "localBoolSearchAttribute"
     #           remoteFieldName: "Bool01"
 
-    remoteClusterHealthCheck:
-      protocol: "http"
-      listenAddress: "0.0.0.0:8234"
-    localClusterHealthCheck:
-      protocol: "http"
-      listenAddress: "0.0.0.0:8234"
+# Health checks aren't implemented yet. When they are, this is how you configure them
+#    remoteClusterHealthCheck:
+#      protocol: "http"
+#      listenAddress: "0.0.0.0:8234"
+#    localClusterHealthCheck:
+#      protocol: "http"
+#      listenAddress: "0.0.0.0:8235"
 
 metrics:
   prometheus:

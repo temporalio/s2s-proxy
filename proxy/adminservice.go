@@ -32,18 +32,22 @@ type (
 
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		shardManager            ShardManager
-		adminClient             adminservice.AdminServiceClient
-		adminClientReverse      adminservice.AdminServiceClient
-		loggers                 logging.LoggerProvider
-		failoverVersionOverride int64
-		clusterEndpointOverride string
-		metricLabelValues       []string
-		reportStreamValue       func(idx int32, value int32)
-		shardCountConfig        config.ShardCountConfig
-		lcmParameters           LCMParameters
-		routingParameters       RoutingParameters
-		lifetime                context.Context
+		shardManager       ShardManager
+		adminClient        adminservice.AdminServiceClient
+		adminClientReverse adminservice.AdminServiceClient
+		loggers            logging.LoggerProvider
+		overrides          AdminServiceOverrides
+		metricLabelValues  []string
+		reportStreamValue  func(idx int32, value int32)
+		shardCountConfig   config.ShardCountConfig
+		lcmParameters      LCMParameters
+		routingParameters  RoutingParameters
+		lifetime           context.Context
+	}
+	AdminServiceOverrides struct {
+		// Failover Version Increment. Overrides the value returned by DescribeCluster
+		FVI                 int64
+		ReplicationEndpoint string
 	}
 )
 
@@ -52,8 +56,7 @@ func NewAdminServiceProxyServer(
 	serviceName string,
 	adminClient adminservice.AdminServiceClient,
 	adminClientReverse adminservice.AdminServiceClient,
-	failoverVersionOverride int64,
-	clusterEndpointOverride string,
+	overrides AdminServiceOverrides,
 	metricLabelValues []string,
 	reportStreamValue func(idx int32, value int32),
 	shardCountConfig config.ShardCountConfig,
@@ -64,29 +67,28 @@ func NewAdminServiceProxyServer(
 	lifetime context.Context,
 ) adminservice.AdminServiceServer {
 	return &adminServiceProxyServer{
-		shardManager:            shardManager,
-		adminClient:             adminClient,
-		adminClientReverse:      adminClientReverse,
-		loggers:                 logProvider.With(common.ServiceTag(serviceName)),
-		failoverVersionOverride: failoverVersionOverride,
-		clusterEndpointOverride: clusterEndpointOverride,
-		metricLabelValues:       metricLabelValues,
-		reportStreamValue:       reportStreamValue,
-		shardCountConfig:        shardCountConfig,
-		lcmParameters:           lcmParameters,
-		routingParameters:       routingParameters,
-		lifetime:                lifetime,
+		shardManager:       shardManager,
+		adminClient:        adminClient,
+		adminClientReverse: adminClientReverse,
+		loggers:            logProvider.With(common.ServiceTag(serviceName)),
+		overrides:          overrides,
+		metricLabelValues:  metricLabelValues,
+		reportStreamValue:  reportStreamValue,
+		shardCountConfig:   shardCountConfig,
+		lcmParameters:      lcmParameters,
+		routingParameters:  routingParameters,
+		lifetime:           lifetime,
 	}
 }
 
 func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (resp *adminservice.AddOrUpdateRemoteClusterResponse, err error) {
 	s.loggers.Get(logging.AdminService).Info("Received AddOrUpdateRemoteCluster", tag.Address(in0.FrontendAddress), tag.NewBoolTag("Enabled", in0.GetEnableRemoteClusterConnection()), tag.NewStringsTag("configTags", s.metricLabelValues))
-	if !common.IsRequestTranslationDisabled(ctx) && len(s.clusterEndpointOverride) > 0 {
+	if !common.IsRequestTranslationDisabled(ctx) && len(s.overrides.ReplicationEndpoint) > 0 {
 		// Override this address so that cross-cluster connections flow through the proxy.
 		// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
 		// from the local temporal server, or the proxy may be deployed behind a load balancer.
 		// Only used in single-proxy scenarios, i.e. Temporal <> Proxy <> Temporal
-		in0.FrontendAddress = s.clusterEndpointOverride
+		in0.FrontendAddress = s.overrides.ReplicationEndpoint
 		s.loggers.Get(logging.AdminService).Info("Overwrote outbound address", tag.Address(in0.FrontendAddress), tag.NewStringsTag("configTags", s.metricLabelValues))
 	}
 	resp, err = s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
@@ -147,8 +149,8 @@ func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *admi
 		}
 	}
 
-	if s.failoverVersionOverride != 0 {
-		resp.FailoverVersionIncrement = s.failoverVersionOverride
+	if s.overrides.FVI != 0 {
+		resp.FailoverVersionIncrement = s.overrides.FVI
 		s.loggers.Get(logging.AdminService).Info("Overwrite FailoverVersionIncrement", tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement),
 			tag.NewStringsTag("configTags", s.metricLabelValues))
 	}

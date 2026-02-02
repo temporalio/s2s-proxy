@@ -100,13 +100,12 @@ type (
 		// managedClient is updated by the multi-mux-manager that also owns the server. Needs some more cleanup.
 		managedClient closableClientConn
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
-		nsTranslations    collect.StaticBiMap[string, string]
-		saTranslations    config.SearchAttributeTranslation
-		fviOverride       int64
-		feAddressOverride string
-		aclPolicy         *config.ACLPolicy
-		shardCountConfig  config.ShardCountConfig
-		loggers           logging.LoggerProvider
+		nsTranslations   collect.StaticBiMap[string, string]
+		saTranslations   config.SearchAttributeTranslation
+		overrides        AdminServiceOverrides
+		aclPolicy        *config.ACLPolicy
+		shardCountConfig config.ShardCountConfig
+		loggers          logging.LoggerProvider
 
 		shardManager      ShardManager
 		lcmParameters     LCMParameters
@@ -189,8 +188,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		managedClient:     cc.outboundClient,
 		nsTranslations:    nsTranslations.Inverse(),
 		saTranslations:    saTranslations.Inverse(),
-		fviOverride:       connConfig.FVITranslation.Local,
-		feAddressOverride: connConfig.ReplicationEndpoint,
+		overrides:         AdminServiceOverrides{connConfig.FVITranslation.Local, connConfig.ReplicationEndpoint},
 		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
 		aclPolicy:         connConfig.ACLPolicy,
 		shardCountConfig:  connConfig.ShardCountConfig,
@@ -212,7 +210,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		managedClient:     cc.inboundClient,
 		nsTranslations:    nsTranslations,
 		saTranslations:    saTranslations,
-		fviOverride:       connConfig.FVITranslation.Remote,
+		overrides:         AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote},
 		shardCountConfig:  connConfig.ShardCountConfig,
 		loggers:           cc.loggers,
 		shardManager:      cc.shardManager,
@@ -344,8 +342,7 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		fmt.Sprintf("%sAdminService", c.directionLabel),
 		adminservice.NewAdminServiceClient(c.client),
 		adminservice.NewAdminServiceClient(c.managedClient),
-		c.fviOverride,
-		c.feAddressOverride,
+		AdminServiceOverrides{c.fviOverride, c.replicationAddress},
 		[]string{c.directionLabel},
 		observeFn,
 		c.shardCountConfig,
