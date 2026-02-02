@@ -342,7 +342,7 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		fmt.Sprintf("%sAdminService", c.directionLabel),
 		adminservice.NewAdminServiceClient(c.client),
 		adminservice.NewAdminServiceClient(c.managedClient),
-		AdminServiceOverrides{c.fviOverride, c.replicationAddress},
+		c.overrides,
 		[]string{c.directionLabel},
 		observeFn,
 		c.shardCountConfig,
