@@ -100,7 +100,6 @@ func TestConversion(t *testing.T) {
 	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].Local.ConnectionType)
 	require.Equal(t, "AddOrUpdateRemoteCluster", converted.ClusterConnections[0].ACLPolicy.AllowedMethods.AdminService[0])
 	require.Equal(t, "namespace1", converted.ClusterConnections[0].ACLPolicy.AllowedNamespaces[0])
-	require.NotNil(t, converted.ClusterConnections[0].FVITranslation)
 	require.Equal(t, int64(100), converted.ClusterConnections[0].FVITranslation.Remote)
 }
 
