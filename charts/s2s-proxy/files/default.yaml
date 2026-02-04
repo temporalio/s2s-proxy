@@ -1,63 +1,81 @@
-inbound:
-  name: "inbound-server"
-  server:
-    type: "mux"
-    mux: "muxed"
-  client:
-    tcp:
-      serverAddress: "frontend-ingress.temporal.svc.cluster.local:7233"
-      tls:
-        certificatePath: ""
-        keyPath: ""
-        serverCAPath: ""
-        serverName: ""
+clusterConnections:
+  # This name will be used in log labels and metrics, so pick a name not shared by other s2s-proxy deployments
+  - name: "my-migration-cluster"
+    # local defines your local Temporal cluster's connections
+    local:
+      # Unless you're daisy-chaining proxies, this should always be tcp for the local cluster
+      connectionType: "tcp"
+      tcpClient:
+        address: "frontend-ingress.temporal.svc.cluster.local:7233"
+        # If your local Temporal uses TLS, use this block to configure it.
+        # tls:
+        #   certificatePath: ""
+        #   keyPath: ""
+        #   remoteCAPath: ""
+      tcpServer:
+        address: "0.0.0.0:9233"
+        # If you want the proxy to use TLS for your local outbound connection, use this block
+        # tls:
+        #   certificatePath: ""
+        #   keyPath: ""
+        #   remoteCAPath: ""
+    # remote describes the remote cluster's connection details
+    remote:
+      # Remotes are usually "mux-client" or "mux-server", but "tcp" is supported
+      connectionType: "mux-client"
+      # When using mux-*, the muxCount defines how many connections to open to the remote server. We recommend at least 10.
+      muxCount: 10
+      # The proxy will use this address to connect to the remote mux-server.
+      muxAddressInfo:
+        address: "remote_proxy_service:8233"
+        tls:
+          certificatePath: ""
+          keyPath: ""
+          remoteCAPath: ""
+    # This should be the routable address
+    replicationEndpoint: "my-s2s-proxy.svc.cluster.local:9233"
+    # This is what the remote cluster is allowed to access on your local cluster
+    aclPolicy:
+      allowedMethods:
+        adminService:
+          - AddOrUpdateRemoteCluster
+          - RemoveRemoteCluster
+          - DescribeCluster
+          - DescribeMutableState
+          - GetNamespaceReplicationMessages
+          - GetWorkflowExecutionRawHistoryV2
+          - ListClusters
+          - StreamWorkflowReplicationMessages
+          - ReapplyEvents
+          - GetNamespace
+      allowedNamespaces:
+        - "myNamespace"
+    # Namespace translations are bi-directional and apply to both local and remote requests.
+    namespaceTranslation:
+      mappings:
+        - local: "myNamespace"
+          remote: "myNamespace.accountid"
+    # If you have custom search attributes, you can map them here. Like the namespace translation, these are bi-directional.
+    # searchAttributeTranslation:
+    #   namespaceMappings:
+    #     - name: "myNamespace"
+    #       namespaceId: "my-namespace-id"
+    #       mappings:
+    #         - localFieldName: "localTextSearchAttribute"
+    #           remoteFieldName: "Text01"
+    #         - localFieldName: "localBoolSearchAttribute"
+    #           remoteFieldName: "Bool01"
 
-  aclPolicy:
-    allowedMethods:
-      adminService:
-        - AddOrUpdateRemoteCluster
-        - RemoveRemoteCluster
-        - DescribeCluster
-        - DescribeMutableState
-        - GetNamespaceReplicationMessages
-        - GetWorkflowExecutionRawHistoryV2
-        - ListClusters
-        - StreamWorkflowReplicationMessages
-        - ReapplyEvents
-        - GetNamespace
-        - AddTasks # for merging dlq task
-
-outbound:
-  name: "outbound-server"
-  server:
-    tcp:
-      listenAddress: "0.0.0.0:9233"
-      externalAddress: "proxy_service_endpoint:9233" # local server connects to this address for sending outbound requests
-      tls:
-        certificatePath: ""
-        keyPath: ""
-        clientCAPath: ""
-        requireClientAuth: false
-  client:
-    type: "mux"
-    mux: "muxed"
-
-mux:
-  - name: "muxed"
-    mode: "client"
-    client:
-      serverAddress: "" # Temporal cloud migration server endpoint
-      tls:
-        certificatePath: ""
-        keyPath: ""
-        serverCAPath: ""
-        serverName: ""
-
-healthCheck:
-  protocol: "http"
-  listenAddress: "0.0.0.0:8234"
+    remoteClusterHealthCheck:
+      protocol: "http"
+      listenAddress: "0.0.0.0:8234"
+# Not implemented yet
+#    localClusterHealthCheck:
+#      protocol: "http"
+#      listenAddress: "0.0.0.0:8235"
 
 metrics:
   prometheus:
-    framework: "tally"
     listenAddress: "0.0.0.0:9090"
+profiling:
+  pprofAddress: "localhost:6060"

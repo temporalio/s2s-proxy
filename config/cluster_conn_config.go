@@ -9,12 +9,15 @@ import (
 type (
 	ClusterConnConfig struct {
 		Name                       string              `yaml:"name"`
-		LocalServer                ClusterDefinition   `yaml:"localServer"`
-		RemoteServer               ClusterDefinition   `yaml:"remoteServer"`
+		Local                      ClusterDefinition   `yaml:"local"`
+		Remote                     ClusterDefinition   `yaml:"remote"`
+		ReplicationEndpoint        string              `yaml:"replicationEndpoint"`
+		FVITranslation             IntMapping          `yaml:"failoverVersionIncrementTranslation"`
+		ACLPolicy                  *ACLPolicy          `yaml:"aclPolicy"`
 		NamespaceTranslation       StringTranslator    `yaml:"namespaceTranslation"`
 		SearchAttributeTranslation SATranslationConfig `yaml:"searchAttributeTranslation"`
-		OutboundHealthCheck        HealthCheckConfig   `yaml:"outboundHealthCheck"`
-		InboundHealthCheck         HealthCheckConfig   `yaml:"inboundHealthCheck"`
+		RemoteClusterHealthCheck   HealthCheckConfig   `yaml:"remoteClusterHealthCheck"`
+		LocalClusterHealthCheck    HealthCheckConfig   `yaml:"localClusterHealthCheck"`
 		ShardCountConfig           ShardCountConfig    `yaml:"shardCount"`
 		MemberlistConfig           *MemberlistConfig   `yaml:"memberlist"`
 	}
@@ -23,31 +26,22 @@ type (
 		cachedBiMap collect.StaticBiMap[string, string]
 	}
 	StringMapping struct {
-		LocalString  string `yaml:"localString"`
-		RemoteString string `yaml:"remoteString"`
+		Local  string `yaml:"local"`
+		Remote string `yaml:"remote"`
 	}
+	IntMapping struct {
+		Local  int64 `yaml:"local"`
+		Remote int64 `yaml:"remote"`
+	}
+	ConnectionType    string
 	ClusterDefinition struct {
-		Connection  TransportInfo `yaml:"connection"`
-		ClusterInfo ClusterInfo   `yaml:"clusterInfo"`
-		// ACLPolicy has a meaningful nil value: it separates no-policy from deny-all
-		ACLPolicy *ACLPolicy `yaml:"aclPolicy"`
-		// APIOverrides has a meaningful nil value: it separates override-to-zero and no-override
-		APIOverrides *APIOverridesConfig `yaml:"apiOverrides"`
-	}
-	ClusterInfo struct {
-		ServerVersion            string `yaml:"serverVersion"`
-		ShardCount               int    `yaml:"shardCount"`
-		FailoverVersionIncrement int    `yaml:"failoverVersionIncrement"`
-		InitialFailoverVersion   int    `yaml:"initialFailoverVersion"`
-	}
-	ConnectionType string
-	TransportInfo  struct {
 		ConnectionType ConnectionType `yaml:"connectionType"`
 		TcpClient      TCPTLSInfo     `yaml:"tcpClient"`
 		TcpServer      TCPTLSInfo     `yaml:"tcpServer"`
 		MuxCount       int            `yaml:"muxCount"`
 		MuxAddressInfo TCPTLSInfo     `yaml:"muxAddressInfo"`
 	}
+
 	TCPTLSInfo struct {
 		ConnectionString string               `yaml:"address"`
 		TLSConfig        encryption.TLSConfig `yaml:"tls"`
@@ -72,7 +66,7 @@ func (config *StringTranslator) AsLocalToRemoteBiMap() (collect.StaticBiMap[stri
 	}
 	mapping, err := collect.NewStaticBiMap(func(yield func(string, string) bool) {
 		for _, mapping := range config.Mappings {
-			if !yield(mapping.LocalString, mapping.RemoteString) {
+			if !yield(mapping.Local, mapping.Remote) {
 				return
 			}
 		}

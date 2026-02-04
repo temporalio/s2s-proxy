@@ -1,0 +1,74 @@
+# Temporal-left:7233
+# proxy-outbound-server-left: 38233
+# proxy-mux: 11000
+# proxy-outbound-server-right: 37233
+# Temporal-right: 8233
+clusterConnections:
+  - name: "myCoolCluster-client"
+    local:
+      connectionType: "tcp" # TCP type must define both inbound and outbound
+      tcpClient:
+        address: "127.0.0.1:7233"
+        tls:
+          # certificatePath: "./proxycerts/client-internal.pem"
+          # keyPath: "./proxycerts/client-internal.key"
+          # remoteCAPath: ""
+          # caServerName: ""
+          # skipCAVerification: true
+      tcpServer:
+        # Connects to "remote" temporal via proxy
+        address: "127.0.0.1:38233"
+        tls:
+          certificatePath: "./proxycerts/client-internal.pem"
+          keyPath: "./proxycerts/client-internal.key"
+          remoteCAPath: "./proxycerts/client-internal.pem"
+          caServerName: "localhost"
+          skipCAVerification: false
+    remote:
+      connectionType: "mux-client" # One mux represents both inbound and outbound
+      muxCount: 10
+      muxAddressInfo:
+        address: "127.0.0.1:11000"
+        tls:
+          certificatePath: "./proxycerts/clientowned.pem"
+          keyPath: "./proxycerts/clientowned.key"
+          remoteCAPath: "./proxycerts/client-account-cert.pem"
+          caServerName: ""
+          skipCAVerification: true
+    failoverVersionIncrementTranslation:
+      local: 1000
+      remote: 100
+    namespaceTranslation:
+      mappings:
+        - localString: "left-ns"
+          remoteString: "rightName"
+    searchAttributeTranslation:
+      namespaceMappings:
+        - name: "left-ns"
+          namespaceId: "left-ns"
+          mappings:
+            - localFieldName: "localSearchAttribute"
+              remoteFieldName: "remoteSearchAttribute"
+    aclPolicy:
+      allowedMethods:
+        adminService:
+          - AddOrUpdateRemoteCluster
+          - DescribeCluster
+          - DescribeMutableState
+          - GetNamespaceReplicationMessages
+          - GetWorkflowExecutionRawHistoryV2
+          - ListClusters
+          - StreamWorkflowReplicationMessages
+      allowedNamespaces:
+        - left-ns
+#    remoteClusterHealthCheck:
+#      protocol: "http"
+#      listenAddress: "127.0.0.1:4911"
+#    localClusterHealthCheck:
+#      protocol: "http"
+#      listenAddress: "127.0.0.1:4912"
+metrics:
+  prometheus:
+    listenAddress: "0.0.0.0:9090"
+profiling:
+  pprofAddress: "localhost:6060"
