@@ -1,11 +1,15 @@
 package config
 
 import (
+	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
+	releaseutil "helm.sh/helm/v4/pkg/release/v1/util"
 )
 
 type Tuple[K, V any] struct {
@@ -155,4 +159,47 @@ func TestDefaultChart(t *testing.T) {
 	require.Equal(t, "remote_proxy_service:8233", cc.Remote.MuxAddressInfo.ConnectionString)
 	require.Equal(t, "my-s2s-proxy.svc.cluster.local:9233", cc.ReplicationEndpoint)
 	require.False(t, cc.Remote.MuxAddressInfo.TLSConfig.IsEnabled())
+}
+
+func TestExampleChart(t *testing.T) {
+	samplePath := filepath.Join("..", "charts", "s2s-proxy", "example.yaml")
+	data, err := os.ReadFile(samplePath)
+	require.NoError(t, err)
+
+	// Split the multi-document YAML into individual manifests
+	manifests := releaseutil.SplitManifests(string(data))
+
+	// Find the ConfigMap manifest and extract config.yaml
+	var configYAML string
+	for _, manifest := range manifests {
+		var doc struct {
+			Kind string            `yaml:"kind"`
+			Data map[string]string `yaml:"data"`
+		}
+		if err := yaml.Unmarshal([]byte(manifest), &doc); err != nil {
+			continue
+		}
+		if doc.Kind == "ConfigMap" {
+			configYAML = doc.Data["config.yaml"]
+			break
+		}
+	}
+	require.NotEmpty(t, configYAML, "config.yaml not found in ConfigMap")
+
+	// Parse the S2SProxyConfig
+	var proxyConfig S2SProxyConfig
+	decoder := yaml.NewDecoder(bytes.NewReader([]byte(configYAML)))
+	decoder.KnownFields(true)
+	err = decoder.Decode(&proxyConfig)
+	require.NoError(t, err)
+
+	// Verify the parsed config
+	require.Equal(t, 1, len(proxyConfig.ClusterConnections))
+	cc := proxyConfig.ClusterConnections[0]
+	require.Equal(t, "my-migration-cluster", cc.Name)
+	require.Equal(t, ConnectionType("tcp"), cc.Local.ConnectionType)
+	// This value is overridden
+	require.Equal(t, "frontend-address:7233", cc.Local.TcpClient.ConnectionString)
+	require.Equal(t, ConnectionType("mux-client"), cc.Remote.ConnectionType)
+	require.Equal(t, "s2s-proxy-sample.example.tmprl.cloud:8233", cc.Remote.MuxAddressInfo.ConnectionString)
 }

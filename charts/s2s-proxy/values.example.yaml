@@ -14,24 +14,24 @@ volumeMounts:
 # - Configure the server address
 # - Configure namespace name translations
 configOverride:
-  - name: "my-migration-cluster"
-    local:
-      client:
+  clusterConnections:
+    - name: "my-migration-cluster"
+      local:
         tcpClient:
           # Address of your Temporal server's frontend.
           address: "frontend-address:7233"
-    remote:
-      muxAddressInfo:
-        # Address of the migration endpoint.
-        address: "s2s-proxy-sample.example.tmprl.cloud:8233"
-        tls:
-          # Path to your client certificate for mTLS authentication.
-          certificatePath: "/s2c-server-tls/tls.crt"
-          # Path to your private key corresponding to the client certificate.
-          keyPath: "/s2c-server-tls/tls.key"
-    # Your s2s-proxy service address, used as the address of migration server.
-    replicationEndpoint: "address-of-your-s2s-proxy-deployment:9233"
-    namespaceNameTranslation:
-      mappings:
-      - localName: my-local       # Name of the namespace in your self-hosted Temporal.
-        remoteName: my-cloud.acct # Corresponding namespace pre-created in Temporal Cloud.
+      remote:
+        muxAddressInfo:
+          # Address of the migration endpoint.
+          address: "s2s-proxy-sample.example.tmprl.cloud:8233"
+          tls:
+            # Path to your client certificate for mTLS authentication.
+            certificatePath: "/s2c-server-tls/tls.crt"
+            # Path to your private key corresponding to the client certificate.
+            keyPath: "/s2c-server-tls/tls.key"
+      # Your s2s-proxy service address, used as the address of migration server.
+      replicationEndpoint: "address-of-your-s2s-proxy-deployment:9233"
+      namespaceTranslation:
+        mappings:
+          - local: my-local       # Name of the namespace in your self-hosted Temporal.
+            remote: my-cloud.acct # Corresponding namespace pre-created in Temporal Cloud.

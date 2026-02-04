@@ -61,8 +61,12 @@ Merge default config with overrides
 
 {{/* Merge the clusterConnections list - each override item merges with its matching index in defaults */}}
 {{- $mergedClusterConnections := list }}
+{{- $overrideClusterConnections := $overrides.clusterConnections | default list }}
 {{- range $index, $defaultItem := $defaults.clusterConnections }}
-    {{- $overrideItem := default dict (index $overrides $index) }}
+    {{- $overrideItem := dict }}
+    {{- if lt $index (len $overrideClusterConnections) }}
+        {{- $overrideItem = index $overrideClusterConnections $index }}
+    {{- end }}
     {{- $mergedItem := deepCopy $defaultItem | merge $overrideItem }}
     {{- $mergedClusterConnections = append $mergedClusterConnections $mergedItem }}
 {{- end }}
@@ -83,7 +87,7 @@ Parse port numbers from merged config
 {{- $health := $firstCluster.remoteClusterHealthCheck.listenAddress }}
 {{- $healthPort := (split ":" $health)._1 }}
 
-{{- $metrics := $config.metrics.prometheus.listenAddress }}
+{{- $metrics := ($firstCluster.metrics).prometheus.listenAddress | default $config.metrics.prometheus.listenAddress }}
 {{- $metricsPort := (split ":" $metrics)._1 }}
 
 {{- dict "egress" $egressPort "health" $healthPort "metrics" $metricsPort | toYaml }}
