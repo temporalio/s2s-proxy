@@ -6,8 +6,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/temporalio/s2s-proxy/config"
 	"gopkg.in/yaml.v3"
+
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 // NewFormatConfig contains only the non-deprecated fields from S2SProxyConfig.
