@@ -57,16 +57,20 @@ Merge default config with overrides
 {{- define "s2s-proxy.mergedConfig" -}}
 {{- $defaults := .Files.Get "files/default.yaml" | fromYaml }}
 {{- $overrides := .Values.configOverride }}
-{{- $merged := deepCopy $defaults | merge $overrides -}}
+{{- $merged := deepCopy $defaults -}}
 
-{{/* Merge the mux list in a better way */}}
-{{- $mergedMux := list }}
-{{- range $index, $item := $defaults.mux }}
-    {{- $overrideItem := default dict (index $overrides.mux $index) }}
-    {{- $mergedItem := deepCopy $item | merge $overrideItem }}
-    {{- $mergedMux = append $mergedMux $mergedItem }}
+{{/* Merge the clusterConnections list - each override item merges with its matching index in defaults */}}
+{{- $mergedClusterConnections := list }}
+{{- $overrideClusterConnections := $overrides.clusterConnections | default list }}
+{{- range $index, $defaultItem := $defaults.clusterConnections }}
+    {{- $overrideItem := dict }}
+    {{- if lt $index (len $overrideClusterConnections) }}
+        {{- $overrideItem = index $overrideClusterConnections $index }}
+    {{- end }}
+    {{- $mergedItem := deepCopy $defaultItem | merge $overrideItem }}
+    {{- $mergedClusterConnections = append $mergedClusterConnections $mergedItem }}
 {{- end }}
-{{- $_ := set $merged "mux" $mergedMux -}}
+{{- $_ := set $merged "clusterConnections" $mergedClusterConnections -}}
 
 {{- $merged | toYaml }}
 {{- end }}
@@ -77,13 +81,13 @@ Parse port numbers from merged config
 {{- define "s2s-proxy.parsedPorts" -}}
 {{- $config := (include "s2s-proxy.mergedConfig" . | fromYaml) }}
 
-{{- $outbound := $config.outbound.server.tcp.listenAddress }}
-{{- $egressPort := (split ":" $outbound)._1 }}
-
-{{- $health := $config.healthCheck.listenAddress }}
+{{- $firstCluster := index $config.clusterConnections 0 }}
+{{- $egress := $firstCluster.local.tcpServer.address }}
+{{- $egressPort := (split ":" $egress)._1 }}
+{{- $health := $firstCluster.remoteClusterHealthCheck.listenAddress }}
 {{- $healthPort := (split ":" $health)._1 }}
 
-{{- $metrics := $config.metrics.prometheus.listenAddress }}
+{{- $metrics := ($firstCluster.metrics).prometheus.listenAddress | default $config.metrics.prometheus.listenAddress }}
 {{- $metricsPort := (split ":" $metrics)._1 }}
 
 {{- dict "egress" $egressPort "health" $healthPort "metrics" $metricsPort | toYaml }}

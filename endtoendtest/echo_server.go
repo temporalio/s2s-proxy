@@ -22,6 +22,7 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/endtoendtest/testservices"
+	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
@@ -115,7 +116,7 @@ func NewEchoServer(
 		configProvider := config.NewMockConfigProvider(*localClusterInfo.S2sProxyConfig)
 		proxy = s2sproxy.NewProxy(
 			configProvider,
-			logger,
+			logging.NewLoggerProvider(logger, configProvider),
 		)
 
 		clientConfig = config.ProxyClientConfig{

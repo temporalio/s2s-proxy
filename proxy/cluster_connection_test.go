@@ -16,9 +16,15 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/endtoendtest/testservices"
+	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"github.com/temporalio/s2s-proxy/transport/mux"
+)
+
+const (
+	localFVI  = 10
+	remoteFVI = 20
 )
 
 func init() {
@@ -92,56 +98,60 @@ func (plcc *pairedLocalClusterConnection) StartAll(t *testing.T) {
 	plcc.localCC.Start()
 }
 
-func makeTCPClusterConfig(name string, localServer string, localToRemoteServer string, remoteToLocalServer string, remoteServer string) config.ClusterConnConfig {
+func makeTCPClusterConfig(name string, localFvi int64, remoteFvi int64, replicationEndpoint string,
+	localServer string, localToRemoteServer string, remoteToLocalServer string, remoteServer string) config.ClusterConnConfig {
 	return config.ClusterConnConfig{
 		Name: name,
-		LocalServer: config.ClusterDefinition{
-			Connection: config.TransportInfo{
-				ConnectionType: config.ConnTypeTCP,
-				TcpServer: config.TCPTLSInfo{
-					ConnectionString: remoteToLocalServer,
-				},
-				TcpClient: config.TCPTLSInfo{
-					ConnectionString: localServer,
-				},
+		Local: config.ClusterDefinition{
+			ConnectionType: config.ConnTypeTCP,
+			TcpServer: config.TCPTLSInfo{
+				ConnectionString: remoteToLocalServer,
+			},
+			TcpClient: config.TCPTLSInfo{
+				ConnectionString: localServer,
 			},
 		},
-		RemoteServer: config.ClusterDefinition{
-			Connection: config.TransportInfo{
-				ConnectionType: config.ConnTypeTCP,
-				TcpServer: config.TCPTLSInfo{
-					ConnectionString: localToRemoteServer,
-				},
-				TcpClient: config.TCPTLSInfo{
-					ConnectionString: remoteServer,
-				},
+		Remote: config.ClusterDefinition{
+			ConnectionType: config.ConnTypeTCP,
+			TcpServer: config.TCPTLSInfo{
+				ConnectionString: localToRemoteServer,
+			},
+			TcpClient: config.TCPTLSInfo{
+				ConnectionString: remoteServer,
 			},
 		},
+		FVITranslation: config.IntMapping{
+			Local:  localFvi,
+			Remote: remoteFvi,
+		},
+		ReplicationEndpoint: replicationEndpoint,
 	}
 }
 
-func makeMuxClusterConfig(name string, client config.ConnectionType, localTemporal string, outboundServer string, muxAddr string,
+func makeMuxClusterConfig(name string, client config.ConnectionType,
+	localFVI int64, remoteFVI int64, replicationEndpoint string, localTemporal string, outboundServer string, muxAddr string,
 	edits ...func(connConfig *config.ClusterConnConfig)) config.ClusterConnConfig {
 	cc := config.ClusterConnConfig{
-		Name: name,
-		LocalServer: config.ClusterDefinition{
-			Connection: config.TransportInfo{
-				ConnectionType: config.ConnTypeTCP,
-				TcpServer: config.TCPTLSInfo{
-					ConnectionString: outboundServer,
-				},
-				TcpClient: config.TCPTLSInfo{
-					ConnectionString: localTemporal,
-				},
+		Name:                name,
+		ReplicationEndpoint: replicationEndpoint,
+		FVITranslation: config.IntMapping{
+			Local:  localFVI,
+			Remote: remoteFVI,
+		},
+		Local: config.ClusterDefinition{
+			ConnectionType: config.ConnTypeTCP,
+			TcpServer: config.TCPTLSInfo{
+				ConnectionString: outboundServer,
+			},
+			TcpClient: config.TCPTLSInfo{
+				ConnectionString: localTemporal,
 			},
 		},
-		RemoteServer: config.ClusterDefinition{
-			Connection: config.TransportInfo{
-				ConnectionType: client,
-				MuxAddressInfo: config.TCPTLSInfo{
-					ConnectionString: muxAddr,
-					// No TLS
-				},
+		Remote: config.ClusterDefinition{
+			ConnectionType: client,
+			MuxAddressInfo: config.TCPTLSInfo{
+				ConnectionString: muxAddr,
+				// No TLS
 			},
 		},
 	}
@@ -159,11 +169,11 @@ func makeEchoServer(name string, listenAddress string, logger log.Logger) *tests
 		nil, listenAddress, logger)
 }
 
-func newPairedLocalClusterConnection(t *testing.T, isMux bool, logger log.Logger) *pairedLocalClusterConnection {
+func newPairedLocalClusterConnection(t *testing.T, isMux bool, loggers logging.LoggerProvider) *pairedLocalClusterConnection {
 	a := getDynamicPlccAddresses(t)
 
-	localTemporal := makeEchoServer("local", a.localTemporalAddr, logger)
-	remoteTemporal := makeEchoServer("remote", a.remoteTemporalAddr, logger)
+	localTemporal := makeEchoServer("local", a.localTemporalAddr, loggers.Get("root"))
+	remoteTemporal := makeEchoServer("remote", a.remoteTemporalAddr, loggers.Get("root"))
 
 	var localCC, remoteCC *ClusterConnection
 	var cancelLocalCC, cancelRemoteCC context.CancelFunc
@@ -172,25 +182,25 @@ func newPairedLocalClusterConnection(t *testing.T, isMux bool, logger log.Logger
 		var localCtx context.Context
 		localCtx, cancelLocalCC = context.WithCancel(t.Context())
 		localCC, err = NewClusterConnection(localCtx, makeTCPClusterConfig("TCP-only Connection Local Proxy",
-			a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound), logger)
+			localFVI, remoteFVI, a.localProxyOutbound, a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound), loggers)
 		require.NoError(t, err)
 
 		var remoteCtx context.Context
 		remoteCtx, cancelRemoteCC = context.WithCancel(t.Context())
 		remoteCC, err = NewClusterConnection(remoteCtx, makeTCPClusterConfig("TCP-only Connection Remote Proxy",
-			a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound), logger)
+			remoteFVI, localFVI, a.remoteProxyOutbound, a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound), loggers)
 		require.NoError(t, err)
 	} else {
 		var localCtx context.Context
 		localCtx, cancelLocalCC = context.WithCancel(t.Context())
 		localCC, err = NewClusterConnection(localCtx, makeMuxClusterConfig("Mux Connection Local Establishing Proxy",
-			config.ConnTypeMuxClient, a.localTemporalAddr, a.localProxyOutbound, a.remoteProxyInbound), logger)
+			config.ConnTypeMuxClient, localFVI, remoteFVI, a.localProxyOutbound, a.localTemporalAddr, a.localProxyOutbound, a.remoteProxyInbound), loggers)
 		require.NoError(t, err)
 
 		var remoteCtx context.Context
 		remoteCtx, cancelRemoteCC = context.WithCancel(t.Context())
 		remoteCC, err = NewClusterConnection(remoteCtx, makeMuxClusterConfig("Mux Connection Remote Receiving Proxy",
-			config.ConnTypeMuxServer, a.remoteTemporalAddr, a.remoteProxyOutbound, a.remoteProxyInbound), logger)
+			config.ConnTypeMuxServer, remoteFVI, localFVI, a.remoteProxyOutbound, a.remoteTemporalAddr, a.remoteProxyOutbound, a.remoteProxyInbound), loggers)
 		require.NoError(t, err)
 	}
 	clientFromLocal, err := grpc.NewClient(a.localProxyOutbound, grpcutil.MakeDialOptions(nil, metrics.GetStandardGRPCClientInterceptor("outbound-local"))...)
@@ -211,45 +221,49 @@ func newPairedLocalClusterConnection(t *testing.T, isMux bool, logger log.Logger
 }
 
 func TestTCPClusterConnection(t *testing.T) {
-	logger := log.NewTestLogger()
-	plcc := newPairedLocalClusterConnection(t, false, logger)
+	loggerProvider := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	plcc := newPairedLocalClusterConnection(t, false, loggerProvider)
 	plcc.StartAll(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	resp, err := adminservice.NewAdminServiceClient(plcc.clientFromLocal).DescribeCluster(ctx, &adminservice.DescribeClusterRequest{})
 	require.NoErrorf(t, err, "Got error from remote server. Configs:\nlocal %s\nremote %s", plcc.localCC.Describe(), plcc.remoteCC.Describe())
+	require.Equal(t, int64(remoteFVI), resp.FailoverVersionIncrement, "Should see remote FVI from the local outbound")
 	require.Equal(t, "remote-EchoAdminService", resp.ClusterName, "Should see remote EchoAdminService from the local outbound")
 	cancel()
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
 	resp, err = adminservice.NewAdminServiceClient(plcc.clientFromRemote).DescribeCluster(ctx, &adminservice.DescribeClusterRequest{})
 	require.NoErrorf(t, err, "Got error from remote server. Configs:\nlocal %s\nremote %s", plcc.localCC.Describe(), plcc.remoteCC.Describe())
+	require.Equal(t, int64(localFVI), resp.FailoverVersionIncrement, "Should see local FVI from the remote outbound")
 	require.Equal(t, "local-EchoAdminService", resp.ClusterName, "Should see local EchoAdminService from the remote outbound")
 	cancel()
 }
 
 func TestMuxClusterConnection(t *testing.T) {
-	logger := log.NewTestLogger()
-	plcc := newPairedLocalClusterConnection(t, true, logger)
+	loggerProvider := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	plcc := newPairedLocalClusterConnection(t, true, loggerProvider)
 	plcc.StartAll(t)
 	t.Log("Started plcc")
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	resp, err := adminservice.NewAdminServiceClient(plcc.clientFromLocal).DescribeCluster(ctx, &adminservice.DescribeClusterRequest{})
 	require.NoErrorf(t, err, "Got error from remote server. Configs:\nlocal %s\nremote %s", plcc.localCC.Describe(), plcc.remoteCC.Describe())
+	require.Equal(t, int64(remoteFVI), resp.FailoverVersionIncrement, "Should see remote FVI from the local outbound")
 	require.Equal(t, "remote-EchoAdminService", resp.ClusterName, "Should see remote EchoAdminService from the local outbound")
 	t.Log("Called remote!")
 	cancel()
 	ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 	resp, err = adminservice.NewAdminServiceClient(plcc.clientFromRemote).DescribeCluster(ctx, &adminservice.DescribeClusterRequest{})
 	require.NoErrorf(t, err, "Got error from remote server. Configs:\nlocal %s\nremote %s", plcc.localCC.Describe(), plcc.remoteCC.Describe())
+	require.Equal(t, int64(localFVI), resp.FailoverVersionIncrement, "Should see local FVI from the remote outbound")
 	require.Equal(t, "local-EchoAdminService", resp.ClusterName, "Should see local EchoAdminService from the remote outbound")
 	t.Log("Finished!")
 	cancel()
 }
 
 func TestMuxCCFailover(t *testing.T) {
-	logger := log.NewTestLogger()
-	plcc := newPairedLocalClusterConnection(t, true, logger)
+	loggerProvider := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	plcc := newPairedLocalClusterConnection(t, true, loggerProvider)
 	plcc.StartAll(t)
 
 	plcc.cancelRemoteCC()
@@ -258,8 +272,9 @@ func TestMuxCCFailover(t *testing.T) {
 	require.Error(t, err)
 	cancel()
 	newConnection, err := NewClusterConnection(t.Context(),
-		makeMuxClusterConfig("newRemoteMux", config.ConnTypeMuxServer, plcc.addresses.remoteTemporalAddr, plcc.addresses.remoteProxyOutbound, plcc.addresses.remoteProxyInbound,
-			func(cc *config.ClusterConnConfig) { cc.RemoteServer.Connection.MuxCount = 5 }), logger)
+		makeMuxClusterConfig("newRemoteMux", config.ConnTypeMuxServer, remoteFVI, localFVI, plcc.addresses.remoteProxyOutbound,
+			plcc.addresses.remoteTemporalAddr, plcc.addresses.remoteProxyOutbound, plcc.addresses.remoteProxyInbound,
+			func(cc *config.ClusterConnConfig) { cc.Remote.MuxCount = 5 }), loggerProvider)
 	require.NoError(t, err)
 	newConnection.Start()
 	// Wait for localCC's client retry...

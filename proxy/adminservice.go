@@ -3,12 +3,10 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/client/history"
-	servercommon "go.temporal.io/server/common"
 	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -16,24 +14,40 @@ import (
 
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type (
 	LCMParameters struct {
-		LCM              int32 `yaml:"lcm"`
-		TargetShardCount int32 `yaml:"targetShardCount"`
+		LCM              int32
+		TargetShardCount int32
+	}
+
+	RoutingParameters struct {
+		OverrideShardCount     int32
+		RoutingLocalShardCount int32
+		DirectionLabel         string
 	}
 
 	adminServiceProxyServer struct {
 		adminservice.UnimplementedAdminServiceServer
-		adminClient       adminservice.AdminServiceClient
-		logger            log.Logger
-		apiOverrides      *config.APIOverridesConfig
-		metricLabelValues []string
-		reportStreamValue func(idx int32, value int32)
-		shardCountConfig  config.ShardCountConfig
-		lcmParameters     LCMParameters
+		shardManager       ShardManager
+		adminClient        adminservice.AdminServiceClient
+		adminClientReverse adminservice.AdminServiceClient
+		loggers            logging.LoggerProvider
+		overrides          AdminServiceOverrides
+		metricLabelValues  []string
+		reportStreamValue  func(idx int32, value int32)
+		shardCountConfig   config.ShardCountConfig
+		lcmParameters      LCMParameters
+		routingParameters  RoutingParameters
+		lifetime           context.Context
+	}
+	AdminServiceOverrides struct {
+		// Failover Version Increment. Overrides the value returned by DescribeCluster
+		FVI                 int64
+		ReplicationEndpoint string
 	}
 )
 
@@ -41,40 +55,48 @@ type (
 func NewAdminServiceProxyServer(
 	serviceName string,
 	adminClient adminservice.AdminServiceClient,
-	apiOverrides *config.APIOverridesConfig,
+	adminClientReverse adminservice.AdminServiceClient,
+	overrides AdminServiceOverrides,
 	metricLabelValues []string,
 	reportStreamValue func(idx int32, value int32),
 	shardCountConfig config.ShardCountConfig,
 	lcmParameters LCMParameters,
-	logger log.Logger,
+	routingParameters RoutingParameters,
+	logProvider logging.LoggerProvider,
+	shardManager ShardManager,
+	lifetime context.Context,
 ) adminservice.AdminServiceServer {
-	// The AdminServiceStreams will duplicate the same output for an underlying connection issue hundreds of times.
-	// Limit their output to three times per minute
-	logger = log.NewThrottledLogger(log.With(logger, common.ServiceTag(serviceName)),
-		func() float64 { return 3.0 / 60.0 })
 	return &adminServiceProxyServer{
-		adminClient:       adminClient,
-		logger:            logger,
-		apiOverrides:      apiOverrides,
-		metricLabelValues: metricLabelValues,
-		reportStreamValue: reportStreamValue,
-		shardCountConfig:  shardCountConfig,
-		lcmParameters:     lcmParameters,
+		shardManager:       shardManager,
+		adminClient:        adminClient,
+		adminClientReverse: adminClientReverse,
+		loggers:            logProvider.With(common.ServiceTag(serviceName)),
+		overrides:          overrides,
+		metricLabelValues:  metricLabelValues,
+		reportStreamValue:  reportStreamValue,
+		shardCountConfig:   shardCountConfig,
+		lcmParameters:      lcmParameters,
+		routingParameters:  routingParameters,
+		lifetime:           lifetime,
 	}
 }
 
-func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (*adminservice.AddOrUpdateRemoteClusterResponse, error) {
-	if !common.IsRequestTranslationDisabled(ctx) && s.apiOverrides != nil {
-		reqOverride := s.apiOverrides.AdminService.AddOrUpdateRemoteCluster
-		if reqOverride != nil && len(reqOverride.Request.FrontendAddress) > 0 {
-			// Override this address so that cross-cluster connections flow through the proxy.
-			// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
-			// from the local temporal server, or the proxy may be deployed behind a load balancer.
-			// Only used in single-proxy scenarios, i.e. Temporal <> Proxy <> Temporal
-			in0.FrontendAddress = reqOverride.Request.FrontendAddress
-		}
+func (s *adminServiceProxyServer) AddOrUpdateRemoteCluster(ctx context.Context, in0 *adminservice.AddOrUpdateRemoteClusterRequest) (resp *adminservice.AddOrUpdateRemoteClusterResponse, err error) {
+	s.loggers.Get(logging.AdminService).Info("Received AddOrUpdateRemoteCluster", tag.Address(in0.FrontendAddress), tag.NewBoolTag("Enabled", in0.GetEnableRemoteClusterConnection()), tag.NewStringsTag("configTags", s.metricLabelValues))
+	if !common.IsRequestTranslationDisabled(ctx) && len(s.overrides.ReplicationEndpoint) > 0 {
+		// Override this address so that cross-cluster connections flow through the proxy.
+		// Use a separate "external address" config option because the outbound.listenerAddress may not be routable
+		// from the local temporal server, or the proxy may be deployed behind a load balancer.
+		// Only used in single-proxy scenarios, i.e. Temporal <> Proxy <> Temporal
+		in0.FrontendAddress = s.overrides.ReplicationEndpoint
+		s.loggers.Get(logging.AdminService).Info("Overwrote outbound address", tag.Address(in0.FrontendAddress), tag.NewStringsTag("configTags", s.metricLabelValues))
 	}
-	return s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
+	resp, err = s.adminClient.AddOrUpdateRemoteCluster(ctx, in0)
+	if err != nil {
+		s.loggers.Get(logging.AdminService).Error("Error when adding remote cluster", tag.Error(err), tag.Operation("AddOrUpdateRemoteCluster"),
+			tag.NewStringTag("FrontendAddress", in0.GetFrontendAddress()))
+	}
+	return
 }
 
 func (s *adminServiceProxyServer) AddSearchAttributes(ctx context.Context, in0 *adminservice.AddSearchAttributesRequest) (*adminservice.AddSearchAttributesResponse, error) {
@@ -98,24 +120,45 @@ func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, i
 }
 
 func (s *adminServiceProxyServer) DescribeCluster(ctx context.Context, in0 *adminservice.DescribeClusterRequest) (*adminservice.DescribeClusterResponse, error) {
+	s.loggers.Get(logging.AdminService).Info("Received DescribeClusterRequest")
 	resp, err := s.adminClient.DescribeCluster(ctx, in0)
+
+	// If err != nil, resp is always nil, but the linter doesn't know that. Check both so that we can skip all the warnings.
+	if err != nil || resp == nil {
+		s.loggers.Get(logging.AdminService).Info("Got error when calling DescribeCluster!", tag.Error(err), tag.NewStringsTag("configTags", s.metricLabelValues))
+		return resp, err
+	}
+	s.loggers.Get(logging.AdminService).Info("Raw DescribeClusterResponse", tag.NewStringTag("clusterID", resp.ClusterId),
+		tag.NewStringTag("clusterName", resp.ClusterName), tag.NewStringTag("version", resp.ServerVersion),
+		tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement), tag.NewInt64("initialFailoverVersion", resp.InitialFailoverVersion),
+		tag.NewBoolTag("isGlobalNamespaceEnabled", resp.IsGlobalNamespaceEnabled), tag.NewStringsTag("configTags", s.metricLabelValues))
+
 	if common.IsRequestTranslationDisabled(ctx) {
+		s.loggers.Get(logging.AdminService).Info("Request translation disabled. Returning as-is")
 		return resp, err
 	}
 
-	if s.shardCountConfig.Mode == config.ShardCountLCM {
+	switch s.shardCountConfig.Mode {
+	case config.ShardCountLCM:
 		// Present a fake number of shards. In LCM mode, we present the least
 		// common multiple of both cluster shard counts.
 		resp.HistoryShardCount = s.lcmParameters.LCM
-	}
-
-	if s.apiOverrides != nil && s.apiOverrides.AdminService.DescribeCluster != nil {
-		responseOverride := s.apiOverrides.AdminService.DescribeCluster.Response
-		if resp != nil && responseOverride.FailoverVersionIncrement != nil {
-			resp.FailoverVersionIncrement = *responseOverride.FailoverVersionIncrement
+	case config.ShardCountRouting:
+		if s.routingParameters.OverrideShardCount > 0 {
+			resp.HistoryShardCount = s.routingParameters.OverrideShardCount
 		}
 	}
 
+	if s.overrides.FVI != 0 {
+		resp.FailoverVersionIncrement = s.overrides.FVI
+		s.loggers.Get(logging.AdminService).Info("Overwrite FailoverVersionIncrement", tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement),
+			tag.NewStringsTag("configTags", s.metricLabelValues))
+	}
+
+	s.loggers.Get(logging.AdminService).Info("Sending translated DescribeClusterResponse", tag.NewStringTag("clusterID", resp.ClusterId),
+		tag.NewStringTag("clusterName", resp.ClusterName), tag.NewStringTag("version", resp.ServerVersion),
+		tag.NewInt64("failoverVersionIncrement", resp.FailoverVersionIncrement), tag.NewInt64("initialFailoverVersion", resp.InitialFailoverVersion),
+		tag.NewBoolTag("isGlobalNamespaceEnabled", resp.IsGlobalNamespaceEnabled), tag.NewStringsTag("configTags", s.metricLabelValues))
 	return resp, err
 }
 
@@ -127,8 +170,17 @@ func (s *adminServiceProxyServer) DescribeHistoryHost(ctx context.Context, in0 *
 	return s.adminClient.DescribeHistoryHost(ctx, in0)
 }
 
-func (s *adminServiceProxyServer) DescribeMutableState(ctx context.Context, in0 *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
-	return s.adminClient.DescribeMutableState(ctx, in0)
+func (s *adminServiceProxyServer) DescribeMutableState(ctx context.Context, in0 *adminservice.DescribeMutableStateRequest) (resp *adminservice.DescribeMutableStateResponse, err error) {
+	resp, err = s.adminClient.DescribeMutableState(ctx, in0)
+	if err != nil {
+		// This is a duplicate of the grpc client metrics, but not everyone has metrics set up
+		s.loggers.Get(logging.ReplicationStreams).Error("Failed to describe workflow",
+			tag.NewStringTag("WorkflowId", in0.GetExecution().GetWorkflowId()),
+			tag.NewStringTag("RunId", in0.GetExecution().GetRunId()),
+			tag.NewStringTag("Namespace", in0.GetNamespace()),
+			tag.Error(err), tag.Operation("DescribeMutableState"))
+	}
+	return
 }
 
 func (s *adminServiceProxyServer) GetDLQMessages(ctx context.Context, in0 *adminservice.GetDLQMessagesRequest) (*adminservice.GetDLQMessagesResponse, error) {
@@ -147,12 +199,23 @@ func (s *adminServiceProxyServer) GetNamespace(ctx context.Context, in0 *adminse
 	return s.adminClient.GetNamespace(ctx, in0)
 }
 
-func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Context, in0 *adminservice.GetNamespaceReplicationMessagesRequest) (*adminservice.GetNamespaceReplicationMessagesResponse, error) {
-	return s.adminClient.GetNamespaceReplicationMessages(ctx, in0)
+func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Context, in0 *adminservice.GetNamespaceReplicationMessagesRequest) (resp *adminservice.GetNamespaceReplicationMessagesResponse, err error) {
+	resp, err = s.adminClient.GetNamespaceReplicationMessages(ctx, in0)
+	if err != nil {
+		// This is a duplicate of the grpc client metrics, but not everyone has metrics set up
+		s.loggers.Get(logging.ReplicationStreams).Error("Failed to get namespace replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
+			tag.Error(err), tag.Operation("GetNamespaceReplicationMessages"))
+	}
+	return
 }
 
-func (s *adminServiceProxyServer) GetReplicationMessages(ctx context.Context, in0 *adminservice.GetReplicationMessagesRequest) (*adminservice.GetReplicationMessagesResponse, error) {
-	return s.adminClient.GetReplicationMessages(ctx, in0)
+func (s *adminServiceProxyServer) GetReplicationMessages(ctx context.Context, in0 *adminservice.GetReplicationMessagesRequest) (resp *adminservice.GetReplicationMessagesResponse, err error) {
+	resp, err = s.adminClient.GetReplicationMessages(ctx, in0)
+	if err != nil {
+		s.loggers.Get(logging.ReplicationStreams).Error("Failed to get replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
+			tag.Error(err), tag.Operation("GetReplicationMessages"))
+	}
+	return
 }
 
 func (s *adminServiceProxyServer) GetSearchAttributes(ctx context.Context, in0 *adminservice.GetSearchAttributesRequest) (*adminservice.GetSearchAttributesResponse, error) {
@@ -243,27 +306,31 @@ func ClusterShardIDtoString(sd history.ClusterShardID) string {
 	return fmt.Sprintf("(id: %d, shard: %d)", sd.ClusterID, sd.ShardID)
 }
 
+func ClusterShardIDtoShortString(sd history.ClusterShardID) string {
+	return fmt.Sprintf("%d:%d", sd.ClusterID, sd.ShardID)
+}
+
 // StreamWorkflowReplicationMessages establishes an HTTP/2 stream. gRPC passes us a stream that represents the initiating server,
 // and we can freely Send and Recv on that "server". Because this is a proxy, we also establish a bidirectional
 // stream using our configured adminClient. When we Recv on the initiator, we Send to the client.
 // When we Recv on the client, we Send to the initiator
 func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
-	targetStreamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
+	streamServer adminservice.AdminService_StreamWorkflowReplicationMessagesServer,
 ) (retError error) {
-	defer log.CapturePanic(s.logger, &retError)
+	defer log.CapturePanic(s.loggers.Get(logging.ReplicationStreams), &retError)
 
-	targetMetadata, ok := metadata.FromIncomingContext(targetStreamServer.Context())
+	targetMetadata, ok := metadata.FromIncomingContext(streamServer.Context())
 	if !ok {
 		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
 	}
 	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(
-		headers.NewGRPCHeaderGetter(targetStreamServer.Context()),
+		headers.NewGRPCHeaderGetter(streamServer.Context()),
 	)
 	if err != nil {
 		return err
 	}
 
-	logger := log.With(s.logger,
+	logger := log.With(s.loggers.Get(logging.ReplicationStreams),
 		tag.NewStringTag("source", ClusterShardIDtoString(sourceClusterShardID)),
 		tag.NewStringTag("target", ClusterShardIDtoString(targetClusterShardID)))
 
@@ -274,58 +341,25 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	streamsActiveGauge.Inc()
 	defer streamsActiveGauge.Dec()
 
-	if s.shardCountConfig.Mode == config.ShardCountLCM {
-		// Arbitrary shard count support.
-		//
-		// Temporal only supports shard counts where one shard count is an even multiple of the other.
-		// The trick in this mode is the proxy will present the Least Common Multiple of both cluster shard counts.
-		// Temporal establishes outbound replication streams to the proxy for all unique shard id pairs between
-		// itself and the proxy's shard count. Then the proxy directly forwards those streams along to the target
-		// cluster, remapping proxy stream shard ids to the target cluster shard ids.
-		newTargetShardID := history.ClusterShardID{
-			ClusterID: targetClusterShardID.ClusterID,
-			ShardID:   sourceClusterShardID.ShardID, // proxy fake shard id
-		}
-		newSourceShardID := history.ClusterShardID{
-			ClusterID: sourceClusterShardID.ClusterID,
-		}
-		// Remap shard id using the pre-calculated target shard count.
-		newSourceShardID.ShardID = mapShardIDUnique(s.lcmParameters.LCM, s.lcmParameters.TargetShardCount, sourceClusterShardID.ShardID)
-
-		logger = log.With(logger,
-			tag.NewStringTag("newTarget", ClusterShardIDtoString(newTargetShardID)),
-			tag.NewStringTag("newSource", ClusterShardIDtoString(newSourceShardID)))
-
-		// Maybe there's a cleaner way. Trying to preserve any other metadata.
-		targetMetadata.Set(history.MetadataKeyClientClusterID, strconv.Itoa(int(newTargetShardID.ClusterID)))
-		targetMetadata.Set(history.MetadataKeyClientShardID, strconv.Itoa(int(newTargetShardID.ShardID)))
-		targetMetadata.Set(history.MetadataKeyServerClusterID, strconv.Itoa(int(newSourceShardID.ClusterID)))
-		targetMetadata.Set(history.MetadataKeyServerShardID, strconv.Itoa(int(newSourceShardID.ShardID)))
-	}
-
-	forwarder := newStreamForwarder(
-		s.adminClient,
-		targetStreamServer,
+	err = handleStream(
+		streamServer,
 		targetMetadata,
 		sourceClusterShardID,
 		targetClusterShardID,
-		s.metricLabelValues,
 		logger,
+		s.shardCountConfig,
+		s.lcmParameters,
+		s.routingParameters,
+		s.adminClient,
+		s.adminClientReverse,
+		s.shardManager,
+		s.metricLabelValues,
+		s.lifetime,
 	)
-	err = forwarder.Run()
 	if err != nil {
 		return err
 	}
 	// Do not try to transfer EOF from the source here. Just returning "nil" is sufficient to terminate the stream
 	// to the client.
 	return nil
-}
-
-func mapShardIDUnique(sourceShardCount, targetShardCount, sourceShardID int32) int32 {
-	targetShardID := servercommon.MapShardID(sourceShardCount, targetShardCount, sourceShardID)
-	if len(targetShardID) != 1 {
-		panic(fmt.Sprintf("remapping shard count error: sourceShardCount=%d targetShardCount=%d sourceShardID=%d targetShardID=%v\n",
-			sourceShardCount, targetShardCount, sourceShardID, targetShardID))
-	}
-	return targetShardID[0]
 }

@@ -1,0 +1,84 @@
+inbound:
+  name: "inbound-server"
+  server:
+    # No TLS here because the mux connection is already mTLS
+    type: "mux"
+    mux: "muxed"
+  client:
+    tcp:
+      # Frontend of local cluster
+      serverAddress: "local-frontend:7233"
+      tls:
+        # Certificate that identifies this host to local Temporal frontend
+        certificatePath: "/tls/internode/tls.crt"
+        # Key this host will use to encrypt local communication to local Temporal frontend
+        keyPath: "/tls/internode/tls.key"
+        # CA for the local Temporal frontend
+        serverCAPath: "/tls/internode/ca.crt"
+        # Servername that should be stamped on the local Temporal frontend's cert
+        serverName: "frontend.temporal.svc.cluster.local"
+  aclPolicy:
+    allowedMethods:
+      adminService:
+        - AddOrUpdateRemoteCluster
+        - RemoveRemoteCluster
+        - DescribeCluster
+        - DescribeMutableState
+        - GetNamespaceReplicationMessages
+        - GetWorkflowExecutionRawHistoryV2
+        - ListClusters
+        - StreamWorkflowReplicationMessages
+        - ReapplyEvents
+        - GetNamespace # for EagerGetNamespace
+outbound:
+  name: "outbound-server"
+  server:
+    tcp:
+      listenAddress: "0.0.0.0:9233"
+      tls:
+        # Certificate that identifies this host to *local* Temporal cluster
+        certificatePath: "/tls/internode/tls.crt"
+        # Key this host will use to encrypt local communication to *local* Temporal cluster
+        keyPath: "/tls/internode/tls.key"
+        # CA for *local* Temporal cluster
+        clientCAPath: "/tls/internode/ca.crt"
+        # We trust our local cluster, we don't need to verify its cert
+        requireClientAuth: false
+  client:
+    # No TLS here because the mux connection is already mTLS
+    type: "mux"
+    mux: "muxed"
+mux:
+  - name: "muxed"
+    mode: "client"
+    num_connections: 10
+    client:
+      serverAddress: "remote-s2s-proxy-endpoint:8233"
+      tls:
+        # Certificate that identifies this host to the remote s2s proxy
+        certificatePath: "/s2c-client-tls/tls.crt"
+        # Key for encrypting the mux tunnel to the remote s2s proxy
+        keyPath: "/s2c-client-tls/tls.key"
+        # CA for the remote s2s proxy
+        serverCAPath: "/s2c-server-tls/tls.crt"
+healthCheck:
+  protocol: "http"
+  listenAddress: "0.0.0.0:8234"
+namespaceNameTranslation:
+  mappings:
+    - localName: "mg-hybrid"
+      remoteName: "mg-hybrid"
+metrics:
+  prometheus:
+    listenAddress: "0.0.0.0:9090"
+# This enables profiling with the default config and port
+profiling: {}
+logConfigs:
+  adminservice:
+    throttleMaxRPS: 0.10
+  testexample:
+    throttleMaxRPS: 11
+  adminstreams:
+    throttleMaxRPS: 0.12
+  testdisabled:
+    disabled: true

@@ -3,11 +3,8 @@
 apiVersion: v1
 data:
   config.yaml: |-
-    healthCheck:
-      listenAddress: 0.0.0.0:8234
-      protocol: http
-    inbound:
-      aclPolicy:
+    clusterConnections:
+    - aclPolicy:
         allowedMethods:
           adminService:
           - AddOrUpdateRemoteCluster
@@ -20,51 +17,37 @@ data:
           - StreamWorkflowReplicationMessages
           - ReapplyEvents
           - GetNamespace
-          - AddTasks
-      client:
-        tcp:
-          serverAddress: frontend-address:7233
+        allowedNamespaces:
+        - myNamespace
+      local:
+        connectionType: tcp
+        tcpClient:
+          address: frontend-address:7233
+        tcpServer:
+          address: 0.0.0.0:9233
+      name: my-migration-cluster
+      namespaceTranslation:
+        mappings:
+        - local: my-local
+          remote: my-cloud.acct
+      remote:
+        connectionType: mux-client
+        muxAddressInfo:
+          address: s2s-proxy-sample.example.tmprl.cloud:8233
           tls:
-            certificatePath: ""
-            keyPath: ""
-            serverCAPath: ""
-            serverName: ""
-      name: inbound-server
-      server:
-        mux: muxed
-        type: mux
+            certificatePath: /s2c-server-tls/tls.crt
+            keyPath: /s2c-server-tls/tls.key
+            remoteCAPath: ""
+        muxCount: 10
+      remoteClusterHealthCheck:
+        listenAddress: 0.0.0.0:8234
+        protocol: http
+      replicationEndpoint: address-of-your-s2s-proxy-deployment:9233
     metrics:
       prometheus:
-        framework: tally
         listenAddress: 0.0.0.0:9090
-    mux:
-    - client:
-        serverAddress: s2s-proxy-sample.example.tmprl.cloud:8233
-        tls:
-          certificatePath: /s2c-server-tls/tls.crt
-          keyPath: /s2c-server-tls/tls.key
-          serverCAPath: ""
-          serverName: ""
-      mode: client
-      name: muxed
-    namespaceNameTranslation:
-      mappings:
-      - localName: my-local
-        remoteName: my-cloud.acct
-    outbound:
-      client:
-        mux: muxed
-        type: mux
-      name: outbound-server
-      server:
-        tcp:
-          externalAddress: address-of-your-s2s-proxy-deployment:9233
-          listenAddress: 0.0.0.0:9233
-          tls:
-            certificatePath: ""
-            clientCAPath: ""
-            keyPath: ""
-            requireClientAuth: false
+    profiling:
+      pprofAddress: localhost:6060
 kind: ConfigMap
 metadata:
   name: example-s2s-proxy
@@ -78,7 +61,7 @@ metadata:
     helm.sh/chart: s2s-proxy-0.1.0
     app.kubernetes.io/name: s2s-proxy
     app.kubernetes.io/instance: example
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.2.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   type: ClusterIP
@@ -100,7 +83,7 @@ metadata:
     helm.sh/chart: s2s-proxy-0.1.0
     app.kubernetes.io/name: s2s-proxy
     app.kubernetes.io/instance: example
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.2.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -114,12 +97,12 @@ spec:
         helm.sh/chart: s2s-proxy-0.1.0
         app.kubernetes.io/name: s2s-proxy
         app.kubernetes.io/instance: example
-        app.kubernetes.io/version: "0.1.0"
+        app.kubernetes.io/version: "0.2.0"
         app.kubernetes.io/managed-by: Helm
     spec:
       containers:
         - name: s2s-proxy
-          image: "temporalio/s2s-proxy:v0.1.0"
+          image: "temporalio/s2s-proxy:v0.2.0"
           imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 9233

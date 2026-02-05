@@ -32,15 +32,16 @@ jobs:
       #
       # See https://github.com/actions/setup-go/issues/316 for more info.
       - name: Install go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v6
         with:
+          go-version: '1.25'
           go-version-file: 'go.mod'
           cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.1
+          version: v2.8
           args: --build-tags=test_dep
 
   build:
@@ -53,13 +54,14 @@ jobs:
           fetch-depth: 0
 
       - name: Install go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v6
         with:
+          go-version: '1.25'
           go-version-file: 'go.mod'
           cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
 
       - name: Run go build
-        run: go build ./...
+        run: make bins
 
       - name: Run go unittest
         run: make test
@@ -67,7 +69,7 @@ jobs:
       - name: Install helm
         uses: azure/setup-helm@v4.3.0
         with:
-          version: v3.17.3
+          version: v3.19.4
 
       - name: Install helm-unittest
         run: helm plugin install https://github.com/helm-unittest/helm-unittest.git

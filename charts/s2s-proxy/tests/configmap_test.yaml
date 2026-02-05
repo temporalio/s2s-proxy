@@ -5,15 +5,15 @@ tests:
   - it: should override s2s-proxy config
     set:
       configOverride:
-        healthCheck:
-          listenAddress: 0.0.0.0:1111
-        inbound:
-          client:
-            tcp:
-              serverAddress: "frontend-other:2222"
-        mux:
-        - client:
-            serverAddress: "addr:3333"
+        clusterConnections:
+          - remoteClusterHealthCheck:
+              listenAddress: 0.0.0.0:1111
+            local:
+              tcpClient:
+                address: "frontend-other:2222"
+            remote:
+              muxAddressInfo:
+                address: "addr:3333"
     asserts:
       - isKind:
           of: ConfigMap
@@ -24,18 +24,15 @@ tests:
       - matchRegex:
           path: data["config.yaml"]
           pattern: |-
-            healthCheck:
+            remoteClusterHealthCheck:
               \s*listenAddress: 0.0.0.0:1111
       - matchRegex:
           path: data["config.yaml"]
           pattern: |-
-              client:
-                \s*tcp:
-                  \s*serverAddress: frontend-other:2222
+            tcpClient:
+              \s*address: frontend-other:2222
       - matchRegex:
           path: data["config.yaml"]
           pattern: |-
-            mux:
-            - client:
-                serverAddress: addr:3333
-
+            muxAddressInfo:
+              \s*address: addr:3333

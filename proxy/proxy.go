@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"strings"
 
-	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
 )
 
@@ -20,33 +20,29 @@ type (
 		// Needs some config revision before uncommenting:
 		//accountId string
 	}
+
 	Proxy struct {
 		lifetime                  context.Context
 		cancel                    context.CancelFunc
-		inboundHealthCheckConfig  *config.HealthCheckConfig
-		outboundHealthCheckConfig *config.HealthCheckConfig
+		localHealthCheckConfig    *config.HealthCheckConfig
+		remoteHealthCheckConfig   *config.HealthCheckConfig
 		metricsConfig             *config.MetricsConfig
 		clusterConnections        map[migrationId]*ClusterConnection
 		inboundHealthCheckServer  *http.Server
 		outboundHealthCheckServer *http.Server
 		metricsServer             *http.Server
-		logger                    log.Logger
+		logProvider               logging.LoggerProvider
 	}
 )
 
-func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
+func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider) *Proxy {
 	s2sConfig := config.ToClusterConnConfig(configProvider.GetS2SProxyConfig())
 	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
 		lifetime:           ctx,
 		cancel:             cancel,
 		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.MuxTransports)),
-		logger: log.NewThrottledLogger(
-			logger,
-			func() float64 {
-				return s2sConfig.Logging.GetThrottleMaxRPS()
-			},
-		),
+		logProvider:        logProvider,
 	}
 	if len(s2sConfig.ClusterConnections) == 0 {
 		panic(errors.New("cannot create proxy without inbound and outbound config"))
@@ -54,20 +50,22 @@ func NewProxy(configProvider config.ConfigProvider, logger log.Logger) *Proxy {
 	if s2sConfig.Metrics != nil {
 		proxy.metricsConfig = s2sConfig.Metrics
 	}
+
 	for _, clusterCfg := range s2sConfig.ClusterConnections {
-		cc, err := NewClusterConnection(ctx, clusterCfg, logger)
+		cc, err := NewClusterConnection(ctx, clusterCfg, logProvider)
 		if err != nil {
-			logger.Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", clusterCfg.Name))
+			logProvider.Get("init").Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", clusterCfg.Name))
 			continue
 		}
-		proxy.clusterConnections[migrationId{clusterCfg.Name}] = cc
+		migrationId := migrationId{clusterCfg.Name}
+		proxy.clusterConnections[migrationId] = cc
 	}
 	// TODO: correctly host multiple health checks
-	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].InboundHealthCheck.ListenAddress != "" {
-		proxy.inboundHealthCheckConfig = &s2sConfig.ClusterConnections[0].InboundHealthCheck
+	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].LocalClusterHealthCheck.ListenAddress != "" {
+		proxy.localHealthCheckConfig = &s2sConfig.ClusterConnections[0].LocalClusterHealthCheck
 	}
-	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].OutboundHealthCheck.ListenAddress != "" {
-		proxy.outboundHealthCheckConfig = &s2sConfig.ClusterConnections[0].OutboundHealthCheck
+	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].RemoteClusterHealthCheck.ListenAddress != "" {
+		proxy.remoteHealthCheckConfig = &s2sConfig.ClusterConnections[0].RemoteClusterHealthCheck
 	}
 
 	metrics.NewProxyCount.Inc()
@@ -89,9 +87,9 @@ func (s *Proxy) startHealthCheckHandler(lifetime context.Context, healthChecker 
 	}
 
 	go func() {
-		s.logger.Info("Starting health check server", tag.Address(cfg.ListenAddress))
+		s.logProvider.Get("init").Info("Starting health check server", tag.Address(cfg.ListenAddress))
 		if err := healthCheckServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.logger.Error("Error starting server", tag.Error(err))
+			s.logProvider.Get("init").Error("Error starting server", tag.Error(err))
 		}
 	}()
 	context.AfterFunc(lifetime, func() {
@@ -103,16 +101,16 @@ func (s *Proxy) startHealthCheckHandler(lifetime context.Context, healthChecker 
 func (s *Proxy) startMetricsHandler(lifetime context.Context, cfg config.MetricsConfig) error {
 	// Why not use the global ServeMux? So that it can be used in unit tests
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", metrics.NewMetricsHandler(s.logger))
+	mux.Handle("/metrics", metrics.NewMetricsHandler(s.logProvider.Get("metrics")))
 	s.metricsServer = &http.Server{
 		Addr:    cfg.Prometheus.ListenAddress,
 		Handler: mux,
 	}
 
 	go func() {
-		s.logger.Info("Starting metrics server", tag.Address(cfg.Prometheus.ListenAddress))
+		s.logProvider.Get("metrics").Info("Starting metrics server", tag.Address(cfg.Prometheus.ListenAddress))
 		if err := s.metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.logger.Error("Error starting server", tag.Error(err))
+			s.logProvider.Get("metrics").Error("Error starting server", tag.Error(err))
 		}
 	}()
 	context.AfterFunc(lifetime, func() {
@@ -122,31 +120,31 @@ func (s *Proxy) startMetricsHandler(lifetime context.Context, cfg config.Metrics
 }
 
 func (s *Proxy) Start() error {
-	if s.inboundHealthCheckConfig != nil {
+	if s.localHealthCheckConfig != nil {
 		var err error
 		healthFn := func() bool {
 			// TODO: Rethink health checks. The inbound/outbound traffic availability isn't quite right for a health check
 			return true
 		}
-		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(healthFn, s.logger), *s.inboundHealthCheckConfig); err != nil {
+		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.localHealthCheckConfig); err != nil {
 			return err
 		}
 	} else {
-		s.logger.Warn("Started up without inbound health check! Double-check the YAML config," +
+		s.logProvider.Get("init").Warn("Started up without inbound health check! Double-check the YAML config," +
 			" it needs at least the following path: healthCheck.listenAddress")
 	}
 
-	if s.outboundHealthCheckConfig != nil {
+	if s.remoteHealthCheckConfig != nil {
 		healthFn := func() bool {
 			// TODO: Rethink health checks. The inbound/outbound traffic availability isn't quite right for a health check
 			return true
 		}
 		var err error
-		if s.outboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newOutboundHealthCheck(healthFn, s.logger), *s.outboundHealthCheckConfig); err != nil {
+		if s.outboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newOutboundHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.remoteHealthCheckConfig); err != nil {
 			return err
 		}
 	} else {
-		s.logger.Warn("Started up without outbound health check! Double-check the YAML config," +
+		s.logProvider.Get("init").Warn("Started up without outbound health check! Double-check the YAML config," +
 			" it needs at least the following path: outboundHealthCheck.listenAddress")
 	}
 
@@ -155,7 +153,7 @@ func (s *Proxy) Start() error {
 			return err
 		}
 	} else {
-		s.logger.Warn(`Started up without metrics! Double-check the YAML config,` +
+		s.logProvider.Get("init").Warn(`Started up without metrics! Double-check the YAML config,` +
 			` it needs at least the following path: metrics.prometheus.listenAddress`)
 	}
 
@@ -163,7 +161,7 @@ func (s *Proxy) Start() error {
 		v.Start()
 	}
 
-	s.logger.Info(fmt.Sprintf("Started Proxy with the following config:\n%s", s.Describe()))
+	s.logProvider.Get("init").Info(fmt.Sprintf("Started Proxy with the following config:\n%s", s.Describe()))
 
 	return nil
 }

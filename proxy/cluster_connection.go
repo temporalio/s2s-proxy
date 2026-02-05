@@ -24,9 +24,19 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/interceptor"
+	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"github.com/temporalio/s2s-proxy/transport/mux"
+)
+
+const (
+	LogStreamObserver    = "streamObserver"
+	LogMuxManager        = "muxManager"
+	LogTCPServer         = "tcpServer"
+	LogClusterConnection = "clusterConnection"
+	LogInterceptor       = "interceptor"
+	LogTLSHandshake      = "tlsHandshake"
 )
 
 type (
@@ -59,7 +69,8 @@ type (
 		inboundClient    closableClientConn
 		inboundObserver  *ReplicationStreamObserver
 		outboundObserver *ReplicationStreamObserver
-		logger           log.Logger
+		shardManager     ShardManager
+		loggers          logging.LoggerProvider
 	}
 	// contextAwareServer represents a startable gRPC server used to provide the Temporal interface on some connection.
 	// IsUsable and Describe allow the caller to know and log the current state of the server.
@@ -91,9 +102,14 @@ type (
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
 		nsTranslations   collect.StaticBiMap[string, string]
 		saTranslations   config.SearchAttributeTranslation
+		overrides        AdminServiceOverrides
+		aclPolicy        *config.ACLPolicy
 		shardCountConfig config.ShardCountConfig
-		targetShardCount int32
-		logger           log.Logger
+		loggers          logging.LoggerProvider
+
+		shardManager      ShardManager
+		lcmParameters     LCMParameters
+		routingParameters RoutingParameters
 	}
 )
 
@@ -103,19 +119,19 @@ func sanitizeConnectionName(name string) string {
 }
 
 // NewClusterConnection unpacks the connConfig and creates the inbound and outbound clients and servers.
-func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logger log.Logger) (*ClusterConnection, error) {
+func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logProvider logging.LoggerProvider) (*ClusterConnection, error) {
 	// The name is used in metrics and in the protocol for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
 	sanitizedConnectionName := sanitizeConnectionName(connConfig.Name)
 	cc := &ClusterConnection{
 		lifetime: lifetime,
-		logger:   log.With(logger, tag.NewStringTag("clusterConn", sanitizedConnectionName)),
+		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
-	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.LocalServer.Connection, "inbound")
+	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound")
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.RemoteServer.Connection, "outbound")
+	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound")
 	if err != nil {
 		return nil, err
 	}
@@ -128,40 +144,88 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		return nil, err
 	}
 
-	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, serverConfiguration{
+	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, connConfig.ShardCountConfig, connConfig.Local.TcpClient.TLSConfig, logProvider)
+
+	getLCMParameters := func(shardCountConfig config.ShardCountConfig, inverse bool) LCMParameters {
+		if shardCountConfig.Mode != config.ShardCountLCM {
+			return LCMParameters{}
+		}
+		lcm := common.LCM(shardCountConfig.LocalShardCount, shardCountConfig.RemoteShardCount)
+		if inverse {
+			return LCMParameters{
+				LCM:              lcm,
+				TargetShardCount: shardCountConfig.LocalShardCount,
+			}
+		}
+		return LCMParameters{
+			LCM:              lcm,
+			TargetShardCount: shardCountConfig.RemoteShardCount,
+		}
+	}
+	getRoutingParameters := func(shardCountConfig config.ShardCountConfig, inverse bool, directionLabel string) RoutingParameters {
+		if shardCountConfig.Mode != config.ShardCountRouting {
+			return RoutingParameters{}
+		}
+		if inverse {
+			return RoutingParameters{
+				OverrideShardCount:     shardCountConfig.RemoteShardCount,
+				RoutingLocalShardCount: shardCountConfig.LocalShardCount,
+				DirectionLabel:         directionLabel,
+			}
+		}
+		return RoutingParameters{
+			OverrideShardCount:     shardCountConfig.LocalShardCount,
+			RoutingLocalShardCount: shardCountConfig.RemoteShardCount,
+			DirectionLabel:         directionLabel,
+		}
+	}
+
+	inboundCfg := serverConfiguration{
 		name:              sanitizedConnectionName,
-		clusterDefinition: connConfig.RemoteServer,
+		clusterDefinition: connConfig.Remote,
 		directionLabel:    "inbound",
 		client:            cc.inboundClient,
 		managedClient:     cc.outboundClient,
 		nsTranslations:    nsTranslations.Inverse(),
 		saTranslations:    saTranslations.Inverse(),
+		overrides:         AdminServiceOverrides{connConfig.FVITranslation.Local, connConfig.ReplicationEndpoint},
+		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
+		aclPolicy:         connConfig.ACLPolicy,
 		shardCountConfig:  connConfig.ShardCountConfig,
-		targetShardCount:  connConfig.ShardCountConfig.LocalShardCount,
-		logger:            cc.logger,
-	})
-	if err != nil {
-		return nil, err
+		loggers:           cc.loggers,
+		shardManager:      cc.shardManager,
+		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, true),
+		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, true, "inbound"),
 	}
-	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, serverConfiguration{
+	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, inboundCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create inbound server: %w\nConfig:%+v", err, inboundCfg)
+	}
+
+	outboundCfg := serverConfiguration{
 		name:              sanitizedConnectionName,
-		clusterDefinition: connConfig.LocalServer,
+		clusterDefinition: connConfig.Local,
 		directionLabel:    "outbound",
 		client:            cc.outboundClient,
 		managedClient:     cc.inboundClient,
 		nsTranslations:    nsTranslations,
 		saTranslations:    saTranslations,
+		overrides:         AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote},
 		shardCountConfig:  connConfig.ShardCountConfig,
-		targetShardCount:  connConfig.ShardCountConfig.RemoteShardCount,
-		logger:            cc.logger,
-	})
-	if err != nil {
-		return nil, err
+		loggers:           cc.loggers,
+		shardManager:      cc.shardManager,
+		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, false),
+		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
 	}
+	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, outboundCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create outbound server: %w\nConfig:%v", err, outboundCfg)
+	}
+
 	return cc, nil
 }
 
-func createClient(lifetime context.Context, connectionName string, transportCfg config.TransportInfo, directionLabel string) (closableClientConn, error) {
+func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string) (closableClientConn, error) {
 	switch transportCfg.ConnectionType {
 	case config.ConnTypeTCP:
 		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel)
@@ -175,18 +239,19 @@ func createClient(lifetime context.Context, connectionName string, transportCfg 
 }
 
 func createServer(lifetime context.Context, c serverConfiguration) (contextAwareServer, *ReplicationStreamObserver, error) {
-	switch c.clusterDefinition.Connection.ConnectionType {
+	switch c.clusterDefinition.ConnectionType {
 	case config.ConnTypeTCP:
 		// No special logic required for managedClient
 		return createTCPServer(lifetime, c)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
-		observer := NewReplicationStreamObserver(c.logger)
-		grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.MuxAddressInfo.TLSConfig, observer.ReportStreamValue)
+		observer := NewReplicationStreamObserver(c.loggers.Get(LogStreamObserver))
+		grpcServer, err := buildProxyServer(c, encryption.TLSConfig{}, observer.ReportStreamValue, lifetime)
 		if err != nil {
 			return nil, nil, err
 		}
 		// The Mux manager needs to update its associated client
-		muxMgr, err := mux.NewGRPCMuxManager(lifetime, c.name, c.clusterDefinition, c.managedClient.(*grpcutil.MultiClientConn), grpcServer, c.logger)
+		muxMgr, err := mux.NewGRPCMuxManager(lifetime, c.name, c.clusterDefinition,
+			c.managedClient.(*grpcutil.MultiClientConn), grpcServer, c.loggers.Get(LogMuxManager))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -197,12 +262,12 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 }
 
 func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAwareServer, *ReplicationStreamObserver, error) {
-	observer := NewReplicationStreamObserver(c.logger)
-	listener, err := net.Listen("tcp", c.clusterDefinition.Connection.TcpServer.ConnectionString)
+	observer := NewReplicationStreamObserver(c.loggers.Get(LogStreamObserver))
+	listener, err := net.Listen("tcp", c.clusterDefinition.TcpServer.ConnectionString)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid configuration for inbound server: %w", err)
 	}
-	grpcServer, err := buildProxyServer(c, c.clusterDefinition.Connection.TcpServer.TLSConfig, observer.ReportStreamValue)
+	grpcServer, err := buildProxyServer(c, c.clusterDefinition.TcpServer.TLSConfig, observer.ReportStreamValue, lifetime)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create inbound server: %w", err)
 	}
@@ -211,7 +276,7 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 		lifetime: lifetime,
 		listener: listener,
 		server:   grpcServer,
-		logger:   c.logger,
+		logger:   log.With(c.loggers.Get(LogTCPServer), tag.NewStringTag("direction", c.directionLabel), tag.Address(listener.Addr().String())),
 	}
 	return server, observer, nil
 }
@@ -239,11 +304,18 @@ func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg en
 }
 
 func (c *ClusterConnection) Start() {
+	if c.shardManager != nil {
+		err := c.shardManager.Start(c.lifetime)
+		if err != nil {
+			c.loggers.Get(LogClusterConnection).Error("Failed to start shard manager", tag.Error(err))
+		}
+	}
 	c.inboundServer.Start()
 	c.inboundObserver.Start(c.lifetime, c.inboundServer.Name(), "inbound")
 	c.outboundServer.Start()
 	c.outboundObserver.Start(c.lifetime, c.outboundServer.Name(), "outbound")
 }
+
 func (c *ClusterConnection) Describe() string {
 	return fmt.Sprintf("[ClusterConnection connects outbound server %s to outbound client %s, inbound server %s to inbound client %s]",
 		c.outboundServer.Describe(), c.outboundClient.Describe(), c.inboundServer.Describe(), c.inboundClient.Describe())
@@ -252,35 +324,40 @@ func (c *ClusterConnection) Describe() string {
 func (c *ClusterConnection) AcceptingInboundTraffic() bool {
 	return c.inboundClient.CanMakeCalls() && c.inboundServer.CanAcceptConnections()
 }
+
 func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
 	return c.outboundClient.CanMakeCalls() && c.outboundServer.CanAcceptConnections()
 }
 
 // buildProxyServer uses the provided grpc.ClientConnInterface and config.ProxyConfig to create a grpc.Server that proxies
 // the Temporal API across the ClientConnInterface.
-func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, observeFn func(int32, int32)) (*grpc.Server, error) {
+func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, observeFn func(int32, int32), lifetime context.Context) (*grpc.Server, error) {
 	serverOpts, err := makeServerOptions(c, tlsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse server options: %w", err)
 	}
 	server := grpc.NewServer(serverOpts...)
 
-	var lcmParameters LCMParameters
-	if c.shardCountConfig.Mode == config.ShardCountLCM {
-		lcmParameters = LCMParameters{
-			LCM:              common.LCM(c.shardCountConfig.LocalShardCount, c.shardCountConfig.RemoteShardCount),
-			TargetShardCount: c.targetShardCount,
-		}
-	}
-
-	adminServiceImpl := NewAdminServiceProxyServer(fmt.Sprintf("%sAdminService", c.directionLabel), adminservice.NewAdminServiceClient(c.client),
-		c.clusterDefinition.APIOverrides, []string{c.directionLabel}, observeFn, c.shardCountConfig, lcmParameters, c.logger)
+	adminServiceImpl := NewAdminServiceProxyServer(
+		fmt.Sprintf("%sAdminService", c.directionLabel),
+		adminservice.NewAdminServiceClient(c.client),
+		adminservice.NewAdminServiceClient(c.managedClient),
+		c.overrides,
+		[]string{c.directionLabel},
+		observeFn,
+		c.shardCountConfig,
+		c.lcmParameters,
+		c.routingParameters,
+		c.loggers,
+		c.shardManager,
+		lifetime,
+	)
 	var accessControl *auth.AccessControl
-	if c.clusterDefinition.ACLPolicy != nil {
-		accessControl = auth.NewAccesControl(c.clusterDefinition.ACLPolicy.AllowedNamespaces)
+	if c.aclPolicy != nil {
+		accessControl = auth.NewAccesControl(c.aclPolicy.AllowedNamespaces)
 	}
 	workflowServiceImpl := NewWorkflowServiceProxyServer("inboundWorkflowService", workflowservice.NewWorkflowServiceClient(c.client),
-		accessControl, c.logger)
+		accessControl, c.loggers)
 	adminservice.RegisterAdminServiceServer(server, adminServiceImpl)
 	workflowservice.RegisterWorkflowServiceServer(server, workflowServiceImpl)
 	return server, nil
@@ -299,25 +376,32 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 
 	var translators []interceptor.Translator
 	if c.nsTranslations.Len() > 0 {
-		translators = append(translators, interceptor.NewNamespaceNameTranslator(c.logger, c.nsTranslations.AsMap(), c.nsTranslations.Inverse().AsMap()))
+		translators = append(translators, interceptor.NewNamespaceNameTranslator(c.loggers.Get(LogInterceptor),
+			c.nsTranslations.AsMap(), c.nsTranslations.Inverse().AsMap()))
 	}
 
 	if c.saTranslations.LenNamespaces() > 0 {
-		c.logger.Info("search attribute translation enabled", tag.NewAnyTag("mappings", c.saTranslations))
+		c.loggers.Get(LogClusterConnection).Info("search attribute translation enabled", tag.NewAnyTag("mappings", c.saTranslations))
 		if c.saTranslations.LenNamespaces() > 1 {
 			panic("multiple namespace search attribute mappings are not supported")
 		}
-		translators = append(translators, interceptor.NewSearchAttributeTranslator(c.logger, c.saTranslations.FlattenMaps(), c.saTranslations.Inverse().FlattenMaps()))
+		translators = append(translators, interceptor.NewSearchAttributeTranslator(c.loggers.Get(LogInterceptor),
+			c.saTranslations.FlattenMaps(), c.saTranslations.Inverse().FlattenMaps()))
 	}
 
 	if len(translators) > 0 {
-		tr := interceptor.NewTranslationInterceptor(c.logger, translators)
+		c.loggers.Get("init").Info("Translators enabled", tag.NewAnyTag("translators", translators))
+		tr := interceptor.NewTranslationInterceptor(c.loggers.Get(LogInterceptor), translators)
 		unaryInterceptors = append(unaryInterceptors, tr.Intercept)
 		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
 	}
 
-	if c.clusterDefinition.ACLPolicy != nil {
-		aclInterceptor := interceptor.NewAccessControlInterceptor(c.logger, c.clusterDefinition.ACLPolicy.AllowedMethods.AdminService, c.clusterDefinition.ACLPolicy.AllowedNamespaces)
+	if c.aclPolicy != nil {
+		c.loggers.Get("init").Info("ACL policy enabled",
+			tag.NewAnyTag("policy", c.aclPolicy),
+			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
+		aclInterceptor := interceptor.NewAccessControlInterceptor(c.loggers.Get(LogInterceptor),
+			c.aclPolicy.AllowedMethods.AdminService, c.aclPolicy.AllowedNamespaces)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
 		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
 	}
@@ -328,11 +412,17 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	}
 
 	if tlsConfig.IsEnabled() {
-		tlsConfig, err := encryption.GetServerTLSConfig(tlsConfig, c.logger)
+		c.loggers.Get(LogTLSHandshake).Info("TLS is enabled", tag.NewStringTag("direction", c.directionLabel),
+			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
+		tlsConfig, err := encryption.GetServerTLSConfig(tlsConfig, log.With(c.loggers.Get(LogTLSHandshake),
+			tag.NewStringTag("name", fmt.Sprintf("Server %s-%s", c.name, c.directionLabel))))
 		if err != nil {
 			return opts, err
 		}
 		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	} else {
+		c.loggers.Get(LogTLSHandshake).Warn("TLS is disabled", tag.NewStringTag("direction", c.directionLabel),
+			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
 	}
 
 	return opts, nil
@@ -342,6 +432,7 @@ func (s *simpleGRPCServer) Start() {
 	metrics.GRPCServerStarted.WithLabelValues(s.name).Inc()
 	go func() {
 		s.logger.Info("Starting TCP-TLS gRPC server", tag.Name(s.name), tag.Address(s.listener.Addr().String()))
+		defer s.logger.Info("TCP-TLS gRPC server closed as requested", tag.Name(s.name), tag.Address(s.listener.Addr().String()))
 		for s.lifetime.Err() == nil {
 			err := s.server.Serve(s.listener)
 			if s.lifetime.Err() != nil {
@@ -349,7 +440,8 @@ func (s *simpleGRPCServer) Start() {
 				return
 			}
 			if err != nil {
-				s.logger.Warn("GRPC server failed", tag.NewStringTag("direction", "outbound"), tag.Address(s.listener.Addr().String()), tag.Error(err))
+				s.logger.Warn("GRPC server failed", tag.NewStringTag("direction", "outbound"),
+					tag.Address(s.listener.Addr().String()), tag.Error(err))
 				if err == io.EOF {
 					metrics.GRPCServerStopped.WithLabelValues(s.name, "eof").Inc()
 				} else if !errors.Is(err, grpc.ErrServerStopped) {

@@ -11,7 +11,7 @@ GO_GET_TOOL    = go get -tool -modfile=$(TOOLS_MOD_FILE)
 
 # Disable cgo by default.
 CGO_ENABLED ?= 0
-TEST_ARG ?= -race -timeout=5m -tags test_dep
+TEST_ARG ?= -race -timeout=5m -tags test_dep -count=1
 BENCH_ARG ?= -benchtime=5000x
 
 ALL_SRC         := $(shell find . -name "*.go")
@@ -32,7 +32,7 @@ s2s-proxy: $(ALL_SRC)
 
 update-tools:
 # When changing the golangci-lint version, update the version in .github/workflows/pull-request.yml
-	$(GO_GET_TOOL) github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1
+	$(GO_GET_TOOL) github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8
 	$(GO_GET_TOOL) go.uber.org/mock/mockgen@v0.5.0
 	-go mod tidy --modfile=$(TOOLS_MOD_FILE) 2>/dev/null
 

@@ -19,15 +19,15 @@ tests:
   - it: should set container ports based on configOverride
     set:
       configOverride:
-        healthCheck:
-          listenAddress: 0.0.0.0:1111
-        outbound:
-          server:
-            tcp:
-              listenAddress: "127.0.0.1:2222"
-        metrics:
-          prometheus:
-            listenAddress: ":3333"
+        clusterConnections:
+          - remoteClusterHealthCheck:
+              listenAddress: "0.0.0.0:1111"
+            local:
+              tcpServer:
+                address: "127.0.0.1:2222"
+            metrics:
+              prometheus:
+                listenAddress: ":3333"
     asserts:
       - isKind:
           of: Deployment
@@ -43,4 +43,3 @@ tests:
             - containerPort: 3333
               name: rpc-metrics
               protocol: TCP
-
