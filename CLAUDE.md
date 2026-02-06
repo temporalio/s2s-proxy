@@ -1,5 +1,13 @@
 # Claude Code Guidelines for s2s-proxy
 
+## Git Workflow
+
+### Branch and PR Requirements
+- **NEVER** push changes directly to `main` branch
+- **ALWAYS** create a new branch for changes
+- **ALWAYS** submit a proper Pull Request for code review
+- Branch naming convention: Use descriptive names like `username/feature-name`
+
 ## Code Style & Conventions
 
 ### License Headers
