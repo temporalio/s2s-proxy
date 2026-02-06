@@ -6,6 +6,9 @@ metadata:
     {{- include "s2s-proxy.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
+  {{- if .Values.service.clusterIP }}
+  clusterIP: {{ .Values.service.clusterIP }}
+  {{- end }}
   ports:
   {{- $ports := (include "s2s-proxy.parsedPorts" . | fromYaml) }}
     - port: {{ $ports.egress }}
