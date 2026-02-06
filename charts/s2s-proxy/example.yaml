@@ -64,7 +64,11 @@ metadata:
     app.kubernetes.io/version: "0.2.0"
     app.kubernetes.io/managed-by: Helm
 spec:
+  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
   type: ClusterIP
+  # We strongly recommend using a headless service. Temporal uses gRPC internally, and kube-proxy's routing conflicts with
+  # gRPC's client-side load balancer. More info https://kubernetes.io/docs/concepts/services-networking/service/#headless-services
+  clusterIP: None
   ports:
     - port: 9233
       targetPort: 9233
