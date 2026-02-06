@@ -29,7 +29,7 @@ configOverride:
             certificatePath: "/s2c-server-tls/tls.crt"
             # Path to your private key corresponding to the client certificate.
             keyPath: "/s2c-server-tls/tls.key"
-      # Your s2s-proxy service address, used as the address of migration server.
+      # Your s2s-proxy service address. This will be called by your Temporal server during namespace migration.
       replicationEndpoint: "address-of-your-s2s-proxy-deployment:9233"
       namespaceTranslation:
         mappings:

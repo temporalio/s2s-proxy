@@ -37,15 +37,7 @@ securityContext: {}
   # runAsNonRoot: true
   # runAsUser: 1000
 
-# Service for the s2s-proxy outbound server
-service:
-  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
-  type: ClusterIP
-  # We strongly recommend using a headless service. Temporal uses gRPC internally, and kube-proxy's routing conflicts with
-  # gRPC's client-side load balancer. More info https://kubernetes.io/docs/concepts/services-networking/service/#headless-services
-  ClusterIP: None
-  
-# We recommend a minimum of 4 CPUs, 512Mi for your proxy as a good starting point. 
+# We recommend a minimum of 4 CPUs, 512Mi for your proxy as a good starting point.
 # If you have a larger dataset (>5RPS steady-state traffic, >10GB history size), a larger proxy deployment may be necessary
 # requests:
 #   cpu: 4
