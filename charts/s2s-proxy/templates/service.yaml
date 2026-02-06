@@ -5,7 +5,11 @@ metadata:
   labels:
     {{- include "s2s-proxy.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
+  type: ClusterIP
+  # We strongly recommend using a headless service. Temporal uses gRPC internally, and kube-proxy's routing conflicts with
+  # gRPC's client-side load balancer. More info https://kubernetes.io/docs/concepts/services-networking/service/#headless-services
+  clusterIP: None
   ports:
   {{- $ports := (include "s2s-proxy.parsedPorts" . | fromYaml) }}
     - port: {{ $ports.egress }}
