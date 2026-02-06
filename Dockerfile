@@ -1,5 +1,5 @@
 # Build stage
-FROM --platform=$BUILDPLATFORM temporalio/base-builder:1.15.5 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
 ARG TARGETARCH
 
