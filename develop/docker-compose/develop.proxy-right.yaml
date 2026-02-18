@@ -1,0 +1,15 @@
+clusterConnections:
+  - name: "cluster-right"
+    local:
+      connectionType: "tcp"
+      tcpClient:
+        address: "temporal-right:7233"
+      tcpServer:
+        address: "0.0.0.0:6333"
+    remote:
+      connectionType: "mux-server"
+      muxCount: 1
+      muxAddressInfo:
+        address: "0.0.0.0:6334"
+profiling:
+  pprofAddress: "0.0.0.0:6060"
