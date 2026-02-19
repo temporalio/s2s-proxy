@@ -10,7 +10,20 @@
 
 # How-Tos
 
-## Setup a local proxy pair with two Temporal clusters
+## Setup a local proxy pair with two Temporal clusters (docker compose)
+
+### Steps
+
+1. To start the development environment: `make start-dependencies`
+2. Done! Run tests against these services. The default ports are specified in an [environment file](docker-compose/develop.env)
+3. To stop the development environment: `make stop-dependencies`
+
+### Logs
+
+- To view container logs, run `docker logs <container name>`. For example `docker logs docker-compose-smoke-test-1`.
+- To find container name, run `docker ps -a`, or grep for specific compose service name, e.g. `docker ps -a | grep smoke-test`
+
+## Setup a local proxy pair with two Temporal clusters (manual)
 
 ### Ports
 | Service              | port  | Connected to   |

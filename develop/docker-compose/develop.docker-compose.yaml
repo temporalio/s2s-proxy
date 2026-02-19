@@ -1,0 +1,138 @@
+x-volumes: &x-volumes
+  - ./..:/etc/develop:ro
+
+services:
+  temporal-left:
+    image: temporalio/temporal:1.5.0
+    command:
+      - server
+      - start-dev
+      - --port
+      - "${TEMPORAL_INTERNAL_PORT}"
+      - --ip
+      - "0.0.0.0"
+      - --headless
+      - --namespace
+      - default
+      - --log-level
+      - warn
+    ports:
+      - "${TEMPORAL_LEFT_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
+    networks:
+      - develop
+    healthcheck:
+      test:
+        - CMD
+        - temporal
+        - operator
+        - cluster
+        - health
+        - --address
+        - "localhost:${TEMPORAL_INTERNAL_PORT}"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  temporal-right:
+    image: temporalio/temporal:1.5.0
+    command:
+      - server
+      - start-dev
+      - --port
+      - "${TEMPORAL_INTERNAL_PORT}"
+      - --ip
+      - "0.0.0.0"
+      - --headless
+      - --namespace
+      - default
+      - --log-level
+      - warn
+    ports:
+      - "${TEMPORAL_RIGHT_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
+    networks:
+      - develop
+    healthcheck:
+      test:
+        - CMD
+        - temporal
+        - operator
+        - cluster
+        - health
+        - --address
+        - "localhost:${TEMPORAL_INTERNAL_PORT}"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  proxy-right:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      CONFIG_YML: /etc/develop/docker-compose/tmp/develop.proxy-right.yaml
+    volumes: *x-volumes
+    ports:
+      - "${PROXY_RIGHT_EXTERNAL_PORT}:${PROXY_RIGHT_INTERNAL_PORT}"
+    networks:
+      - develop
+    depends_on:
+      temporal-right:
+        condition: service_healthy
+    healthcheck: # TODO: Replace with healthcheck endpoint.
+      test:
+        - CMD-SHELL
+        - "wget -q -O /dev/null -T 3 http://localhost:6060/debug/pprof/ || exit 1"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  proxy-left:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      CONFIG_YML: /etc/develop/docker-compose/tmp/develop.proxy-left.yaml
+    volumes: *x-volumes
+    ports:
+      - "${PROXY_LEFT_EXTERNAL_PORT}:${PROXY_LEFT_INTERNAL_PORT}"
+    networks:
+      - develop
+    depends_on:
+      temporal-left:
+        condition: service_healthy
+      proxy-right:
+        condition: service_healthy
+    healthcheck: # TODO: Replace with healthcheck endpoint.
+      test:
+        - CMD-SHELL
+        - "wget -q -O /dev/null -T 3 http://localhost:6060/debug/pprof/ || exit 1"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  smoke-test:
+    image: temporalio/temporal:1.5.0
+    entrypoint: /bin/sh
+    networks:
+      - develop
+    depends_on:
+      proxy-left:
+        condition: service_healthy
+      proxy-right:
+        condition: service_healthy
+    volumes: *x-volumes
+    environment:
+      TEMPORAL_LEFT_INBOUND: "temporal-left:${TEMPORAL_INTERNAL_PORT}"
+      TEMPORAL_RIGHT_INBOUND: "temporal-right:${TEMPORAL_INTERNAL_PORT}"
+      PROXY_LEFT_OUTBOUND: "proxy-left:${PROXY_LEFT_INTERNAL_PORT}"
+      PROXY_RIGHT_OUTBOUND: "proxy-right:${PROXY_RIGHT_INTERNAL_PORT}"
+    command:
+      - /etc/develop/docker-compose/smoke-test.sh
+
+networks:
+  develop:
+    driver: bridge

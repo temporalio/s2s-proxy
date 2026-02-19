@@ -144,3 +144,33 @@ helm-test:
 helm-example:
 	cd charts; helm template example ./s2s-proxy -f ./s2s-proxy/values.example.yaml > s2s-proxy/example.yaml
 	@echo "Example written to charts/s2s-proxy/example.yaml"
+
+# Local development environment
+DEVELOP_ENV_FILE    = develop/docker-compose/develop.env
+DOCKER_COMPOSE_FILE    ?= ./develop/docker-compose/develop.docker-compose.yaml
+DOCKER_COMPOSE          = docker compose --file $(DOCKER_COMPOSE_FILE) --env-file $(DEVELOP_ENV_FILE)
+
+PROXY_LEFT_CONFIG_TMPL  = develop/docker-compose/develop.proxy-left.tmpl.yaml
+PROXY_RIGHT_CONFIG_TMPL = develop/docker-compose/develop.proxy-right.tmpl.yaml
+PROXY_LEFT_CONFIG       = develop/docker-compose/tmp/develop.proxy-left.yaml
+PROXY_RIGHT_CONFIG      = develop/docker-compose/tmp/develop.proxy-right.yaml
+
+.PHONY: generate-configs
+generate-configs:
+	mkdir -p develop/docker-compose/tmp
+	set -a && . $(DEVELOP_ENV_FILE) && set +a && \
+	envsubst < $(PROXY_LEFT_CONFIG_TMPL) > $(PROXY_LEFT_CONFIG) && \
+	envsubst < $(PROXY_RIGHT_CONFIG_TMPL) > $(PROXY_RIGHT_CONFIG)
+
+.PHONY: start-dependencies
+start-dependencies: generate-configs
+	$(DOCKER_COMPOSE) up --detach --build --wait --wait-timeout 120
+	@echo >&2 'Dependencies ready!'
+
+.PHONY: stop-dependencies
+stop-dependencies:
+	$(DOCKER_COMPOSE) down --timeout 60
+
+.PHONY: nuke-dependencies
+nuke-dependencies:
+	$(DOCKER_COMPOSE) down --timeout 60 --volumes --remove-orphans

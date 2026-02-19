@@ -1,0 +1,15 @@
+clusterConnections:
+  - name: "cluster-left"
+    local:
+      connectionType: "tcp"
+      tcpClient:
+        address: "temporal-left:${TEMPORAL_INTERNAL_PORT}"
+      tcpServer:
+        address: "0.0.0.0:${PROXY_LEFT_INTERNAL_PORT}"
+    remote:
+      connectionType: "mux-client"
+      muxCount: 1
+      muxAddressInfo:
+        address: "proxy-right:${PROXY_MUX_INTERNAL_PORT}"
+profiling:
+  pprofAddress: "0.0.0.0:6060"
