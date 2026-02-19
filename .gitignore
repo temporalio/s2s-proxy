@@ -32,6 +32,7 @@ go.work.sum
 *.key
 build/
 bins/
+**/tmp/
 
 # Claude Code settings
 .claude/

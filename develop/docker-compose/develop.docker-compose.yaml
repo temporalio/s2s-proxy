@@ -8,7 +8,7 @@ services:
       - server
       - start-dev
       - --port
-      - "7233"
+      - "${TEMPORAL_INTERNAL_PORT}"
       - --ip
       - "0.0.0.0"
       - --headless
@@ -17,7 +17,7 @@ services:
       - --log-level
       - warn
     ports:
-      - "${TEMPORAL_LEFT_PORT}:7233"
+      - "${TEMPORAL_LEFT_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
     networks:
       - develop
     healthcheck:
@@ -28,7 +28,7 @@ services:
         - cluster
         - health
         - --address
-        - "localhost:7233"
+        - "localhost:${TEMPORAL_INTERNAL_PORT}"
       interval: 5s
       timeout: 5s
       retries: 30
@@ -40,7 +40,7 @@ services:
       - server
       - start-dev
       - --port
-      - "7233"
+      - "${TEMPORAL_INTERNAL_PORT}"
       - --ip
       - "0.0.0.0"
       - --headless
@@ -49,7 +49,7 @@ services:
       - --log-level
       - warn
     ports:
-      - "${TEMPORAL_RIGHT_PORT}:7233"
+      - "${TEMPORAL_RIGHT_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
     networks:
       - develop
     healthcheck:
@@ -60,7 +60,7 @@ services:
         - cluster
         - health
         - --address
-        - "localhost:7233"
+        - "localhost:${TEMPORAL_INTERNAL_PORT}"
       interval: 5s
       timeout: 5s
       retries: 30
@@ -71,10 +71,10 @@ services:
       context: ../..
       dockerfile: Dockerfile
     environment:
-      CONFIG_YML: /etc/develop/docker-compose/develop.proxy-right.yaml
+      CONFIG_YML: /etc/develop/docker-compose/tmp/develop.proxy-right.yaml
     volumes: *x-volumes
     ports:
-      - "${PROXY_RIGHT_PORT}:6333"
+      - "${PROXY_RIGHT_EXTERNAL_PORT}:${PROXY_RIGHT_INTERNAL_PORT}"
     networks:
       - develop
     depends_on:
@@ -94,10 +94,10 @@ services:
       context: ../..
       dockerfile: Dockerfile
     environment:
-      CONFIG_YML: /etc/develop/docker-compose/develop.proxy-left.yaml
+      CONFIG_YML: /etc/develop/docker-compose/tmp/develop.proxy-left.yaml
     volumes: *x-volumes
     ports:
-      - "${PROXY_LEFT_PORT}:6233"
+      - "${PROXY_LEFT_EXTERNAL_PORT}:${PROXY_LEFT_INTERNAL_PORT}"
     networks:
       - develop
     depends_on:
@@ -116,6 +116,7 @@ services:
 
   smoke-test:
     image: temporalio/temporal:1.5.0
+    entrypoint: /bin/sh
     networks:
       - develop
     depends_on:
@@ -124,8 +125,12 @@ services:
       proxy-right:
         condition: service_healthy
     volumes: *x-volumes
+    environment:
+      TEMPORAL_LEFT_INBOUND: "temporal-left:${TEMPORAL_INTERNAL_PORT}"
+      TEMPORAL_RIGHT_INBOUND: "temporal-right:${TEMPORAL_INTERNAL_PORT}"
+      PROXY_LEFT_OUTBOUND: "proxy-left:${PROXY_LEFT_INTERNAL_PORT}"
+      PROXY_RIGHT_OUTBOUND: "proxy-right:${PROXY_RIGHT_INTERNAL_PORT}"
     command:
-      - sh
       - /etc/develop/docker-compose/smoke-test.sh
 
 networks:
