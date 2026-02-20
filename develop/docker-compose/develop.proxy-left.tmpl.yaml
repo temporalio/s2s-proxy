@@ -12,4 +12,7 @@ clusterConnections:
       muxAddressInfo:
         address: "proxy-right:${PROXY_MUX_INTERNAL_PORT}"
 profiling:
-  pprofAddress: "0.0.0.0:6060"
+  pprofAddress: "0.0.0.0:${PROXY_PPROF_INTERNAL_PORT}"
+metrics:
+  prometheus:
+    listenAddress: "0.0.0.0:${PROXY_METRICS_INTERNAL_PORT}"
