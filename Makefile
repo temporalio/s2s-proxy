@@ -169,8 +169,12 @@ generate-configs:
 show-dependencies-ports:
 	@echo 'Exposed localhost ports:'
 	@grep '_EXTERNAL_PORT=' $(DEVELOP_ENV_FILE) | \
-		awk -F= '{ n=$$1; gsub(/_EXTERNAL_PORT$$/, "", n); gsub(/_/, "-", n); \
-		           printf "  %-34s http://localhost:%s\n", tolower(n), $$2 }'
+	awk -F= '{ \
+	    name = $$1; \
+	    gsub(/_EXTERNAL_PORT$$/, "", name); \
+	    gsub(/_/, "-",           name); \
+	    printf "  %-34s http://localhost:%s\n", tolower(name), $$2; \
+	}'
 
 .PHONY: start-dependencies
 start-dependencies: generate-configs
