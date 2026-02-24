@@ -18,6 +18,25 @@
 2. Done! Run tests against these services. The default ports are specified in an [environment file](docker-compose/develop.env)
 3. To stop the development environment: `make stop-dependencies`
 
+### Example Commands
+
+The two Temporal clusters are exposed on `localhost:17233` (left) and `localhost:27233` (right).
+
+```bash
+# Describe cluster
+temporal operator cluster describe --address localhost:17233
+temporal operator cluster describe --address localhost:27233
+
+# List namespaces
+temporal operator namespace list --address localhost:17233
+
+# List workflows in the default namespace
+temporal workflow list --address localhost:17233 --namespace default
+
+# Describe a namespace
+temporal operator namespace describe default --address localhost:17233
+```
+
 ### Logs
 
 - To view container logs, run `docker logs <container name>`. For example `docker logs docker-compose-smoke-test-1`.
