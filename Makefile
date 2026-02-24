@@ -152,20 +152,35 @@ DOCKER_COMPOSE          = docker compose --file $(DOCKER_COMPOSE_FILE) --env-fil
 
 PROXY_LEFT_CONFIG_TMPL  = develop/docker-compose/develop.proxy-left.tmpl.yaml
 PROXY_RIGHT_CONFIG_TMPL = develop/docker-compose/develop.proxy-right.tmpl.yaml
+PROMETHEUS_CONFIG_TMPL  = develop/docker-compose/develop.prometheus.tmpl.yaml
 PROXY_LEFT_CONFIG       = develop/docker-compose/tmp/develop.proxy-left.yaml
 PROXY_RIGHT_CONFIG      = develop/docker-compose/tmp/develop.proxy-right.yaml
+PROMETHEUS_CONFIG       = develop/docker-compose/tmp/develop.prometheus.yaml
 
 .PHONY: generate-configs
 generate-configs:
 	mkdir -p develop/docker-compose/tmp
 	set -a && . $(DEVELOP_ENV_FILE) && set +a && \
-	envsubst < $(PROXY_LEFT_CONFIG_TMPL) > $(PROXY_LEFT_CONFIG) && \
-	envsubst < $(PROXY_RIGHT_CONFIG_TMPL) > $(PROXY_RIGHT_CONFIG)
+	envsubst < $(PROXY_LEFT_CONFIG_TMPL)  > $(PROXY_LEFT_CONFIG) && \
+	envsubst < $(PROXY_RIGHT_CONFIG_TMPL) > $(PROXY_RIGHT_CONFIG) && \
+	envsubst < $(PROMETHEUS_CONFIG_TMPL)  > $(PROMETHEUS_CONFIG)
+
+.PHONY: show-dependencies-ports
+show-dependencies-ports:
+	@echo 'Exposed localhost ports:'
+	@grep '_EXTERNAL_PORT=' $(DEVELOP_ENV_FILE) | \
+	awk -F= '{ \
+	    name = $$1; \
+	    gsub(/_EXTERNAL_PORT$$/, "", name); \
+	    gsub(/_/, "-",           name); \
+	    printf "  %-34s http://localhost:%s\n", tolower(name), $$2; \
+	}'
 
 .PHONY: start-dependencies
 start-dependencies: generate-configs
 	$(DOCKER_COMPOSE) up --detach --build --wait --wait-timeout 120
 	@echo >&2 'Dependencies ready!'
+	@$(MAKE) --no-print-directory show-dependencies-ports
 
 .PHONY: stop-dependencies
 stop-dependencies:

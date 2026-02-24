@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: proxy-left
+    static_configs:
+      - targets: ["proxy-left:${PROXY_METRICS_INTERNAL_PORT}"]
+
+  - job_name: proxy-right
+    static_configs:
+      - targets: ["proxy-right:${PROXY_METRICS_INTERNAL_PORT}"]

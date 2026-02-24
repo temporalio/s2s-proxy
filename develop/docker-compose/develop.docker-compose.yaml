@@ -11,13 +11,15 @@ services:
       - "${TEMPORAL_INTERNAL_PORT}"
       - --ip
       - "0.0.0.0"
-      - --headless
+      - --ui-port
+      - "${TEMPORAL_UI_INTERNAL_PORT}"
       - --namespace
       - default
       - --log-level
       - warn
     ports:
       - "${TEMPORAL_LEFT_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
+      - "${TEMPORAL_LEFT_UI_EXTERNAL_PORT}:${TEMPORAL_UI_INTERNAL_PORT}"
     networks:
       - develop
     healthcheck:
@@ -43,13 +45,15 @@ services:
       - "${TEMPORAL_INTERNAL_PORT}"
       - --ip
       - "0.0.0.0"
-      - --headless
+      - --ui-port
+      - "${TEMPORAL_UI_INTERNAL_PORT}"
       - --namespace
       - default
       - --log-level
       - warn
     ports:
       - "${TEMPORAL_RIGHT_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
+      - "${TEMPORAL_RIGHT_UI_EXTERNAL_PORT}:${TEMPORAL_UI_INTERNAL_PORT}"
     networks:
       - develop
     healthcheck:
@@ -75,6 +79,7 @@ services:
     volumes: *x-volumes
     ports:
       - "${PROXY_RIGHT_EXTERNAL_PORT}:${PROXY_RIGHT_INTERNAL_PORT}"
+      - "${PROXY_RIGHT_METRICS_EXTERNAL_PORT}:${PROXY_METRICS_INTERNAL_PORT}"
     networks:
       - develop
     depends_on:
@@ -83,7 +88,7 @@ services:
     healthcheck: # TODO: Replace with healthcheck endpoint.
       test:
         - CMD-SHELL
-        - "wget -q -O /dev/null -T 3 http://localhost:6060/debug/pprof/ || exit 1"
+        - "wget -q -O /dev/null -T 3 http://localhost:${PROXY_PPROF_INTERNAL_PORT}/debug/pprof/ || exit 1"
       interval: 5s
       timeout: 5s
       retries: 30
@@ -98,6 +103,7 @@ services:
     volumes: *x-volumes
     ports:
       - "${PROXY_LEFT_EXTERNAL_PORT}:${PROXY_LEFT_INTERNAL_PORT}"
+      - "${PROXY_LEFT_METRICS_EXTERNAL_PORT}:${PROXY_METRICS_INTERNAL_PORT}"
     networks:
       - develop
     depends_on:
@@ -108,11 +114,26 @@ services:
     healthcheck: # TODO: Replace with healthcheck endpoint.
       test:
         - CMD-SHELL
-        - "wget -q -O /dev/null -T 3 http://localhost:6060/debug/pprof/ || exit 1"
+        - "wget -q -O /dev/null -T 3 http://localhost:${PROXY_PPROF_INTERNAL_PORT}/debug/pprof/ || exit 1"
       interval: 5s
       timeout: 5s
       retries: 30
       start_period: 10s
+
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - --config.file=/etc/develop/docker-compose/tmp/develop.prometheus.yaml
+    volumes: *x-volumes
+    ports:
+      - "${PROMETHEUS_EXTERNAL_PORT}:${PROMETHEUS_INTERNAL_PORT}"
+    networks:
+      - develop
+    depends_on:
+      proxy-left:
+        condition: service_healthy
+      proxy-right:
+        condition: service_healthy
 
   smoke-test:
     image: temporalio/temporal:1.5.0
