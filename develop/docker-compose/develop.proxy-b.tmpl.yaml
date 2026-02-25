@@ -1,16 +1,16 @@
 clusterConnections:
-  - name: "cluster-left"
+  - name: "cluster-b"
     local:
       connectionType: "tcp"
       tcpClient:
-        address: "temporal-left:${TEMPORAL_INTERNAL_PORT}"
+        address: "temporal-b:${TEMPORAL_INTERNAL_PORT}"
       tcpServer:
-        address: "0.0.0.0:${PROXY_LEFT_INTERNAL_PORT}"
+        address: "0.0.0.0:${PROXY_B_INTERNAL_PORT}"
     remote:
-      connectionType: "mux-client"
+      connectionType: "mux-server"
       muxCount: 1
       muxAddressInfo:
-        address: "proxy-right:${PROXY_MUX_INTERNAL_PORT}"
+        address: "0.0.0.0:${PROXY_MUX_INTERNAL_PORT}"
 profiling:
   pprofAddress: "0.0.0.0:${PROXY_PPROF_INTERNAL_PORT}"
 metrics:
