@@ -2,7 +2,7 @@ x-volumes: &x-volumes
   - ./..:/etc/develop:ro
 
 services:
-  temporal-left:
+  temporal-a:
     image: temporalio/temporal:1.5.0
     command:
       - server
@@ -18,8 +18,8 @@ services:
       - --log-level
       - warn
     ports:
-      - "${TEMPORAL_LEFT_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
-      - "${TEMPORAL_LEFT_UI_EXTERNAL_PORT}:${TEMPORAL_UI_INTERNAL_PORT}"
+      - "${TEMPORAL_A_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
+      - "${TEMPORAL_A_UI_EXTERNAL_PORT}:${TEMPORAL_UI_INTERNAL_PORT}"
     networks:
       - develop
     healthcheck:
@@ -36,7 +36,7 @@ services:
       retries: 30
       start_period: 5s
 
-  temporal-right:
+  temporal-b:
     image: temporalio/temporal:1.5.0
     command:
       - server
@@ -52,8 +52,8 @@ services:
       - --log-level
       - warn
     ports:
-      - "${TEMPORAL_RIGHT_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
-      - "${TEMPORAL_RIGHT_UI_EXTERNAL_PORT}:${TEMPORAL_UI_INTERNAL_PORT}"
+      - "${TEMPORAL_B_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
+      - "${TEMPORAL_B_UI_EXTERNAL_PORT}:${TEMPORAL_UI_INTERNAL_PORT}"
     networks:
       - develop
     healthcheck:
@@ -70,20 +70,20 @@ services:
       retries: 30
       start_period: 5s
 
-  proxy-right:
+  proxy-b:
     build:
       context: ../..
       dockerfile: Dockerfile
     environment:
-      CONFIG_YML: /etc/develop/docker-compose/tmp/develop.proxy-right.yaml
+      CONFIG_YML: /etc/develop/docker-compose/tmp/develop.proxy-b.yaml
     volumes: *x-volumes
     ports:
-      - "${PROXY_RIGHT_EXTERNAL_PORT}:${PROXY_RIGHT_INTERNAL_PORT}"
-      - "${PROXY_RIGHT_METRICS_EXTERNAL_PORT}:${PROXY_METRICS_INTERNAL_PORT}"
+      - "${PROXY_B_EXTERNAL_PORT}:${PROXY_B_INTERNAL_PORT}"
+      - "${PROXY_B_METRICS_EXTERNAL_PORT}:${PROXY_METRICS_INTERNAL_PORT}"
     networks:
       - develop
     depends_on:
-      temporal-right:
+      temporal-b:
         condition: service_healthy
     healthcheck: # TODO: Replace with healthcheck endpoint.
       test:
@@ -94,22 +94,22 @@ services:
       retries: 30
       start_period: 10s
 
-  proxy-left:
+  proxy-a:
     build:
       context: ../..
       dockerfile: Dockerfile
     environment:
-      CONFIG_YML: /etc/develop/docker-compose/tmp/develop.proxy-left.yaml
+      CONFIG_YML: /etc/develop/docker-compose/tmp/develop.proxy-a.yaml
     volumes: *x-volumes
     ports:
-      - "${PROXY_LEFT_EXTERNAL_PORT}:${PROXY_LEFT_INTERNAL_PORT}"
-      - "${PROXY_LEFT_METRICS_EXTERNAL_PORT}:${PROXY_METRICS_INTERNAL_PORT}"
+      - "${PROXY_A_EXTERNAL_PORT}:${PROXY_A_INTERNAL_PORT}"
+      - "${PROXY_A_METRICS_EXTERNAL_PORT}:${PROXY_METRICS_INTERNAL_PORT}"
     networks:
       - develop
     depends_on:
-      temporal-left:
+      temporal-a:
         condition: service_healthy
-      proxy-right:
+      proxy-b:
         condition: service_healthy
     healthcheck: # TODO: Replace with healthcheck endpoint.
       test:
@@ -130,9 +130,9 @@ services:
     networks:
       - develop
     depends_on:
-      proxy-left:
+      proxy-a:
         condition: service_healthy
-      proxy-right:
+      proxy-b:
         condition: service_healthy
 
   smoke-test:
@@ -141,16 +141,16 @@ services:
     networks:
       - develop
     depends_on:
-      proxy-left:
+      proxy-a:
         condition: service_healthy
-      proxy-right:
+      proxy-b:
         condition: service_healthy
     volumes: *x-volumes
     environment:
-      TEMPORAL_LEFT_INBOUND: "temporal-left:${TEMPORAL_INTERNAL_PORT}"
-      TEMPORAL_RIGHT_INBOUND: "temporal-right:${TEMPORAL_INTERNAL_PORT}"
-      PROXY_LEFT_OUTBOUND: "proxy-left:${PROXY_LEFT_INTERNAL_PORT}"
-      PROXY_RIGHT_OUTBOUND: "proxy-right:${PROXY_RIGHT_INTERNAL_PORT}"
+      TEMPORAL_A_INBOUND: "temporal-a:${TEMPORAL_INTERNAL_PORT}"
+      TEMPORAL_B_INBOUND: "temporal-b:${TEMPORAL_INTERNAL_PORT}"
+      PROXY_A_OUTBOUND: "proxy-a:${PROXY_A_INTERNAL_PORT}"
+      PROXY_B_OUTBOUND: "proxy-b:${PROXY_B_INTERNAL_PORT}"
     command:
       - /etc/develop/docker-compose/smoke-test.sh
 
