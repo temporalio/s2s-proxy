@@ -1,0 +1,61 @@
+services:
+  postgres-b:
+    image: postgres:${POSTGRESQL_VERSION}
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    networks:
+      - develop
+    healthcheck:
+      test: [CMD, pg_isready, -U, temporal]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  elasticsearch-b:
+    image: elasticsearch:${ELASTICSEARCH_VERSION}
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms256m -Xmx256m"
+    networks:
+      - develop
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl -s http://localhost:9200/_cluster/health | grep -qv '\"status\":\"red\"'"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  temporal-b:
+    image: temporalio/auto-setup:${TEMPORAL_B_VERSION}
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_SEEDS: postgres-b
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      ENABLE_ES: "true"
+      ES_SEEDS: elasticsearch-b
+      ES_PORT: 9200
+      ES_VERSION: v7
+      VISIBILITY_TYPE: elasticsearch
+    ports:
+      - "${TEMPORAL_B_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
+      - "${TEMPORAL_B_UI_EXTERNAL_PORT}:${TEMPORAL_UI_INTERNAL_PORT}"
+    networks:
+      - develop
+    depends_on:
+      postgres-b:
+        condition: service_healthy
+      elasticsearch-b:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "temporal operator cluster health --address $(hostname -i):${TEMPORAL_INTERNAL_PORT}"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s

@@ -147,24 +147,31 @@ helm-example:
 	@echo "Example written to charts/s2s-proxy/example.yaml"
 
 # Local development environment
-DEVELOP_ENV_FILE    = develop/docker-compose/develop.env
-DOCKER_COMPOSE_FILE    ?= ./develop/docker-compose/develop.docker-compose.yaml
-DOCKER_COMPOSE          = docker compose --file $(DOCKER_COMPOSE_FILE) --env-file $(DEVELOP_ENV_FILE)
+DEVELOP_ENV_FILE       = develop/docker-compose/develop.env
+CORE_COMPOSE_FILE      = develop/docker-compose/core.docker-compose.yaml
+TEMPORAL_A_COMPOSE     = develop/docker-compose/temporal-a.docker-compose.yaml
+TEMPORAL_B_COMPOSE     = develop/docker-compose/temporal-b.docker-compose.yaml
 
-PROXY_A_CONFIG_TMPL  = develop/docker-compose/develop.proxy-a.tmpl.yaml
-PROXY_B_CONFIG_TMPL = develop/docker-compose/develop.proxy-b.tmpl.yaml
-PROMETHEUS_CONFIG_TMPL  = develop/docker-compose/develop.prometheus.tmpl.yaml
-PROXY_A_CONFIG       = develop/docker-compose/tmp/develop.proxy-a.yaml
-PROXY_B_CONFIG      = develop/docker-compose/tmp/develop.proxy-b.yaml
-PROMETHEUS_CONFIG       = develop/docker-compose/tmp/develop.prometheus.yaml
+DOCKER_COMPOSE = docker compose \
+  --file $(CORE_COMPOSE_FILE) \
+  --file $(TEMPORAL_A_COMPOSE) \
+  --file $(TEMPORAL_B_COMPOSE) \
+  --env-file $(DEVELOP_ENV_FILE)
+
+PROXY_A_CONFIG_TMPL    = develop/docker-compose/develop.proxy-a.tmpl.yaml
+PROXY_B_CONFIG_TMPL    = develop/docker-compose/develop.proxy-b.tmpl.yaml
+PROMETHEUS_CONFIG_TMPL = develop/docker-compose/develop.prometheus.tmpl.yaml
+PROXY_A_CONFIG         = develop/docker-compose/tmp/develop.proxy-a.yaml
+PROXY_B_CONFIG         = develop/docker-compose/tmp/develop.proxy-b.yaml
+PROMETHEUS_CONFIG      = develop/docker-compose/tmp/develop.prometheus.yaml
 
 .PHONY: generate-configs
 generate-configs:
 	mkdir -p develop/docker-compose/tmp
 	set -a && . $(DEVELOP_ENV_FILE) && set +a && \
 	envsubst < $(PROXY_A_CONFIG_TMPL)  > $(PROXY_A_CONFIG) && \
-	envsubst < $(PROXY_B_CONFIG_TMPL) > $(PROXY_B_CONFIG) && \
-	envsubst < $(PROMETHEUS_CONFIG_TMPL)  > $(PROMETHEUS_CONFIG)
+	envsubst < $(PROXY_B_CONFIG_TMPL)  > $(PROXY_B_CONFIG) && \
+	envsubst < $(PROMETHEUS_CONFIG_TMPL) > $(PROMETHEUS_CONFIG)
 
 .PHONY: show-dependencies-ports
 show-dependencies-ports:
@@ -177,10 +184,23 @@ show-dependencies-ports:
 	    printf "  %-34s http://localhost:%s\n", tolower(name), $$2; \
 	}'
 
+.PHONY: show-server-configuration
+show-server-configuration:
+	@echo 'Temporal server versions:'
+	@printf '  %-16s' 'temporal-a:' && \
+	    $(DOCKER_COMPOSE) exec -T temporal-a \
+	    sh -c 'temporal operator cluster describe --address $$(hostname -i):7233 -o json 2>/dev/null | awk -F\" "/(serverVersion|server_version)/{print \$$4}"' \
+	    2>/dev/null || printf '(not running)\n'
+	@printf '  %-16s' 'temporal-b:' && \
+	    $(DOCKER_COMPOSE) exec -T temporal-b \
+	    sh -c 'temporal operator cluster describe --address $$(hostname -i):7233 -o json 2>/dev/null | awk -F\" "/(serverVersion|server_version)/{print \$$4}"' \
+	    2>/dev/null || printf '(not running)\n'
+
 .PHONY: start-dependencies
 start-dependencies: generate-configs
-	$(DOCKER_COMPOSE) up --detach --build --wait --wait-timeout 120
+	$(DOCKER_COMPOSE) up --detach --build --wait --wait-timeout 300
 	@echo >&2 'Dependencies ready!'
+	@$(MAKE) --no-print-directory show-server-configuration
 	@$(MAKE) --no-print-directory show-dependencies-ports
 
 .PHONY: stop-dependencies
