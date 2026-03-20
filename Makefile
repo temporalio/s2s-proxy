@@ -189,3 +189,27 @@ stop-dependencies:
 .PHONY: nuke-dependencies
 nuke-dependencies:
 	$(DOCKER_COMPOSE) down --timeout 60 --volumes --remove-orphans
+
+# Compatibility tests
+COMPAT_DIR     = tests/compatibility
+COMPAT_PARALLEL ?= 1
+
+.PHONY: test-compatibility
+test-compatibility: test-compatibility-pull
+	cd $(COMPAT_DIR) && GOFLAGS="" go test \
+		-tags testcompatibility \
+		-timeout 60m \
+		-parallel $(COMPAT_PARALLEL) \
+		./matrix/ 
+
+.PHONY: test-compatibility-pull
+test-compatibility-pull:
+	DOCKER_CLI_HINTS=false docker pull -q temporalio/auto-setup:1.29.2
+	DOCKER_CLI_HINTS=false docker pull -q temporalio/server:1.27.4
+	DOCKER_CLI_HINTS=false docker pull -q temporalio/admin-tools:1.27
+	DOCKER_CLI_HINTS=false docker pull -q postgres:15
+	DOCKER_CLI_HINTS=false docker pull -q postgres:12
+
+.PHONY: test-compatibility-tidy
+test-compatibility-tidy:
+	cd $(COMPAT_DIR) && GOFLAGS="" go mod tidy
