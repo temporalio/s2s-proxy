@@ -1,15 +1,12 @@
 package main
 
 import (
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/urfave/cli/v2"
 	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
 	"go.uber.org/fx"
 
 	"github.com/temporalio/s2s-proxy/config"
@@ -25,9 +22,7 @@ const (
 type ProxyParams struct {
 	fx.In
 
-	ConfigProvider config.ConfigProvider
-	Proxy          *proxy.Proxy
-	Logger         log.Logger
+	Proxy *proxy.Proxy
 }
 
 func run(args []string) error {
@@ -64,25 +59,6 @@ func buildCLIOptions() *cli.App {
 	return app
 }
 
-func startPProfHTTPServer(logger log.Logger, c config.ProfilingConfig, proxyInstance *proxy.Proxy) {
-	addr := c.PProfHTTPAddress
-	if len(addr) == 0 {
-		return
-	}
-
-	// Add debug endpoint handler
-	http.HandleFunc("/debug/connections", func(w http.ResponseWriter, r *http.Request) {
-		proxy.HandleDebugInfo(w, r, proxyInstance, logger)
-	})
-
-	go func() {
-		logger.Info("Start pprof http server", tag.NewStringTag("address", addr))
-		if err := http.ListenAndServe(addr, nil); err != nil {
-			panic(err)
-		}
-	}()
-}
-
 func startProxy(c *cli.Context) error {
 	var proxyParams ProxyParams
 
@@ -106,9 +82,6 @@ func startProxy(c *cli.Context) error {
 	if err := app.Err(); err != nil {
 		return err
 	}
-
-	cfg := proxyParams.ConfigProvider.GetS2SProxyConfig()
-	startPProfHTTPServer(proxyParams.Logger, cfg.ProfilingConfig, proxyParams.Proxy)
 
 	if err := proxyParams.Proxy.Start(); err != nil {
 		return err

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"strings"
 
 	"go.temporal.io/server/common/log/tag"
@@ -27,6 +28,7 @@ type (
 		localHealthCheckConfig    *config.HealthCheckConfig
 		remoteHealthCheckConfig   *config.HealthCheckConfig
 		metricsConfig             *config.MetricsConfig
+		profilingConfig           *config.ProfilingConfig
 		clusterConnections        map[migrationId]*ClusterConnection
 		inboundHealthCheckServer  *http.Server
 		outboundHealthCheckServer *http.Server
@@ -50,6 +52,7 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 	if s2sConfig.Metrics != nil {
 		proxy.metricsConfig = s2sConfig.Metrics
 	}
+	proxy.profilingConfig = s2sConfig.ProfilingConfig
 
 	for _, clusterCfg := range s2sConfig.ClusterConnections {
 		cc, err := NewClusterConnection(ctx, clusterCfg, logProvider)
@@ -98,6 +101,23 @@ func (s *Proxy) startHealthCheckHandler(lifetime context.Context, healthChecker 
 	return healthCheckServer, nil
 }
 
+func (s *Proxy) startPProfHTTPServer() {
+	if s.profilingConfig == nil || len(s.profilingConfig.PProfHTTPAddress) == 0 {
+		return
+	}
+	addr := s.profilingConfig.PProfHTTPAddress
+	logger := s.logProvider.Get("init")
+	http.HandleFunc("/debug/connections", func(w http.ResponseWriter, r *http.Request) {
+		HandleDebugInfo(w, r, s, logger)
+	})
+	go func() {
+		logger.Info("Start pprof http server", tag.NewStringTag("address", addr))
+		if err := http.ListenAndServe(addr, nil); err != nil {
+			panic(err)
+		}
+	}()
+}
+
 func (s *Proxy) startMetricsHandler(lifetime context.Context, cfg config.MetricsConfig) error {
 	// Why not use the global ServeMux? So that it can be used in unit tests
 	mux := http.NewServeMux()
@@ -120,6 +140,8 @@ func (s *Proxy) startMetricsHandler(lifetime context.Context, cfg config.Metrics
 }
 
 func (s *Proxy) Start() error {
+	s.startPProfHTTPServer()
+
 	if s.localHealthCheckConfig != nil {
 		var err error
 		healthFn := func() bool {

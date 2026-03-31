@@ -17,7 +17,7 @@ type NewFormatConfig struct {
 	NamespaceNameTranslation   config.NameTranslationConfig    `yaml:"namespaceNameTranslation,omitempty"`
 	SearchAttributeTranslation config.SATranslationConfig      `yaml:"searchAttributeTranslation,omitempty"`
 	Metrics                    *config.MetricsConfig           `yaml:"metrics,omitempty"`
-	ProfilingConfig            config.ProfilingConfig          `yaml:"profiling,omitempty"`
+	ProfilingConfig            *config.ProfilingConfig         `yaml:"profiling,omitempty"`
 	Logging                    config.LoggingConfig            `yaml:"logging,omitempty"`
 	LogConfigs                 map[string]config.LoggingConfig `yaml:"logConfigs,omitempty"`
 	ClusterConnections         []config.ClusterConnConfig      `yaml:"clusterConnections,omitempty"`
