@@ -162,7 +162,7 @@ type (
 		NamespaceNameTranslation   NameTranslationConfig    `yaml:"namespaceNameTranslation"`
 		SearchAttributeTranslation SATranslationConfig      `yaml:"searchAttributeTranslation"`
 		Metrics                    *MetricsConfig           `yaml:"metrics"`
-		ProfilingConfig            ProfilingConfig          `yaml:"profiling"`
+		ProfilingConfig            *ProfilingConfig         `yaml:"profiling"`
 		Logging                    LoggingConfig            `yaml:"logging"`
 		LogConfigs                 map[string]LoggingConfig `yaml:"logConfigs"`
 		ClusterConnections         []ClusterConnConfig      `yaml:"clusterConnections"`
