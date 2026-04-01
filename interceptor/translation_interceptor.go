@@ -18,16 +18,19 @@ type (
 	TranslationInterceptor struct {
 		logger      log.Logger
 		translators []Translator
+		reg         *metrics.Registry
 	}
 )
 
 func NewTranslationInterceptor(
 	logger log.Logger,
 	translators []Translator,
+	reg *metrics.Registry,
 ) *TranslationInterceptor {
 	return &TranslationInterceptor{
 		logger:      logger,
 		translators: translators,
+		reg:         reg,
 	}
 }
 
@@ -50,7 +53,7 @@ func (i *TranslationInterceptor) Intercept(
 			if tr.MatchMethod(info.FullMethod) {
 				start := time.Now()
 				changed, trErr := tr.TranslateRequest(req)
-				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Request", req, time.Since(start))
+				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Request", req, time.Since(start), i.reg)
 			}
 		}
 
@@ -60,7 +63,7 @@ func (i *TranslationInterceptor) Intercept(
 			if tr.MatchMethod(info.FullMethod) {
 				start := time.Now()
 				changed, trErr := tr.TranslateResponse(resp)
-				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Response", resp, time.Since(start))
+				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Response", resp, time.Since(start), i.reg)
 			}
 		}
 
@@ -86,20 +89,21 @@ func (i *TranslationInterceptor) InterceptStream(
 		}
 		return err
 	}
-	return handler(srv, newStreamTranslator(ss, i.logger, i.translators))
+	return handler(srv, newStreamTranslator(ss, i.logger, i.translators, i.reg))
 }
 
 type streamTranslator struct {
 	grpc.ServerStream
 	logger      log.Logger
 	translators []Translator
+	reg         *metrics.Registry
 }
 
 func (w *streamTranslator) RecvMsg(m any) error {
 	for _, tr := range w.translators {
 		start := time.Now()
 		changed, trErr := tr.TranslateRequest(m)
-		logTranslateResult(tr, w.logger, changed, trErr, "RecvMsg", m, time.Since(start))
+		logTranslateResult(tr, w.logger, changed, trErr, "RecvMsg", m, time.Since(start), w.reg)
 	}
 	return w.ServerStream.RecvMsg(m)
 }
@@ -108,7 +112,7 @@ func (w *streamTranslator) SendMsg(m any) error {
 	for _, tr := range w.translators {
 		start := time.Now()
 		changed, trErr := tr.TranslateResponse(m)
-		logTranslateResult(tr, w.logger, changed, trErr, "SendMsg", m, time.Since(start))
+		logTranslateResult(tr, w.logger, changed, trErr, "SendMsg", m, time.Since(start), w.reg)
 	}
 	return w.ServerStream.SendMsg(m)
 }
@@ -117,25 +121,27 @@ func newStreamTranslator(
 	s grpc.ServerStream,
 	logger log.Logger,
 	translators []Translator,
+	reg *metrics.Registry,
 ) grpc.ServerStream {
 	return &streamTranslator{
 		ServerStream: s,
 		logger:       logger,
 		translators:  translators,
+		reg:          reg,
 	}
 }
 
-func logTranslateResult(tr Translator, logger log.Logger, changed bool, err error, methodName string, obj any, duration time.Duration) {
+func logTranslateResult(tr Translator, logger log.Logger, changed bool, err error, methodName string, obj any, duration time.Duration, reg *metrics.Registry) {
 	msgType := metrics.SanitizedTypeName(obj)
-	metrics.TranslationLatency.WithLabelValues(tr.Kind(), msgType).Observe(duration.Seconds())
+	reg.TranslationLatency.WithLabelValues(tr.Kind(), msgType).Observe(duration.Seconds())
 
 	methodTag := tag.NewStringTag("method", methodName)
 	if err != nil {
 		logger.Error("translation error", methodTag, tag.Error(err), tag.NewStringTag("type", msgType))
-		metrics.TranslationErrors.WithLabelValues(tr.Kind(), msgType).Inc()
+		reg.TranslationErrors.WithLabelValues(tr.Kind(), msgType).Inc()
 	} else if changed {
 		logger.Debug("translation applied", methodTag, tag.NewAnyTag("obj", obj))
-		metrics.TranslationCount.WithLabelValues(tr.Kind(), msgType).Inc()
+		reg.TranslationCount.WithLabelValues(tr.Kind(), msgType).Inc()
 	} else {
 		logger.Debug("translation not applied", methodTag, tag.NewAnyTag("obj", obj))
 	}

@@ -41,6 +41,7 @@ type RoutedMessage struct {
 // provides simple send helpers (e.g., forwarding ACKs).
 type intraProxyManager struct {
 	loggers      logging.LoggerProvider
+	reg          *metrics.Registry
 	streamsMu    sync.RWMutex
 	shardManager ShardManager
 	notifyCh     chan struct{}
@@ -60,9 +61,10 @@ type peerStreamKey struct {
 	sourceShard history.ClusterShardID
 }
 
-func newIntraProxyManager(logProvider logging.LoggerProvider, shardManager ShardManager) *intraProxyManager {
+func newIntraProxyManager(logProvider logging.LoggerProvider, reg *metrics.Registry, shardManager ShardManager) *intraProxyManager {
 	return &intraProxyManager{
 		loggers:      logProvider,
+		reg:          reg,
 		shardManager: shardManager,
 		peers:        make(map[string]*peerState),
 		notifyCh:     make(chan struct{}),
@@ -555,7 +557,7 @@ func (m *intraProxyManager) ensurePeer(
 	} else {
 		logger.Debug("ensurePeer TLS disabled")
 	}
-	dialOpts := grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics("intra_proxy"))
+	dialOpts := grpcutil.MakeDialOptions(parsedTLSCfg, m.reg.GRPCClientMetrics("intra_proxy"))
 
 	proxyAddresses, ok := m.shardManager.GetProxyAddress(peerNodeName)
 	if !ok {

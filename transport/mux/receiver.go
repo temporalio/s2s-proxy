@@ -29,11 +29,12 @@ type receivingConnProvider struct {
 	metricLabels []string
 	lifetime     context.Context
 	hasCleanedUp channel.ShutdownOnce
+	reg          *metrics.Registry
 }
 
 // NewMuxReceiverProvider runs a TCP server and waits for a client to connect. Once a connection is established and
 // authenticated with the TLS config, it starts a yamux session and returns the details using transportFn
-func NewMuxReceiverProvider(lifetime context.Context, name string, transportFn AddNewMux, connectionCapacity int64, setting config.TCPTLSInfo, metricLabels []string, upstreamLog log.Logger) (MuxProvider, error) {
+func NewMuxReceiverProvider(lifetime context.Context, name string, transportFn AddNewMux, connectionCapacity int64, setting config.TCPTLSInfo, metricLabels []string, reg *metrics.Registry, upstreamLog log.Logger) (MuxProvider, error) {
 	logger := log.With(upstreamLog, tag.NewStringTag("component", "receivingMux"),
 		tag.NewStringTag("listenAddr", setting.ConnectionString), tag.NewStringTag("name", fmt.Sprintf("MuxReceiver-%s", name)))
 	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
@@ -58,6 +59,7 @@ func NewMuxReceiverProvider(lifetime context.Context, name string, transportFn A
 		metricLabels: metricLabels,
 		lifetime:     lifetime,
 		hasCleanedUp: channel.NewShutdownOnce(),
+		reg:          reg,
 	}
 	go func() {
 		<-lifetime.Done()
@@ -73,7 +75,7 @@ func NewMuxReceiverProvider(lifetime context.Context, name string, transportFn A
 		cfg.LogOutput = nil
 		return yamux.Server(conn, cfg)
 	}
-	return NewMuxProvider(lifetime, name, connPv, sessionFn, connectionCapacity, transportFn, metricLabels, logger), nil
+	return NewMuxProvider(lifetime, name, connPv, sessionFn, connectionCapacity, transportFn, metricLabels, reg, logger), nil
 }
 
 // NewConnection waits on the TCP server for a connection, then provides it
@@ -86,7 +88,7 @@ func (r *receivingConnProvider) NewConnection() (net.Conn, error) {
 	}
 	if err != nil {
 		r.logger.Fatal("listener.Accept failed", tag.Error(err))
-		metrics.MuxErrors.WithLabelValues(append(r.metricLabels, classifyError(err))...).Inc()
+		r.reg.MuxErrors.WithLabelValues(append(r.metricLabels, classifyError(err))...).Inc()
 		return nil, err
 	}
 	r.logger.Info("Accept new connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))

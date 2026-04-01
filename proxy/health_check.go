@@ -17,14 +17,15 @@ type HealthChecker interface {
 type outboundHealthChecker struct {
 	isHealthy func() bool
 	logger    log.Logger
+	reg       *metrics.Registry
 }
 
 func (h *outboundHealthChecker) createHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		metrics.LBHealthCheckCount.WithLabelValues("outbound").Inc()
+		h.reg.LBHealthCheckCount.WithLabelValues("outbound").Inc()
 		w.Header().Set("Content-Type", "text/plain")
 		if h.isHealthy() {
-			metrics.LBHealthSuccessCount.WithLabelValues("outbound").Inc()
+			h.reg.LBHealthSuccessCount.WithLabelValues("outbound").Inc()
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("OK"))
 		} else {
@@ -34,24 +35,26 @@ func (h *outboundHealthChecker) createHandler() func(w http.ResponseWriter, r *h
 	}
 }
 
-func newOutboundHealthCheck(isHealthy func() bool, logger log.Logger) HealthChecker {
+func newOutboundHealthCheck(isHealthy func() bool, logger log.Logger, reg *metrics.Registry) HealthChecker {
 	return &outboundHealthChecker{
 		isHealthy: isHealthy,
 		logger:    logger,
+		reg:       reg,
 	}
 }
 
 type inboundHealthChecker struct {
 	isHealthy func() bool
 	logger    log.Logger
+	reg       *metrics.Registry
 }
 
 func (h *inboundHealthChecker) createHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		metrics.LBHealthCheckCount.WithLabelValues("inbound").Inc()
+		h.reg.LBHealthCheckCount.WithLabelValues("inbound").Inc()
 		w.Header().Set("Content-Type", "text/plain")
 		if h.isHealthy() {
-			metrics.LBHealthSuccessCount.WithLabelValues("inbound").Inc()
+			h.reg.LBHealthSuccessCount.WithLabelValues("inbound").Inc()
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("OK"))
 		} else {
@@ -61,9 +64,10 @@ func (h *inboundHealthChecker) createHandler() func(w http.ResponseWriter, r *ht
 	}
 }
 
-func newInboundHealthCheck(isHealthy func() bool, logger log.Logger) HealthChecker {
+func newInboundHealthCheck(isHealthy func() bool, logger log.Logger, reg *metrics.Registry) HealthChecker {
 	return &inboundHealthChecker{
 		isHealthy: isHealthy,
 		logger:    logger,
+		reg:       reg,
 	}
 }

@@ -33,6 +33,7 @@ type (
 		init                sync.Once            // Ensures a MuxManager can only be started once
 		hasShutDown         channel.ShutdownOnce // Notify that multiMuxManager has finished shutting down
 		logger              log.Logger
+		reg                 *metrics.Registry
 	}
 
 	// OnConnectionListUpdate will be called when the list of muxes changes, inside the lock that mutated the list.
@@ -64,6 +65,7 @@ func NewCustomMultiMuxManager(ctx context.Context,
 	muxProviderBuilder MuxProviderBuilder,
 	perSessionFactories []session.StartManagedComponentFn,
 	connectionListeners []OnConnectionListUpdate,
+	reg *metrics.Registry,
 	logger log.Logger) (MultiMuxManager, error) {
 	muxMgr := &multiMuxManager{
 		name:                name,
@@ -76,6 +78,7 @@ func NewCustomMultiMuxManager(ctx context.Context,
 		lifetime:            ctx,
 		hasShutDown:         channel.NewShutdownOnce(),
 		logger:              log.With(logger, tag.NewStringTag("component", fmt.Sprintf("MuxManager-%s", name))),
+		reg:                 reg,
 	}
 	var err error
 	muxMgr.muxProvider, err = muxProviderBuilder(muxMgr.AddConnection, muxMgr.lifetime)
@@ -88,7 +91,7 @@ func NewCustomMultiMuxManager(ctx context.Context,
 
 // notifyChange is called *inside* of the global muxes lock, which ensures
 func (m *multiMuxManager) notifyChange() {
-	metrics.NumMuxesActive.WithLabelValues(m.muxProvider.MetricLabels()...).Set(float64(len(m.muxes)))
+	m.reg.NumMuxesActive.WithLabelValues(m.muxProvider.MetricLabels()...).Set(float64(len(m.muxes)))
 	for _, fn := range m.connectionListeners {
 		fn(m.muxes)
 	}

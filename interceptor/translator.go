@@ -16,21 +16,21 @@ type (
 
 	translatorImpl struct {
 		logger      log.Logger
+		reg         *metrics.Registry
 		matchMethod func(string) bool
 		matchReq    stringMatcher
 		matchResp   stringMatcher
-		visitor     visitor
 		kind        string
 	}
 )
 
-func NewNamespaceNameTranslator(logger log.Logger, reqMap, respMap map[string]string) Translator {
+func NewNamespaceNameTranslator(logger log.Logger, reg *metrics.Registry, reqMap, respMap map[string]string) Translator {
 	return &translatorImpl{
 		logger:      logger,
+		reg:         reg,
 		matchMethod: func(string) bool { return true },
 		matchReq:    createStringMatcher(reqMap),
 		matchResp:   createStringMatcher(respMap),
-		visitor:     visitNamespace,
 		kind:        metrics.NamespaceTranslationKind,
 	}
 }
@@ -44,11 +44,11 @@ func (n *translatorImpl) MatchMethod(m string) bool {
 }
 
 func (n *translatorImpl) TranslateRequest(req any) (bool, error) {
-	return n.visitor(n.logger, req, n.matchReq)
+	return visitNamespaceWithReg(n.logger, n.reg, req, n.matchReq)
 }
 
 func (n *translatorImpl) TranslateResponse(resp any) (bool, error) {
-	return n.visitor(n.logger, resp, n.matchResp)
+	return visitNamespaceWithReg(n.logger, n.reg, resp, n.matchResp)
 }
 
 func createStringMatcher(mapping map[string]string) stringMatcher {

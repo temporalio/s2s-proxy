@@ -64,6 +64,7 @@ type StreamForwarder struct {
 	metricLabelValues    []string
 	logger               log.Logger
 	streamID             string
+	reg                  *metrics.Registry
 
 	sourceStreamClient adminservice.AdminService_StreamWorkflowReplicationMessagesClient
 	shutdownChan       channel.ShutdownOnce
@@ -77,6 +78,7 @@ func newStreamForwarder(
 	targetClusterShardID history.ClusterShardID,
 	metricLabelValues []string,
 	logger log.Logger,
+	reg *metrics.Registry,
 ) *StreamForwarder {
 	streamID := BuildForwarderStreamID(sourceClusterShardID, targetClusterShardID)
 	logger = log.With(logger, tag.NewStringTag("streamID", streamID))
@@ -89,6 +91,7 @@ func newStreamForwarder(
 		targetClusterShardID: targetClusterShardID,
 		metricLabelValues:    metricLabelValues,
 		logger:               logger,
+		reg:                  reg,
 	}
 }
 
@@ -115,8 +118,8 @@ func (f *StreamForwarder) Run() error {
 	f.sourceStreamClient = sourceStreamClient
 
 	// We succesfully got a stream connection, so mark the stream as active
-	metrics.AdminServiceStreamsOpenedCount.WithLabelValues(f.metricLabelValues...).Inc()
-	defer metrics.AdminServiceStreamsClosedCount.WithLabelValues(f.metricLabelValues...).Inc()
+	f.reg.AdminServiceStreamsOpenedCount.WithLabelValues(f.metricLabelValues...).Inc()
+	defer f.reg.AdminServiceStreamsClosedCount.WithLabelValues(f.metricLabelValues...).Inc()
 	streamStartTime := time.Now()
 
 	// Register the forwarder stream here
@@ -151,7 +154,7 @@ func (f *StreamForwarder) Run() error {
 	go f.forwardReplicationMessages(&wg)
 	wg.Wait()
 
-	metrics.AdminServiceStreamDuration.WithLabelValues(f.metricLabelValues...).Observe(time.Since(streamStartTime).Seconds())
+	f.reg.AdminServiceStreamDuration.WithLabelValues(f.metricLabelValues...).Observe(time.Since(streamStartTime).Seconds())
 	return nil
 }
 
@@ -178,7 +181,7 @@ func (f *StreamForwarder) forwardReplicationMessages(wg *sync.WaitGroup) {
 		}
 		if err == io.EOF {
 			f.logger.Debug("sourceStreamClient.Recv encountered EOF", tag.Error(err))
-			metrics.AdminServiceStreamTerminatedCount.WithLabelValues(append(f.metricLabelValues, "source")...).Inc()
+			f.reg.AdminServiceStreamTerminatedCount.WithLabelValues(append(f.metricLabelValues, "source")...).Inc()
 			return
 		}
 
@@ -204,11 +207,11 @@ func (f *StreamForwarder) forwardReplicationMessages(wg *sync.WaitGroup) {
 					f.logger.Error("targetStreamServer.Send encountered error", tag.Error(err))
 				} else {
 					f.logger.Debug("targetStreamServer.Send encountered EOF", tag.Error(err))
-					metrics.AdminServiceStreamTerminatedCount.WithLabelValues(append(f.metricLabelValues, "target")...).Inc()
+					f.reg.AdminServiceStreamTerminatedCount.WithLabelValues(append(f.metricLabelValues, "target")...).Inc()
 				}
 				return
 			}
-			metrics.AdminServiceStreamReqCount.WithLabelValues(f.metricLabelValues...).Inc()
+			f.reg.AdminServiceStreamReqCount.WithLabelValues(f.metricLabelValues...).Inc()
 		default:
 			f.logger.Error("sourceStreamClient.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
 				"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
@@ -257,7 +260,7 @@ func (f *StreamForwarder) forwardAcks(wg *sync.WaitGroup) {
 		}
 		if err == io.EOF {
 			f.logger.Debug("targetStreamServer.Recv encountered EOF", tag.Error(err))
-			metrics.AdminServiceStreamTerminatedCount.WithLabelValues(append(f.metricLabelValues, "target")...).Inc()
+			f.reg.AdminServiceStreamTerminatedCount.WithLabelValues(append(f.metricLabelValues, "target")...).Inc()
 			return
 		}
 
@@ -282,11 +285,11 @@ func (f *StreamForwarder) forwardAcks(wg *sync.WaitGroup) {
 					f.logger.Error("sourceStreamClient.Send encountered error", tag.Error(err))
 				} else {
 					f.logger.Debug("sourceStreamClient.Send encountered EOF", tag.Error(err))
-					metrics.AdminServiceStreamTerminatedCount.WithLabelValues(append(f.metricLabelValues, "source")...).Inc()
+					f.reg.AdminServiceStreamTerminatedCount.WithLabelValues(append(f.metricLabelValues, "source")...).Inc()
 				}
 				return
 			}
-			metrics.AdminServiceStreamRespCount.WithLabelValues(f.metricLabelValues...).Inc()
+			f.reg.AdminServiceStreamRespCount.WithLabelValues(f.metricLabelValues...).Inc()
 		default:
 			f.logger.Error("targetStreamServer.Recv encountered error", tag.Error(serviceerror.NewInternal(fmt.Sprintf(
 				"StreamWorkflowReplicationMessages encountered unknown type: %T %v", attr, attr,
@@ -311,6 +314,7 @@ func handleStream(
 	shardManager ShardManager,
 	metricLabelValues []string,
 	lifetime context.Context,
+	reg *metrics.Registry,
 ) error {
 	switch shardCountConfig.Mode {
 	case config.ShardCountLCM:
@@ -356,6 +360,7 @@ func handleStream(
 		targetClusterShardID,
 		metricLabelValues,
 		logger,
+		reg,
 	)
 	return forwarder.Run()
 }

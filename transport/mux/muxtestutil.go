@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/server/common/channel"
 	"go.temporal.io/server/common/log"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/temporalio/s2s-proxy/endtoendtest/proxyassert"
+	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
@@ -107,6 +109,11 @@ func buildTestMuxProviderBuilder(name string,
 	logger log.Logger,
 ) MuxProviderBuilder {
 	return func(cb AddNewMux, lifetime context.Context) (MuxProvider, error) {
+		reg := prometheus.NewRegistry()
+		testReg, err := metrics.NewRegistry(reg, reg)
+		if err != nil {
+			return nil, err
+		}
 		provider := &muxProvider{
 			name:         fmt.Sprintf("provider-%s", name),
 			connProvider: buildProvider(lifetime),
@@ -126,6 +133,7 @@ func buildTestMuxProviderBuilder(name string,
 			hasStarted:   atomic.Bool{},
 			lifetime:     lifetime,
 			hasCleanedUp: channel.NewShutdownOnce(),
+			reg:          testReg,
 		}
 		return provider, nil
 	}
@@ -139,11 +147,15 @@ func buildMuxManager(t *testing.T,
 ) (MultiMuxManager, chan connectionEvent, context.CancelFunc) {
 	eventsCh := make(chan connectionEvent, 100)
 	ctx, cancel := context.WithCancel(t.Context())
+	reg := prometheus.NewRegistry()
+	testReg, err2 := metrics.NewRegistry(reg, reg)
+	require.NoError(t, err2)
 	mgr, err := NewCustomMultiMuxManager(ctx,
 		name,
 		muxProviderBuilder,
 		[]session.StartManagedComponentFn{eventsComponent(eventsCh)},
 		connectionListObservers,
+		testReg,
 		logger)
 	require.NoError(t, err)
 	return mgr, eventsCh, cancel

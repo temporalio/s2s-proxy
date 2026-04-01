@@ -15,15 +15,15 @@ import (
 
 // registerYamuxObserverBuilder makes a closure with the muxCategory and logger so that sessions belonging to the same
 // grpcMuxManager all emit the same metrics together
-func registerYamuxObserverBuilder(muxCategory string, logger log.Logger) session.StartManagedComponentFn {
+func registerYamuxObserverBuilder(muxCategory string, reg *metrics.Registry, logger log.Logger) session.StartManagedComponentFn {
 	return func(lifetime context.Context, id string, session *yamux.Session) {
-		go emitYamuxMetrics(lifetime, muxCategory, id, session, logger)
+		go emitYamuxMetrics(lifetime, muxCategory, id, session, reg, logger)
 	}
 }
 
 // emitYamuxMetrics creates a loop that pings the provided yamux session repeatedly and gathers its two
 // metrics: Whether the server is alive and how many streams it has open. Intended for use as a goroutine.
-func emitYamuxMetrics(lifetime context.Context, muxCategory string, id string, session *yamux.Session, logger log.Logger) {
+func emitYamuxMetrics(lifetime context.Context, muxCategory string, id string, session *yamux.Session, reg *metrics.Registry, logger log.Logger) {
 	logger.Info("mux session watcher starting", tag.NewStringTag("remote_addr", common.GetHost(session.RemoteAddr().String())),
 		tag.NewStringTag("local_addr", session.LocalAddr().String()),
 		tag.NewStringTag("mux_id", id))
@@ -32,9 +32,9 @@ func emitYamuxMetrics(lifetime context.Context, muxCategory string, id string, s
 		// If we got a null session, we can't even generate tags to report
 		return
 	}
-	metrics.MuxSessionPingError.WithLabelValues(metricLabels...)
-	metrics.MuxSessionPingLatency.WithLabelValues(metricLabels...)
-	metrics.MuxSessionPingSuccess.WithLabelValues(metricLabels...)
+	reg.MuxSessionPingError.WithLabelValues(metricLabels...)
+	reg.MuxSessionPingLatency.WithLabelValues(metricLabels...)
+	reg.MuxSessionPingSuccess.WithLabelValues(metricLabels...)
 	var sessionActive int8 = 1
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -49,19 +49,19 @@ func emitYamuxMetrics(lifetime context.Context, muxCategory string, id string, s
 		}
 		dur, err := session.Ping()
 		if err != nil {
-			metrics.MuxSessionPingError.WithLabelValues(metricLabels...).Inc()
+			reg.MuxSessionPingError.WithLabelValues(metricLabels...).Inc()
 		} else {
-			metrics.MuxSessionPingLatency.WithLabelValues(metricLabels...).Add(float64(dur))
-			metrics.MuxSessionPingSuccess.WithLabelValues(metricLabels...).Inc()
+			reg.MuxSessionPingLatency.WithLabelValues(metricLabels...).Add(float64(dur))
+			reg.MuxSessionPingSuccess.WithLabelValues(metricLabels...).Inc()
 		}
-		metrics.MuxSessionOpen.WithLabelValues(metricLabels...).Set(float64(sessionActive))
+		reg.MuxSessionOpen.WithLabelValues(metricLabels...).Set(float64(sessionActive))
 		if sessionActive == 1 {
-			metrics.MuxStreamsActive.WithLabelValues(metricLabels...).Set(float64(session.NumStreams()))
+			reg.MuxStreamsActive.WithLabelValues(metricLabels...).Set(float64(session.NumStreams()))
 		} else {
 			// Clean up the label so we don't report it forever
-			metrics.MuxStreamsActive.DeleteLabelValues(metricLabels...)
-			metrics.MuxSessionOpen.DeleteLabelValues(metricLabels...)
+			reg.MuxStreamsActive.DeleteLabelValues(metricLabels...)
+			reg.MuxSessionOpen.DeleteLabelValues(metricLabels...)
 		}
-		metrics.MuxObserverReportCount.WithLabelValues(metricLabels...).Inc()
+		reg.MuxObserverReportCount.WithLabelValues(metricLabels...).Inc()
 	}
 }

@@ -20,6 +20,7 @@ type (
 		adminServiceAccess *auth.AccessControl
 		namespaceAccess    *auth.AccessControl
 	}
+
 	ACLConfig interface {
 		AllowedNamespaces() []string
 		AdminServiceAllowedMethods() []string

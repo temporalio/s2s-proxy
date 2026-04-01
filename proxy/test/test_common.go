@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/api/historyservice/v1"
 	"go.temporal.io/server/common"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/logging"
+	"github.com/temporalio/s2s-proxy/metrics"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 )
 
@@ -363,12 +365,17 @@ func createProxy(
 	}
 
 	configProvider := &simpleConfigProvider{cfg: *cfg}
-	proxy := s2sproxy.NewProxy(configProvider, logging.NewLoggerProvider(logger, configProvider))
+	reg := prometheus.NewRegistry()
+	testReg, err := metrics.NewRegistry(reg, reg)
+	if err != nil {
+		t.Fatalf("Failed to create metrics registry: %v", err)
+	}
+	proxy := s2sproxy.NewProxy(configProvider, logging.NewLoggerProvider(logger, configProvider), testReg)
 	if proxy == nil {
 		t.Fatalf("Failed to create proxy %s", name)
 	}
 
-	err := proxy.Start()
+	err = proxy.Start()
 	if err != nil {
 		t.Fatalf("Failed to start proxy %s: %v", name, err)
 	}
