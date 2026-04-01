@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
@@ -23,8 +24,17 @@ func init() {
 	MuxManagerStartDelay = 0
 }
 
+func newTestMuxRegistry(t *testing.T) *metrics.Registry {
+	t.Helper()
+	reg := prometheus.NewRegistry()
+	r, err := metrics.NewRegistry(reg, reg)
+	require.NoError(t, err)
+	return r
+}
+
 func TestGRPCMux(t *testing.T) {
 	logger := log.NewTestLogger()
+	testReg := newTestMuxRegistry(t)
 
 	// Receiving
 	serverConfig := config.ClusterDefinition{
@@ -33,7 +43,7 @@ func TestGRPCMux(t *testing.T) {
 			ConnectionString: "127.0.0.1:0",
 		},
 	}
-	receivingClient, err := grpcutil.NewMultiClientConn(t.Context(), "receivingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
+	receivingClient, err := grpcutil.NewMultiClientConn(t.Context(), "receivingClientConns", grpcutil.MakeDialOptions(nil, testReg.GRPCClientMetrics("outbound"))...)
 	receivingServerDefn := grpc.NewServer()
 	receivingEas := &testservices.EchoAdminService{
 		ServiceName: "receivingServerDefn",
@@ -43,7 +53,7 @@ func TestGRPCMux(t *testing.T) {
 	}
 	adminservice.RegisterAdminServiceServer(receivingServerDefn, receivingEas)
 	require.NoError(t, err)
-	receivingMuxManager, err := NewGRPCMuxManager(t.Context(), "receivingMM", serverConfig, receivingClient, receivingServerDefn, logger)
+	receivingMuxManager, err := NewGRPCMuxManager(t.Context(), "receivingMM", serverConfig, receivingClient, receivingServerDefn, testReg, logger)
 	require.NoError(t, err)
 	receivingMuxManager.Start()
 	receivingAdminServiceClient := adminservice.NewAdminServiceClient(receivingClient)
@@ -62,7 +72,7 @@ func TestGRPCMux(t *testing.T) {
 			ConnectionString: "127.0.0.1:0",
 		},
 	}
-	establishingClient, err := grpcutil.NewMultiClientConn(t.Context(), "establishingClientConns", grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
+	establishingClient, err := grpcutil.NewMultiClientConn(t.Context(), "establishingClientConns", grpcutil.MakeDialOptions(nil, testReg.GRPCClientMetrics("outbound"))...)
 	require.NoError(t, err)
 	establishingServer := grpc.NewServer()
 	establishingEas := &testservices.EchoAdminService{
@@ -72,7 +82,7 @@ func TestGRPCMux(t *testing.T) {
 		PayloadSize: 1024,
 	}
 	adminservice.RegisterAdminServiceServer(establishingServer, establishingEas)
-	establishingMuxManager, err := NewGRPCMuxManager(t.Context(), "establishingMM", clientConfig, establishingClient, establishingServer, logger)
+	establishingMuxManager, err := NewGRPCMuxManager(t.Context(), "establishingMM", clientConfig, establishingClient, establishingServer, testReg, logger)
 	require.NoError(t, err)
 	establishingMuxManager.Start()
 }

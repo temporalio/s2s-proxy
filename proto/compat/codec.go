@@ -27,6 +27,7 @@ type (
 	RepairUTF8Codec struct {
 		delegate encoding.CodecV2
 		*CodecParams
+		reg *metrics.Registry
 	}
 
 	CodecParams struct {
@@ -51,6 +52,11 @@ func GetCodec() *RepairUTF8Codec {
 	return encoding.GetCodecV2(CodecName).(*RepairUTF8Codec)
 }
 
+// SetRegistry configures the metrics registry used by the codec.
+func (c *RepairUTF8Codec) SetRegistry(reg *metrics.Registry) {
+	c.reg = reg
+}
+
 // Name implements encoding.CodecV2.
 func (c *RepairUTF8Codec) Name() string {
 	return CodecName
@@ -65,13 +71,19 @@ func (c *RepairUTF8Codec) Unmarshal(data mem.BufferSlice, v any) error {
 		duration := time.Since(start)
 
 		msgType := metrics.SanitizedTypeName(v)
-		metrics.TranslationLatency.WithLabelValues(metrics.UTF8RepairTranslationKind, msgType).Observe(duration.Seconds())
+		if c.reg != nil {
+			c.reg.TranslationLatency.WithLabelValues(metrics.UTF8RepairTranslationKind, msgType).Observe(duration.Seconds())
+		}
 		if err != nil {
 			c.Logger.Error("during UTF-8 repair", tag.Error(err))
-			metrics.TranslationErrors.WithLabelValues(metrics.UTF8RepairTranslationKind, msgType).Inc()
+			if c.reg != nil {
+				c.reg.TranslationErrors.WithLabelValues(metrics.UTF8RepairTranslationKind, msgType).Inc()
+			}
 		} else {
 			c.Logger.Debug("repaired invalid UTF-8 string during unmarshal", tag.NewStringTag("type", msgType))
-			metrics.TranslationCount.WithLabelValues(metrics.UTF8RepairTranslationKind, msgType).Inc()
+			if c.reg != nil {
+				c.reg.TranslationCount.WithLabelValues(metrics.UTF8RepairTranslationKind, msgType).Inc()
+			}
 			return nil
 		}
 	}

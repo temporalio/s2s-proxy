@@ -27,6 +27,7 @@ type establishingConnProvider struct {
 	logger        log.Logger
 	lifetime      context.Context
 	metricLabels  []string
+	reg           *metrics.Registry
 }
 
 var (
@@ -45,7 +46,7 @@ func init() {
 // NewMuxEstablisherProvider makes an outbound call using the provided TCP settings. This constructor handles unpacking
 // the TLS config, configures the connection provider with retry and exponential backoff, and sets a disconnect
 // sleep time of 1-2 seconds.
-func NewMuxEstablisherProvider(lifetime context.Context, name string, transportFn AddNewMux, connectionsCapacity int64, setting config.TCPTLSInfo, metricLabels []string, logger log.Logger) (MuxProvider, error) {
+func NewMuxEstablisherProvider(lifetime context.Context, name string, transportFn AddNewMux, connectionsCapacity int64, setting config.TCPTLSInfo, metricLabels []string, reg *metrics.Registry, logger log.Logger) (MuxProvider, error) {
 	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
 	if tlsCfg := setting.TLSConfig; tlsCfg.IsEnabled() {
 		tlsConfig, err := encryption.GetClientTLSConfig(tlsCfg)
@@ -64,6 +65,7 @@ func NewMuxEstablisherProvider(lifetime context.Context, name string, transportF
 		// The connProvider doesn't need the whole shutDown object, so don't give it a reference
 		lifetime:     lifetime,
 		metricLabels: metricLabels,
+		reg:          reg,
 	}
 	sessionFn := func(conn net.Conn) (*yamux.Session, error) {
 		cfg := yamux.DefaultConfig()
@@ -73,9 +75,9 @@ func NewMuxEstablisherProvider(lifetime context.Context, name string, transportF
 		return yamux.Client(conn, cfg)
 	}
 	// pre-initialize the MuxDial metrics
-	metrics.MuxDialFailed.WithLabelValues(metricLabels...)
-	metrics.MuxDialSuccess.WithLabelValues(metricLabels...)
-	return NewMuxProvider(lifetime, name, connPv, sessionFn, connectionsCapacity, transportFn, metricLabels, logger), nil
+	reg.MuxDialFailed.WithLabelValues(metricLabels...)
+	reg.MuxDialSuccess.WithLabelValues(metricLabels...)
+	return NewMuxProvider(lifetime, name, connPv, sessionFn, connectionsCapacity, transportFn, metricLabels, reg, logger), nil
 }
 
 // NewConnection makes a TCP call to establish a connection, then returns it. Retries with backoff over 30 seconds
@@ -106,10 +108,10 @@ func (p *establishingConnProvider) NewConnection() (net.Conn, error) {
 			return nil, p.lifetime.Err()
 		}
 		p.logger.Error("mux client failed to dial with retry", tag.Error(err))
-		metrics.MuxDialFailed.WithLabelValues(p.metricLabels...).Inc()
+		p.reg.MuxDialFailed.WithLabelValues(p.metricLabels...).Inc()
 		return nil, err
 	}
-	metrics.MuxDialSuccess.WithLabelValues(p.metricLabels...).Inc()
+	p.reg.MuxDialSuccess.WithLabelValues(p.metricLabels...).Inc()
 	return client, nil
 }
 

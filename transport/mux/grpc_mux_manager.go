@@ -23,7 +23,7 @@ type ConnListener interface {
 // and will manage the mux connections of the provided grpcutil.MultiClientConn such that they match the list of available muxes
 // Caller usage: 1. Create the MultiClientConn, 2. call NewGRPCMuxManager, 3. MultiMuxManager.Start, 4. Use the grpcutil.MultiClientConn
 // grpc.Server's will be started on every inbound mux automatically.
-func NewGRPCMuxManager(ctx context.Context, name string, cd config.ClusterDefinition, listener ConnListener, serverDefinition *grpc.Server, logger log.Logger) (MultiMuxManager, error) {
+func NewGRPCMuxManager(ctx context.Context, name string, cd config.ClusterDefinition, listener ConnListener, serverDefinition *grpc.Server, reg *metrics.Registry, logger log.Logger) (MultiMuxManager, error) {
 	// sane default for existing configs
 	muxCount := 10
 	if cd.MuxCount != 0 {
@@ -36,11 +36,11 @@ func NewGRPCMuxManager(ctx context.Context, name string, cd config.ClusterDefini
 	switch cd.ConnectionType {
 	case config.ConnTypeMuxClient:
 		muxProviderBuilder = func(cb AddNewMux, lifetime context.Context) (MuxProvider, error) {
-			return NewMuxEstablisherProvider(lifetime, name, cb, int64(muxCount), cd.MuxAddressInfo, metricLabels, logger)
+			return NewMuxEstablisherProvider(lifetime, name, cb, int64(muxCount), cd.MuxAddressInfo, metricLabels, reg, logger)
 		}
 	case config.ConnTypeMuxServer:
 		muxProviderBuilder = func(cb AddNewMux, lifetime context.Context) (MuxProvider, error) {
-			return NewMuxReceiverProvider(lifetime, name, cb, int64(muxCount), cd.MuxAddressInfo, metricLabels, logger)
+			return NewMuxReceiverProvider(lifetime, name, cb, int64(muxCount), cd.MuxAddressInfo, metricLabels, reg, logger)
 		}
 	default:
 		return nil, fmt.Errorf("invalid multiplexed transport mode: name %s, mode %s", name, connectionTypeName)
@@ -49,15 +49,16 @@ func NewGRPCMuxManager(ctx context.Context, name string, cd config.ClusterDefini
 		name,
 		muxProviderBuilder,
 		[]session.StartManagedComponentFn{
-			registerYamuxObserverBuilder(name, logger),
-			registerGRPCServer(connectionTypeName, serverDefinition, metricLabels, logger),
+			registerYamuxObserverBuilder(name, reg, logger),
+			registerGRPCServer(connectionTypeName, serverDefinition, metricLabels, reg, logger),
 		},
 		[]OnConnectionListUpdate{listener.OnConnectionListUpdate},
+		reg,
 		logger,
 	)
 }
 
-func registerGRPCServer(mode string, serverConfig *grpc.Server, metricLabels []string, logger log.Logger) session.StartManagedComponentFn {
+func registerGRPCServer(mode string, serverConfig *grpc.Server, metricLabels []string, reg *metrics.Registry, logger log.Logger) session.StartManagedComponentFn {
 	return func(lifetime context.Context, id string, session *yamux.Session) {
 		go func() {
 			logger.Info("Starting inbound server for mux",
@@ -65,7 +66,7 @@ func registerGRPCServer(mode string, serverConfig *grpc.Server, metricLabels []s
 				tag.NewStringTag("mode", mode), tag.NewStringTag("mux_id", id))
 			for lifetime.Err() == nil {
 				_ = serverConfig.Serve(session)
-				metrics.MuxServerDisconnected.WithLabelValues(metricLabels...).Inc()
+				reg.MuxServerDisconnected.WithLabelValues(metricLabels...).Inc()
 			}
 		}()
 	}

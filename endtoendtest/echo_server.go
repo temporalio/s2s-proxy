@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gogo/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	replicationpb "go.temporal.io/server/api/replication/v1"
@@ -114,9 +115,16 @@ func NewEchoServer(
 		}
 
 		configProvider := config.NewMockConfigProvider(*localClusterInfo.S2sProxyConfig)
+		promReg := prometheus.NewRegistry()
+		reg, err := metrics.NewRegistry(promReg, promReg)
+		if err != nil {
+			panic(err)
+		}
+
 		proxy = s2sproxy.NewProxy(
 			configProvider,
 			logging.NewLoggerProvider(logger, configProvider),
+			reg,
 		)
 
 		clientConfig = config.ProxyClientConfig{
@@ -268,7 +276,8 @@ func SendRecv(stream adminservice.AdminService_StreamWorkflowReplicationMessages
 						InclusiveLowWatermarkTime: timestamppb.New(highWatermarkInfo.Timestamp),
 					},
 				},
-			}}
+			},
+		}
 
 		if err = stream.Send(req); err != nil {
 			return echoed, err
@@ -322,6 +331,7 @@ func (s *EchoServer) PollActivityTaskQueue(req *workflowservice.PollActivityTask
 	defer cancel()
 	return workflowservice.NewWorkflowServiceClient(s.RemoteClient).PollActivityTaskQueue(timeout, req)
 }
+
 func (s *EchoServer) Describe() string {
 	proxyDescription := "no proxy"
 	if s.Proxy != nil {

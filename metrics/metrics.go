@@ -116,7 +116,7 @@ func DefaultHistogramVec(name string, help string, labels ...string) *prometheus
 		Name:      SanitizeForPrometheus(name),
 		Help:      help,
 		// TODO: Native histograms aren't supported in our Grafana just yet
-		//NativeHistogramBucketFactor: 1.1,
+		// NativeHistogramBucketFactor: 1.1,
 	}, labels)
 }
 
@@ -151,11 +151,10 @@ func (wls *wrapLoggerForPrometheus) Println(v ...interface{}) {
 	wls.Error(fmt.Sprintln(v...))
 }
 
-// NewMetricsHandler returns an http handler that will talk to Prometheus. This uses the global-default registry right now
-func NewMetricsHandler(logger log.Logger) http.Handler {
-	return promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
+// NewMetricsHandler returns an http handler that will talk to Prometheus using the provided gatherer.
+func NewMetricsHandler(gatherer prometheus.Gatherer, logger log.Logger) http.Handler {
+	return promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{
 		ErrorLog:          &wrapLoggerForPrometheus{Logger: logger},
-		Registry:          nil, // use default
 		EnableOpenMetrics: true,
 	})
 }

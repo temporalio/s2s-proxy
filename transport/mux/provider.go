@@ -34,6 +34,7 @@ type (
 		hasStarted   atomic.Bool
 		lifetime     context.Context
 		hasCleanedUp channel.ShutdownOnce
+		reg          *metrics.Registry
 	}
 	AddNewMux func(*yamux.Session, net.Conn)
 	// connProvider represents a way to get connections, either as a client or a server.
@@ -63,10 +64,11 @@ func NewMuxProvider(ctx context.Context,
 	muxCount int64,
 	addNewMux AddNewMux,
 	metricLabels []string,
+	reg *metrics.Registry,
 	logger log.Logger,
 ) MuxProvider {
 	// Initialize the counters so we get clear "0"s
-	metrics.MuxConnectionEstablish.WithLabelValues(metricLabels...)
+	reg.MuxConnectionEstablish.WithLabelValues(metricLabels...)
 	provider := &muxProvider{
 		name:         name,
 		lifetime:     ctx,
@@ -79,6 +81,7 @@ func NewMuxProvider(ctx context.Context,
 		startOnce:    sync.Once{},
 		hasStarted:   atomic.Bool{},
 		hasCleanedUp: channel.NewShutdownOnce(),
+		reg:          reg,
 	}
 	return provider
 }
@@ -138,14 +141,14 @@ func (m *muxProvider) Start() {
 					} else if errors.Is(err, yamux.ErrConnectionWriteTimeout) {
 						m.logger.Info("Timed out establishing mux", tag.Error(err),
 							tag.NewStringTag("remoteAddr", common.GetHost(session.RemoteAddr().String())))
-						metrics.MuxErrors.WithLabelValues(append(m.metricLabels, "timeout")...).Inc()
+						m.reg.MuxErrors.WithLabelValues(append(m.metricLabels, "timeout")...).Inc()
 					} else if err == io.EOF {
 						m.logger.Info("Remote immediately disconnected. This usually means the listener had queued connections", tag.Error(err),
 							tag.NewStringTag("remoteAddr", common.GetHost(session.RemoteAddr().String())))
-						metrics.MuxErrors.WithLabelValues(append(m.metricLabels, "disconnected")...).Inc()
+						m.reg.MuxErrors.WithLabelValues(append(m.metricLabels, "disconnected")...).Inc()
 					} else {
 						m.logger.Warn("Unknown error", tag.Error(err), tag.NewStringTag("remoteAddr", common.GetHost(session.RemoteAddr().String())))
-						metrics.MuxErrors.WithLabelValues(append(m.metricLabels, "unknown")...).Inc()
+						m.reg.MuxErrors.WithLabelValues(append(m.metricLabels, "unknown")...).Inc()
 					}
 					// Make sure session & conn close on error
 					_ = session.Close()
@@ -155,7 +158,7 @@ func (m *muxProvider) Start() {
 				}
 
 				m.addNewMux(session, conn)
-				metrics.MuxConnectionEstablish.WithLabelValues(m.metricLabels...).Inc()
+				m.reg.MuxConnectionEstablish.WithLabelValues(m.metricLabels...).Inc()
 			}
 		}()
 	})

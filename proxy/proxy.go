@@ -34,10 +34,11 @@ type (
 		outboundHealthCheckServer *http.Server
 		metricsServer             *http.Server
 		logProvider               logging.LoggerProvider
+		reg                       *metrics.Registry
 	}
 )
 
-func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider) *Proxy {
+func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider, reg *metrics.Registry) *Proxy {
 	s2sConfig := config.ToClusterConnConfig(configProvider.GetS2SProxyConfig())
 	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
@@ -45,6 +46,7 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 		cancel:             cancel,
 		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.MuxTransports)),
 		logProvider:        logProvider,
+		reg:                reg,
 	}
 	if len(s2sConfig.ClusterConnections) == 0 {
 		panic(errors.New("cannot create proxy without inbound and outbound config"))
@@ -55,7 +57,7 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 	proxy.profilingConfig = s2sConfig.ProfilingConfig
 
 	for _, clusterCfg := range s2sConfig.ClusterConnections {
-		cc, err := NewClusterConnection(ctx, clusterCfg, logProvider)
+		cc, err := NewClusterConnection(ctx, clusterCfg, logProvider, reg)
 		if err != nil {
 			logProvider.Get("init").Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", clusterCfg.Name))
 			continue
@@ -71,7 +73,7 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 		proxy.remoteHealthCheckConfig = &s2sConfig.ClusterConnections[0].RemoteClusterHealthCheck
 	}
 
-	metrics.NewProxyCount.Inc()
+	proxy.reg.NewProxyCount.Inc()
 	return proxy
 }
 
@@ -121,7 +123,7 @@ func (s *Proxy) startPProfHTTPServer() {
 func (s *Proxy) startMetricsHandler(lifetime context.Context, cfg config.MetricsConfig) error {
 	// Why not use the global ServeMux? So that it can be used in unit tests
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", metrics.NewMetricsHandler(s.logProvider.Get("metrics")))
+	mux.Handle("/metrics", metrics.NewMetricsHandler(s.reg.Gatherer(), s.logProvider.Get("metrics")))
 	s.metricsServer = &http.Server{
 		Addr:    cfg.Prometheus.ListenAddress,
 		Handler: mux,
@@ -148,7 +150,7 @@ func (s *Proxy) Start() error {
 			// TODO: Rethink health checks. The inbound/outbound traffic availability isn't quite right for a health check
 			return true
 		}
-		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.localHealthCheckConfig); err != nil {
+		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(healthFn, s.logProvider.Get("healthCheck"), s.reg), *s.localHealthCheckConfig); err != nil {
 			return err
 		}
 	} else {
@@ -162,7 +164,7 @@ func (s *Proxy) Start() error {
 			return true
 		}
 		var err error
-		if s.outboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newOutboundHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.remoteHealthCheckConfig); err != nil {
+		if s.outboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newOutboundHealthCheck(healthFn, s.logProvider.Get("healthCheck"), s.reg), *s.remoteHealthCheckConfig); err != nil {
 			return err
 		}
 	} else {

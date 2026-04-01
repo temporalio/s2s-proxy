@@ -43,6 +43,7 @@ type (
 		lcmParameters      LCMParameters
 		routingParameters  RoutingParameters
 		lifetime           context.Context
+		reg                *metrics.Registry
 	}
 	AdminServiceOverrides struct {
 		// Failover Version Increment. Overrides the value returned by DescribeCluster
@@ -65,6 +66,7 @@ func NewAdminServiceProxyServer(
 	logProvider logging.LoggerProvider,
 	shardManager ShardManager,
 	lifetime context.Context,
+	reg *metrics.Registry,
 ) adminservice.AdminServiceServer {
 	return &adminServiceProxyServer{
 		shardManager:       shardManager,
@@ -78,6 +80,7 @@ func NewAdminServiceProxyServer(
 		lcmParameters:      lcmParameters,
 		routingParameters:  routingParameters,
 		lifetime:           lifetime,
+		reg:                reg,
 	}
 }
 
@@ -337,7 +340,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	// Record streams active: the observer will report which exact streams are active, the gauge tells us the count
 	s.reportStreamValue(sourceClusterShardID.ShardID, 1)
 	defer s.reportStreamValue(sourceClusterShardID.ShardID, -1)
-	streamsActiveGauge := metrics.AdminServiceStreamsActive.WithLabelValues(s.metricLabelValues...)
+	streamsActiveGauge := s.reg.AdminServiceStreamsActive.WithLabelValues(s.metricLabelValues...)
 	streamsActiveGauge.Inc()
 	defer streamsActiveGauge.Dec()
 
@@ -355,6 +358,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		s.shardManager,
 		s.metricLabelValues,
 		s.lifetime,
+		s.reg,
 	)
 	if err != nil {
 		return err

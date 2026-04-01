@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
@@ -30,6 +31,14 @@ const (
 func init() {
 	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
 	mux.MuxManagerStartDelay = 0
+}
+
+func newTestMetricsRegistry(t *testing.T) *metrics.Registry {
+	t.Helper()
+	reg := prometheus.NewRegistry()
+	r, err := metrics.NewRegistry(reg, reg)
+	require.NoError(t, err)
+	return r
 }
 
 func getDynamicPorts(t *testing.T, num int) []string {
@@ -182,25 +191,25 @@ func newPairedLocalClusterConnection(t *testing.T, isMux bool, loggers logging.L
 		var localCtx context.Context
 		localCtx, cancelLocalCC = context.WithCancel(t.Context())
 		localCC, err = NewClusterConnection(localCtx, makeTCPClusterConfig("TCP-only Connection Local Proxy",
-			localFVI, remoteFVI, a.localProxyOutbound, a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound), loggers)
+			localFVI, remoteFVI, a.localProxyOutbound, a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound), loggers, newTestMetricsRegistry(t))
 		require.NoError(t, err)
 
 		var remoteCtx context.Context
 		remoteCtx, cancelRemoteCC = context.WithCancel(t.Context())
 		remoteCC, err = NewClusterConnection(remoteCtx, makeTCPClusterConfig("TCP-only Connection Remote Proxy",
-			remoteFVI, localFVI, a.remoteProxyOutbound, a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound), loggers)
+			remoteFVI, localFVI, a.remoteProxyOutbound, a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound), loggers, newTestMetricsRegistry(t))
 		require.NoError(t, err)
 	} else {
 		var localCtx context.Context
 		localCtx, cancelLocalCC = context.WithCancel(t.Context())
 		localCC, err = NewClusterConnection(localCtx, makeMuxClusterConfig("Mux Connection Local Establishing Proxy",
-			config.ConnTypeMuxClient, localFVI, remoteFVI, a.localProxyOutbound, a.localTemporalAddr, a.localProxyOutbound, a.remoteProxyInbound), loggers)
+			config.ConnTypeMuxClient, localFVI, remoteFVI, a.localProxyOutbound, a.localTemporalAddr, a.localProxyOutbound, a.remoteProxyInbound), loggers, newTestMetricsRegistry(t))
 		require.NoError(t, err)
 
 		var remoteCtx context.Context
 		remoteCtx, cancelRemoteCC = context.WithCancel(t.Context())
 		remoteCC, err = NewClusterConnection(remoteCtx, makeMuxClusterConfig("Mux Connection Remote Receiving Proxy",
-			config.ConnTypeMuxServer, remoteFVI, localFVI, a.remoteProxyOutbound, a.remoteTemporalAddr, a.remoteProxyOutbound, a.remoteProxyInbound), loggers)
+			config.ConnTypeMuxServer, remoteFVI, localFVI, a.remoteProxyOutbound, a.remoteTemporalAddr, a.remoteProxyOutbound, a.remoteProxyInbound), loggers, newTestMetricsRegistry(t))
 		require.NoError(t, err)
 	}
 	clientFromLocal, err := grpc.NewClient(a.localProxyOutbound, grpcutil.MakeDialOptions(nil, metrics.GetStandardGRPCClientInterceptor("outbound-local"))...)
@@ -274,7 +283,7 @@ func TestMuxCCFailover(t *testing.T) {
 	newConnection, err := NewClusterConnection(t.Context(),
 		makeMuxClusterConfig("newRemoteMux", config.ConnTypeMuxServer, remoteFVI, localFVI, plcc.addresses.remoteProxyOutbound,
 			plcc.addresses.remoteTemporalAddr, plcc.addresses.remoteProxyOutbound, plcc.addresses.remoteProxyInbound,
-			func(cc *config.ClusterConnConfig) { cc.Remote.MuxCount = 5 }), loggerProvider)
+			func(cc *config.ClusterConnConfig) { cc.Remote.MuxCount = 5 }), loggerProvider, newTestMetricsRegistry(t))
 	require.NoError(t, err)
 	newConnection.Start()
 	// Wait for localCC's client retry...

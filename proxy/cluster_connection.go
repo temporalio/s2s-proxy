@@ -48,6 +48,7 @@ type (
 		listener net.Listener
 		server   *grpc.Server
 		logger   log.Logger
+		reg      *metrics.Registry
 	}
 
 	// describableClientConn is a small extension to add a Describe() method to grpc.ClientConn. Used for logging.
@@ -106,6 +107,7 @@ type (
 		aclPolicy        *config.ACLPolicy
 		shardCountConfig config.ShardCountConfig
 		loggers          logging.LoggerProvider
+		reg              *metrics.Registry
 
 		shardManager      ShardManager
 		lcmParameters     LCMParameters
@@ -119,7 +121,7 @@ func sanitizeConnectionName(name string) string {
 }
 
 // NewClusterConnection unpacks the connConfig and creates the inbound and outbound clients and servers.
-func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logProvider logging.LoggerProvider) (*ClusterConnection, error) {
+func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logProvider logging.LoggerProvider, reg *metrics.Registry) (*ClusterConnection, error) {
 	// The name is used in metrics and in the protocol for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
 	sanitizedConnectionName := sanitizeConnectionName(connConfig.Name)
 	cc := &ClusterConnection{
@@ -127,11 +129,11 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
-	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound")
+	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound", reg)
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound")
+	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound", reg)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +146,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		return nil, err
 	}
 
-	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, connConfig.ShardCountConfig, connConfig.Local.TcpClient.TLSConfig, logProvider)
+	cc.shardManager = NewShardManager(connConfig.MemberlistConfig, connConfig.ShardCountConfig, connConfig.Local.TcpClient.TLSConfig, logProvider, reg)
 
 	getLCMParameters := func(shardCountConfig config.ShardCountConfig, inverse bool) LCMParameters {
 		if shardCountConfig.Mode != config.ShardCountLCM {
@@ -193,6 +195,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		aclPolicy:         connConfig.ACLPolicy,
 		shardCountConfig:  connConfig.ShardCountConfig,
 		loggers:           cc.loggers,
+		reg:               reg,
 		shardManager:      cc.shardManager,
 		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, true),
 		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, true, "inbound"),
@@ -213,6 +216,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		overrides:         AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote},
 		shardCountConfig:  connConfig.ShardCountConfig,
 		loggers:           cc.loggers,
+		reg:               reg,
 		shardManager:      cc.shardManager,
 		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, false),
 		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
@@ -225,14 +229,14 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	return cc, nil
 }
 
-func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string) (closableClientConn, error) {
+func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string, reg *metrics.Registry) (closableClientConn, error) {
 	switch transportCfg.ConnectionType {
 	case config.ConnTypeTCP:
-		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel)
+		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel, reg)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		return grpcutil.NewMultiClientConn(lifetime, fmt.Sprintf("client-conn-%s", connectionName),
 			// TLS is handled by the mux connection, so tlsConfig will always be nil
-			grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics(directionLabel))...)
+			grpcutil.MakeDialOptions(nil, reg.GRPCClientMetrics(directionLabel))...)
 	default:
 		return nil, errors.New("invalid connection type")
 	}
@@ -251,7 +255,7 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 		}
 		// The Mux manager needs to update its associated client
 		muxMgr, err := mux.NewGRPCMuxManager(lifetime, c.name, c.clusterDefinition,
-			c.managedClient.(*grpcutil.MultiClientConn), grpcServer, c.loggers.Get(LogMuxManager))
+			c.managedClient.(*grpcutil.MultiClientConn), grpcServer, c.reg, c.loggers.Get(LogMuxManager))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -277,13 +281,14 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 		listener: listener,
 		server:   grpcServer,
 		logger:   log.With(c.loggers.Get(LogTCPServer), tag.NewStringTag("direction", c.directionLabel), tag.Address(listener.Addr().String())),
+		reg:      c.reg,
 	}
 	return server, observer, nil
 }
 
 // buildTLSTCPClient creates a grpc.ClientConn using the provided configuration. It schedules a goroutine that closes
 // the grpc.ClientConn when the provided lifetime ends.
-func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg encryption.TLSConfig, metricLabel string) (closableClientConn, error) {
+func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg encryption.TLSConfig, metricLabel string, reg *metrics.Registry) (closableClientConn, error) {
 	var parsedTLSCfg *tls.Config
 	if tlsCfg.IsEnabled() {
 		var err error
@@ -292,7 +297,7 @@ func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg en
 			return nil, fmt.Errorf("config error when creating tls config: %w", err)
 		}
 	}
-	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics(metricLabel))...)
+	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(parsedTLSCfg, reg.GRPCClientMetrics(metricLabel))...)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inbound client: %w", err)
 	}
@@ -351,6 +356,7 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 		c.loggers,
 		c.shardManager,
 		lifetime,
+		c.reg,
 	)
 	var accessControl *auth.AccessControl
 	if c.aclPolicy != nil {
@@ -371,13 +377,13 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	})
 
 	// Ordering matters! These metrics happen BEFORE the translations/acl
-	unaryInterceptors = append(unaryInterceptors, metrics.GRPCServerMetrics.UnaryServerInterceptor(labelGenerator))
-	streamInterceptors = append(streamInterceptors, metrics.GRPCServerMetrics.StreamServerInterceptor(labelGenerator))
+	unaryInterceptors = append(unaryInterceptors, c.reg.GRPCServerMetrics.UnaryServerInterceptor(labelGenerator))
+	streamInterceptors = append(streamInterceptors, c.reg.GRPCServerMetrics.StreamServerInterceptor(labelGenerator))
 
 	var translators []interceptor.Translator
 	if c.nsTranslations.Len() > 0 {
 		translators = append(translators, interceptor.NewNamespaceNameTranslator(c.loggers.Get(LogInterceptor),
-			c.nsTranslations.AsMap(), c.nsTranslations.Inverse().AsMap()))
+			c.reg, c.nsTranslations.AsMap(), c.nsTranslations.Inverse().AsMap()))
 	}
 
 	if c.saTranslations.LenNamespaces() > 0 {
@@ -386,12 +392,12 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 			panic("multiple namespace search attribute mappings are not supported")
 		}
 		translators = append(translators, interceptor.NewSearchAttributeTranslator(c.loggers.Get(LogInterceptor),
-			c.saTranslations.FlattenMaps(), c.saTranslations.Inverse().FlattenMaps()))
+			c.reg, c.saTranslations.FlattenMaps(), c.saTranslations.Inverse().FlattenMaps()))
 	}
 
 	if len(translators) > 0 {
 		c.loggers.Get("init").Info("Translators enabled", tag.NewAnyTag("translators", translators))
-		tr := interceptor.NewTranslationInterceptor(c.loggers.Get(LogInterceptor), translators)
+		tr := interceptor.NewTranslationInterceptor(c.loggers.Get(LogInterceptor), translators, c.reg)
 		unaryInterceptors = append(unaryInterceptors, tr.Intercept)
 		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
 	}
@@ -429,7 +435,7 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 }
 
 func (s *simpleGRPCServer) Start() {
-	metrics.GRPCServerStarted.WithLabelValues(s.name).Inc()
+	s.reg.GRPCServerStarted.WithLabelValues(s.name).Inc()
 	go func() {
 		s.logger.Info("Starting TCP-TLS gRPC server", tag.Name(s.name), tag.Address(s.listener.Addr().String()))
 		defer s.logger.Info("TCP-TLS gRPC server closed as requested", tag.Name(s.name), tag.Address(s.listener.Addr().String()))
@@ -443,9 +449,9 @@ func (s *simpleGRPCServer) Start() {
 				s.logger.Warn("GRPC server failed", tag.NewStringTag("direction", "outbound"),
 					tag.Address(s.listener.Addr().String()), tag.Error(err))
 				if err == io.EOF {
-					metrics.GRPCServerStopped.WithLabelValues(s.name, "eof").Inc()
+					s.reg.GRPCServerStopped.WithLabelValues(s.name, "eof").Inc()
 				} else if !errors.Is(err, grpc.ErrServerStopped) {
-					metrics.GRPCServerStopped.WithLabelValues(s.name, "unknown").Inc()
+					s.reg.GRPCServerStopped.WithLabelValues(s.name, "unknown").Inc()
 				}
 			}
 			time.Sleep(1 * time.Second)
@@ -453,7 +459,7 @@ func (s *simpleGRPCServer) Start() {
 	}()
 	// The basic net.Listen, grpc.Server, and ClientConn are not context-aware, so make sure they clean up on context close.
 	context.AfterFunc(s.lifetime, func() {
-		metrics.GRPCServerStopped.WithLabelValues(s.name, "none").Inc()
+		s.reg.GRPCServerStopped.WithLabelValues(s.name, "none").Inc()
 		s.server.GracefulStop()
 		_ = s.listener.Close()
 	})

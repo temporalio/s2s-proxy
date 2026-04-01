@@ -135,6 +135,10 @@ type visitor func(logger log.Logger, obj any, match stringMatcher) (bool, error)
 // in the given object. When it finds namespace string fields, it invokes
 // the provided match function.
 func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, error) {
+	return visitNamespaceWithReg(logger, nil, obj, match)
+}
+
+func visitNamespaceWithReg(logger log.Logger, reg *metrics.Registry, obj any, match stringMatcher) (bool, error) {
 	if isSkippableForNamespaceTranslation(obj) {
 		return false, nil
 	}
@@ -166,7 +170,7 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 		} else if hist, ok := vwp.Interface().(*history.History); ok && hist != nil {
 			for _, evt := range hist.GetEvents() {
 				// Do the recursive call here so that we check `isSkippableForNamespaceTranslation`.
-				m, err := visitNamespace(logger, evt, match)
+				m, err := visitNamespaceWithReg(logger, reg, evt, match)
 				matched = matched || m
 				if err != nil {
 					return visit.Stop, err
@@ -174,7 +178,9 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 			}
 			return visit.Skip, nil
 		} else if dataBlobFieldNames[fieldType.Name] {
-			changed, err := visitDataBlobs(logger, vwp, match, visitNamespace)
+			changed, err := visitDataBlobs(logger, reg, vwp, match, func(l log.Logger, o any, m stringMatcher) (bool, error) {
+				return visitNamespaceWithReg(l, reg, o, m)
+			})
 			matched = matched || changed
 			if err != nil {
 				return visit.Stop, err
@@ -202,9 +208,13 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 }
 
 // visitSearchAttributes uses reflection to recursively visit all fields
-// in the given object. When it finds namespace string fields, it invokes
+// in the given object. When it finds search attribute fields, it invokes
 // the provided match function.
 func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (bool, error) {
+	return visitSearchAttributesWithReg(logger, nil, obj, match)
+}
+
+func visitSearchAttributesWithReg(logger log.Logger, reg *metrics.Registry, obj any, match stringMatcher) (bool, error) {
 	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
@@ -219,7 +229,9 @@ func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (boo
 			return action, nil
 		}
 		if dataBlobFieldNames[fieldType.Name] {
-			changed, err := visitDataBlobs(logger, vwp, match, visitSearchAttributes)
+			changed, err := visitDataBlobs(logger, reg, vwp, match, func(l log.Logger, o any, m stringMatcher) (bool, error) {
+				return visitSearchAttributesWithReg(l, reg, o, m)
+			})
 			matched = matched || changed
 			if err != nil {
 				return visit.Stop, err
@@ -281,10 +293,10 @@ func getParentFieldType(vwp visit.ValueWithParent) (result reflect.StructField, 
 	return fieldType, action
 }
 
-func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMatcher, visitor visitor) (bool, error) {
+func visitDataBlobs(logger log.Logger, reg *metrics.Registry, vwp visit.ValueWithParent, match stringMatcher, visitor visitor) (bool, error) {
 	switch evt := vwp.Interface().(type) {
 	case []*common.DataBlob:
-		newEvts, matched, changed, err := translateDataBlobs(logger, match, visitor, evt...)
+		newEvts, matched, changed, err := translateDataBlobs(logger, reg, match, visitor, evt...)
 		if err != nil {
 			return matched, err
 		}
@@ -295,7 +307,7 @@ func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMa
 		}
 		return matched, nil
 	case *common.DataBlob:
-		newEvt, matched, changed, err := translateOneDataBlob(logger, match, visitor, evt)
+		newEvt, matched, changed, err := translateOneDataBlob(logger, reg, match, visitor, evt)
 		if err != nil {
 			return matched, err
 		}
@@ -310,9 +322,9 @@ func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMa
 	}
 }
 
-func translateDataBlobs(logger log.Logger, match stringMatcher, visitor visitor, blobs ...*common.DataBlob) (result []*common.DataBlob, anyMatched, anyChanged bool, retErr error) {
+func translateDataBlobs(logger log.Logger, reg *metrics.Registry, match stringMatcher, visitor visitor, blobs ...*common.DataBlob) (result []*common.DataBlob, anyMatched, anyChanged bool, retErr error) {
 	for i, blob := range blobs {
-		newBlob, matched, changed, err := translateOneDataBlob(logger, match, visitor, blob)
+		newBlob, matched, changed, err := translateOneDataBlob(logger, reg, match, visitor, blob)
 		anyChanged = anyChanged || changed
 		anyMatched = anyMatched || matched
 		if err != nil {
@@ -323,7 +335,7 @@ func translateDataBlobs(logger log.Logger, match stringMatcher, visitor visitor,
 	return blobs, anyMatched, anyChanged, nil
 }
 
-func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visitor, blob *common.DataBlob) (result *common.DataBlob, matched, changed bool, retErr error) {
+func translateOneDataBlob(logger log.Logger, reg *metrics.Registry, match stringMatcher, visitor visitor, blob *common.DataBlob) (result *common.DataBlob, matched, changed bool, retErr error) {
 	if blob == nil || len(blob.Data) == 0 {
 		return blob, matched, changed, nil
 	}
@@ -341,11 +353,15 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 		changed = changed || c
 		if err != nil {
 			logger.Error("failed to repair invalid utf-8 in history event blob", tag.Error(err))
-			metrics.TranslationErrors.WithLabelValues(metrics.UTF8RepairTranslationKind, metrics.HistoryBlobMessageType).Inc()
+			if reg != nil {
+				reg.TranslationErrors.WithLabelValues(metrics.UTF8RepairTranslationKind, metrics.HistoryBlobMessageType).Inc()
+			}
 			return blob, matched, changed, err
 		} else if changed {
 			logger.Debug("repaired invalid utf-8 in history event blob")
-			metrics.TranslationCount.WithLabelValues(metrics.UTF8RepairTranslationKind, metrics.HistoryBlobMessageType).Inc()
+			if reg != nil {
+				reg.TranslationCount.WithLabelValues(metrics.UTF8RepairTranslationKind, metrics.HistoryBlobMessageType).Inc()
+			}
 			events = repairedEvents
 		}
 	}
