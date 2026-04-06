@@ -14,8 +14,7 @@ import (
 )
 
 const (
-	DefaultName    = "s2s-proxy"
-	DefaultVersion = "0.0.1" // TODO: configure build-time injection of version.
+	DefaultName = "s2s-proxy"
 )
 
 type proxyRunner interface {

@@ -1,6 +1,7 @@
 # Build stage
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
+ARG VERSION=dev
 ARG TARGETARCH
 
 # System dependencies
@@ -25,7 +26,7 @@ COPY . .
 
 # Build
 # need to make clean first in case binaries to be built are stale
-RUN make clean && CGO_ENABLED=0 make bins
+RUN make clean && CGO_ENABLED=0 make bins VERSION=${VERSION}
 
 # Runtime stage
 FROM alpine:3.22 AS base

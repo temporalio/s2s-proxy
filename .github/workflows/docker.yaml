@@ -44,12 +44,35 @@ jobs:
 
       - name: Set image names
         id: image-names
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [[ "${{ github.event_name }}" == "release" ]]; then
+          if [[ "$EVENT_NAME" == "release" ]]; then
             echo "images=temporaliotest/s2s-proxy,temporalio/s2s-proxy" >> "$GITHUB_OUTPUT"
           else
             echo "images=temporaliotest/s2s-proxy" >> "$GITHUB_OUTPUT"
           fi
+      - name: Compute version
+        id: version
+        # Produces the VERSION passed to `make bins` and used as the image tag.
+        # Three cases:
+        #   local: "dev"             local build (Makefile default, no VERSION arg).
+        #   dispatch: "dev-<sha>"    CI build on main push; set by docker.yaml. Or manual dispatch with a commit SHA.
+        #   release: "v1.2.3"        GitHub release; set to the release tag by docker.yaml.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_COMMIT: ${{ inputs.commit }}
+        run: |
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            echo "value=$REF_NAME" >> "$GITHUB_OUTPUT"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            SHA=$(echo "$INPUT_COMMIT" | cut -c1-7)
+            echo "value=dev-${SHA}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
@@ -57,7 +80,7 @@ jobs:
           images: ${{ steps.image-names.outputs.images }}
           # Don't set latest label if it is a prerelease.
           tags: |
-            type=raw,value=${{ github.ref_name }}
+            type=raw,value=${{ steps.version.outputs.value }}
             ${{ github.event_name == 'release' && github.event.release.prerelease != true && 'type=raw,value=latest' || '' }}
 
       - name: Build and push Docker image
@@ -68,5 +91,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ steps.version.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
