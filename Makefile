@@ -1,5 +1,6 @@
 
 ##### Arguments ######
+VERSION       ?= dev
 GOOS          ?= $(shell go env GOOS)
 GOARCH        ?= $(if $(TARGETARCH),$(TARGETARCH),$(shell go env GOARCH))
 GOPATH        ?= $(shell go env GOPATH)
@@ -28,7 +29,7 @@ clean-bins:
 # Binary target
 s2s-proxy: $(ALL_SRC)
 	@printf $(COLOR) "Build s2s-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)...\n"
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -o ./bins/s2s-proxy ./cmd/proxy
+	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -ldflags "-X main.Version=$(VERSION)" -o ./bins/s2s-proxy ./cmd/proxy
 
 update-tools:
 # When changing the golangci-lint version, update the version in .github/workflows/pull-request.yml

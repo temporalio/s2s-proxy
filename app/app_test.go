@@ -42,6 +42,8 @@ func runWithCancelledCtx(t *testing.T, a *App) error {
 	return a.Run(ctx, []string{"app", "start", "--" + config.ConfigPathFlag, "stubbed.yaml"})
 }
 
+const testVersion = "dev"
+
 func TestBuildApp_ReflectsNameAndVersion(t *testing.T) {
 	app := New("just-another-proxy-💁", "9.9.9").buildApp(context.Background())
 	assert.Equal(t, "just-another-proxy-💁", app.Name)
@@ -49,7 +51,7 @@ func TestBuildApp_ReflectsNameAndVersion(t *testing.T) {
 }
 
 func TestRun_MissingConfigFlag_ReturnsError(t *testing.T) {
-	err := New(DefaultName, DefaultVersion).Run(
+	err := New(DefaultName, testVersion).Run(
 		context.Background(),
 		[]string{"app", "start"}, // no --config flag
 	)
@@ -59,7 +61,7 @@ func TestRun_MissingConfigFlag_ReturnsError(t *testing.T) {
 
 func TestRun_BadConfigPath_ReturnsError(t *testing.T) {
 	// tries to read the file w/o stubbed config, so it fails.
-	err := New(DefaultName, DefaultVersion).Run(
+	err := New(DefaultName, testVersion).Run(
 		context.Background(),
 		[]string{"app", "start", "--" + config.ConfigPathFlag, "/not/stubbed.yaml"},
 	)
@@ -68,7 +70,7 @@ func TestRun_BadConfigPath_ReturnsError(t *testing.T) {
 
 func TestRun_CancelledContext_StartsAndStopsProxy(t *testing.T) {
 	stub := &stubbedProxy{}
-	err := runWithCancelledCtx(t, New(DefaultName, DefaultVersion, withStubbedConfig(), withStubbedProxy(stub)))
+	err := runWithCancelledCtx(t, New(DefaultName, testVersion, withStubbedConfig(), withStubbedProxy(stub)))
 	require.NoError(t, err)
 	assert.True(t, stub.startCalled)
 	assert.True(t, stub.stopped)
@@ -76,7 +78,7 @@ func TestRun_CancelledContext_StartsAndStopsProxy(t *testing.T) {
 
 func TestRun_ProxyStartError_PropagatesAndSkipsStop(t *testing.T) {
 	stub := &stubbedProxy{startErr: errors.New("start failed")}
-	err := New(DefaultName, DefaultVersion, withStubbedConfig(), withStubbedProxy(stub)).Run(
+	err := New(DefaultName, testVersion, withStubbedConfig(), withStubbedProxy(stub)).Run(
 		context.Background(),
 		[]string{"app", "start", "--" + config.ConfigPathFlag, "stubbed.yaml"},
 	)
@@ -86,7 +88,7 @@ func TestRun_ProxyStartError_PropagatesAndSkipsStop(t *testing.T) {
 
 func TestRun_ExtraOptsSeam_InjectedRunnerIsUsed(t *testing.T) {
 	stub := &stubbedProxy{}
-	err := runWithCancelledCtx(t, New(DefaultName, DefaultVersion, withStubbedConfig(), withStubbedProxy(stub)))
+	err := runWithCancelledCtx(t, New(DefaultName, testVersion, withStubbedConfig(), withStubbedProxy(stub)))
 	require.NoError(t, err)
 	assert.True(t, stub.startCalled)
 }
@@ -97,7 +99,7 @@ func TestRun_ContextCancelledMidRun_StopsProxy(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- New(DefaultName, DefaultVersion, withStubbedConfig(), withStubbedProxy(stub)).Run(
+		done <- New(DefaultName, testVersion, withStubbedConfig(), withStubbedProxy(stub)).Run(
 			ctx,
 			[]string{"app", "start", "--" + config.ConfigPathFlag, "stubbed.yaml"},
 		)
@@ -110,6 +112,6 @@ func TestRun_ContextCancelledMidRun_StopsProxy(t *testing.T) {
 
 func TestRun_LogLevelFlag_ParsedWithoutError(t *testing.T) {
 	stub := &stubbedProxy{}
-	err := runWithCancelledCtx(t, New(DefaultName, DefaultVersion, withStubbedConfig(), withStubbedProxy(stub)))
+	err := runWithCancelledCtx(t, New(DefaultName, testVersion, withStubbedConfig(), withStubbedProxy(stub)))
 	require.NoError(t, err)
 }
