@@ -131,6 +131,8 @@ func init() {
 	prometheus.MustRegister(MuxConnectionEstablish)
 	prometheus.MustRegister(MuxDialFailed)
 	prometheus.MustRegister(MuxDialSuccess)
+	prometheus.MustRegister(MuxServerDisconnected)
+	prometheus.MustRegister(NumMuxesActive)
 
 	prometheus.MustRegister(TranslationCount)
 	prometheus.MustRegister(TranslationErrors)
