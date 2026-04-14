@@ -2,74 +2,6 @@ x-volumes: &x-volumes
   - ./..:/etc/develop:ro
 
 services:
-  temporal-a:
-    image: temporalio/temporal:1.5.0
-    command:
-      - server
-      - start-dev
-      - --port
-      - "${TEMPORAL_INTERNAL_PORT}"
-      - --ip
-      - "0.0.0.0"
-      - --ui-port
-      - "${TEMPORAL_UI_INTERNAL_PORT}"
-      - --namespace
-      - default
-      - --log-level
-      - warn
-    ports:
-      - "${TEMPORAL_A_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
-      - "${TEMPORAL_A_UI_EXTERNAL_PORT}:${TEMPORAL_UI_INTERNAL_PORT}"
-    networks:
-      - develop
-    healthcheck:
-      test:
-        - CMD
-        - temporal
-        - operator
-        - cluster
-        - health
-        - --address
-        - "localhost:${TEMPORAL_INTERNAL_PORT}"
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 5s
-
-  temporal-b:
-    image: temporalio/temporal:1.5.0
-    command:
-      - server
-      - start-dev
-      - --port
-      - "${TEMPORAL_INTERNAL_PORT}"
-      - --ip
-      - "0.0.0.0"
-      - --ui-port
-      - "${TEMPORAL_UI_INTERNAL_PORT}"
-      - --namespace
-      - default
-      - --log-level
-      - warn
-    ports:
-      - "${TEMPORAL_B_EXTERNAL_PORT}:${TEMPORAL_INTERNAL_PORT}"
-      - "${TEMPORAL_B_UI_EXTERNAL_PORT}:${TEMPORAL_UI_INTERNAL_PORT}"
-    networks:
-      - develop
-    healthcheck:
-      test:
-        - CMD
-        - temporal
-        - operator
-        - cluster
-        - health
-        - --address
-        - "localhost:${TEMPORAL_INTERNAL_PORT}"
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 5s
-
   proxy-b:
     build:
       context: ../..
@@ -136,7 +68,7 @@ services:
         condition: service_healthy
 
   smoke-test:
-    image: temporalio/temporal:1.5.0
+    image: temporalio/admin-tools:${TEMPORAL_CLI_VERSION}
     entrypoint: /bin/sh
     networks:
       - develop
