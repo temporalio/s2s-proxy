@@ -356,7 +356,7 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 		return blob, matched, changed, err
 	}
 	if matched || changed {
-		blob, err = serializer.SerializeEvents(events, blob.EncodingType)
+		blob, err = serializer.SerializeEvents(events)
 	}
 	return blob, matched, changed, err
 }
