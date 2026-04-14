@@ -626,7 +626,7 @@ func makeHistoryEventsBlobWithNamespaceField(ns string) *common.DataBlob {
 	}
 
 	s := serialization.NewSerializer()
-	blob, err := s.SerializeEvents(evts, enums.ENCODING_TYPE_PROTO3)
+	blob, err := s.SerializeEvents(evts)
 	if err != nil {
 		panic(err)
 	}
@@ -676,7 +676,7 @@ func makeHistoryEventsBlobWithUTF8(utf string) *common.DataBlob {
 	}
 
 	s := serialization.NewSerializer()
-	blob, err := s.SerializeEvents(evts, enums.ENCODING_TYPE_PROTO3)
+	blob, err := s.SerializeEvents(evts)
 	if err != nil {
 		panic(err)
 	}

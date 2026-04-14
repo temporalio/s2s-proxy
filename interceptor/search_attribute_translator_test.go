@@ -218,7 +218,7 @@ func makeHistoryEventsBlobWithSearchAttribute(name string) *common.DataBlob {
 	}
 
 	s := serialization.NewSerializer()
-	blob, err := s.SerializeEvents(evts, enums.ENCODING_TYPE_PROTO3)
+	blob, err := s.SerializeEvents(evts)
 	if err != nil {
 		panic(err)
 	}
