@@ -38,6 +38,7 @@ clusterConnections:
     aclPolicy:
       allowedMethods:
         adminService:
+        # Optional. If configured, these methods are required to support multi-cluster replication.
           - AddOrUpdateRemoteCluster
           - RemoveRemoteCluster
           - DescribeCluster
@@ -49,6 +50,8 @@ clusterConnections:
           - ReapplyEvents
           - GetNamespace
       allowedNamespaces:
+        # Optional. If configured, the temporal-system namespace must be included to allow migration workflows to run.
+        - "temporal-system"
         - "myNamespace"
     # Namespace translations are bi-directional and apply to both local and remote requests.
     namespaceTranslation:
