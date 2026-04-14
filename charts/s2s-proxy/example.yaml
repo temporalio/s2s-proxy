@@ -18,6 +18,7 @@ data:
           - ReapplyEvents
           - GetNamespace
         allowedNamespaces:
+        - temporal-system
         - myNamespace
       local:
         connectionType: tcp
