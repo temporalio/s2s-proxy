@@ -3,6 +3,7 @@ package encryption
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -53,7 +54,7 @@ func GetServerTLSConfig(serverConfig TLSConfig, logger log.Logger) (tlsConfig *t
 	tlsConfig = auth.NewEmptyTLSConfig()
 	if !serverConfig.SkipCAVerification {
 		tlsConfig.ClientAuth = tls.RequireAnyClientCert
-		tlsConfig.ClientCAs, err = fetchCACert(serverConfig.RemoteCAPath)
+		tlsConfig.ClientCAs, err = fetchCACert(serverConfig.RemoteCAPath, logger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read CACert from %s: %w", serverConfig.RemoteCAPath, err)
 		}
@@ -111,7 +112,7 @@ func GetServerTLSConfig(serverConfig TLSConfig, logger log.Logger) (tlsConfig *t
 	return
 }
 
-func GetClientTLSConfig(clientConfig TLSConfig) (tlsConfig *tls.Config, err error) {
+func GetClientTLSConfig(clientConfig TLSConfig, logger log.Logger) (tlsConfig *tls.Config, err error) {
 	if !clientConfig.IsEnabled() {
 		return
 	}
@@ -126,7 +127,7 @@ func GetClientTLSConfig(clientConfig TLSConfig) (tlsConfig *tls.Config, err erro
 	}
 
 	if clientConfig.RemoteCAPath != "" {
-		caCertPool, err := fetchCACert(clientConfig.RemoteCAPath)
+		caCertPool, err := fetchCACert(clientConfig.RemoteCAPath, logger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load CA cert: %w", err)
 		}
@@ -144,9 +145,9 @@ func GetClientTLSConfig(clientConfig TLSConfig) (tlsConfig *tls.Config, err erro
 	return
 }
 
-func fetchCACert(pathOrUrl string) (caPool *x509.CertPool, err error) {
-	caPool = x509.NewCertPool()
+func fetchCACert(pathOrUrl string, logger log.Logger) (*x509.CertPool, error) {
 	var caBytes []byte
+	var err error
 
 	if strings.HasPrefix(pathOrUrl, "http://") {
 		return nil, errors.New("HTTP is not supported for CA cert URLs. Provide HTTPS URL")
@@ -169,8 +170,51 @@ func fetchCACert(pathOrUrl string) (caPool *x509.CertPool, err error) {
 		}
 	}
 
+	if err := validateCAPoolPEM(caBytes, pathOrUrl, logger); err != nil {
+		return nil, err
+	}
+
+	caPool := x509.NewCertPool()
 	if !caPool.AppendCertsFromPEM(caBytes) {
-		return nil, errors.New("unknown failure constructing cert pool for ca")
+		return nil, fmt.Errorf("ca file %q: failed to build cert pool", pathOrUrl)
 	}
 	return caPool, nil
+}
+
+// validateCAPoolPEM rejects PEM bundles containing non-CA certificates.
+// non-CA Certificates defined by [rfc-5280](https://datatracker.ietf.org/doc/html/rfc5280):
+// - BasicConstraints is not valid
+// - CA is FALSE
+// Reasoning: x509.CertPool.AppendCertsFromPEM accepts leaf certs as trust anchors
+// Reference: [golang/go#51953](https://github.com/golang/go/issues/51953)
+func validateCAPoolPEM(pemBytes []byte, source string, logger log.Logger) error {
+	rest := pemBytes
+	var found bool
+	for len(rest) > 0 {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+
+		if block.Type != "CERTIFICATE" {
+			logger.Info("skipping non-CERTIFICATE PEM block in CA file",
+				tag.NewStringTag("source", source),
+				tag.NewStringTag("blockType", block.Type))
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return fmt.Errorf("cannot parse ca file %q: %w", source, err)
+		}
+		if !cert.BasicConstraintsValid || !cert.IsCA {
+			return fmt.Errorf("cannot trust ca file %q: %q is not a CA",
+				source, cert.Subject.CommonName)
+		}
+		found = true
+	}
+	if !found {
+		return fmt.Errorf("ca file %q: no CA certificates found", source)
+	}
+	return nil
 }
