@@ -152,7 +152,7 @@ func NewEchoServer(
 	clientTLS := config.FromClientTLSConfig(clientConfig.TLS)
 	if clientTLS.IsEnabled() {
 		var err error
-		parsedTLSCfg, err = encryption.GetClientTLSConfig(clientTLS)
+		parsedTLSCfg, err = encryption.GetClientTLSConfig(clientTLS, logger)
 		if err != nil {
 			panic(err)
 		}
