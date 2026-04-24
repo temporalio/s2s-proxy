@@ -127,11 +127,11 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
-	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound", cc.loggers.Get(LogTLSHandshake))
+	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound")
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound", cc.loggers.Get(LogTLSHandshake))
+	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound")
 	if err != nil {
 		return nil, err
 	}
@@ -225,10 +225,10 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	return cc, nil
 }
 
-func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string, logger log.Logger) (closableClientConn, error) {
+func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string) (closableClientConn, error) {
 	switch transportCfg.ConnectionType {
 	case config.ConnTypeTCP:
-		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel, logger)
+		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		return grpcutil.NewMultiClientConn(lifetime, fmt.Sprintf("client-conn-%s", connectionName),
 			// TLS is handled by the mux connection, so tlsConfig will always be nil
@@ -283,11 +283,11 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 
 // buildTLSTCPClient creates a grpc.ClientConn using the provided configuration. It schedules a goroutine that closes
 // the grpc.ClientConn when the provided lifetime ends.
-func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg encryption.TLSConfig, metricLabel string, logger log.Logger) (closableClientConn, error) {
+func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg encryption.TLSConfig, metricLabel string) (closableClientConn, error) {
 	var parsedTLSCfg *tls.Config
 	if tlsCfg.IsEnabled() {
 		var err error
-		parsedTLSCfg, err = encryption.GetClientTLSConfig(tlsCfg, logger)
+		parsedTLSCfg, err = encryption.GetClientTLSConfig(tlsCfg)
 		if err != nil {
 			return nil, fmt.Errorf("config error when creating tls config: %w", err)
 		}
