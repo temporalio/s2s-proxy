@@ -547,7 +547,7 @@ func (m *intraProxyManager) ensurePeer(
 	if tlsCfg.IsEnabled() {
 		logger.Debug("ensurePeer TLS enabled, building TLS config")
 		var err error
-		parsedTLSCfg, err = encryption.GetClientTLSConfig(tlsCfg, logger)
+		parsedTLSCfg, err = encryption.GetClientTLSConfig(tlsCfg)
 		if err != nil {
 			logger.Error("ensurePeer failed to create TLS config", tag.Error(err))
 			return nil, fmt.Errorf("config error when creating tls config: %w", err)

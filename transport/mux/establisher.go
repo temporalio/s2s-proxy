@@ -48,7 +48,7 @@ func init() {
 func NewMuxEstablisherProvider(lifetime context.Context, name string, transportFn AddNewMux, connectionsCapacity int64, setting config.TCPTLSInfo, metricLabels []string, logger log.Logger) (MuxProvider, error) {
 	tlsWrapper := func(conn net.Conn) net.Conn { return conn }
 	if tlsCfg := setting.TLSConfig; tlsCfg.IsEnabled() {
-		tlsConfig, err := encryption.GetClientTLSConfig(tlsCfg, logger)
+		tlsConfig, err := encryption.GetClientTLSConfig(tlsCfg)
 		if err != nil {
 			return nil, err
 		}
