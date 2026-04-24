@@ -119,12 +119,15 @@ func TestEOFFromServer(t *testing.T) {
 	adminHandler := &hangupAdminServer{}
 	grpcHost := grpc.NewServer()
 	adminservice.RegisterAdminServiceServer(grpcHost, adminHandler)
-	listener, _ := net.Listen("tcp", "localhost:8566")
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
 	go func() {
 		_ = grpcHost.Serve(listener)
 	}()
 	time.Sleep(10 * time.Millisecond)
-	client, err := grpc.NewClient("localhost:8566", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	assert.NoError(t, err)
 	adminServiceClient := adminservice.NewAdminServiceClient(client)
 	clientCtx, cancelCtx := context.WithCancel(t.Context())

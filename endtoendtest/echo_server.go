@@ -230,13 +230,13 @@ func (s *EchoServer) DescribeCluster(req *adminservice.DescribeClusterRequest) (
 	if s.RemoteClient == nil {
 		panic("nil RemoteClient")
 	}
-	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return adminservice.NewAdminServiceClient(s.RemoteClient).DescribeCluster(timeout, req)
 }
 
 func (s *EchoServer) DescribeMutableState(req *adminservice.DescribeMutableStateRequest) (*adminservice.DescribeMutableStateResponse, error) {
-	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return adminservice.NewAdminServiceClient(s.RemoteClient).DescribeMutableState(timeout, req)
 }
