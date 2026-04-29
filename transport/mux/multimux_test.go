@@ -24,7 +24,6 @@ type muxClientServer struct {
 }
 
 func (s *muxServer) Run(t *testing.T) {
-	s.wg.Add(1)
 	defer s.wg.Done()
 	for {
 		//t.Log("Listening on yamux", s.session.Addr())
@@ -111,6 +110,7 @@ func TestMultiMux(t *testing.T) {
 			muxServer: <-serverCh,
 			muxClient: yamuxClient,
 		}
+		wg.Add(1)
 		go muxes[i].muxServer.Run(t)
 	}
 	time.Sleep(1 * time.Second)
