@@ -144,9 +144,9 @@ func GetClientTLSConfig(clientConfig TLSConfig) (tlsConfig *tls.Config, err erro
 	return
 }
 
-func fetchCACert(pathOrUrl string) (caPool *x509.CertPool, err error) {
-	caPool = x509.NewCertPool()
+func fetchCACert(pathOrUrl string) (*x509.CertPool, error) {
 	var caBytes []byte
+	var err error
 
 	if strings.HasPrefix(pathOrUrl, "http://") {
 		return nil, errors.New("HTTP is not supported for CA cert URLs. Provide HTTPS URL")
@@ -169,8 +169,17 @@ func fetchCACert(pathOrUrl string) (caPool *x509.CertPool, err error) {
 		}
 	}
 
+	certs, err := certificatesFromPEM(caBytes)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse ca file %q: %w", pathOrUrl, err)
+	}
+	if err := validateHasCA(certs, pathOrUrl); err != nil {
+		return nil, err
+	}
+
+	caPool := x509.NewCertPool()
 	if !caPool.AppendCertsFromPEM(caBytes) {
-		return nil, errors.New("unknown failure constructing cert pool for ca")
+		return nil, fmt.Errorf("ca file %q: failed to build cert pool", pathOrUrl)
 	}
 	return caPool, nil
 }
