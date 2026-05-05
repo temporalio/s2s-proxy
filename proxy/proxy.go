@@ -23,31 +23,31 @@ type (
 	}
 
 	Proxy struct {
-		lifetime                  context.Context
-		cancel                    context.CancelFunc
-		localHealthCheckConfig    *config.HealthCheckConfig
-		remoteHealthCheckConfig   *config.HealthCheckConfig
-		metricsConfig             *config.MetricsConfig
-		profilingConfig           *config.ProfilingConfig
-		clusterConnections        map[migrationId]*ClusterConnection
-		inboundHealthCheckServer  *http.Server
-		outboundHealthCheckServer *http.Server
-		metricsServer             *http.Server
-		logProvider               logging.LoggerProvider
+		lifetime                context.Context
+		cancel                  context.CancelFunc
+		localHealthCheckConfig  *config.HealthCheckConfig
+		remoteHealthCheckConfig *config.HealthCheckConfig
+		metricsConfig           *config.MetricsConfig
+		profilingConfig         *config.ProfilingConfig
+		clusterConnections      map[migrationId]*ClusterConnection
+		localHealthCheckServer  *http.Server
+		remoteHealthCheckServer *http.Server
+		metricsServer           *http.Server
+		logProvider             logging.LoggerProvider
 	}
 )
 
 func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider) *Proxy {
-	s2sConfig := config.ToClusterConnConfig(configProvider.GetS2SProxyConfig())
+	s2sConfig := configProvider.GetS2SProxyConfig()
 	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
 		lifetime:           ctx,
 		cancel:             cancel,
-		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.MuxTransports)),
+		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.ClusterConnections)),
 		logProvider:        logProvider,
 	}
 	if len(s2sConfig.ClusterConnections) == 0 {
-		panic(errors.New("cannot create proxy without inbound and outbound config"))
+		panic(errors.New("cannot create proxy: clusterConnections is empty"))
 	}
 	if s2sConfig.Metrics != nil {
 		proxy.metricsConfig = s2sConfig.Metrics
@@ -148,12 +148,12 @@ func (s *Proxy) Start() error {
 			// TODO: Rethink health checks. The inbound/outbound traffic availability isn't quite right for a health check
 			return true
 		}
-		if s.inboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newInboundHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.localHealthCheckConfig); err != nil {
+		if s.localHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newLocalHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.localHealthCheckConfig); err != nil {
 			return err
 		}
 	} else {
-		s.logProvider.Get("init").Warn("Started up without inbound health check! Double-check the YAML config," +
-			" it needs at least the following path: healthCheck.listenAddress")
+		s.logProvider.Get("init").Warn("Started up without local cluster health check! Double-check the YAML config," +
+			" it needs at least the following path: clusterConnections[].localClusterHealthCheck.listenAddress")
 	}
 
 	if s.remoteHealthCheckConfig != nil {
@@ -162,12 +162,12 @@ func (s *Proxy) Start() error {
 			return true
 		}
 		var err error
-		if s.outboundHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newOutboundHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.remoteHealthCheckConfig); err != nil {
+		if s.remoteHealthCheckServer, err = s.startHealthCheckHandler(s.lifetime, newRemoteHealthCheck(healthFn, s.logProvider.Get("healthCheck")), *s.remoteHealthCheckConfig); err != nil {
 			return err
 		}
 	} else {
-		s.logProvider.Get("init").Warn("Started up without outbound health check! Double-check the YAML config," +
-			" it needs at least the following path: outboundHealthCheck.listenAddress")
+		s.logProvider.Get("init").Warn("Started up without remote cluster health check! Double-check the YAML config," +
+			" it needs at least the following path: clusterConnections[].remoteClusterHealthCheck.listenAddress")
 	}
 
 	if s.metricsConfig != nil {

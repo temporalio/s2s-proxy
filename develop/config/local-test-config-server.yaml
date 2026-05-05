@@ -52,8 +52,8 @@ clusterConnections:
         - "left-ns"
 #    namespaceTranslation:
 #      mappings:
-#        - localString: "leftName"
-#          remoteString: "rightName"
+#        - local: "leftName"
+#          remote: "rightName"
 #    searchAttributeTranslation:
 #      namespaceMappings:
 #        - name: "leftName"

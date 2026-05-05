@@ -15,7 +15,6 @@ import (
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/logging"
-	clientmock "github.com/temporalio/s2s-proxy/mocks/client"
 )
 
 func TestAdminserviceSuite(t *testing.T) {
@@ -26,14 +25,12 @@ type adminserviceSuite struct {
 	suite.Suite
 	ctrl *gomock.Controller
 
-	adminClientMock   *adminservicemock.MockAdminServiceClient
-	clientFactoryMock *clientmock.MockClientFactory
+	adminClientMock *adminservicemock.MockAdminServiceClient
 }
 
 func (s *adminserviceSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.adminClientMock = adminservicemock.NewMockAdminServiceClient(s.ctrl)
-	s.clientFactoryMock = clientmock.NewMockClientFactory(s.ctrl)
 }
 
 func (s *adminserviceSuite) AfterTest() {

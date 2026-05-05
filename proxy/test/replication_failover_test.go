@@ -284,8 +284,8 @@ func (s *ReplicationTestSuite) setupSimple() {
 		proxyBShardConfig.RemoteShardCount = int32(s.shardCountA)
 	}
 
-	s.proxyA = createProxy(s.logger, s.T(), "proxy-a", "", proxyAOutbound, muxServerAddress, s.clusterA, config.ClientMode, config.ShardCountConfig{}, "", "", 0, nil, nil)
-	s.proxyB = createProxy(s.logger, s.T(), "proxy-b", "", proxyBOutbound, muxServerAddress, s.clusterB, config.ServerMode, proxyBShardConfig, "", "", 0, nil, nil)
+	s.proxyA = createProxy(s.logger, s.T(), "proxy-a", "", proxyAOutbound, muxServerAddress, s.clusterA, config.ConnTypeMuxClient, config.ShardCountConfig{}, "", "", 0, nil, nil)
+	s.proxyB = createProxy(s.logger, s.T(), "proxy-b", "", proxyBOutbound, muxServerAddress, s.clusterB, config.ConnTypeMuxServer, proxyBShardConfig, "", "", 0, nil, nil)
 }
 
 func (s *ReplicationTestSuite) setupMultiProxy() {
@@ -333,8 +333,8 @@ func (s *ReplicationTestSuite) setupMultiProxy() {
 		proxyBShardConfig.RemoteShardCount = int32(s.shardCountA)
 	}
 
-	s.proxyB1 = createProxy(s.logger, s.T(), "proxy-b-1", proxyB1Address, s.proxyB1Outbound, s.proxyB1Mux, s.clusterB, config.ServerMode, proxyBShardConfig, "proxy-node-b-1", "127.0.0.1", s.proxyB1MemberlistPort, nil, proxyAddressesB)
-	s.proxyB2 = createProxy(s.logger, s.T(), "proxy-b-2", proxyB2Address, s.proxyB2Outbound, s.proxyB2Mux, s.clusterB, config.ServerMode, proxyBShardConfig, "proxy-node-b-2", "127.0.0.1", s.proxyB2MemberlistPort, []string{fmt.Sprintf("127.0.0.1:%d", s.proxyB1MemberlistPort)}, proxyAddressesB)
+	s.proxyB1 = createProxy(s.logger, s.T(), "proxy-b-1", proxyB1Address, s.proxyB1Outbound, s.proxyB1Mux, s.clusterB, config.ConnTypeMuxServer, proxyBShardConfig, "proxy-node-b-1", "127.0.0.1", s.proxyB1MemberlistPort, nil, proxyAddressesB)
+	s.proxyB2 = createProxy(s.logger, s.T(), "proxy-b-2", proxyB2Address, s.proxyB2Outbound, s.proxyB2Mux, s.clusterB, config.ConnTypeMuxServer, proxyBShardConfig, "proxy-node-b-2", "127.0.0.1", s.proxyB2MemberlistPort, []string{fmt.Sprintf("127.0.0.1:%d", s.proxyB1MemberlistPort)}, proxyAddressesB)
 
 	var countA1, countA2, countB1, countB2, countPA1, countPA2 atomic.Int64
 
@@ -347,8 +347,8 @@ func (s *ReplicationTestSuite) setupMultiProxy() {
 	s.NoError(err, "Failed to start load balancer C")
 
 	muxLoadBalancerBAddress := fmt.Sprintf("localhost:%s", loadBalancerBPort)
-	s.proxyA1 = createProxy(s.logger, s.T(), "proxy-a-1", proxyA1Address, s.proxyA1Outbound, muxLoadBalancerBAddress, s.clusterA, config.ClientMode, config.ShardCountConfig{}, "proxy-node-a-1", "127.0.0.1", s.proxyA1MemberlistPort, nil, proxyAddressesA)
-	s.proxyA2 = createProxy(s.logger, s.T(), "proxy-a-2", proxyA2Address, s.proxyA2Outbound, muxLoadBalancerBAddress, s.clusterA, config.ClientMode, config.ShardCountConfig{}, "proxy-node-a-2", "127.0.0.1", s.proxyA2MemberlistPort, []string{fmt.Sprintf("127.0.0.1:%d", s.proxyA1MemberlistPort)}, proxyAddressesA)
+	s.proxyA1 = createProxy(s.logger, s.T(), "proxy-a-1", proxyA1Address, s.proxyA1Outbound, muxLoadBalancerBAddress, s.clusterA, config.ConnTypeMuxClient, config.ShardCountConfig{}, "proxy-node-a-1", "127.0.0.1", s.proxyA1MemberlistPort, nil, proxyAddressesA)
+	s.proxyA2 = createProxy(s.logger, s.T(), "proxy-a-2", proxyA2Address, s.proxyA2Outbound, muxLoadBalancerBAddress, s.clusterA, config.ConnTypeMuxClient, config.ShardCountConfig{}, "proxy-node-a-2", "127.0.0.1", s.proxyA2MemberlistPort, []string{fmt.Sprintf("127.0.0.1:%d", s.proxyA1MemberlistPort)}, proxyAddressesA)
 }
 
 func (s *ReplicationTestSuite) TearDownSuite() {

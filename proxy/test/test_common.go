@@ -305,7 +305,7 @@ func createProxy(
 	outboundAddress string,
 	muxAddress string,
 	cluster *testcore.TestCluster,
-	muxMode config.MuxMode,
+	muxConnectionType config.ConnectionType,
 	shardCountConfig config.ShardCountConfig,
 	nodeName string,
 	memberlistBindAddr string,
@@ -313,18 +313,8 @@ func createProxy(
 	memberlistJoinAddrs []string,
 	proxyAddresses map[string]string,
 ) *s2sproxy.Proxy {
-	var muxConnectionType config.ConnectionType
-	var muxAddressInfo config.TCPTLSInfo
-	if muxMode == config.ServerMode {
-		muxConnectionType = config.ConnTypeMuxServer
-		muxAddressInfo = config.TCPTLSInfo{
-			ConnectionString: muxAddress,
-		}
-	} else {
-		muxConnectionType = config.ConnTypeMuxClient
-		muxAddressInfo = config.TCPTLSInfo{
-			ConnectionString: muxAddress,
-		}
+	muxAddressInfo := config.TCPTLSInfo{
+		ConnectionString: muxAddress,
 	}
 
 	cfg := &config.S2SProxyConfig{
@@ -377,7 +367,7 @@ func createProxy(
 		tag.NewStringTag("inboundAddress", inboundAddress),
 		tag.NewStringTag("outboundAddress", outboundAddress),
 		tag.NewStringTag("muxAddress", muxAddress),
-		tag.NewStringTag("muxMode", string(muxMode)),
+		tag.NewStringTag("muxConnectionType", string(muxConnectionType)),
 		tag.NewStringTag("nodeName", nodeName),
 	)
 

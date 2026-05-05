@@ -30,11 +30,3 @@
 ## Project Overview
 
 This is the s2s-proxy project for Temporal, providing server-to-server proxy functionality.
-
-### Important Components
-
-#### Config Converter Tool
-- Located at: `cmd/tools/configconverter/`
-- Purpose: Converts legacy s2s-proxy configs to new `clusterConnections` format
-- Uses `config.ToClusterConnConfig()` for conversion
-- Filters out deprecated fields marked with "TODO: Soon to be deprecated!"

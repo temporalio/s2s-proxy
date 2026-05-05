@@ -329,8 +329,8 @@ func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
 	return c.outboundClient.CanMakeCalls() && c.outboundServer.CanAcceptConnections()
 }
 
-// buildProxyServer uses the provided grpc.ClientConnInterface and config.ProxyConfig to create a grpc.Server that proxies
-// the Temporal API across the ClientConnInterface.
+// buildProxyServer uses the provided serverConfiguration and TLSConfig to create a grpc.Server that proxies
+// the Temporal API across the inbound ClientConnInterface.
 func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, observeFn func(int32, int32), lifetime context.Context) (*grpc.Server, error) {
 	serverOpts, err := makeServerOptions(c, tlsConfig)
 	if err != nil {

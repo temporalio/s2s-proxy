@@ -12,14 +12,13 @@ type HealthChecker interface {
 	createHandler() func(w http.ResponseWriter, r *http.Request)
 }
 
-// outboundHealthChecker contains references required to report whether the local Temporal server
-// can make requests of the remote Temporal server
-type outboundHealthChecker struct {
+// remoteHealthChecker reports whether the local Temporal server can make requests of the remote Temporal server.
+type remoteHealthChecker struct {
 	isHealthy func() bool
 	logger    log.Logger
 }
 
-func (h *outboundHealthChecker) createHandler() func(w http.ResponseWriter, r *http.Request) {
+func (h *remoteHealthChecker) createHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		metrics.LBHealthCheckCount.WithLabelValues("outbound").Inc()
 		w.Header().Set("Content-Type", "text/plain")
@@ -34,19 +33,19 @@ func (h *outboundHealthChecker) createHandler() func(w http.ResponseWriter, r *h
 	}
 }
 
-func newOutboundHealthCheck(isHealthy func() bool, logger log.Logger) HealthChecker {
-	return &outboundHealthChecker{
+func newRemoteHealthCheck(isHealthy func() bool, logger log.Logger) HealthChecker {
+	return &remoteHealthChecker{
 		isHealthy: isHealthy,
 		logger:    logger,
 	}
 }
 
-type inboundHealthChecker struct {
+type localHealthChecker struct {
 	isHealthy func() bool
 	logger    log.Logger
 }
 
-func (h *inboundHealthChecker) createHandler() func(w http.ResponseWriter, r *http.Request) {
+func (h *localHealthChecker) createHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		metrics.LBHealthCheckCount.WithLabelValues("inbound").Inc()
 		w.Header().Set("Content-Type", "text/plain")
@@ -61,8 +60,8 @@ func (h *inboundHealthChecker) createHandler() func(w http.ResponseWriter, r *ht
 	}
 }
 
-func newInboundHealthCheck(isHealthy func() bool, logger log.Logger) HealthChecker {
-	return &inboundHealthChecker{
+func newLocalHealthCheck(isHealthy func() bool, logger log.Logger) HealthChecker {
+	return &localHealthChecker{
 		isHealthy: isHealthy,
 		logger:    logger,
 	}
