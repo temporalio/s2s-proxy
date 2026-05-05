@@ -1,22 +1,12 @@
-inbound:
-  name: "b-inbound-server"
-  server:
-    type: "mux"
-    mux: "muxed"
-  client:
-    tcp:
-      serverAddress: "localhost:8233"
-outbound:
-  name: "b-outbound-server"
-  server:
-    tcp:
-      listenAddress: "0.0.0.0:6333"
-  client:
-    type: "mux"
-    mux: "muxed"
-mux:
-  - name: "muxed"
-    mode: "server"
-    server:
-      listenAddress: "0.0.0.0:6334"
-
+clusterConnections:
+  - name: "b-inbound-server/b-outbound-server"
+    local:
+      connectionType: "tcp"
+      tcpClient:
+        address: "localhost:8233"
+      tcpServer:
+        address: "0.0.0.0:6333"
+    remote:
+      connectionType: "mux-server"
+      muxAddressInfo:
+        address: "0.0.0.0:6334"

@@ -40,8 +40,8 @@ clusterConnections:
       remote: 100
     namespaceTranslation:
       mappings:
-        - localString: "left-ns"
-          remoteString: "rightName"
+        - local: "left-ns"
+          remote: "rightName"
     searchAttributeTranslation:
       namespaceMappings:
         - name: "left-ns"

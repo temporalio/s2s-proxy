@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/server/common/log"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/endtoendtest"
 	"github.com/temporalio/s2s-proxy/transport/mux"
 )
@@ -59,88 +60,58 @@ type (
 	cfgOption func(c *config.S2SProxyConfig)
 )
 
-func withServerTLS(tls config.ServerTLSConfig, inbound bool) cfgOption {
+func conn(c *config.S2SProxyConfig) *config.ClusterConnConfig {
+	return &c.ClusterConnections[0]
+}
+
+// withRemoteServerTLS configures TLS on the remote-facing server listener (the proxy's "inbound" entry point).
+func withRemoteServerTLS(tls encryption.TLSConfig) cfgOption {
+	return func(c *config.S2SProxyConfig) { conn(c).Remote.TcpServer.TLSConfig = tls }
+}
+
+// withRemoteClientTLS configures TLS on the remote-facing client (forwarding to the remote proxy).
+func withRemoteClientTLS(tls encryption.TLSConfig) cfgOption {
+	return func(c *config.S2SProxyConfig) { conn(c).Remote.TcpClient.TLSConfig = tls }
+}
+
+func withACLPolicy(aclPolicy *config.ACLPolicy) cfgOption {
+	return func(c *config.S2SProxyConfig) { conn(c).ACLPolicy = aclPolicy }
+}
+
+func withRemoteMuxClient(address string) cfgOption {
 	return func(c *config.S2SProxyConfig) {
-		if inbound {
-			c.Inbound.Server.TLS = tls
-		} else {
-			c.Outbound.Server.TLS = tls
-		}
+		conn(c).Remote.ConnectionType = config.ConnTypeMuxClient
+		conn(c).Remote.MuxAddressInfo.ConnectionString = address
 	}
 }
 
-func withClientTLS(tls config.ClientTLSConfig, inbound bool) cfgOption {
+func withRemoteMuxServer(address string) cfgOption {
 	return func(c *config.S2SProxyConfig) {
-		if inbound {
-			c.Inbound.Client.TLS = tls
-		} else {
-			c.Outbound.Client.TLS = tls
-		}
+		conn(c).Remote.ConnectionType = config.ConnTypeMuxServer
+		conn(c).Remote.MuxAddressInfo.ConnectionString = address
 	}
 }
 
-func withACLPolicy(aclPolicy *config.ACLPolicy, inbound bool) cfgOption {
+func withNamespaceTranslation(mappings []config.StringMapping) cfgOption {
 	return func(c *config.S2SProxyConfig) {
-		if inbound {
-			c.Inbound.ACLPolicy = aclPolicy
-		} else {
-			c.Outbound.ACLPolicy = aclPolicy
-		}
-	}
-}
-
-func withMux(mux config.MuxTransportConfig) cfgOption {
-	return func(c *config.S2SProxyConfig) {
-		c.MuxTransports = append(c.MuxTransports, mux)
-	}
-}
-
-func withClientConfig(clientCfg config.ProxyClientConfig, inbound bool) cfgOption {
-	return func(c *config.S2SProxyConfig) {
-		if inbound {
-			c.Inbound.Client = clientCfg
-		} else {
-			c.Outbound.Client = clientCfg
-		}
-	}
-}
-
-func withServerConfig(serverCfg config.ProxyServerConfig, inbound bool) cfgOption {
-	return func(c *config.S2SProxyConfig) {
-		if inbound {
-			c.Inbound.Server = serverCfg
-		} else {
-			c.Outbound.Server = serverCfg
-		}
-	}
-}
-
-func withNamespaceTranslation(mapping []config.NameMappingConfig, _ bool) cfgOption {
-	return func(c *config.S2SProxyConfig) {
-		c.NamespaceNameTranslation.Mappings = mapping
+		conn(c).NamespaceTranslation.Mappings = mappings
 	}
 }
 
 func EchoServerTLSOptions() []cfgOption {
 	return []cfgOption{
-		withServerTLS(
-			config.ServerTLSConfig{
-				CertificatePath:   filepath.Join("certificates", "proxy1.pem"),
-				KeyPath:           filepath.Join("certificates", "proxy1.key"),
-				ClientCAPath:      filepath.Join("certificates", "proxy2.pem"),
-				RequireClientAuth: true,
-			},
-			true,
-		),
-		withClientTLS(
-			config.ClientTLSConfig{
-				CertificatePath: filepath.Join("certificates", "proxy1.pem"),
-				KeyPath:         filepath.Join("certificates", "proxy1.key"),
-				ServerName:      "onebox-proxy2.cluster.tmprl.cloud",
-				ServerCAPath:    filepath.Join("certificates", "proxy2.pem"),
-			},
-			false,
-		),
+		withRemoteServerTLS(encryption.TLSConfig{
+			CertificatePath:    filepath.Join("certificates", "proxy1.pem"),
+			KeyPath:            filepath.Join("certificates", "proxy1.key"),
+			RemoteCAPath:       filepath.Join("certificates", "proxy2.pem"),
+			SkipCAVerification: false,
+		}),
+		withRemoteClientTLS(encryption.TLSConfig{
+			CertificatePath: filepath.Join("certificates", "proxy1.pem"),
+			KeyPath:         filepath.Join("certificates", "proxy1.key"),
+			CAServerName:    "onebox-proxy2.cluster.tmprl.cloud",
+			RemoteCAPath:    filepath.Join("certificates", "proxy2.pem"),
+		}),
 	}
 }
 
@@ -154,86 +125,54 @@ func createS2SProxyConfig(cfg *config.S2SProxyConfig, opts []cfgOption) *config.
 
 func (s *proxyTestSuite) createEchoServerConfig(opts ...cfgOption) *config.S2SProxyConfig {
 	return createS2SProxyConfig(&config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy1-inbound-server",
-			Server: config.ProxyServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: s.serverProxyInboundAddress,
-				},
+		ClusterConnections: []config.ClusterConnConfig{{
+			Name: "proxy1",
+			Local: config.ClusterDefinition{
+				ConnectionType: config.ConnTypeTCP,
+				TcpServer:      config.TCPTLSInfo{ConnectionString: s.serverProxyOutboundAddress},
+				TcpClient:      config.TCPTLSInfo{ConnectionString: s.echoServerAddress},
 			},
-			Client: config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: s.echoServerAddress,
-				},
+			Remote: config.ClusterDefinition{
+				ConnectionType: config.ConnTypeTCP,
+				TcpServer:      config.TCPTLSInfo{ConnectionString: s.serverProxyInboundAddress},
+				TcpClient:      config.TCPTLSInfo{ConnectionString: "to-be-added"},
 			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy1-outbound-server",
-			Server: config.ProxyServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: s.serverProxyOutboundAddress,
-				},
-			},
-			Client: config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: "to-be-added",
-				},
-			},
-		},
+		}},
 	}, opts)
 }
 
 func EchoClientTLSOptions() []cfgOption {
 	return []cfgOption{
-		withServerTLS(
-			config.ServerTLSConfig{
-				CertificatePath:   filepath.Join("certificates", "proxy2.pem"),
-				KeyPath:           filepath.Join("certificates", "proxy2.key"),
-				ClientCAPath:      filepath.Join("certificates", "proxy1.pem"),
-				RequireClientAuth: true,
-			},
-			true,
-		),
-		withClientTLS(
-			config.ClientTLSConfig{
-				CertificatePath: filepath.Join("certificates", "proxy2.pem"),
-				KeyPath:         filepath.Join("certificates", "proxy2.key"),
-				ServerName:      "onebox-proxy1.cluster.tmprl.cloud",
-				ServerCAPath:    filepath.Join("certificates", "proxy1.pem"),
-			},
-			false,
-		),
+		withRemoteServerTLS(encryption.TLSConfig{
+			CertificatePath:    filepath.Join("certificates", "proxy2.pem"),
+			KeyPath:            filepath.Join("certificates", "proxy2.key"),
+			RemoteCAPath:       filepath.Join("certificates", "proxy1.pem"),
+			SkipCAVerification: false,
+		}),
+		withRemoteClientTLS(encryption.TLSConfig{
+			CertificatePath: filepath.Join("certificates", "proxy2.pem"),
+			KeyPath:         filepath.Join("certificates", "proxy2.key"),
+			CAServerName:    "onebox-proxy1.cluster.tmprl.cloud",
+			RemoteCAPath:    filepath.Join("certificates", "proxy1.pem"),
+		}),
 	}
 }
 
 func (s *proxyTestSuite) createEchoClientConfig(opts ...cfgOption) *config.S2SProxyConfig {
 	return createS2SProxyConfig(&config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy2-inbound-server",
-			Server: config.ProxyServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: s.clientProxyInboundAddress,
-				},
+		ClusterConnections: []config.ClusterConnConfig{{
+			Name: "proxy2",
+			Local: config.ClusterDefinition{
+				ConnectionType: config.ConnTypeTCP,
+				TcpServer:      config.TCPTLSInfo{ConnectionString: s.clientProxyOutboundAddress},
+				TcpClient:      config.TCPTLSInfo{ConnectionString: s.echoClientAddress},
 			},
-			Client: config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: s.echoClientAddress,
-				},
+			Remote: config.ClusterDefinition{
+				ConnectionType: config.ConnTypeTCP,
+				TcpServer:      config.TCPTLSInfo{ConnectionString: s.clientProxyInboundAddress},
+				TcpClient:      config.TCPTLSInfo{ConnectionString: "to-be-added"},
 			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy2-outbound-server",
-			Server: config.ProxyServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: s.clientProxyOutboundAddress,
-				},
-			},
-			Client: config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: "to-be-added",
-				},
-			},
-		},
+		}},
 	}, opts)
 }
 
@@ -383,7 +322,6 @@ func (s *proxyTestSuite) Test_Echo_Success() {
 							"example-ns",
 						},
 					},
-					true,
 				)),
 			},
 			echoClientInfo: endtoendtest.ClusterInfo{
@@ -446,13 +384,9 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 				ServerAddress:  s.echoServerAddress,
 				ClusterShardID: serverClusterShard,
 				S2sProxyConfig: s.createEchoServerConfig(withNamespaceTranslation(
-					[]config.NameMappingConfig{
-						{
-							LocalName:  "local",
-							RemoteName: "remote",
-						},
+					[]config.StringMapping{
+						{Local: "local", Remote: "remote"},
 					},
-					true,
 				)),
 			},
 			echoClientInfo: endtoendtest.ClusterInfo{
@@ -470,13 +404,9 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 				ClusterShardID: serverClusterShard,
 				S2sProxyConfig: s.createEchoServerConfig(
 					withNamespaceTranslation(
-						[]config.NameMappingConfig{
-							{
-								LocalName:  "local",
-								RemoteName: "remote",
-							},
+						[]config.StringMapping{
+							{Local: "local", Remote: "remote"},
 						},
-						true,
 					),
 					withACLPolicy(
 						&config.ACLPolicy{
@@ -489,7 +419,6 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 								"local",
 							},
 						},
-						true,
 					),
 				)},
 			echoClientInfo: endtoendtest.ClusterInfo{
@@ -530,57 +459,17 @@ func (s *proxyTestSuite) Test_Echo_WithNamespaceTranslation() {
 }
 
 func (s *proxyTestSuite) Test_Echo_WithMuxTransport() {
-	muxTransportName := "muxed"
-
 	// Mux Transport
 	//    echoServer muxClient(proxy1) -> muxServer(proxy2) echoClient
 	//
-	// echoServer proxy1.inbound.Server(muxClient)  <- proxy2.outbound.Client(muxServer) echoClient
-	// echoServer proxy1.outbound.Client(muxClient) -> proxy2.inbound.Server(muxServer) echoClient
+	// proxy1 dials proxy2's mux listener at clientProxyInboundAddress;
+	// the established connection multiplexes both directions.
 	echoServerConfig := s.createEchoServerConfig(
-		withMux(
-			config.MuxTransportConfig{
-				Name: muxTransportName,
-				Mode: config.ClientMode,
-				Client: config.TCPClientSetting{
-					ServerAddress: s.clientProxyInboundAddress,
-				},
-			}),
-		withServerConfig(
-			// proxy1.inbound.Server
-			config.ProxyServerConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			}, true),
-		withClientConfig(
-			// proxy1.outbound.Client
-			config.ProxyClientConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			}, false),
+		withRemoteMuxClient(s.clientProxyInboundAddress),
 	)
 
 	echoClientConfig := s.createEchoClientConfig(
-		withMux(
-			config.MuxTransportConfig{
-				Name: muxTransportName,
-				Mode: config.ServerMode,
-				Server: config.TCPServerSetting{
-					ListenAddress: s.clientProxyInboundAddress,
-				},
-			}),
-		withServerConfig(
-			// proxy2.inbound.Server
-			config.ProxyServerConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			}, true),
-		withClientConfig(
-			// proxy2.outbound.Client
-			config.ProxyClientConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			}, false),
+		withRemoteMuxServer(s.clientProxyInboundAddress),
 	)
 
 	echoServerInfo := endtoendtest.ClusterInfo{

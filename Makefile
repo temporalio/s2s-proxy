@@ -19,21 +19,17 @@ ALL_SRC         := $(shell find . -name "*.go")
 ALL_SRC         += go.mod
 
 all: bins fmt lint
-bins: s2s-proxy configconverter
+bins: s2s-proxy
 clean:  clean-bins clean-tests
 
 clean-bins:
 	@printf $(COLOR) "Delete old binaries...\n"
 	@rm -f ./bins/*
 
-# Binary targets
+# Binary target
 s2s-proxy: $(ALL_SRC)
 	@printf $(COLOR) "Build s2s-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)...\n"
 	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -ldflags "-X main.Version=$(VERSION)" -o ./bins/s2s-proxy ./cmd/proxy
-
-configconverter: $(ALL_SRC)
-	@printf $(COLOR) "Build configconverter with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)...\n"
-	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -o ./bins/configconverter ./cmd/tools/configconverter
 
 update-tools:
 # When changing the golangci-lint version, update the version in .github/workflows/pull-request.yml

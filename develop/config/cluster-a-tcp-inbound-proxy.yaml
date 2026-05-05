@@ -1,8 +1,14 @@
-inbound:
-  name: "inbound-server"
-  server:
-    tcp:
-      listenAddress: "0.0.0.0:6233"
-  client:
-    tcp:
-      serverAddress: "localhost:7233"
+clusterConnections:
+  - name: "inbound-server"
+    local:
+      connectionType: "tcp"
+      tcpServer:
+        address: "0.0.0.0:6233"
+      tcpClient:
+        address: "localhost:7233"
+    remote:
+      connectionType: "tcp"
+      tcpServer:
+        address: "0.0.0.0:6234"
+      tcpClient:
+        address: "localhost:7234"

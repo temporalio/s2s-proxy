@@ -19,32 +19,19 @@ func createEchoServerConfigWithPorts(
 	opts ...cfgOption,
 ) *config.S2SProxyConfig {
 	return createS2SProxyConfig(&config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy1-inbound-server",
-			Server: config.ProxyServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: serverProxyInboundAddress,
-				},
+		ClusterConnections: []config.ClusterConnConfig{{
+			Name: "proxy1",
+			Local: config.ClusterDefinition{
+				ConnectionType: config.ConnTypeTCP,
+				TcpServer:      config.TCPTLSInfo{ConnectionString: serverProxyOutboundAddress},
+				TcpClient:      config.TCPTLSInfo{ConnectionString: echoServerAddress},
 			},
-			Client: config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: echoServerAddress,
-				},
+			Remote: config.ClusterDefinition{
+				ConnectionType: config.ConnTypeTCP,
+				TcpServer:      config.TCPTLSInfo{ConnectionString: serverProxyInboundAddress},
+				TcpClient:      config.TCPTLSInfo{ConnectionString: "to-be-added"},
 			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy1-outbound-server",
-			Server: config.ProxyServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: serverProxyOutboundAddress,
-				},
-			},
-			Client: config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: "to-be-added",
-				},
-			},
-		},
+		}},
 	}, opts)
 }
 
@@ -55,32 +42,19 @@ func createEchoClientConfigWithPorts(
 	opts ...cfgOption,
 ) *config.S2SProxyConfig {
 	return createS2SProxyConfig(&config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy2-inbound-server",
-			Server: config.ProxyServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: clientProxyInboundAddress,
-				},
+		ClusterConnections: []config.ClusterConnConfig{{
+			Name: "proxy2",
+			Local: config.ClusterDefinition{
+				ConnectionType: config.ConnTypeTCP,
+				TcpServer:      config.TCPTLSInfo{ConnectionString: clientProxyOutboundAddress},
+				TcpClient:      config.TCPTLSInfo{ConnectionString: echoClientAddress},
 			},
-			Client: config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: echoClientAddress,
-				},
+			Remote: config.ClusterDefinition{
+				ConnectionType: config.ConnTypeTCP,
+				TcpServer:      config.TCPTLSInfo{ConnectionString: clientProxyInboundAddress},
+				TcpClient:      config.TCPTLSInfo{ConnectionString: "to-be-added"},
 			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy2-outbound-server",
-			Server: config.ProxyServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: clientProxyOutboundAddress,
-				},
-			},
-			Client: config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: "to-be-added",
-				},
-			},
-		},
+		}},
 	}, opts)
 }
 
@@ -100,7 +74,6 @@ func benchmarkStreamSendRecvWithoutProxy(b *testing.B, payloadSize int) {
 
 func benchmarkStreamSendRecvWithMuxProxy(b *testing.B, payloadSize int) {
 	b.Log("Start BenchmarkStreamSendRecv")
-	muxTransportName := "muxed"
 
 	// Allocate ports dynamically
 	echoServerAddress := GetLocalhostAddress()
@@ -114,52 +87,14 @@ func benchmarkStreamSendRecvWithMuxProxy(b *testing.B, payloadSize int) {
 		echoServerAddress,
 		serverProxyInboundAddress,
 		serverProxyOutboundAddress,
-		withMux(
-			config.MuxTransportConfig{
-				Name: muxTransportName,
-				Mode: config.ClientMode,
-				Client: config.TCPClientSetting{
-					ServerAddress: clientProxyInboundAddress,
-				},
-			}),
-		withServerConfig(
-			// proxy1.inbound.Server
-			config.ProxyServerConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			}, true),
-		withClientConfig(
-			// proxy1.outbound.Client
-			config.ProxyClientConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			}, false),
+		withRemoteMuxClient(clientProxyInboundAddress),
 	)
 
 	echoClientConfig := createEchoClientConfigWithPorts(
 		echoClientAddress,
 		clientProxyInboundAddress,
 		clientProxyOutboundAddress,
-		withMux(
-			config.MuxTransportConfig{
-				Name: muxTransportName,
-				Mode: config.ServerMode,
-				Server: config.TCPServerSetting{
-					ListenAddress: clientProxyInboundAddress,
-				},
-			}),
-		withServerConfig(
-			// proxy2.inbound.Server
-			config.ProxyServerConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			}, true),
-		withClientConfig(
-			// proxy2.outbound.Client
-			config.ProxyClientConfig{
-				Type:             config.MuxTransport,
-				MuxTransportName: muxTransportName,
-			}, false),
+		withRemoteMuxServer(clientProxyInboundAddress),
 	)
 
 	echoServerInfo := endtoendtest.ClusterInfo{

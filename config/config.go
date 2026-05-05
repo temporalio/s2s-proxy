@@ -2,15 +2,12 @@ package config
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"os"
 
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
 	"github.com/temporalio/s2s-proxy/collect"
-	"github.com/temporalio/s2s-proxy/encryption"
 )
 
 const (
@@ -19,20 +16,6 @@ const (
 
 	DefaultPProfAddress          = "localhost:6060"
 	DefaultLoggingThrottleMaxRPS = 10.0
-)
-
-type TransportType string
-
-const (
-	TCPTransport TransportType = "tcp"
-	MuxTransport TransportType = "mux" // transport based on multiplexing over TCP
-)
-
-type MuxMode string
-
-const (
-	ClientMode MuxMode = "client" // client of the underly tcp connection in mux mode.
-	ServerMode MuxMode = "server" // server of underly tcp connection in mux mode.
 )
 
 type ShardCountMode string
@@ -54,118 +37,17 @@ type (
 		GetS2SProxyConfig() S2SProxyConfig
 	}
 
-	// ServerTLSConfig provides backwards compatibility with existing configurations. Prefer config.ClusterConnConfig instead.
-	// TODO: This will be removed soon!
-	ServerTLSConfig struct {
-		CertificatePath   string `yaml:"certificatePath"`
-		KeyPath           string `yaml:"keyPath"`
-		ClientCAPath      string `yaml:"clientCAPath"`
-		RequireClientAuth bool   `yaml:"requireClientAuth"`
-	}
-
-	// ClientTLSConfig provides backwards compatibility with existing configurations. Prefer config.ClusterConnConfig instead.
-	// TODO: This will be removed soon!
-	ClientTLSConfig struct {
-		CertificatePath string `yaml:"certificatePath"`
-		KeyPath         string `yaml:"keyPath"`
-		ServerName      string `yaml:"serverName"`
-		ServerCAPath    string `yaml:"serverCAPath"`
-	}
-
-	TCPServerSetting struct {
-		// ListenAddress indicates the server address (Host:Port) for listening requests
-		ListenAddress string          `yaml:"listenAddress"`
-		TLS           ServerTLSConfig `yaml:"tls"`
-		// ExternalAddress is the externally reachable address of this server.
-		ExternalAddress string `yaml:"externalAddress"`
-	}
-
-	TCPClientSetting struct {
-		// ServerAddress indicates the address (Host:Port) for forwarding requests
-		ServerAddress string          `yaml:"serverAddress"`
-		TLS           ClientTLSConfig `yaml:"tls"`
-	}
-
-	ProxyServerConfig struct {
-		Type             TransportType `yaml:"type"`
-		TCPServerSetting `yaml:"tcp"`
-		MuxTransportName string `yaml:"mux"`
-	}
-
-	ProxyClientConfig struct {
-		Type             TransportType `yaml:"type"`
-		TCPClientSetting `yaml:"tcp"`
-		MuxTransportName string `yaml:"mux"`
-	}
-
-	DescribeClusterResponseOverrides struct {
-		FailoverVersionIncrement *int64 `yaml:"failover_version_increment,omitempty"`
-	}
-
-	DescribeClusterOverride struct {
-		Response DescribeClusterResponseOverrides `yaml:"response"`
-	}
-
-	AddOrUpdateRemoteClusterRequestOverrides struct {
-		FrontendAddress string `yaml:"FrontendAddress"`
-	}
-
-	AddOrUpdateRemoteClusterOverride struct {
-		Request AddOrUpdateRemoteClusterRequestOverrides `yaml:"request"`
-	}
-
-	AdminServiceOverrides struct {
-		AddOrUpdateRemoteCluster *AddOrUpdateRemoteClusterOverride `yaml:"AddOrUpdateRemoteCluster"`
-		DescribeCluster          *DescribeClusterOverride          `yaml:"DescribeCluster"`
-	}
-
-	APIOverridesConfig struct {
-		AdminService AdminServiceOverrides `yaml:"adminService"`
-	}
-
-	ProxyConfig struct {
-		Name         string              `yaml:"name"`
-		Server       ProxyServerConfig   `yaml:"server"`
-		Client       ProxyClientConfig   `yaml:"client"`
-		ACLPolicy    *ACLPolicy          `yaml:"aclPolicy"`
-		APIOverrides *APIOverridesConfig `yaml:"api_overrides"`
-	}
-
-	MuxTransportConfig struct {
-		Name           string           `yaml:"name"`
-		Mode           MuxMode          `yaml:"mode"`
-		Client         TCPClientSetting `yaml:"client"`
-		Server         TCPServerSetting `yaml:"server"`
-		NumConnections int              `yaml:"num_connections"`
-	}
-
 	HealthCheckConfig struct {
 		Protocol      HealthCheckProtocol `yaml:"protocol"`
 		ListenAddress string              `yaml:"listenAddress"`
 	}
 
 	S2SProxyConfig struct {
-		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
-		Inbound *ProxyConfig `yaml:"inbound"`
-		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
-		Outbound *ProxyConfig `yaml:"outbound"`
-		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
-		MuxTransports []MuxTransportConfig `yaml:"mux"`
-		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
-		HealthCheck *HealthCheckConfig `yaml:"healthCheck"`
-		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
-		OutboundHealthCheck *HealthCheckConfig `yaml:"outboundHealthCheck"`
-		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
-		ShardCountConfig ShardCountConfig `yaml:"shardCount"`
-		// TODO: Soon to be deprecated! Create an item in ClusterConnections instead
-		MemberlistConfig           *MemberlistConfig        `yaml:"memberlist"`
-		NamespaceNameTranslation   NameTranslationConfig    `yaml:"namespaceNameTranslation"`
-		SearchAttributeTranslation SATranslationConfig      `yaml:"searchAttributeTranslation"`
-		Metrics                    *MetricsConfig           `yaml:"metrics"`
-		ProfilingConfig            *ProfilingConfig         `yaml:"profiling"`
-		Logging                    LoggingConfig            `yaml:"logging"`
-		LogConfigs                 map[string]LoggingConfig `yaml:"logConfigs"`
-		ClusterConnections         []ClusterConnConfig      `yaml:"clusterConnections"`
+		Metrics            *MetricsConfig           `yaml:"metrics"`
+		ProfilingConfig    *ProfilingConfig         `yaml:"profiling"`
+		Logging            LoggingConfig            `yaml:"logging"`
+		LogConfigs         map[string]LoggingConfig `yaml:"logConfigs"`
+		ClusterConnections []ClusterConnConfig      `yaml:"clusterConnections"`
 	}
 
 	SATranslationConfig struct {
@@ -186,15 +68,6 @@ type (
 
 	ProfilingConfig struct {
 		PProfHTTPAddress string `yaml:"pprofAddress"`
-	}
-
-	NameTranslationConfig struct {
-		Mappings []NameMappingConfig `yaml:"mappings"`
-	}
-
-	NameMappingConfig struct {
-		LocalName  string `yaml:"localName"`
-		RemoteName string `yaml:"remoteName"`
 	}
 
 	cliConfigProvider struct {
@@ -251,57 +124,6 @@ type (
 	}
 )
 
-func FromServerTLSConfig(cfg ServerTLSConfig) encryption.TLSConfig {
-	return encryption.TLSConfig{
-		CertificatePath:    cfg.CertificatePath,
-		KeyPath:            cfg.KeyPath,
-		RemoteCAPath:       cfg.ClientCAPath,
-		SkipCAVerification: !cfg.RequireClientAuth,
-	}
-}
-func FromClientTLSConfig(cfg ClientTLSConfig) encryption.TLSConfig {
-	return encryption.TLSConfig{
-		CertificatePath: cfg.CertificatePath,
-		KeyPath:         cfg.KeyPath,
-		RemoteCAPath:    cfg.ServerCAPath,
-		CAServerName:    cfg.ServerName,
-	}
-}
-
-func (c ProxyClientConfig) IsMux() bool {
-	return c.Type == MuxTransport
-}
-
-func (c ProxyClientConfig) IsTCP() bool {
-	return c.Type == TCPTransport
-}
-
-func (c *ProxyClientConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	// Set default
-	c.Type = TCPTransport
-
-	// Alias to avoid infinite recursion
-	type plain ProxyClientConfig
-	return unmarshal((*plain)(c))
-}
-
-func (c ProxyServerConfig) IsMux() bool {
-	return c.Type == MuxTransport
-}
-
-func (c ProxyServerConfig) IsTCP() bool {
-	return c.Type == TCPTransport
-}
-
-func (c *ProxyServerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	// Set default
-	c.Type = TCPTransport
-
-	// Alias to avoid infinite recursion
-	type plain ProxyServerConfig
-	return unmarshal((*plain)(c))
-}
-
 func newConfigProvider(ctx *cli.Context) (ConfigProvider, error) {
 	s2sConfig, err := LoadConfig[S2SProxyConfig](ctx.String(ConfigPathFlag))
 	if err != nil {
@@ -351,45 +173,6 @@ func WriteConfig[T any](config T, filePath string) error {
 	return nil
 }
 
-func marshalWithoutError(v any) string {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Sprintf("%+v", v)
-	}
-
-	return string(data)
-}
-
-func (o MuxTransportConfig) GetLabelValues() []string {
-	switch o.Mode {
-	case ServerMode:
-		return []string{o.Server.ListenAddress, string(o.Mode), o.Name}
-	case ClientMode:
-		return []string{o.Client.ServerAddress, string(o.Mode), o.Name}
-	}
-	return []string{"unknown", "unknown", o.Name}
-}
-
-func (o ProxyClientConfig) String() string {
-	return marshalWithoutError(o)
-}
-
-func (o ProxyServerConfig) String() string {
-	return marshalWithoutError(o)
-}
-
-func (o MuxTransportConfig) String() string {
-	return marshalWithoutError(o)
-}
-
-func (o TCPServerSetting) String() string {
-	return marshalWithoutError(o)
-}
-
-func (o TCPClientSetting) String() string {
-	return marshalWithoutError(o)
-}
-
 type (
 	MockConfigProvider struct {
 		config S2SProxyConfig
@@ -406,34 +189,6 @@ func NewMockConfigProvider(config S2SProxyConfig) *MockConfigProvider {
 
 func (mc *MockConfigProvider) GetS2SProxyConfig() S2SProxyConfig {
 	return mc.config
-}
-
-func (n NameTranslationConfig) IsEnabled() bool {
-	return len(n.Mappings) > 0
-}
-
-// ToMaps returns request and response mappings.
-func (n NameTranslationConfig) ToMaps(inBound bool) (map[string]string, map[string]string) {
-	reqMap := make(map[string]string)
-	respMap := make(map[string]string)
-	if inBound {
-		// For inbound listener,
-		//   - incoming requests from remote server are modifed to match local server
-		//   - outgoing responses to local server are modified to match remote server
-		for _, tr := range n.Mappings {
-			reqMap[tr.RemoteName] = tr.LocalName
-			respMap[tr.LocalName] = tr.RemoteName
-		}
-	} else {
-		// For outbound listener,
-		//   - incoming requests from local server are modifed to match remote server
-		//   - outgoing responses to remote server are modified to match local server
-		for _, tr := range n.Mappings {
-			reqMap[tr.LocalName] = tr.RemoteName
-			respMap[tr.RemoteName] = tr.LocalName
-		}
-	}
-	return reqMap, respMap
 }
 
 func (c *ProfilingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {

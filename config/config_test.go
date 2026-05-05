@@ -21,43 +21,22 @@ func NewTuple[K, V any](k K, v V) Tuple[K, V] {
 	return Tuple[K, V]{k: k, v: v}
 }
 
-func TestLoadS2SConfig(t *testing.T) {
-	samplePath := filepath.Join("..", "develop", "legacyconfig", "empty-config.yaml")
-
-	s2sConfig, err := LoadConfig[S2SProxyConfig](samplePath)
-	assert.NoError(t, err)
-	assert.Equal(t, "inbound-proxy", s2sConfig.Inbound.Name)
-	assert.Equal(t, "outbound-proxy", s2sConfig.Outbound.Name)
-	assert.Equal(t, TCPTransport, s2sConfig.Inbound.Client.Type)
-	assert.Equal(t, TCPTransport, s2sConfig.Inbound.Server.Type)
-	assert.Equal(t, "outbound-proxy", s2sConfig.Outbound.Name)
-	assert.Equal(t, []NameMappingConfig{
-		{
-			LocalName:  "example",
-			RemoteName: "example.cloud",
-		},
-	}, s2sConfig.NamespaceNameTranslation.Mappings)
-
-	aclConfig := s2sConfig.Inbound.ACLPolicy
-	assert.NotEmpty(t, aclConfig)
-	assert.Greater(t, len(aclConfig.AllowedMethods.AdminService), 0)
-	assert.Equal(t, []string{"namespace1", "namespace2"}, aclConfig.AllowedNamespaces)
-	assert.Equal(t, HTTP, s2sConfig.HealthCheck.Protocol)
-	assert.Equal(t, int64(100), *s2sConfig.Inbound.APIOverrides.AdminService.DescribeCluster.Response.FailoverVersionIncrement)
-}
-
 func TestLoadS2SConfigMux(t *testing.T) {
-	configFiles := []string{
-		"cluster-a-mux-client-proxy.yaml",
-		"cluster-b-mux-server-proxy.yaml",
+	cases := []struct {
+		file       string
+		remoteType ConnectionType
+	}{
+		{"cluster-a-mux-client-proxy.yaml", ConnTypeMuxClient},
+		{"cluster-b-mux-server-proxy.yaml", ConnTypeMuxServer},
 	}
 
-	for _, file := range configFiles {
-		samplePath := filepath.Join("..", "develop", "config", file)
+	for _, c := range cases {
+		samplePath := filepath.Join("..", "develop", "config", c.file)
 		s2sConfig, err := LoadConfig[S2SProxyConfig](samplePath)
-		assert.Equal(t, MuxTransport, s2sConfig.Inbound.Server.Type)
-		assert.Equal(t, MuxTransport, s2sConfig.Outbound.Client.Type)
-		assert.NoError(t, err)
+		require.NoError(t, err)
+		require.Equal(t, 1, len(s2sConfig.ClusterConnections))
+		assert.Equal(t, ConnTypeTCP, s2sConfig.ClusterConnections[0].Local.ConnectionType)
+		assert.Equal(t, c.remoteType, s2sConfig.ClusterConnections[0].Remote.ConnectionType)
 	}
 }
 
@@ -88,62 +67,15 @@ func TestBasic(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "remoteSearchAttribute", saTranslation.Get("namespace-id-1", "localSearchAttribute"))
 	require.Equal(t, "localSearchAttribute", saTranslation.Inverse().Get("namespace-id-1", "remoteSearchAttribute"))
-}
 
-func TestConversion(t *testing.T) {
-	samplePath := filepath.Join("..", "develop", "legacyconfig", "empty-config.yaml")
-
-	proxyConfig, err := LoadConfig[S2SProxyConfig](samplePath)
-	require.NoError(t, err)
-	converted := ToClusterConnConfig(proxyConfig)
-	require.Equal(t, 1, len(converted.ClusterConnections))
-	require.Nil(t, converted.Inbound)
-	require.Nil(t, converted.Outbound)
-	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].Remote.ConnectionType)
-	require.False(t, converted.ClusterConnections[0].Remote.TcpServer.TLSConfig.SkipCAVerification)
-	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].Local.ConnectionType)
-	require.Equal(t, "AddOrUpdateRemoteCluster", converted.ClusterConnections[0].ACLPolicy.AllowedMethods.AdminService[0])
-	require.Equal(t, "namespace1", converted.ClusterConnections[0].ACLPolicy.AllowedNamespaces[0])
-	require.Equal(t, int64(100), converted.ClusterConnections[0].FVITranslation.Remote)
-}
-
-func TestConversionWithTLS(t *testing.T) {
-	samplePath := filepath.Join("..", "develop", "legacyconfig", "old-config-with-TLS.yaml")
-
-	proxyConfig, err := LoadConfig[S2SProxyConfig](samplePath)
-	require.NoError(t, err)
-	converted := ToClusterConnConfig(proxyConfig)
-	require.Equal(t, 0.1, converted.LogConfigs["adminservice"].ThrottleMaxRPS)
-	require.Equal(t, float64(11), converted.LogConfigs["testexample"].ThrottleMaxRPS)
-	require.Equal(t, 0.12, converted.LogConfigs["adminstreams"].ThrottleMaxRPS)
-	require.Equal(t, false, converted.LogConfigs["adminstreams"].Disabled)
-	require.Equal(t, true, converted.LogConfigs["testdisabled"].Disabled)
-	require.Equal(t, 1, len(converted.ClusterConnections))
-	require.Nil(t, converted.Inbound)
-	require.Nil(t, converted.Outbound)
-	require.Equal(t, ConnTypeMuxClient, converted.ClusterConnections[0].Remote.ConnectionType)
-	require.True(t, converted.ClusterConnections[0].Remote.TcpServer.TLSConfig.SkipCAVerification)
-	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].Local.ConnectionType)
-	require.Equal(t, "AddOrUpdateRemoteCluster", converted.ClusterConnections[0].ACLPolicy.AllowedMethods.AdminService[0])
-	require.Equal(t, 0, len(converted.ClusterConnections[0].ACLPolicy.AllowedNamespaces))
-	require.Equal(t, IntMapping{0, 0}, converted.ClusterConnections[0].FVITranslation)
-}
-
-func TestConversionWithOverride(t *testing.T) {
-	samplePath := filepath.Join("..", "develop", "legacyconfig", "old-config-with-override.yaml")
-
-	proxyConfig, err := LoadConfig[S2SProxyConfig](samplePath)
-	require.NoError(t, err)
-	converted := ToClusterConnConfig(proxyConfig)
-	require.Equal(t, 1, len(converted.ClusterConnections))
-	require.Nil(t, converted.Inbound)
-	require.Nil(t, converted.Outbound)
-	require.Equal(t, ConnTypeMuxClient, converted.ClusterConnections[0].Remote.ConnectionType)
-	require.True(t, converted.ClusterConnections[0].Remote.TcpServer.TLSConfig.SkipCAVerification)
-	require.Equal(t, ConnTypeTCP, converted.ClusterConnections[0].Local.ConnectionType)
-	require.Equal(t, "AddOrUpdateRemoteCluster", converted.ClusterConnections[0].ACLPolicy.AllowedMethods.AdminService[0])
-	require.Equal(t, 0, len(converted.ClusterConnections[0].ACLPolicy.AllowedNamespaces))
-	require.Equal(t, "127.0.0.1:6233", converted.ClusterConnections[0].ReplicationEndpoint)
+	cc := proxyConfig.ClusterConnections[0]
+	require.Equal(t, "127.0.0.1:9002", cc.ReplicationEndpoint)
+	require.Equal(t, IntMapping{Local: 100, Remote: 1000000}, cc.FVITranslation)
+	require.NotNil(t, cc.ACLPolicy)
+	require.Contains(t, cc.ACLPolicy.AllowedMethods.AdminService, "AddOrUpdateRemoteCluster")
+	require.Contains(t, cc.ACLPolicy.AllowedMethods.AdminService, "StreamWorkflowReplicationMessages")
+	require.Equal(t, []string{"namespace1", "namespace2"}, cc.ACLPolicy.AllowedNamespaces)
+	require.True(t, cc.Remote.MuxAddressInfo.TLSConfig.SkipCAVerification)
 }
 
 func TestDefaultChart(t *testing.T) {

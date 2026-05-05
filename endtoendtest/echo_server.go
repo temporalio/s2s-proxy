@@ -36,8 +36,9 @@ type (
 	}
 
 	EchoServer struct {
-		ServerConfig config.ProxyServerConfig
-		ClientConfig config.ProxyClientConfig
+		ServerAddress string
+		ClientAddress string
+		ClientTLS     encryption.TLSConfig
 		// provides EchoService directly
 		Temporal *testservices.TemporalServerWithListen
 		// connects to Temporal directly
@@ -88,28 +89,32 @@ func NewEchoServer(
 	}
 
 	var proxy *s2sproxy.Proxy
-	var clientConfig config.ProxyClientConfig
+	var clientAddress string
+	var clientTLS encryption.TLSConfig
 
 	localProxyCfg := localClusterInfo.S2sProxyConfig
 	remoteProxyCfg := remoteClusterInfo.S2sProxyConfig
 
 	if localProxyCfg != nil && remoteProxyCfg != nil {
-		if localProxyCfg.Outbound.Client.Type != remoteProxyCfg.Inbound.Server.Type {
-			panic(fmt.Sprintf("local Proxy outbound client type: %s doesn't match with remote inbound Server type: %s",
-				localProxyCfg.Outbound.Client.Type,
-				remoteProxyCfg.Inbound.Server.Type,
+		localRemoteType := localProxyCfg.ClusterConnections[0].Remote.ConnectionType
+		remoteRemoteType := remoteProxyCfg.ClusterConnections[0].Remote.ConnectionType
+		if isMuxConn(localRemoteType) != isMuxConn(remoteRemoteType) {
+			panic(fmt.Sprintf("local Proxy remote connection type: %s doesn't match with remote Proxy remote connection type: %s",
+				localRemoteType,
+				remoteRemoteType,
 			))
 		}
 	}
 
 	if localProxyCfg != nil {
-		if localProxyCfg.Outbound.Client.Type != config.MuxTransport {
-			// Setup local Proxy forwarded Server address explicitly if not using multiplex transport.
-			// If use multiplex transport, then outbound -> inbound uses established multiplex connection.
+		localRemote := &localProxyCfg.ClusterConnections[0].Remote
+		if !isMuxConn(localRemote.ConnectionType) {
+			// Set the remote-facing TCP target explicitly when not using mux.
+			// In mux mode, the established multiplex connection carries outbound traffic.
 			if remoteProxyCfg != nil {
-				localProxyCfg.Outbound.Client.ServerAddress = remoteProxyCfg.Inbound.Server.ListenAddress
+				localRemote.TcpClient.ConnectionString = remoteProxyCfg.ClusterConnections[0].Remote.TcpServer.ConnectionString
 			} else {
-				localProxyCfg.Outbound.Client.ServerAddress = remoteClusterInfo.ServerAddress
+				localRemote.TcpClient.ConnectionString = remoteClusterInfo.ServerAddress
 			}
 		}
 
@@ -119,37 +124,18 @@ func NewEchoServer(
 			logging.NewLoggerProvider(logger, configProvider),
 		)
 
-		clientConfig = config.ProxyClientConfig{
-			TCPClientSetting: config.TCPClientSetting{
-				ServerAddress: localProxyCfg.Outbound.Server.ListenAddress,
-			},
-		}
+		clientAddress = localProxyCfg.ClusterConnections[0].Local.TcpServer.ConnectionString
 	} else {
 		// No local Proxy
 		if remoteProxyCfg != nil {
-			clientConfig = config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: remoteProxyCfg.Inbound.Server.ListenAddress,
-				},
-			}
+			clientAddress = remoteProxyCfg.ClusterConnections[0].Remote.TcpServer.ConnectionString
 		} else {
-			clientConfig = config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: remoteClusterInfo.ServerAddress,
-				},
-			}
+			clientAddress = remoteClusterInfo.ServerAddress
 		}
-	}
-
-	serverConfig := config.ProxyServerConfig{
-		TCPServerSetting: config.TCPServerSetting{
-			ListenAddress: localClusterInfo.ServerAddress,
-		},
 	}
 
 	logger = log.With(logger, common.ServiceTag(serviceName))
 	var parsedTLSCfg *tls.Config
-	clientTLS := config.FromClientTLSConfig(clientConfig.TLS)
 	if clientTLS.IsEnabled() {
 		var err error
 		parsedTLSCfg, err = encryption.GetClientTLSConfig(clientTLS)
@@ -157,14 +143,15 @@ func NewEchoServer(
 			panic(err)
 		}
 	}
-	client, err := grpc.NewClient(clientConfig.ServerAddress,
+	client, err := grpc.NewClient(clientAddress,
 		grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetStandardGRPCClientInterceptor("local"))...)
 	if err != nil {
 		panic(err)
 	}
 	return &EchoServer{
-		ServerConfig: serverConfig,
-		ClientConfig: clientConfig,
+		ServerAddress: localClusterInfo.ServerAddress,
+		ClientAddress: clientAddress,
+		ClientTLS:     clientTLS,
 		Temporal: testservices.NewTemporalAPIServer(
 			serviceName,
 			senderAdminService,
@@ -181,12 +168,16 @@ func NewEchoServer(
 	}
 }
 
+func isMuxConn(t config.ConnectionType) bool {
+	return t == config.ConnTypeMuxClient || t == config.ConnTypeMuxServer
+}
+
 func (s *EchoServer) SetPayloadSize(size int) {
 	s.EchoService.PayloadSize = size
 }
 
 func (s *EchoServer) Start() {
-	s.Logger.Info(fmt.Sprintf("Starting echoServer with ServerConfig: %v, ClientConfig: %v", s.ServerConfig, s.ClientConfig))
+	s.Logger.Info(fmt.Sprintf("Starting echoServer at %s, connecting to %s", s.ServerAddress, s.ClientAddress))
 	s.Temporal.Start()
 	if s.Proxy != nil {
 		_ = s.Proxy.Start()
@@ -328,10 +319,10 @@ func (s *EchoServer) Describe() string {
 		proxyDescription = s.Proxy.Describe()
 	}
 	return fmt.Sprintf("[EchoServer \n"+
+		"ServerAddress: %s\n"+
+		"ClientAddress: %s\n"+
+		"Proxy: %s\n"+
 		"ClusterInfo: %v\n"+
-		"RemoteClusterInfo: %v\n,"+
-		"Server config: %v\n,"+
-		"Client config: %v\n,"+
-		"Proxy config: %v\n,"+
-		"]", s.ServerConfig, s.ClientConfig, proxyDescription, s.ClusterInfo, s.RemoteClusterInfo)
+		"RemoteClusterInfo: %v\n]",
+		s.ServerAddress, s.ClientAddress, proxyDescription, s.ClusterInfo, s.RemoteClusterInfo)
 }

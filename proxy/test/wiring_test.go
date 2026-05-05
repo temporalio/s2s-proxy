@@ -163,7 +163,7 @@ func TestWiringWithEchoService(t *testing.T) {
 	// The server may take a few 10s of ms to start
 	var healthErr = fmt.Errorf("not started")
 	for attempts := 0; healthErr != nil && attempts < 5; attempts++ {
-		_, healthErr = http.Get(fmt.Sprintf("http://%s/health", echoServerInfo.S2sProxyConfig.HealthCheck.ListenAddress))
+		_, healthErr = http.Get(fmt.Sprintf("http://%s/health", echoServerInfo.S2sProxyConfig.ClusterConnections[0].LocalClusterHealthCheck.ListenAddress))
 		time.Sleep(10 * time.Millisecond)
 	}
 	assert.NoError(t, healthErr)
@@ -214,17 +214,17 @@ func scrapePrometheus(t *testing.T, address string) string {
 
 func makeS2SConfig(addresses s2sAddresses) *config.S2SProxyConfig {
 	return &config.S2SProxyConfig{
-		Inbound: &config.ProxyConfig{
-			Name: "proxy1-inbound-server",
-			Server: config.ProxyServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: addresses.inbound,
-				},
+		ClusterConnections: []config.ClusterConnConfig{{
+			Name: "proxy1",
+			Local: config.ClusterDefinition{
+				ConnectionType: config.ConnTypeTCP,
+				TcpServer:      config.TCPTLSInfo{ConnectionString: addresses.outbound},
+				TcpClient:      config.TCPTLSInfo{ConnectionString: addresses.echoServer},
 			},
-			Client: config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: addresses.echoServer,
-				},
+			Remote: config.ClusterDefinition{
+				ConnectionType: config.ConnTypeTCP,
+				TcpServer:      config.TCPTLSInfo{ConnectionString: addresses.inbound},
+				TcpClient:      config.TCPTLSInfo{ConnectionString: "to-be-added"},
 			},
 			ACLPolicy: &config.ACLPolicy{
 				AllowedMethods: config.AllowedMethods{
@@ -237,29 +237,16 @@ func makeS2SConfig(addresses s2sAddresses) *config.S2SProxyConfig {
 					"example-ns",
 				},
 			},
-		},
-		Outbound: &config.ProxyConfig{
-			Name: "proxy1-outbound-server",
-			Server: config.ProxyServerConfig{
-				TCPServerSetting: config.TCPServerSetting{
-					ListenAddress: addresses.outbound,
-				},
+			LocalClusterHealthCheck: config.HealthCheckConfig{
+				Protocol:      "http",
+				ListenAddress: addresses.healthCheck,
 			},
-			Client: config.ProxyClientConfig{
-				TCPClientSetting: config.TCPClientSetting{
-					ServerAddress: "to-be-added",
-				},
-			},
-		},
+		}},
 		Metrics: &config.MetricsConfig{
 			Prometheus: config.PrometheusConfig{
 				ListenAddress: addresses.prometheus,
 				Framework:     "prometheus",
 			},
-		},
-		HealthCheck: &config.HealthCheckConfig{
-			Protocol:      "http",
-			ListenAddress: addresses.healthCheck,
 		},
 	}
 }
