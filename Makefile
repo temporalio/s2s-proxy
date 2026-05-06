@@ -27,6 +27,7 @@ clean-bins:
 	@rm -f ./bins/*
 
 # Binary target
+.PHONY: s2s-proxy
 s2s-proxy: $(ALL_SRC)
 	@printf $(COLOR) "Build s2s-proxy with CGO_ENABLED=$(CGO_ENABLED) for $(GOOS)/$(GOARCH)...\n"
 	GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) go build -ldflags "-X main.Version=$(VERSION)" -o ./bins/s2s-proxy ./cmd/proxy
