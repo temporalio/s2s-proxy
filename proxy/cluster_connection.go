@@ -465,7 +465,7 @@ func (s *simpleGRPCServer) CanMakeCalls() bool {
 	return true
 }
 func (s *simpleGRPCServer) Describe() string {
-	return fmt.Sprintf("[simpleGRPCServer %s listening on %s. lifetime.Err: %e]", s.name, s.listener.Addr(), s.lifetime.Err())
+	return fmt.Sprintf("[simpleGRPCServer %s listening on %s. lifetime.Err: %v]", s.name, s.listener.Addr(), s.lifetime.Err())
 }
 func (s *simpleGRPCServer) Name() string {
 	return s.name
