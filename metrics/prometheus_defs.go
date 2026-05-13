@@ -58,14 +58,15 @@ var (
 		muxSessionLabels...)
 
 	// Mux Manager
-
 	muxManagerLabels       = []string{"addr", "mode", "config_name"}
 	MuxErrors              = DefaultCounterVec("mux_errors", "Number of errors observed from mux", append(muxManagerLabels, "error")...)
 	MuxConnectionEstablish = DefaultCounterVec("mux_connection_establish", "Number of times mux has established", muxManagerLabels...)
-	MuxDialFailed          = DefaultCounterVec("mux_dial_failed", "Mux failed when dialing", muxManagerLabels...)
-	MuxDialSuccess         = DefaultCounterVec("mux_dial_success", "Mux succeeded on dial", muxManagerLabels...)
 	MuxServerDisconnected  = DefaultCounterVec("mux_server_disconnected", "Mux server disconnected", muxManagerLabels...)
 	NumMuxesActive         = DefaultGaugeVec("num_muxes_active", "Host-local number of active muxes for config", muxManagerLabels...)
+
+	// Connection provider
+	ReceiverError    = DefaultCounterVec("receiver_error", "Number of errors observed from connection receiver", append(muxManagerLabels, "error")...)
+	EstablisherError = DefaultCounterVec("establisher_error", "Number of errors observed from connection establisher", muxManagerLabels...)
 
 	// Translation interceptor
 
@@ -128,9 +129,9 @@ func init() {
 
 	// Mux Manager
 	prometheus.MustRegister(MuxErrors)
+	prometheus.MustRegister(ReceiverError)
 	prometheus.MustRegister(MuxConnectionEstablish)
-	prometheus.MustRegister(MuxDialFailed)
-	prometheus.MustRegister(MuxDialSuccess)
+	prometheus.MustRegister(EstablisherError)
 	prometheus.MustRegister(MuxServerDisconnected)
 	prometheus.MustRegister(NumMuxesActive)
 

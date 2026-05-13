@@ -86,7 +86,7 @@ func (r *receivingConnProvider) NewConnection() (net.Conn, error) {
 	}
 	if err != nil {
 		r.logger.Fatal("listener.Accept failed", tag.Error(err))
-		metrics.MuxErrors.WithLabelValues(append(r.metricLabels, classifyError(err))...).Inc()
+		metrics.ReceiverError.WithLabelValues(append(r.metricLabels, classifyError(err))...).Inc()
 		return nil, err
 	}
 	r.logger.Info("Accept new connection", tag.NewStringTag("remoteAddr", conn.RemoteAddr().String()))
@@ -98,7 +98,7 @@ func classifyError(err error) string {
 	if err == io.EOF {
 		return "eof"
 	} else {
-		return "unclassified error"
+		return "unknown"
 	}
 }
 
