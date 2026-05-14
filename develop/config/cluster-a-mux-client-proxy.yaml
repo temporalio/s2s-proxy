@@ -10,3 +10,8 @@ clusterConnections:
       connectionType: "mux-client"
       muxAddressInfo:
         address: "localhost:6334"
+    namespaceTranslation:
+      mappings:
+        - local: "myNamespace"
+          remote: "myNamespace.accountid"
+

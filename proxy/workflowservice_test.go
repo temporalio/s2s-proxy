@@ -107,23 +107,28 @@ func (s *workflowServiceTestSuite) TestNamespaceFiltering() {
 	s.Equalf(-1, steveIndex, "Shouldn't have found namespace %s\n in list response: %s", matchingNS, res.Namespaces)
 }
 
-func (s *workflowServiceTestSuite) TestPreserveRedirectionHeader() {
+func (s *workflowServiceTestSuite) TestPreservedHeaders() {
 	loggerProvider := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
 	wfProxy := NewWorkflowServiceProxyServer("My cool test server", s.clientMock, nil, loggerProvider)
 
-	// Client should be called with xdc-redirection=false header
+	// All PreservedHeaders should be forwarded from the incoming context.
 	for _, headerValue := range []string{"true", "false", ""} {
 		s.clientMock.EXPECT().DescribeWorkflowExecution(gomockold.Any(), gomockold.Any()).DoAndReturn(
 			func(ctx context.Context, request *workflowservice.DescribeWorkflowExecutionRequest, opts ...grpc.CallOption) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 				md, ok := metadata.FromOutgoingContext(ctx)
 				s.True(ok)
-				s.Equal(md.Get(DCRedirectionContextHeaderName), []string{headerValue})
+				for _, header := range PreservedHeaders {
+					s.Equal([]string{headerValue}, md.Get(header), "header %q not forwarded", header)
+				}
 				return &workflowservice.DescribeWorkflowExecutionResponse{}, nil
 			},
 		).Times(1)
 
-		// API is passed xdc-redirection=false header
-		ctx := metadata.NewIncomingContext(context.Background(), metadata.New(map[string]string{DCRedirectionContextHeaderName: headerValue}))
+		incoming := map[string]string{}
+		for _, header := range PreservedHeaders {
+			incoming[header] = headerValue
+		}
+		ctx := metadata.NewIncomingContext(context.Background(), metadata.New(incoming))
 		res, err := wfProxy.DescribeWorkflowExecution(ctx, &workflowservice.DescribeWorkflowExecutionRequest{})
 		s.NoError(err)
 		s.NotNil(res)

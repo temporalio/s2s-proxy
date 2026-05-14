@@ -40,34 +40,33 @@ func (i *TranslationInterceptor) Intercept(
 	info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler,
 ) (any, error) {
-	if len(i.translators) > 0 &&
-		strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) ||
-		strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
-
-		methodName := api.MethodName(info.FullMethod)
-
-		for _, tr := range i.translators {
-			if tr.MatchMethod(info.FullMethod) {
-				start := time.Now()
-				changed, trErr := tr.TranslateRequest(req)
-				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Request", req, time.Since(start))
-			}
-		}
-
-		resp, err := handler(ctx, req)
-
-		for _, tr := range i.translators {
-			if tr.MatchMethod(info.FullMethod) {
-				start := time.Now()
-				changed, trErr := tr.TranslateResponse(resp)
-				logTranslateResult(tr, i.logger, changed, trErr, methodName+"Response", resp, time.Since(start))
-			}
-		}
-
-		return resp, err
-	} else {
+	if common.IsRequestTranslationDisabled(ctx) || len(i.translators) == 0 ||
+		(!strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) &&
+			!strings.HasPrefix(info.FullMethod, api.AdminServicePrefix)) {
 		return handler(ctx, req)
 	}
+
+	methodName := api.MethodName(info.FullMethod)
+
+	for _, tr := range i.translators {
+		if tr.MatchMethod(info.FullMethod) {
+			start := time.Now()
+			changed, trErr := tr.TranslateRequest(req)
+			logTranslateResult(tr, i.logger, changed, trErr, methodName+"Request", req, time.Since(start))
+		}
+	}
+
+	resp, err := handler(ctx, req)
+
+	for _, tr := range i.translators {
+		if tr.MatchMethod(info.FullMethod) {
+			start := time.Now()
+			changed, trErr := tr.TranslateResponse(resp)
+			logTranslateResult(tr, i.logger, changed, trErr, methodName+"Response", resp, time.Since(start))
+		}
+	}
+
+	return resp, err
 }
 
 func (i *TranslationInterceptor) InterceptStream(

@@ -16,6 +16,32 @@
 				"--config",
 				"proxy-config.yaml",
 			]
+		},
+		{
+			"name": "Debug Proxy (cluster-a mux client)",
+			"type": "go",
+			"request": "launch",
+			"mode": "debug",
+			"program": "${workspaceFolder}/cmd/proxy",
+			"cwd": "${workspaceFolder}",
+			"args": [
+				"start",
+				"--config",
+				"develop/config/cluster-a-mux-client-proxy.yaml",
+			]
+		},
+		{
+			"name": "Debug Proxy (cluster-b mux server)",
+			"type": "go",
+			"request": "launch",
+			"mode": "debug",
+			"program": "${workspaceFolder}/cmd/proxy",
+			"cwd": "${workspaceFolder}",
+			"args": [
+				"start",
+				"--config",
+				"develop/config/cluster-b-mux-server-proxy.yaml",
+			]
 		}
     ]
 }
