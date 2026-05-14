@@ -10,6 +10,7 @@ import (
 
 	"go.temporal.io/server/common/log/tag"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
@@ -39,6 +40,9 @@ type (
 
 func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider) *Proxy {
 	s2sConfig := configProvider.GetS2SProxyConfig()
+	if s2sConfig.MuxManagerStartDelay != nil {
+		common.GlobalPolicy.UpdateMuxManagerStartDelay(s2sConfig.MuxManagerStartDelay.AsDuration())
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
 		lifetime:           ctx,

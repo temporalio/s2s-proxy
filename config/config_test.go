@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -134,4 +135,79 @@ func TestExampleChart(t *testing.T) {
 	require.Equal(t, "frontend-address:7233", cc.Local.TcpClient.ConnectionString)
 	require.Equal(t, ConnectionType("mux-client"), cc.Remote.ConnectionType)
 	require.Equal(t, "s2s-proxy-sample.example.tmprl.cloud:8233", cc.Remote.MuxAddressInfo.ConnectionString)
+}
+
+func TestDurationUnmarshalYAML(t *testing.T) {
+	cases := []struct {
+		name      string
+		yamlValue string
+		want      time.Duration
+		wantErr   string
+	}{
+		{name: "seconds", yamlValue: `"30s"`, want: 30 * time.Second},
+		{name: "minutes", yamlValue: `"1m"`, want: time.Minute},
+		{name: "mixed_units", yamlValue: `"1m500ms"`, want: time.Minute + 500*time.Millisecond},
+		{name: "zero", yamlValue: `"0s"`, want: 0},
+		{name: "empty_string_yields_zero", yamlValue: `""`, want: 0},
+		{name: "invalid_format", yamlValue: `"not-a-duration"`, wantErr: `invalid duration "not-a-duration"`},
+		{name: "missing_unit_quoted", yamlValue: `"30"`, wantErr: `invalid duration "30"`},
+		// yaml.v3 coerces a bare integer scalar to a string when our UnmarshalYAML
+		// asks for one, so a unitless int hits the same "missing unit" path.
+		{name: "missing_unit_unquoted_int", yamlValue: `30`, wantErr: `invalid duration "30"`},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var d Duration
+			err := yaml.Unmarshal([]byte(c.yamlValue), &d)
+			if c.wantErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), c.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, c.want, time.Duration(d))
+		})
+	}
+}
+
+func TestDurationAsDuration(t *testing.T) {
+	cases := []struct {
+		name string
+		in   Duration
+		want time.Duration
+	}{
+		{name: "zero", in: 0, want: 0},
+		{name: "positive", in: Duration(2*time.Minute + 30*time.Second), want: 2*time.Minute + 30*time.Second},
+		{name: "negative", in: Duration(-500 * time.Millisecond), want: -500 * time.Millisecond},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.want, c.in.AsDuration())
+		})
+	}
+}
+
+func TestDurationUnmarshalYAML_NestedStructAndOmitted(t *testing.T) {
+	type wrapper struct {
+		Delay Duration `yaml:"delay"`
+	}
+
+	t.Run("parses_from_struct_field", func(t *testing.T) {
+		var w wrapper
+		require.NoError(t, yaml.Unmarshal([]byte(`delay: "45s"`), &w))
+		require.Equal(t, 45*time.Second, time.Duration(w.Delay))
+	})
+
+	t.Run("absent_field_stays_zero", func(t *testing.T) {
+		var w wrapper
+		require.NoError(t, yaml.Unmarshal([]byte(`{}`), &w))
+		require.Equal(t, time.Duration(0), time.Duration(w.Delay))
+	})
+
+	t.Run("explicit_zero_string_parses_to_zero", func(t *testing.T) {
+		var w wrapper
+		require.NoError(t, yaml.Unmarshal([]byte(`delay: "0"`), &w))
+		require.Equal(t, time.Duration(0), time.Duration(w.Delay))
+	})
 }
