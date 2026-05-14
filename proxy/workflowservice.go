@@ -310,9 +310,11 @@ func (s *workflowServiceProxyServer) UpdateWorkflowExecution(ctx context.Context
 }
 
 func copyContext(src context.Context) context.Context {
-	val := metadata.ValueFromIncomingContext(src, DCRedirectionContextHeaderName)
-	if len(val) > 0 {
-		src = metadata.AppendToOutgoingContext(src, DCRedirectionContextHeaderName, val[0])
+	for _, header := range []string{DCRedirectionContextHeaderName, common.RequestTranslationHeaderName} {
+		val := metadata.ValueFromIncomingContext(src, header)
+		if len(val) > 0 {
+			src = metadata.AppendToOutgoingContext(src, header, val[0])
+		}
 	}
 	return src
 }
