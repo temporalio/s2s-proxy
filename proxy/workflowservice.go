@@ -14,6 +14,13 @@ import (
 
 const DCRedirectionContextHeaderName = "xdc-redirection" // https://github.com/temporalio/temporal/blob/9a1060c4162ff62576cb899d7e5b1bae179af814/common/rpc/interceptor/redirection.go#L27
 
+// PreservedHeaders are forwarded from the incoming context to the outgoing
+// context so they survive the proxy hop.
+var PreservedHeaders = []string{
+	DCRedirectionContextHeaderName,
+	common.RequestTranslationHeaderName,
+}
+
 type (
 	workflowServiceProxyServer struct {
 		workflowservice.UnimplementedWorkflowServiceServer
@@ -310,7 +317,7 @@ func (s *workflowServiceProxyServer) UpdateWorkflowExecution(ctx context.Context
 }
 
 func copyContext(src context.Context) context.Context {
-	for _, header := range []string{DCRedirectionContextHeaderName, common.RequestTranslationHeaderName} {
+	for _, header := range PreservedHeaders {
 		val := metadata.ValueFromIncomingContext(src, header)
 		if len(val) > 0 {
 			src = metadata.AppendToOutgoingContext(src, header, val[0])

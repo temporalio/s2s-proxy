@@ -78,7 +78,7 @@ func (i *TranslationInterceptor) InterceptStream(
 
 	i.logger.Debug("InterceptStream", tag.NewAnyTag("method", info.FullMethod))
 	// Skip translation for intra-proxy streams
-	if common.IsIntraProxy(ss.Context()) || common.IsRequestTranslationDisabled(ss.Context()) {
+	if common.IsIntraProxy(ss.Context()) {
 		err := handler(srv, ss)
 		if err != nil {
 			i.logger.Error("grpc handler with error: %v", tag.Error(err))
