@@ -138,35 +138,40 @@ func TestExampleChart(t *testing.T) {
 }
 
 func TestDurationUnmarshalYAML(t *testing.T) {
+	type wrapper struct {
+		Delay Duration `yaml:"delay"`
+	}
 	cases := []struct {
 		name      string
-		yamlValue string
+		yamlInput string
 		want      time.Duration
 		wantErr   string
 	}{
-		{name: "seconds", yamlValue: `"30s"`, want: 30 * time.Second},
-		{name: "minutes", yamlValue: `"1m"`, want: time.Minute},
-		{name: "mixed_units", yamlValue: `"1m500ms"`, want: time.Minute + 500*time.Millisecond},
-		{name: "zero", yamlValue: `"0s"`, want: 0},
-		{name: "empty_string_yields_zero", yamlValue: `""`, want: 0},
-		{name: "invalid_format", yamlValue: `"not-a-duration"`, wantErr: `invalid duration "not-a-duration"`},
-		{name: "missing_unit_quoted", yamlValue: `"30"`, wantErr: `invalid duration "30"`},
+		{name: "seconds", yamlInput: `delay: "30s"`, want: 30 * time.Second},
+		{name: "minutes", yamlInput: `delay: "1m"`, want: time.Minute},
+		{name: "mixed_units", yamlInput: `delay: "1m500ms"`, want: time.Minute + 500*time.Millisecond},
+		{name: "explicit_zero", yamlInput: `delay: "0s"`, want: 0},
+		{name: "explicit_zero_unitless", yamlInput: `delay: "0"`, want: 0},
+		{name: "empty_string", yamlInput: `delay: ""`, want: 0},
+		{name: "absent_field", yamlInput: `{}`, want: 0},
+		{name: "invalid_format", yamlInput: `delay: "not-a-duration"`, wantErr: `invalid duration "not-a-duration"`},
+		{name: "missing_unit_quoted", yamlInput: `delay: "30"`, wantErr: `invalid duration "30"`},
 		// yaml.v3 coerces a bare integer scalar to a string when our UnmarshalYAML
 		// asks for one, so a unitless int hits the same "missing unit" path.
-		{name: "missing_unit_unquoted_int", yamlValue: `30`, wantErr: `invalid duration "30"`},
+		{name: "missing_unit_int", yamlInput: `delay: 30`, wantErr: `invalid duration "30"`},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			var d Duration
-			err := yaml.Unmarshal([]byte(c.yamlValue), &d)
+			var w wrapper
+			err := yaml.Unmarshal([]byte(c.yamlInput), &w)
 			if c.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), c.wantErr)
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, c.want, time.Duration(d))
+			require.Equal(t, c.want, time.Duration(w.Delay))
 		})
 	}
 }
@@ -186,28 +191,4 @@ func TestDurationAsDuration(t *testing.T) {
 			require.Equal(t, c.want, c.in.AsDuration())
 		})
 	}
-}
-
-func TestDurationUnmarshalYAML_NestedStructAndOmitted(t *testing.T) {
-	type wrapper struct {
-		Delay Duration `yaml:"delay"`
-	}
-
-	t.Run("parses_from_struct_field", func(t *testing.T) {
-		var w wrapper
-		require.NoError(t, yaml.Unmarshal([]byte(`delay: "45s"`), &w))
-		require.Equal(t, 45*time.Second, time.Duration(w.Delay))
-	})
-
-	t.Run("absent_field_stays_zero", func(t *testing.T) {
-		var w wrapper
-		require.NoError(t, yaml.Unmarshal([]byte(`{}`), &w))
-		require.Equal(t, time.Duration(0), time.Duration(w.Delay))
-	})
-
-	t.Run("explicit_zero_string_parses_to_zero", func(t *testing.T) {
-		var w wrapper
-		require.NoError(t, yaml.Unmarshal([]byte(`delay: "0"`), &w))
-		require.Equal(t, time.Duration(0), time.Duration(w.Delay))
-	})
 }
