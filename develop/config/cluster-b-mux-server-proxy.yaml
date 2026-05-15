@@ -1,4 +1,4 @@
-# muxManagerStartDelay: "0s"
+muxManagerStartDelay: "0s"
 clusterConnections:
   - name: "b-inbound-server/b-outbound-server"
     local:
