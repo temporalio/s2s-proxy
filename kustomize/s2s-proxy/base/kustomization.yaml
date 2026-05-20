@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - configmap.yaml
+  - service.yaml
+  - deployment.yaml
+
+# Common labels to add to all resources
+commonLabels:
+  app.kubernetes.io/name: s2s-proxy
+  # You might want to add instance or version labels here as well
+  # app.kubernetes.io/instance: s2s-proxy-dev
+  # app.kubernetes.io/version: "0.1.0" 
