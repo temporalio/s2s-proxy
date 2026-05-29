@@ -56,17 +56,18 @@ temporal operator namespace describe default --address localhost:17233
 ### Steps
 1. Start two local Temporal clusters, one on port 7233 and one on port 8233
    1. Make sure `enableGlobalNamespace: true` is in your config, and name them `left` and `right`
-2. Start a proxy with `./bins/s2s-proxy start --config ./develop/config/local-test-config-server.yaml`
-3. Start a proxy with `./bins/s2s-proxy start --config ./develop/config/local-test-config-client.yaml`
-4. Add the proxy for Temporal-left
+2. Generate the TLS certs referenced by the proxy configs: `./scripts/generate-local-test-certs.sh`
+3. Start a proxy with `./bins/s2s-proxy start --config ./develop/config/local-test-config-server.yaml`
+4. Start a proxy with `./bins/s2s-proxy start --config ./develop/config/local-test-config-client.yaml`
+5. Add the proxy for Temporal-left
    1. `temporal --address localhost:7233 operator cluster upsert --frontend-address localhost:38233 --enable-connection`
-5. Add the proxy for Temporal-right
+6. Add the proxy for Temporal-right
    1. `temporal --address localhost:8233 operator cluster upsert --frontend-address localhost:37233 --enable-connection`
-6. Create a namespace on Temporal-left and add Temporal-right as passive
+7. Create a namespace on Temporal-left and add Temporal-right as passive
    1. `temporal operator namespace create --active-cluster left --global -n left-ns`
    2. `temporal operator search-attribute create -n left-ns --name CustomStringField --type Text`
    3. `temporal operator namespace update -n left-ns --cluster left --cluster right`
-7. Done! Create some workflows and run whatever tests you need. 
+8. Done! Create some workflows and run whatever tests you need. 
 
 ## Generate Lazy Client (hacky solution)
 
