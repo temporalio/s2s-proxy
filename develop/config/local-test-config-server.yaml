@@ -9,30 +9,18 @@ clusterConnections:
       connectionType: "tcp" # TCP type must define both inbound and outbound
       tcpClient:
         address: "127.0.0.1:8233"
-        tls:
-          # certificatePath: "./proxycerts/temporal-internal.pem"
-          # keyPath: "./proxycerts/temporal-internal.key"
-          # remoteCAPath: "./proxycerts/temporal-internal.pem"
-          # caServerName: "testhost"
-          # skipCAVerification: true
       tcpServer:
         # Connects to "remote" temporal via proxy
         address: "127.0.0.1:37233"
-        tls:
-          certificatePath: "./proxycerts/temporal-internal.pem"
-          keyPath: "./proxycerts/temporal-internal.key"
-          remoteCAPath: "./proxycerts/temporal-internal.pem"
-          caServerName: "localhost"
-          skipCAVerification: false
     remote:
       connectionType: "mux-server" # One mux represents both inbound and outbound
       muxCount: 10
       muxAddressInfo:
         address: "127.0.0.1:11000"
         tls:
-          certificatePath: "./proxycerts/client-account-cert.pem"
-          keyPath: "./proxycerts/client-account-cert.key"
-          remoteCAPath: "./proxycerts/clientowned.pem"
+          certificatePath: "./proxycerts/server.pem"
+          keyPath: "./proxycerts/server.key"
+          remoteCAPath: "./proxycerts/server.pem"
           caServerName: ""
           skipCAVerification: true
     failoverVersionIncrementTranslation:
