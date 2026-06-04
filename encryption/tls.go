@@ -37,7 +37,7 @@ type (
 )
 
 func (t TLSConfig) IsEnabled() bool {
-	return (t.CertificatePath != "" && t.KeyPath != "") || (t.RemoteCAPath != "" && t.CAServerName != "")
+	return (t.CertificatePath != "" && t.KeyPath != "") || t.CAServerName != ""
 }
 
 var netClient HttpGetter = &http.Client{
@@ -119,8 +119,8 @@ func GetClientTLSConfig(clientConfig TLSConfig) (tlsConfig *tls.Config, err erro
 	tlsConfig = auth.NewEmptyTLSConfig()
 	tlsConfig.InsecureSkipVerify = clientConfig.SkipCAVerification
 	if !clientConfig.SkipCAVerification {
-		if clientConfig.CAServerName == "" || clientConfig.RemoteCAPath == "" {
-			return nil, errors.New("CAServerName and RemoteCAPath must be set when SkipCAVerification is false")
+		if clientConfig.CAServerName == "" {
+			return nil, errors.New("CAServerName must be set when SkipCAVerification is false")
 		}
 		tlsConfig.ServerName = clientConfig.CAServerName
 	}
@@ -132,6 +132,8 @@ func GetClientTLSConfig(clientConfig TLSConfig) (tlsConfig *tls.Config, err erro
 		}
 		tlsConfig.RootCAs = caCertPool
 	}
+	// If RemoteCAPath is empty, RootCAs stays nil and Go's TLS stack falls
+	// back to the host's system root CAs (x509.SystemCertPool).
 
 	if clientConfig.CertificatePath != "" {
 		myCert, err := tls.LoadX509KeyPair(clientConfig.CertificatePath, clientConfig.KeyPath)

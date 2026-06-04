@@ -55,15 +55,29 @@ func (s *tlsTestSuite) Test_ClientTLSConfig() {
 			isEnabled: true,
 		},
 		{
+			name: "server-auth-enabled-system-roots",
+			tlsConfig: TLSConfig{
+				CAServerName: "server",
+			},
+			isEnabled: true,
+		},
+		{
 			name:      "auth-disabled",
 			tlsConfig: TLSConfig{},
 			isEnabled: false,
 		},
 		{
-			name: "partialauth-disabled",
+			name: "partialauth-server-auth-only",
 			tlsConfig: TLSConfig{
 				CertificatePath: "path",
 				CAServerName:    "server",
+			},
+			isEnabled: true,
+		},
+		{
+			name: "partialauth-cert-only-disabled",
+			tlsConfig: TLSConfig{
+				CertificatePath: "path",
 			},
 			isEnabled: false,
 		},
