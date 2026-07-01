@@ -6,6 +6,7 @@ It enables communication between two Temporal servers even if the servers are lo
 The proxy can be customized with access control policies, such as defining allow lists for APIs and namespaces, 
 to enhance security. Using multiplex mode allows one server to connect to another server unidirectionally unlike 
 a typical multi-cluster setup where both servers must expose an accessible endpoint.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to build and run locally, run tests, etc.
@@ -13,6 +14,10 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to build and run locally, run t
 ## License
 
 [MIT License](https://github.com/temporalio/s2s-proxy/blob/main/LICENSE)
+
+## Docker publishing
+
+[temporalio/s2s-proxy](https://hub.docker.com/r/temporalio/s2s-proxy)
 
 *This project is intended for use as a binary only. Internal APIs are subject to change without warning!*
 
