@@ -14,12 +14,12 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/endtoendtest/testservices"
 	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
-	"github.com/temporalio/s2s-proxy/transport/mux"
 )
 
 const (
@@ -29,7 +29,7 @@ const (
 
 func init() {
 	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
-	mux.MuxManagerStartDelay = 0
+	common.GlobalPolicy.MuxManagerStartDelay = 0
 }
 
 func getDynamicPorts(t *testing.T, num int) []string {

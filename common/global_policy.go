@@ -1,0 +1,19 @@
+package common
+
+import "time"
+
+type Policy struct {
+	// MuxManagerStartDelay is how long the MuxManager's Start() waits for the
+	// underlying MuxProvider to publish initial connections before returning.
+	// A value of 0 tells Start() to skip the wait entirely.
+	MuxManagerStartDelay time.Duration
+}
+
+func (p *Policy) UpdateMuxManagerStartDelay(d time.Duration) {
+	p.MuxManagerStartDelay = d
+}
+
+// GlobalPolicy is the process-wide policy singleton.
+var GlobalPolicy = &Policy{
+	MuxManagerStartDelay: time.Minute,
+}
