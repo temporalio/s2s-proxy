@@ -37,11 +37,13 @@ jobs:
           go-version-file: 'go.mod'
           cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
 
+      # Run golangci-lint via `make lint` so it is built from the version pinned
+      # in develop/tools.mod using the Go toolchain from go.mod (installed above).
+      # The prebuilt golangci-lint-action binary is built with an older Go and
+      # fails when go.mod targets a newer Go ("used to build golangci-lint is
+      # lower than the targeted Go version").
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: v2.8
-          args: --build-tags=test_dep
+        run: make lint
 
   build:
     runs-on: ubuntu-latest
