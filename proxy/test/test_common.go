@@ -407,14 +407,33 @@ func removeRemoteCluster(
 	cluster *testcore.TestCluster,
 	remoteClusterName string,
 ) {
-	_, err := cluster.AdminClient().RemoveRemoteCluster(
-		context.Background(),
-		&adminservice.RemoveRemoteClusterRequest{
-			ClusterName: remoteClusterName,
-		},
+	// Since temporal server 1.32, RemoveRemoteCluster is rejected with a
+	// FailedPrecondition while any namespace still references the cluster. After
+	// deglobalizing the namespace, the in-memory namespace registry that guards
+	// removal (GetAllNamespaces) may lag persistence by up to its refresh
+	// interval, so retry until the deglobalization is observed (or a deadline is
+	// reached).
+	const (
+		timeout  = 30 * time.Second
+		interval = 500 * time.Millisecond
 	)
-	if err != nil {
-		t.Fatalf("Failed to remove remote cluster %s: %v", remoteClusterName, err)
+	deadline := time.Now().Add(timeout)
+	var err error
+	for {
+		_, err = cluster.AdminClient().RemoveRemoteCluster(
+			context.Background(),
+			&adminservice.RemoveRemoteClusterRequest{
+				ClusterName: remoteClusterName,
+			},
+		)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Failed to remove remote cluster %s: %v", remoteClusterName, err)
+			return
+		}
+		time.Sleep(interval)
 	}
 	logger.Info("Removed remote cluster",
 		tag.NewStringTag("remoteClusterName", remoteClusterName),
