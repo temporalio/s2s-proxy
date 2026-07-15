@@ -34,5 +34,6 @@ build/
 bins/
 **/tmp/
 
-# Claude Code settings
-.claude/
+# Claude Code settings (ignore local settings, but track shared skills)
+.claude/*
+!.claude/skills/

@@ -119,6 +119,12 @@ var (
 		enums.EVENT_TYPE_NEXUS_OPERATION_TIMED_OUT:               {},
 		enums.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED:        {},
 		enums.EVENT_TYPE_WORKFLOW_EXECUTION_OPTIONS_UPDATED:      {},
+
+		// Added in temporal server 1.32. These pause/unpause/time-skipping event
+		// attributes carry no namespace field, so they are skippable.
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_PAUSED:                     {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_UNPAUSED:                   {},
+		enums.EVENT_TYPE_WORKFLOW_EXECUTION_TIME_SKIPPING_TRANSITIONED: {},
 	}
 )
 
