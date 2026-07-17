@@ -115,6 +115,10 @@ func (s *adminServiceProxyServer) CloseShard(ctx context.Context, in0 *adminserv
 	return s.adminClient.CloseShard(ctx, in0)
 }
 
+func (s *adminServiceProxyServer) DeepHealthCheck(ctx context.Context, in0 *adminservice.DeepHealthCheckRequest) (*adminservice.DeepHealthCheckResponse, error) {
+	return s.adminClient.DeepHealthCheck(ctx, in0)
+}
+
 func (s *adminServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, in0 *adminservice.DeleteWorkflowExecutionRequest) (*adminservice.DeleteWorkflowExecutionResponse, error) {
 	return s.adminClient.DeleteWorkflowExecution(ctx, in0)
 }
@@ -183,6 +187,18 @@ func (s *adminServiceProxyServer) DescribeMutableState(ctx context.Context, in0 
 	return
 }
 
+func (s *adminServiceProxyServer) DescribeTaskQueuePartition(ctx context.Context, in0 *adminservice.DescribeTaskQueuePartitionRequest) (*adminservice.DescribeTaskQueuePartitionResponse, error) {
+	return s.adminClient.DescribeTaskQueuePartition(ctx, in0)
+}
+
+func (s *adminServiceProxyServer) ForceUnloadTaskQueuePartition(ctx context.Context, in0 *adminservice.ForceUnloadTaskQueuePartitionRequest) (*adminservice.ForceUnloadTaskQueuePartitionResponse, error) {
+	return s.adminClient.ForceUnloadTaskQueuePartition(ctx, in0)
+}
+
+func (s *adminServiceProxyServer) GenerateLastHistoryReplicationTasks(ctx context.Context, in0 *adminservice.GenerateLastHistoryReplicationTasksRequest) (*adminservice.GenerateLastHistoryReplicationTasksResponse, error) {
+	return s.adminClient.GenerateLastHistoryReplicationTasks(ctx, in0)
+}
+
 func (s *adminServiceProxyServer) GetDLQMessages(ctx context.Context, in0 *adminservice.GetDLQMessagesRequest) (*adminservice.GetDLQMessagesResponse, error) {
 	return s.adminClient.GetDLQMessages(ctx, in0)
 }
@@ -230,6 +246,10 @@ func (s *adminServiceProxyServer) GetTaskQueueTasks(ctx context.Context, in0 *ad
 	return s.adminClient.GetTaskQueueTasks(ctx, in0)
 }
 
+func (s *adminServiceProxyServer) GetTaskQueueUserData(ctx context.Context, in0 *adminservice.GetTaskQueueUserDataRequest) (*adminservice.GetTaskQueueUserDataResponse, error) {
+	return s.adminClient.GetTaskQueueUserData(ctx, in0)
+}
+
 func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistory(ctx context.Context, in0 *adminservice.GetWorkflowExecutionRawHistoryRequest) (*adminservice.GetWorkflowExecutionRawHistoryResponse, error) {
 	return s.adminClient.GetWorkflowExecutionRawHistory(ctx, in0)
 }
@@ -266,6 +286,10 @@ func (s *adminServiceProxyServer) MergeDLQTasks(ctx context.Context, in0 *admins
 	return s.adminClient.MergeDLQTasks(ctx, in0)
 }
 
+func (s *adminServiceProxyServer) MigrateSchedule(ctx context.Context, in0 *adminservice.MigrateScheduleRequest) (*adminservice.MigrateScheduleResponse, error) {
+	return s.adminClient.MigrateSchedule(ctx, in0)
+}
+
 func (s *adminServiceProxyServer) PurgeDLQMessages(ctx context.Context, in0 *adminservice.PurgeDLQMessagesRequest) (*adminservice.PurgeDLQMessagesResponse, error) {
 	return s.adminClient.PurgeDLQMessages(ctx, in0)
 }
@@ -300,6 +324,14 @@ func (s *adminServiceProxyServer) RemoveTask(ctx context.Context, in0 *adminserv
 
 func (s *adminServiceProxyServer) ResendReplicationTasks(ctx context.Context, in0 *adminservice.ResendReplicationTasksRequest) (*adminservice.ResendReplicationTasksResponse, error) {
 	return s.adminClient.ResendReplicationTasks(ctx, in0)
+}
+
+func (s *adminServiceProxyServer) StartAdminBatchOperation(ctx context.Context, in0 *adminservice.StartAdminBatchOperationRequest) (*adminservice.StartAdminBatchOperationResponse, error) {
+	return s.adminClient.StartAdminBatchOperation(ctx, in0)
+}
+
+func (s *adminServiceProxyServer) SyncWorkflowState(ctx context.Context, in0 *adminservice.SyncWorkflowStateRequest) (*adminservice.SyncWorkflowStateResponse, error) {
+	return s.adminClient.SyncWorkflowState(ctx, in0)
 }
 
 func ClusterShardIDtoString(sd history.ClusterShardID) string {

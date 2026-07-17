@@ -780,7 +780,7 @@ func (s *ReplicationTestSuite) failoverNamespace(
 				if err != nil || resp == nil {
 					return false
 				}
-				if resp.ActiveClusterName() != targetCluster {
+				if resp.ActiveClusterName(namespace.RoutingKey{}) != targetCluster {
 					return false
 				}
 			}
@@ -799,10 +799,13 @@ func (s *ReplicationTestSuite) deglobalizeNamespace(namespaceName string) {
 	}
 
 	ctx := context.Background()
+
+	s.ensureNamespaceActive(s.clusterA.ClusterName())
+
+	// Stop replication by removing clusterB
 	updateReq := &workflowservice.UpdateNamespaceRequest{
 		Namespace: namespaceName,
 		ReplicationConfig: &replicationpb.NamespaceReplicationConfig{
-			ActiveClusterName: s.clusterA.ClusterName(),
 			Clusters: []*replicationpb.ClusterReplicationConfig{
 				{ClusterName: s.clusterA.ClusterName()},
 			},
