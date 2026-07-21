@@ -49,6 +49,7 @@ clusterConnections:
           - StreamWorkflowReplicationMessages
           - ReapplyEvents
           - GetNamespace
+          - SyncWorkflowState
       allowedNamespaces:
         # Optional. If configured, the temporal-system namespace must be included to allow migration workflows to run.
         - "temporal-system"
