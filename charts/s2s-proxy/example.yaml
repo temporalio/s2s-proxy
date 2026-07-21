@@ -17,6 +17,7 @@ data:
           - StreamWorkflowReplicationMessages
           - ReapplyEvents
           - GetNamespace
+          - SyncWorkflowState
         allowedNamespaces:
         - temporal-system
         - myNamespace
