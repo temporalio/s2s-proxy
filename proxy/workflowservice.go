@@ -24,7 +24,7 @@ var PreservedHeaders = []string{
 type responseConstructorFn func() any
 
 var (
-	// https://github.com/temporalio/temporal/blob/f93f567d8395042b132ff69685053e0282e15416/common/rpc/interceptor/redirection.go#L47
+	// https://github.com/temporalio/temporal/blob/v1.31.2/common/rpc/interceptor/redirection.go#L47
 
 	globalAPIResponses = map[string]responseConstructorFn{
 		"DescribeTaskQueue":                  func() any { return &workflowservice.DescribeTaskQueueResponse{} },
@@ -92,10 +92,6 @@ var (
 		"PauseActivity":                  func() any { return &workflowservice.PauseActivityResponse{} },
 		"UnpauseActivity":                func() any { return &workflowservice.UnpauseActivityResponse{} },
 		"ResetActivity":                  func() any { return &workflowservice.ResetActivityResponse{} },
-		"UpdateActivityExecutionOptions": func() any { return &workflowservice.UpdateActivityExecutionOptionsResponse{} },
-		"PauseActivityExecution":         func() any { return &workflowservice.PauseActivityExecutionResponse{} },
-		"UnpauseActivityExecution":       func() any { return &workflowservice.UnpauseActivityExecutionResponse{} },
-		"ResetActivityExecution":         func() any { return &workflowservice.ResetActivityExecutionResponse{} },
 		"UpdateWorkflowExecutionOptions": func() any { return &workflowservice.UpdateWorkflowExecutionOptionsResponse{} },
 
 		"DescribeDeployment":                           func() any { return &workflowservice.DescribeDeploymentResponse{} },        // [cleanup-wv-pre-release]
@@ -124,7 +120,6 @@ var (
 		"TriggerWorkflowRule":   func() any { return &workflowservice.TriggerWorkflowRuleResponse{} },
 		"RecordWorkerHeartbeat": func() any { return &workflowservice.RecordWorkerHeartbeatResponse{} },
 		"ListWorkers":           func() any { return &workflowservice.ListWorkersResponse{} },
-		"CountWorkers":          func() any { return &workflowservice.CountWorkersResponse{} },
 		"DescribeWorker":        func() any { return &workflowservice.DescribeWorkerResponse{} },
 		"UpdateTaskQueueConfig": func() any { return &workflowservice.UpdateTaskQueueConfigResponse{} },
 		"FetchWorkerConfig":     func() any { return &workflowservice.FetchWorkerConfigResponse{} },
@@ -138,15 +133,6 @@ var (
 		"RequestCancelActivityExecution": func() any { return &workflowservice.RequestCancelActivityExecutionResponse{} },
 		"TerminateActivityExecution":     func() any { return &workflowservice.TerminateActivityExecutionResponse{} },
 		"DeleteActivityExecution":        func() any { return &workflowservice.DeleteActivityExecutionResponse{} },
-
-		"CountNexusOperationExecutions":        func() any { return &workflowservice.CountNexusOperationExecutionsResponse{} },
-		"DeleteNexusOperationExecution":        func() any { return &workflowservice.DeleteNexusOperationExecutionResponse{} },
-		"DescribeNexusOperationExecution":      func() any { return &workflowservice.DescribeNexusOperationExecutionResponse{} },
-		"ListNexusOperationExecutions":         func() any { return &workflowservice.ListNexusOperationExecutionsResponse{} },
-		"PollNexusOperationExecution":          func() any { return &workflowservice.PollNexusOperationExecutionResponse{} },
-		"RequestCancelNexusOperationExecution": func() any { return &workflowservice.RequestCancelNexusOperationExecutionResponse{} },
-		"StartNexusOperationExecution":         func() any { return &workflowservice.StartNexusOperationExecutionResponse{} },
-		"TerminateNexusOperationExecution":     func() any { return &workflowservice.TerminateNexusOperationExecutionResponse{} },
 	}
 )
 
@@ -573,10 +559,6 @@ func (s *workflowServiceProxyServer) ListWorkers(ctx context.Context, in0 *workf
 	return s.workflowServiceClient.ListWorkers(copyContext(ctx), in0)
 }
 
-func (s *workflowServiceProxyServer) CountWorkers(ctx context.Context, in0 *workflowservice.CountWorkersRequest) (*workflowservice.CountWorkersResponse, error) {
-	return s.workflowServiceClient.CountWorkers(copyContext(ctx), in0)
-}
-
 func (s *workflowServiceProxyServer) UpdateTaskQueueConfig(ctx context.Context, in0 *workflowservice.UpdateTaskQueueConfigRequest) (*workflowservice.UpdateTaskQueueConfigResponse, error) {
 	return s.workflowServiceClient.UpdateTaskQueueConfig(copyContext(ctx), in0)
 }
@@ -605,48 +587,24 @@ func (s *workflowServiceProxyServer) StartActivityExecution(ctx context.Context,
 	return s.workflowServiceClient.StartActivityExecution(copyContext(ctx), in0)
 }
 
-func (s *workflowServiceProxyServer) StartNexusOperationExecution(ctx context.Context, in0 *workflowservice.StartNexusOperationExecutionRequest) (*workflowservice.StartNexusOperationExecutionResponse, error) {
-	return s.workflowServiceClient.StartNexusOperationExecution(copyContext(ctx), in0)
-}
-
 func (s *workflowServiceProxyServer) DescribeActivityExecution(ctx context.Context, in0 *workflowservice.DescribeActivityExecutionRequest) (*workflowservice.DescribeActivityExecutionResponse, error) {
 	return s.workflowServiceClient.DescribeActivityExecution(copyContext(ctx), in0)
-}
-
-func (s *workflowServiceProxyServer) DescribeNexusOperationExecution(ctx context.Context, in0 *workflowservice.DescribeNexusOperationExecutionRequest) (*workflowservice.DescribeNexusOperationExecutionResponse, error) {
-	return s.workflowServiceClient.DescribeNexusOperationExecution(copyContext(ctx), in0)
 }
 
 func (s *workflowServiceProxyServer) PollActivityExecution(ctx context.Context, in0 *workflowservice.PollActivityExecutionRequest) (*workflowservice.PollActivityExecutionResponse, error) {
 	return s.workflowServiceClient.PollActivityExecution(copyContext(ctx), in0)
 }
 
-func (s *workflowServiceProxyServer) PollNexusOperationExecution(ctx context.Context, in0 *workflowservice.PollNexusOperationExecutionRequest) (*workflowservice.PollNexusOperationExecutionResponse, error) {
-	return s.workflowServiceClient.PollNexusOperationExecution(copyContext(ctx), in0)
-}
-
 func (s *workflowServiceProxyServer) ListActivityExecutions(ctx context.Context, in0 *workflowservice.ListActivityExecutionsRequest) (*workflowservice.ListActivityExecutionsResponse, error) {
 	return s.workflowServiceClient.ListActivityExecutions(copyContext(ctx), in0)
-}
-
-func (s *workflowServiceProxyServer) ListNexusOperationExecutions(ctx context.Context, in0 *workflowservice.ListNexusOperationExecutionsRequest) (*workflowservice.ListNexusOperationExecutionsResponse, error) {
-	return s.workflowServiceClient.ListNexusOperationExecutions(copyContext(ctx), in0)
 }
 
 func (s *workflowServiceProxyServer) CountActivityExecutions(ctx context.Context, in0 *workflowservice.CountActivityExecutionsRequest) (*workflowservice.CountActivityExecutionsResponse, error) {
 	return s.workflowServiceClient.CountActivityExecutions(copyContext(ctx), in0)
 }
 
-func (s *workflowServiceProxyServer) CountNexusOperationExecutions(ctx context.Context, in0 *workflowservice.CountNexusOperationExecutionsRequest) (*workflowservice.CountNexusOperationExecutionsResponse, error) {
-	return s.workflowServiceClient.CountNexusOperationExecutions(copyContext(ctx), in0)
-}
-
 func (s *workflowServiceProxyServer) RequestCancelActivityExecution(ctx context.Context, in0 *workflowservice.RequestCancelActivityExecutionRequest) (*workflowservice.RequestCancelActivityExecutionResponse, error) {
 	return s.workflowServiceClient.RequestCancelActivityExecution(copyContext(ctx), in0)
-}
-
-func (s *workflowServiceProxyServer) RequestCancelNexusOperationExecution(ctx context.Context, in0 *workflowservice.RequestCancelNexusOperationExecutionRequest) (*workflowservice.RequestCancelNexusOperationExecutionResponse, error) {
-	return s.workflowServiceClient.RequestCancelNexusOperationExecution(copyContext(ctx), in0)
 }
 
 func (s *workflowServiceProxyServer) TerminateActivityExecution(ctx context.Context, in0 *workflowservice.TerminateActivityExecutionRequest) (*workflowservice.TerminateActivityExecutionResponse, error) {
@@ -655,30 +613,6 @@ func (s *workflowServiceProxyServer) TerminateActivityExecution(ctx context.Cont
 
 func (s *workflowServiceProxyServer) DeleteActivityExecution(ctx context.Context, in0 *workflowservice.DeleteActivityExecutionRequest) (*workflowservice.DeleteActivityExecutionResponse, error) {
 	return s.workflowServiceClient.DeleteActivityExecution(copyContext(ctx), in0)
-}
-
-func (s *workflowServiceProxyServer) PauseActivityExecution(ctx context.Context, in0 *workflowservice.PauseActivityExecutionRequest) (*workflowservice.PauseActivityExecutionResponse, error) {
-	return s.workflowServiceClient.PauseActivityExecution(copyContext(ctx), in0)
-}
-
-func (s *workflowServiceProxyServer) ResetActivityExecution(ctx context.Context, in0 *workflowservice.ResetActivityExecutionRequest) (*workflowservice.ResetActivityExecutionResponse, error) {
-	return s.workflowServiceClient.ResetActivityExecution(copyContext(ctx), in0)
-}
-
-func (s *workflowServiceProxyServer) UnpauseActivityExecution(ctx context.Context, in0 *workflowservice.UnpauseActivityExecutionRequest) (*workflowservice.UnpauseActivityExecutionResponse, error) {
-	return s.workflowServiceClient.UnpauseActivityExecution(copyContext(ctx), in0)
-}
-
-func (s *workflowServiceProxyServer) UpdateActivityExecutionOptions(ctx context.Context, in0 *workflowservice.UpdateActivityExecutionOptionsRequest) (*workflowservice.UpdateActivityExecutionOptionsResponse, error) {
-	return s.workflowServiceClient.UpdateActivityExecutionOptions(copyContext(ctx), in0)
-}
-
-func (s *workflowServiceProxyServer) TerminateNexusOperationExecution(ctx context.Context, in0 *workflowservice.TerminateNexusOperationExecutionRequest) (*workflowservice.TerminateNexusOperationExecutionResponse, error) {
-	return s.workflowServiceClient.TerminateNexusOperationExecution(copyContext(ctx), in0)
-}
-
-func (s *workflowServiceProxyServer) DeleteNexusOperationExecution(ctx context.Context, in0 *workflowservice.DeleteNexusOperationExecutionRequest) (*workflowservice.DeleteNexusOperationExecutionResponse, error) {
-	return s.workflowServiceClient.DeleteNexusOperationExecution(copyContext(ctx), in0)
 }
 
 func copyContext(src context.Context) context.Context {

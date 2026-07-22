@@ -780,7 +780,7 @@ func (s *ReplicationTestSuite) failoverNamespace(
 				if err != nil || resp == nil {
 					return false
 				}
-				if resp.ActiveClusterName(namespace.RoutingKey{}) != targetCluster {
+				if resp.ActiveClusterName(namespace.EmptyBusinessID) != targetCluster {
 					return false
 				}
 			}
