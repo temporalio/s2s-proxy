@@ -131,6 +131,11 @@ docker-login:
 docker-build-push:
 	@docker buildx build --platform=linux/amd64,linux/arm64 -t "${DOCKER_REPO}/${DOCKER_IMAGE}:${DOCKER_TAG}" --push .
 
+.PHONY: docker-local-build
+docker-local-build:
+	@docker build --build-arg VERSION=${DOCKER_TAG} -t "${DOCKER_IMAGE}:${DOCKER_TAG}" .
+	@echo "Built local image ${DOCKER_IMAGE}:${DOCKER_TAG}"
+
 
 .PHONY: helm-install
 helm-install:
