@@ -37,6 +37,7 @@ data:
         muxAddressInfo:
           address: s2s-proxy-sample.example.tmprl.cloud:8233
           tls:
+            caServerName: ""
             certificatePath: /s2c-server-tls/tls.crt
             keyPath: /s2c-server-tls/tls.key
             remoteCAPath: ""

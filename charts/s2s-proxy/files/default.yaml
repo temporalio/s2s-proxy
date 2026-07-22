@@ -31,7 +31,8 @@ clusterConnections:
         tls:
           certificatePath: ""
           keyPath: ""
-          remoteCAPath: ""
+          remoteCAPath: "" # path to the CA cert that signed the remote server's cert; empty = use system root CAs
+          caServerName: "" # required unless skipCAVerification: true; must match the remote cert's SAN/CN
     # This should be the routable address
     replicationEndpoint: "my-s2s-proxy.svc.cluster.local:9233"
     # This is what the remote cluster is allowed to access on your local cluster
