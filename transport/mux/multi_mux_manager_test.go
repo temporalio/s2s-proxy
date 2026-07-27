@@ -11,13 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/server/common/log"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/endtoendtest/proxyassert"
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
 func init() {
 	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
-	MuxManagerStartDelay = 0
+	common.GlobalPolicy.MuxManagerStartDelay = 0
 }
 
 func TestMultiMuxManager(t *testing.T) {

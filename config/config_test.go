@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -134,4 +135,60 @@ func TestExampleChart(t *testing.T) {
 	require.Equal(t, "frontend-address:7233", cc.Local.TcpClient.ConnectionString)
 	require.Equal(t, ConnectionType("mux-client"), cc.Remote.ConnectionType)
 	require.Equal(t, "s2s-proxy-sample.example.tmprl.cloud:8233", cc.Remote.MuxAddressInfo.ConnectionString)
+}
+
+func TestDurationUnmarshalYAML(t *testing.T) {
+	type wrapper struct {
+		Delay Duration `yaml:"delay"`
+	}
+	cases := []struct {
+		name      string
+		yamlInput string
+		want      time.Duration
+		wantErr   string
+	}{
+		{name: "seconds", yamlInput: `delay: "30s"`, want: 30 * time.Second},
+		{name: "minutes", yamlInput: `delay: "1m"`, want: time.Minute},
+		{name: "mixed_units", yamlInput: `delay: "1m500ms"`, want: time.Minute + 500*time.Millisecond},
+		{name: "explicit_zero", yamlInput: `delay: "0s"`, want: 0},
+		{name: "explicit_zero_unitless", yamlInput: `delay: "0"`, want: 0},
+		{name: "empty_string", yamlInput: `delay: ""`, want: 0},
+		{name: "absent_field", yamlInput: `{}`, want: 0},
+		{name: "invalid_format", yamlInput: `delay: "not-a-duration"`, wantErr: `invalid duration "not-a-duration"`},
+		{name: "missing_unit_quoted", yamlInput: `delay: "30"`, wantErr: `invalid duration "30"`},
+		// yaml.v3 coerces a bare integer scalar to a string when our UnmarshalYAML
+		// asks for one, so a unitless int hits the same "missing unit" path.
+		{name: "missing_unit_int", yamlInput: `delay: 30`, wantErr: `invalid duration "30"`},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var w wrapper
+			err := yaml.Unmarshal([]byte(c.yamlInput), &w)
+			if c.wantErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), c.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, c.want, time.Duration(w.Delay))
+		})
+	}
+}
+
+func TestDurationAsDuration(t *testing.T) {
+	cases := []struct {
+		name string
+		in   Duration
+		want time.Duration
+	}{
+		{name: "zero", in: 0, want: 0},
+		{name: "positive", in: Duration(2*time.Minute + 30*time.Second), want: 2*time.Minute + 30*time.Second},
+		{name: "negative", in: Duration(-500 * time.Millisecond), want: -500 * time.Millisecond},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.want, c.in.AsDuration())
+		})
+	}
 }

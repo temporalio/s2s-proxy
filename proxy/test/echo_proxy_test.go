@@ -14,16 +14,16 @@ import (
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/endtoendtest"
-	"github.com/temporalio/s2s-proxy/transport/mux"
 )
 
 func init() {
 	// silence info log spam
 	_ = os.Setenv("TEMPORAL_TEST_LOG_LEVEL", "error")
-	mux.MuxManagerStartDelay = 0
+	common.GlobalPolicy.MuxManagerStartDelay = 0
 }
 
 var (

@@ -20,7 +20,7 @@ import (
 )
 
 func init() {
-	MuxManagerStartDelay = 0
+	common.GlobalPolicy.MuxManagerStartDelay = 0
 }
 
 func TestGRPCMux(t *testing.T) {

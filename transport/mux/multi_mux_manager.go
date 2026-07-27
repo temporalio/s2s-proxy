@@ -14,11 +14,10 @@ import (
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
+	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
-
-var MuxManagerStartDelay = time.Minute
 
 type (
 	multiMuxManager struct {
@@ -172,8 +171,11 @@ func (m *multiMuxManager) Start() {
 					tag.Name(m.name), tag.NewStringTag("sessions", sb.String()))
 			}
 		}()
-		// Allow the mux provider some time to provide connections
-		<-time.After(MuxManagerStartDelay)
+		// Allow the mux provider some time to provide connections.
+		// A MuxManagerStartDelay of 0 means skip the wait entirely.
+		if common.GlobalPolicy.MuxManagerStartDelay > 0 {
+			<-time.After(common.GlobalPolicy.MuxManagerStartDelay)
+		}
 	})
 }
 func (m *multiMuxManager) Describe() string {

@@ -2,7 +2,9 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
@@ -48,7 +50,17 @@ type (
 		Logging            LoggingConfig            `yaml:"logging"`
 		LogConfigs         map[string]LoggingConfig `yaml:"logConfigs"`
 		ClusterConnections []ClusterConnConfig      `yaml:"clusterConnections"`
+		// MuxManagerStartDelay overrides the time the mux manager waits for
+		// initial connections before serving. Accepts Go duration strings
+		// (e.g. "30s", "1m", or "0s" to skip the wait entirely). When the
+		// field is omitted, the in-process default (time.Minute) is used.
+		MuxManagerStartDelay *Duration `yaml:"muxManagerStartDelay,omitempty"`
 	}
+
+	// Duration is a time.Duration that unmarshals from YAML duration strings
+	// (e.g. "30s", "1m500ms") rather than the integer-nanoseconds form yaml.v3
+	// would otherwise produce.
+	Duration time.Duration
 
 	SATranslationConfig struct {
 		NamespaceMappings []SANamespaceMapping `yaml:"namespaceMappings"`
@@ -200,6 +212,25 @@ func (c *ProfilingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error
 	type plain ProfilingConfig
 	return unmarshal((*plain)(c))
 }
+
+func (d *Duration) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+	if s == "" {
+		return nil
+	}
+	parsed, err := time.ParseDuration(s)
+	if err != nil {
+		return fmt.Errorf("invalid duration %q: %w", s, err)
+	}
+	*d = Duration(parsed)
+	return nil
+}
+
+// AsDuration returns the value as a standard time.Duration.
+func (d Duration) AsDuration() time.Duration { return time.Duration(d) }
 
 func (s *SATranslationConfig) IsEnabled() bool {
 	return len(s.NamespaceMappings) > 0
