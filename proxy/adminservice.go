@@ -252,16 +252,10 @@ func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Co
 func (s *adminServiceProxyServer) GetReplicationMessages(ctx context.Context, in0 *adminservice.GetReplicationMessagesRequest) (resp *adminservice.GetReplicationMessagesResponse, err error) {
 	resp, err = s.adminClient.GetReplicationMessages(ctx, in0)
 	if err != nil {
-		s.loggers.Get(logging.ReplicationStreams).Error("Failed to get replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
+		s.loggers.Get(logging.AdminService).Error("Failed to get replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
 			tag.Error(err), tag.Operation("GetReplicationMessages"))
-	} else {
-		for shardID, messages := range resp.GetShardMessages() {
-			if tasks := messages.GetReplicationTasks(); len(tasks) > 0 {
-				s.loggers.Get(logging.ReplicationStreams).Info("Got replication tasks", tag.NewStringTag("Cluster", in0.GetClusterName()),
-					tag.NewInt32("ShardID", shardID), tag.NewInt("TaskCount", len(tasks)), tag.Operation("GetReplicationMessages"))
-			}
-		}
 	}
+
 	return
 }
 
