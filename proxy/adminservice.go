@@ -222,7 +222,7 @@ func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Co
 	resp, err = s.adminClient.GetNamespaceReplicationMessages(ctx, in0)
 	if err != nil {
 		// This is a duplicate of the grpc client metrics, but not everyone has metrics set up
-		s.loggers.Get(logging.ReplicationStreams).Error("Failed to get namespace replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
+		s.loggers.Get(logging.AdminService).Error("Failed to get namespace replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
 			tag.Error(err), tag.Operation("GetNamespaceReplicationMessages"))
 	} else if s.overrides.CustomSearchAttributes.IsEnabled() {
 		// Set the custom search attribute aliases on namespace replication tasks for namespaces
@@ -240,7 +240,7 @@ func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Co
 			}
 			if attrs.Config != nil {
 				attrs.Config.CustomSearchAttributeAliases = aliases
-				s.loggers.Get(logging.ReplicationStreams).Info("Overrode custom search attribute aliases",
+				s.loggers.Get(logging.AdminService).Info("Overrode custom search attribute aliases",
 					tag.WorkflowNamespace(attrs.GetInfo().GetName()), tag.Operation("GetNamespaceReplicationMessages"))
 			}
 		}
