@@ -221,7 +221,11 @@ func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Co
 		// This is a duplicate of the grpc client metrics, but not everyone has metrics set up
 		s.loggers.Get(logging.ReplicationStreams).Error("Failed to get namespace replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
 			tag.Error(err), tag.Operation("GetNamespaceReplicationMessages"))
+	} else if tasks := resp.GetMessages().GetReplicationTasks(); len(tasks) > 0 {
+		s.loggers.Get(logging.ReplicationStreams).Info("Got namespace replication tasks", tag.NewStringTag("Cluster", in0.GetClusterName()),
+			tag.NewInt("TaskCount", len(tasks)), tag.Operation("GetNamespaceReplicationMessages"))
 	}
+
 	return
 }
 
@@ -230,6 +234,13 @@ func (s *adminServiceProxyServer) GetReplicationMessages(ctx context.Context, in
 	if err != nil {
 		s.loggers.Get(logging.ReplicationStreams).Error("Failed to get replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
 			tag.Error(err), tag.Operation("GetReplicationMessages"))
+	} else {
+		for shardID, messages := range resp.GetShardMessages() {
+			if tasks := messages.GetReplicationTasks(); len(tasks) > 0 {
+				s.loggers.Get(logging.ReplicationStreams).Info("Got replication tasks", tag.NewStringTag("Cluster", in0.GetClusterName()),
+					tag.NewInt32("ShardID", shardID), tag.NewInt("TaskCount", len(tasks)), tag.Operation("GetReplicationMessages"))
+			}
+		}
 	}
 	return
 }

@@ -76,6 +76,21 @@ func TestBasic(t *testing.T) {
 	require.Contains(t, cc.ACLPolicy.AllowedMethods.AdminService, "StreamWorkflowReplicationMessages")
 	require.Equal(t, []string{"namespace1", "namespace2"}, cc.ACLPolicy.AllowedNamespaces)
 	require.True(t, cc.Remote.MuxAddressInfo.TLSConfig.SkipCAVerification)
+
+	customSAs := cc.CustomSearchAttributes
+	require.True(t, customSAs.IsEnabled())
+	require.Equal(t, map[string]map[string]string{
+		"namespace1": {
+			"CustomKeywordField": "Keyword02",
+			"CustomStringField":  "Text02",
+			"MyKeyword":          "Keyword01",
+			"MyText":             "Text01",
+		},
+	}, customSAs.ToMap())
+	require.Equal(t, NewTuple("Keyword02", true), NewTuple(customSAs.Get("namespace1", "CustomKeywordField")))
+	require.Equal(t, NewTuple("Text01", true), NewTuple(customSAs.Get("namespace1", "MyText")))
+	require.Equal(t, NewTuple("", false), NewTuple(customSAs.Get("namespace1", "UnknownField")))
+	require.Equal(t, NewTuple("", false), NewTuple(customSAs.Get("unknownNamespace", "MyText")))
 }
 
 func TestDefaultChart(t *testing.T) {

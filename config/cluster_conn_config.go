@@ -16,6 +16,7 @@ type (
 		ACLPolicy                  *ACLPolicy          `yaml:"aclPolicy"`
 		NamespaceTranslation       StringTranslator    `yaml:"namespaceTranslation"`
 		SearchAttributeTranslation SATranslationConfig `yaml:"searchAttributeTranslation"`
+		CustomSearchAttributes     CustomSAConfig      `yaml:"customSearchAttributes"`
 		RemoteClusterHealthCheck   HealthCheckConfig   `yaml:"remoteClusterHealthCheck"`
 		LocalClusterHealthCheck    HealthCheckConfig   `yaml:"localClusterHealthCheck"`
 		ShardCountConfig           ShardCountConfig    `yaml:"shardCount"`

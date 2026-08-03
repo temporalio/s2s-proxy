@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"maps"
 	"os"
 
 	"github.com/urfave/cli/v2"
@@ -64,6 +65,19 @@ type (
 	SAMapping struct {
 		LocalName  string `yaml:"localFieldName"`
 		RemoteName string `yaml:"remoteFieldName"`
+	}
+
+	// CustomSAConfig holds the custom search attributes registered per namespace.
+	CustomSAConfig struct {
+		NamespaceMappings []CustomSANamespaceMapping `yaml:"namespaceMappings"`
+	}
+
+	// CustomSANamespaceMapping is the custom search attribute mapping for a single namespace.
+	// CustomSearchAttributes maps the search attribute name provided by the customer to the
+	// internal field name, e.g. {"CustomKeywordField": "Keyword02", "MyText": "Text01"}.
+	CustomSANamespaceMapping struct {
+		Name                   string            `yaml:"name"`
+		CustomSearchAttributes map[string]string `yaml:"customSearchAttributes"`
 	}
 
 	ProfilingConfig struct {
@@ -199,6 +213,35 @@ func (c *ProfilingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error
 	// Alias to avoid infinite recursion
 	type plain ProfilingConfig
 	return unmarshal((*plain)(c))
+}
+
+func (c *CustomSAConfig) IsEnabled() bool {
+	return len(c.NamespaceMappings) > 0
+}
+
+// ToMap returns the custom search attributes keyed by namespace name, where each inner map is
+// customer-provided search attribute name -> internal field name.
+func (c *CustomSAConfig) ToMap() map[string]map[string]string {
+	out := make(map[string]map[string]string, len(c.NamespaceMappings))
+	for _, ns := range c.NamespaceMappings {
+		attrs := make(map[string]string, len(ns.CustomSearchAttributes))
+		maps.Copy(attrs, ns.CustomSearchAttributes)
+		out[ns.Name] = attrs
+	}
+	return out
+}
+
+// Get returns the internal field name for the given customer-provided search attribute name
+// in the given namespace.
+func (c *CustomSAConfig) Get(namespace string, searchAttr string) (string, bool) {
+	for _, ns := range c.NamespaceMappings {
+		if ns.Name != namespace {
+			continue
+		}
+		internalName, found := ns.CustomSearchAttributes[searchAttr]
+		return internalName, found
+	}
+	return "", false
 }
 
 func (s *SATranslationConfig) IsEnabled() bool {
