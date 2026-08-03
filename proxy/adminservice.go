@@ -48,6 +48,9 @@ type (
 		// Failover Version Increment. Overrides the value returned by DescribeCluster
 		FVI                 int64
 		ReplicationEndpoint string
+		// CustomSearchAttributes are the per-namespace custom search attributes
+		// (customer-provided name -> internal field name). Inbound only.
+		CustomSearchAttributes config.CustomSAConfig
 	}
 )
 
@@ -221,9 +224,26 @@ func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Co
 		// This is a duplicate of the grpc client metrics, but not everyone has metrics set up
 		s.loggers.Get(logging.ReplicationStreams).Error("Failed to get namespace replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
 			tag.Error(err), tag.Operation("GetNamespaceReplicationMessages"))
-	} else if tasks := resp.GetMessages().GetReplicationTasks(); len(tasks) > 0 {
-		s.loggers.Get(logging.ReplicationStreams).Info("Got namespace replication tasks", tag.NewStringTag("Cluster", in0.GetClusterName()),
-			tag.NewInt("TaskCount", len(tasks)), tag.Operation("GetNamespaceReplicationMessages"))
+	} else if s.overrides.CustomSearchAttributes.IsEnabled() {
+		// Set the custom search attribute aliases on namespace replication tasks for namespaces
+		// configured with custom search attributes. The aliases are the reverse of the configured
+		// mapping: customer-provided name -> internal field name becomes internal field name ->
+		// customer-provided name.
+		for _, task := range resp.GetMessages().GetReplicationTasks() {
+			attrs := task.GetNamespaceTaskAttributes()
+			if attrs == nil {
+				continue
+			}
+			aliases := s.overrides.CustomSearchAttributes.Aliases(attrs.GetInfo().GetName())
+			if len(aliases) == 0 {
+				continue
+			}
+			if attrs.Config != nil {
+				attrs.Config.CustomSearchAttributeAliases = aliases
+				s.loggers.Get(logging.ReplicationStreams).Info("Overrode custom search attribute aliases",
+					tag.WorkflowNamespace(attrs.GetInfo().GetName()), tag.Operation("GetNamespaceReplicationMessages"))
+			}
+		}
 	}
 
 	return

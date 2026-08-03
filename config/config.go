@@ -231,6 +231,26 @@ func (c *CustomSAConfig) ToMap() map[string]map[string]string {
 	return out
 }
 
+// Aliases returns the search attribute aliases for the given namespace, i.e. the reverse of the
+// configured mapping: internal field name -> customer-provided search attribute name.
+// It returns nil if the namespace has no custom search attributes configured.
+func (c *CustomSAConfig) Aliases(namespace string) map[string]string {
+	for _, ns := range c.NamespaceMappings {
+		if ns.Name != namespace {
+			continue
+		}
+		if len(ns.CustomSearchAttributes) == 0 {
+			return nil
+		}
+		aliases := make(map[string]string, len(ns.CustomSearchAttributes))
+		for name, internalName := range ns.CustomSearchAttributes {
+			aliases[internalName] = name
+		}
+		return aliases
+	}
+	return nil
+}
+
 // Get returns the internal field name for the given customer-provided search attribute name
 // in the given namespace.
 func (c *CustomSAConfig) Get(namespace string, searchAttr string) (string, bool) {

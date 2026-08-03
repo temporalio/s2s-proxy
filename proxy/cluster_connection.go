@@ -188,7 +188,11 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		managedClient:     cc.outboundClient,
 		nsTranslations:    nsTranslations.Inverse(),
 		saTranslations:    saTranslations.Inverse(),
-		overrides:         AdminServiceOverrides{connConfig.FVITranslation.Local, connConfig.ReplicationEndpoint},
+		overrides: AdminServiceOverrides{
+			FVI:                    connConfig.FVITranslation.Local,
+			ReplicationEndpoint:    connConfig.ReplicationEndpoint,
+			CustomSearchAttributes: connConfig.CustomSearchAttributes,
+		},
 		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
 		aclPolicy:         connConfig.ACLPolicy,
 		shardCountConfig:  connConfig.ShardCountConfig,
