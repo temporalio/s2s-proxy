@@ -91,6 +91,151 @@ func TestBasic(t *testing.T) {
 	require.Equal(t, NewTuple("Text01", true), NewTuple(customSAs.Get("namespace1", "MyText")))
 	require.Equal(t, NewTuple("", false), NewTuple(customSAs.Get("namespace1", "UnknownField")))
 	require.Equal(t, NewTuple("", false), NewTuple(customSAs.Get("unknownNamespace", "MyText")))
+	require.Equal(t, map[string]string{
+		"Keyword02": "CustomKeywordField",
+		"Text02":    "CustomStringField",
+		"Keyword01": "MyKeyword",
+		"Text01":    "MyText",
+	}, customSAs.Aliases("namespace1"))
+}
+
+func TestCustomSAConfigAliases(t *testing.T) {
+	cfg := CustomSAConfig{
+		NamespaceMappings: []CustomSANamespaceMapping{
+			{
+				Name: "namespace1",
+				CustomSearchAttributes: map[string]string{
+					"MyKeyword": "Keyword01",
+					"MyText":    "Text01",
+				},
+			},
+			{
+				Name: "namespace2",
+				CustomSearchAttributes: map[string]string{
+					"OtherKeyword": "Keyword01",
+				},
+			},
+			{
+				Name:                   "emptyNamespace",
+				CustomSearchAttributes: map[string]string{},
+			},
+			{
+				Name: "nilNamespace",
+			},
+		},
+	}
+
+	cases := []struct {
+		name      string
+		namespace string
+		expected  map[string]string
+	}{
+		{
+			name:      "reverses the configured mapping",
+			namespace: "namespace1",
+			expected: map[string]string{
+				"Keyword01": "MyKeyword",
+				"Text01":    "MyText",
+			},
+		},
+		{
+			// Each namespace is independent: namespace2 reuses Keyword01 without
+			// affecting namespace1.
+			name:      "scoped per namespace",
+			namespace: "namespace2",
+			expected:  map[string]string{"Keyword01": "OtherKeyword"},
+		},
+		{
+			name:      "unknown namespace",
+			namespace: "unknownNamespace",
+			expected:  nil,
+		},
+		{
+			name:      "namespace with empty mapping",
+			namespace: "emptyNamespace",
+			expected:  nil,
+		},
+		{
+			name:      "namespace with nil mapping",
+			namespace: "nilNamespace",
+			expected:  nil,
+		},
+		{
+			name:      "empty namespace name",
+			namespace: "",
+			expected:  nil,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.expected, cfg.Aliases(c.namespace))
+		})
+	}
+}
+
+func TestCustomSAConfigAliasesEmptyConfig(t *testing.T) {
+	var cfg CustomSAConfig
+	require.False(t, cfg.IsEnabled())
+	require.Nil(t, cfg.Aliases("namespace1"))
+}
+
+// Two search attribute names mapped to the same internal field name cannot both be
+// represented in the reversed map, so one of them is dropped. Which one survives is
+// not deterministic, so this only pins down that the result stays well formed.
+func TestCustomSAConfigAliasesDuplicateInternalName(t *testing.T) {
+	cfg := CustomSAConfig{
+		NamespaceMappings: []CustomSANamespaceMapping{
+			{
+				Name: "namespace1",
+				CustomSearchAttributes: map[string]string{
+					"MyKeyword":    "Keyword01",
+					"OtherKeyword": "Keyword01",
+				},
+			},
+		},
+	}
+
+	aliases := cfg.Aliases("namespace1")
+	require.Len(t, aliases, 1)
+	require.Contains(t, []string{"MyKeyword", "OtherKeyword"}, aliases["Keyword01"])
+}
+
+// The first mapping wins when a namespace is listed more than once.
+func TestCustomSAConfigAliasesDuplicateNamespace(t *testing.T) {
+	cfg := CustomSAConfig{
+		NamespaceMappings: []CustomSANamespaceMapping{
+			{
+				Name:                   "namespace1",
+				CustomSearchAttributes: map[string]string{"MyKeyword": "Keyword01"},
+			},
+			{
+				Name:                   "namespace1",
+				CustomSearchAttributes: map[string]string{"MyText": "Text01"},
+			},
+		},
+	}
+
+	require.Equal(t, map[string]string{"Keyword01": "MyKeyword"}, cfg.Aliases("namespace1"))
+}
+
+// Aliases must not alias the configured map: mutating the result cannot corrupt config.
+func TestCustomSAConfigAliasesReturnsCopy(t *testing.T) {
+	cfg := CustomSAConfig{
+		NamespaceMappings: []CustomSANamespaceMapping{
+			{
+				Name:                   "namespace1",
+				CustomSearchAttributes: map[string]string{"MyKeyword": "Keyword01"},
+			},
+		},
+	}
+
+	aliases := cfg.Aliases("namespace1")
+	aliases["Keyword01"] = "mutated"
+	delete(aliases, "Keyword01")
+
+	require.Equal(t, map[string]string{"Keyword01": "MyKeyword"}, cfg.Aliases("namespace1"))
+	require.Equal(t, map[string]string{"MyKeyword": "Keyword01"}, cfg.NamespaceMappings[0].CustomSearchAttributes)
 }
 
 func TestDefaultChart(t *testing.T) {
