@@ -2,7 +2,6 @@ package config
 
 import (
 	"bytes"
-	"maps"
 	"os"
 
 	"github.com/urfave/cli/v2"
@@ -219,18 +218,6 @@ func (c *CustomSAConfig) IsEnabled() bool {
 	return len(c.NamespaceMappings) > 0
 }
 
-// ToMap returns the custom search attributes keyed by namespace name, where each inner map is
-// customer-provided search attribute name -> internal field name.
-func (c *CustomSAConfig) ToMap() map[string]map[string]string {
-	out := make(map[string]map[string]string, len(c.NamespaceMappings))
-	for _, ns := range c.NamespaceMappings {
-		attrs := make(map[string]string, len(ns.CustomSearchAttributes))
-		maps.Copy(attrs, ns.CustomSearchAttributes)
-		out[ns.Name] = attrs
-	}
-	return out
-}
-
 // Aliases returns the search attribute aliases for the given namespace, i.e. the reverse of the
 // configured mapping: internal field name -> customer-provided search attribute name.
 // It returns nil if the namespace has no custom search attributes configured.
@@ -249,19 +236,6 @@ func (c *CustomSAConfig) Aliases(namespace string) map[string]string {
 		return aliases
 	}
 	return nil
-}
-
-// Get returns the internal field name for the given customer-provided search attribute name
-// in the given namespace.
-func (c *CustomSAConfig) Get(namespace string, searchAttr string) (string, bool) {
-	for _, ns := range c.NamespaceMappings {
-		if ns.Name != namespace {
-			continue
-		}
-		internalName, found := ns.CustomSearchAttributes[searchAttr]
-		return internalName, found
-	}
-	return "", false
 }
 
 func (s *SATranslationConfig) IsEnabled() bool {

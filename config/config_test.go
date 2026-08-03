@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +20,32 @@ type Tuple[K, V any] struct {
 
 func NewTuple[K, V any](k K, v V) Tuple[K, V] {
 	return Tuple[K, V]{k: k, v: v}
+}
+
+// ToMap returns the custom search attributes keyed by namespace name, where each inner map is
+// customer-provided search attribute name -> internal field name. Test-only: production code
+// reads the config through Aliases.
+func (c *CustomSAConfig) ToMap() map[string]map[string]string {
+	out := make(map[string]map[string]string, len(c.NamespaceMappings))
+	for _, ns := range c.NamespaceMappings {
+		attrs := make(map[string]string, len(ns.CustomSearchAttributes))
+		maps.Copy(attrs, ns.CustomSearchAttributes)
+		out[ns.Name] = attrs
+	}
+	return out
+}
+
+// Get returns the internal field name for the given customer-provided search attribute name
+// in the given namespace. Test-only: production code reads the config through Aliases.
+func (c *CustomSAConfig) Get(namespace string, searchAttr string) (string, bool) {
+	for _, ns := range c.NamespaceMappings {
+		if ns.Name != namespace {
+			continue
+		}
+		internalName, found := ns.CustomSearchAttributes[searchAttr]
+		return internalName, found
+	}
+	return "", false
 }
 
 func TestLoadS2SConfigMux(t *testing.T) {
