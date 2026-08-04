@@ -135,16 +135,17 @@ func (s *adminserviceSuite) TestAddOrUpdateRemoteCluster() {
 func (s *adminserviceSuite) TestAPIOverrides_GetNamespaceReplicationMessages() {
 	req := &adminservice.GetNamespaceReplicationMessagesRequest{ClusterName: "test-cluster"}
 
-	customSAs := func(mappings ...config.CustomSANamespaceMapping) config.CustomSAConfig {
-		return config.CustomSAConfig{NamespaceMappings: mappings}
+	customSAAliases := func(mappings ...config.CustomSAAliasNamespaceMapping) config.CustomSAAliasConfig {
+		return config.CustomSAAliasConfig{NamespaceMappings: mappings}
 	}
-	namespace1Mapping := config.CustomSANamespaceMapping{
+	namespace1Mapping := config.CustomSAAliasNamespaceMapping{
 		Name: "namespace1",
-		CustomSearchAttributes: map[string]string{
-			"MyKeyword": "Keyword01",
-			"MyText":    "Text01",
+		CustomSearchAttributeAliases: map[string]string{
+			"Keyword01": "MyKeyword",
+			"Text01":    "MyText",
 		},
 	}
+	// What the handler is expected to write onto the task.
 	namespace1Aliases := map[string]string{
 		"Keyword01": "MyKeyword",
 		"Text01":    "MyText",
@@ -205,7 +206,7 @@ func (s *adminserviceSuite) TestAPIOverrides_GetNamespaceReplicationMessages() {
 			name: "override matching namespace",
 			adminProxyServerInput: adminProxyServerInput{
 				metricLabels: []string{"inbound"},
-				overrides:    AdminServiceOverrides{CustomSearchAttributes: customSAs(namespace1Mapping)},
+				overrides:    AdminServiceOverrides{CustomSearchAttributeAliases: customSAAliases(namespace1Mapping)},
 			},
 			mockResp: makeResp(makeNSTask("namespace1", nil)),
 			expResp:  makeResp(makeNSTask("namespace1", namespace1Aliases)),
@@ -214,7 +215,7 @@ func (s *adminserviceSuite) TestAPIOverrides_GetNamespaceReplicationMessages() {
 			name: "replaces pre-existing aliases",
 			adminProxyServerInput: adminProxyServerInput{
 				metricLabels: []string{"inbound"},
-				overrides:    AdminServiceOverrides{CustomSearchAttributes: customSAs(namespace1Mapping)},
+				overrides:    AdminServiceOverrides{CustomSearchAttributeAliases: customSAAliases(namespace1Mapping)},
 			},
 			mockResp: makeResp(makeNSTask("namespace1", map[string]string{
 				"Keyword01": "SourceKeyword",
@@ -227,7 +228,7 @@ func (s *adminserviceSuite) TestAPIOverrides_GetNamespaceReplicationMessages() {
 			name: "mixed batch overrides only configured namespaces",
 			adminProxyServerInput: adminProxyServerInput{
 				metricLabels: []string{"inbound"},
-				overrides:    AdminServiceOverrides{CustomSearchAttributes: customSAs(namespace1Mapping)},
+				overrides:    AdminServiceOverrides{CustomSearchAttributeAliases: customSAAliases(namespace1Mapping)},
 			},
 			mockResp: makeResp(
 				makeNSTask("namespace1", nil),
@@ -242,18 +243,18 @@ func (s *adminserviceSuite) TestAPIOverrides_GetNamespaceReplicationMessages() {
 			name: "unconfigured namespace",
 			adminProxyServerInput: adminProxyServerInput{
 				metricLabels: []string{"inbound"},
-				overrides:    AdminServiceOverrides{CustomSearchAttributes: customSAs(namespace1Mapping)},
+				overrides:    AdminServiceOverrides{CustomSearchAttributeAliases: customSAAliases(namespace1Mapping)},
 			},
 			mockResp: makeResp(makeNSTask("unknownNamespace", nil)),
 			expResp:  makeResp(makeNSTask("unknownNamespace", nil)),
 		},
 		{
-			name: "namespace configured with no attributes",
+			name: "namespace configured with no aliases",
 			adminProxyServerInput: adminProxyServerInput{
 				metricLabels: []string{"inbound"},
-				overrides: AdminServiceOverrides{CustomSearchAttributes: customSAs(namespace1Mapping, config.CustomSANamespaceMapping{
-					Name:                   "namespace2",
-					CustomSearchAttributes: map[string]string{},
+				overrides: AdminServiceOverrides{CustomSearchAttributeAliases: customSAAliases(namespace1Mapping, config.CustomSAAliasNamespaceMapping{
+					Name:                         "namespace2",
+					CustomSearchAttributeAliases: map[string]string{},
 				})},
 			},
 			mockResp: makeResp(makeNSTask("namespace2", nil)),
@@ -265,7 +266,7 @@ func (s *adminserviceSuite) TestAPIOverrides_GetNamespaceReplicationMessages() {
 			name: "task with nil config is skipped",
 			adminProxyServerInput: adminProxyServerInput{
 				metricLabels: []string{"inbound"},
-				overrides:    AdminServiceOverrides{CustomSearchAttributes: customSAs(namespace1Mapping)},
+				overrides:    AdminServiceOverrides{CustomSearchAttributeAliases: customSAAliases(namespace1Mapping)},
 			},
 			mockResp: makeResp(makeNSTaskNilConfig("namespace1")),
 			expResp:  makeResp(makeNSTaskNilConfig("namespace1")),
@@ -274,7 +275,7 @@ func (s *adminserviceSuite) TestAPIOverrides_GetNamespaceReplicationMessages() {
 			name: "non-namespace tasks and nil entries",
 			adminProxyServerInput: adminProxyServerInput{
 				metricLabels: []string{"inbound"},
-				overrides:    AdminServiceOverrides{CustomSearchAttributes: customSAs(namespace1Mapping)},
+				overrides:    AdminServiceOverrides{CustomSearchAttributeAliases: customSAAliases(namespace1Mapping)},
 			},
 			mockResp: makeResp(
 				nil,
@@ -291,7 +292,7 @@ func (s *adminserviceSuite) TestAPIOverrides_GetNamespaceReplicationMessages() {
 			name: "nil messages",
 			adminProxyServerInput: adminProxyServerInput{
 				metricLabels: []string{"inbound"},
-				overrides:    AdminServiceOverrides{CustomSearchAttributes: customSAs(namespace1Mapping)},
+				overrides:    AdminServiceOverrides{CustomSearchAttributeAliases: customSAAliases(namespace1Mapping)},
 			},
 			mockResp: &adminservice.GetNamespaceReplicationMessagesResponse{},
 			expResp:  &adminservice.GetNamespaceReplicationMessagesResponse{},
@@ -302,7 +303,7 @@ func (s *adminserviceSuite) TestAPIOverrides_GetNamespaceReplicationMessages() {
 			name: "override applied with request translation disabled",
 			adminProxyServerInput: adminProxyServerInput{
 				metricLabels: []string{"inbound"},
-				overrides:    AdminServiceOverrides{CustomSearchAttributes: customSAs(namespace1Mapping)},
+				overrides:    AdminServiceOverrides{CustomSearchAttributeAliases: customSAAliases(namespace1Mapping)},
 			},
 			reqMetadata: map[string]string{
 				common.RequestTranslationHeaderName: "false",
@@ -333,11 +334,11 @@ func (s *adminserviceSuite) TestAPIOverrides_GetNamespaceReplicationMessagesErro
 	observer := NewReplicationStreamObserver(log.NewTestLogger())
 	server := s.newAdminServiceProxyServer(adminProxyServerInput{
 		metricLabels: []string{"inbound"},
-		overrides: AdminServiceOverrides{CustomSearchAttributes: config.CustomSAConfig{
-			NamespaceMappings: []config.CustomSANamespaceMapping{
+		overrides: AdminServiceOverrides{CustomSearchAttributeAliases: config.CustomSAAliasConfig{
+			NamespaceMappings: []config.CustomSAAliasNamespaceMapping{
 				{
-					Name:                   "namespace1",
-					CustomSearchAttributes: map[string]string{"MyKeyword": "Keyword01"},
+					Name:                         "namespace1",
+					CustomSearchAttributeAliases: map[string]string{"Keyword01": "MyKeyword"},
 				},
 			},
 		}},

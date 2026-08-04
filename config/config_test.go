@@ -22,28 +22,28 @@ func NewTuple[K, V any](k K, v V) Tuple[K, V] {
 	return Tuple[K, V]{k: k, v: v}
 }
 
-// ToMap returns the custom search attributes keyed by namespace name, where each inner map is
-// customer-provided search attribute name -> internal field name. Test-only: production code
-// reads the config through Aliases.
-func (c *CustomSAConfig) ToMap() map[string]map[string]string {
+// ToMap returns the custom search attribute aliases keyed by namespace name, where each inner
+// map is internal field name -> customer-provided search attribute name. Test-only: production
+// code reads the config through Aliases.
+func (c *CustomSAAliasConfig) ToMap() map[string]map[string]string {
 	out := make(map[string]map[string]string, len(c.NamespaceMappings))
 	for _, ns := range c.NamespaceMappings {
-		attrs := make(map[string]string, len(ns.CustomSearchAttributes))
-		maps.Copy(attrs, ns.CustomSearchAttributes)
-		out[ns.Name] = attrs
+		aliases := make(map[string]string, len(ns.CustomSearchAttributeAliases))
+		maps.Copy(aliases, ns.CustomSearchAttributeAliases)
+		out[ns.Name] = aliases
 	}
 	return out
 }
 
-// Get returns the internal field name for the given customer-provided search attribute name
-// in the given namespace. Test-only: production code reads the config through Aliases.
-func (c *CustomSAConfig) Get(namespace string, searchAttr string) (string, bool) {
+// Get returns the customer-provided search attribute name aliased to the given internal field
+// name in the given namespace. Test-only: production code reads the config through Aliases.
+func (c *CustomSAAliasConfig) Get(namespace string, internalName string) (string, bool) {
 	for _, ns := range c.NamespaceMappings {
 		if ns.Name != namespace {
 			continue
 		}
-		internalName, found := ns.CustomSearchAttributes[searchAttr]
-		return internalName, found
+		alias, found := ns.CustomSearchAttributeAliases[internalName]
+		return alias, found
 	}
 	return "", false
 }
@@ -104,47 +104,47 @@ func TestBasic(t *testing.T) {
 	require.Equal(t, []string{"namespace1", "namespace2"}, cc.ACLPolicy.AllowedNamespaces)
 	require.True(t, cc.Remote.MuxAddressInfo.TLSConfig.SkipCAVerification)
 
-	customSAs := cc.CustomSearchAttributes
-	require.True(t, customSAs.IsEnabled())
+	customSAAliases := cc.CustomSearchAttributeAliases
+	require.True(t, customSAAliases.IsEnabled())
 	require.Equal(t, map[string]map[string]string{
 		"namespace1": {
-			"CustomKeywordField": "Keyword02",
-			"CustomStringField":  "Text02",
-			"MyKeyword":          "Keyword01",
-			"MyText":             "Text01",
+			"Keyword01": "MyKeyword",
+			"Keyword02": "CustomKeywordField",
+			"Text01":    "MyText",
+			"Text02":    "CustomStringField",
 		},
-	}, customSAs.ToMap())
-	require.Equal(t, NewTuple("Keyword02", true), NewTuple(customSAs.Get("namespace1", "CustomKeywordField")))
-	require.Equal(t, NewTuple("Text01", true), NewTuple(customSAs.Get("namespace1", "MyText")))
-	require.Equal(t, NewTuple("", false), NewTuple(customSAs.Get("namespace1", "UnknownField")))
-	require.Equal(t, NewTuple("", false), NewTuple(customSAs.Get("unknownNamespace", "MyText")))
+	}, customSAAliases.ToMap())
+	require.Equal(t, NewTuple("CustomKeywordField", true), NewTuple(customSAAliases.Get("namespace1", "Keyword02")))
+	require.Equal(t, NewTuple("MyText", true), NewTuple(customSAAliases.Get("namespace1", "Text01")))
+	require.Equal(t, NewTuple("", false), NewTuple(customSAAliases.Get("namespace1", "UnknownField")))
+	require.Equal(t, NewTuple("", false), NewTuple(customSAAliases.Get("unknownNamespace", "Text01")))
 	require.Equal(t, map[string]string{
-		"Keyword02": "CustomKeywordField",
-		"Text02":    "CustomStringField",
 		"Keyword01": "MyKeyword",
+		"Keyword02": "CustomKeywordField",
 		"Text01":    "MyText",
-	}, customSAs.Aliases("namespace1"))
+		"Text02":    "CustomStringField",
+	}, customSAAliases.Aliases("namespace1"))
 }
 
-func TestCustomSAConfigAliases(t *testing.T) {
-	cfg := CustomSAConfig{
-		NamespaceMappings: []CustomSANamespaceMapping{
+func TestCustomSAAliasConfigAliases(t *testing.T) {
+	cfg := CustomSAAliasConfig{
+		NamespaceMappings: []CustomSAAliasNamespaceMapping{
 			{
 				Name: "namespace1",
-				CustomSearchAttributes: map[string]string{
-					"MyKeyword": "Keyword01",
-					"MyText":    "Text01",
+				CustomSearchAttributeAliases: map[string]string{
+					"Keyword01": "MyKeyword",
+					"Text01":    "MyText",
 				},
 			},
 			{
 				Name: "namespace2",
-				CustomSearchAttributes: map[string]string{
-					"OtherKeyword": "Keyword01",
+				CustomSearchAttributeAliases: map[string]string{
+					"Keyword01": "OtherKeyword",
 				},
 			},
 			{
-				Name:                   "emptyNamespace",
-				CustomSearchAttributes: map[string]string{},
+				Name:                         "emptyNamespace",
+				CustomSearchAttributeAliases: map[string]string{},
 			},
 			{
 				Name: "nilNamespace",
@@ -158,7 +158,7 @@ func TestCustomSAConfigAliases(t *testing.T) {
 		expected  map[string]string
 	}{
 		{
-			name:      "reverses the configured mapping",
+			name:      "returns the configured aliases",
 			namespace: "namespace1",
 			expected: map[string]string{
 				"Keyword01": "MyKeyword",
@@ -166,8 +166,8 @@ func TestCustomSAConfigAliases(t *testing.T) {
 			},
 		},
 		{
-			// Each namespace is independent: namespace2 reuses Keyword01 without
-			// affecting namespace1.
+			// Each namespace is independent: namespace2 aliases Keyword01 to a different
+			// name without affecting namespace1.
 			name:      "scoped per namespace",
 			namespace: "namespace2",
 			expected:  map[string]string{"Keyword01": "OtherKeyword"},
@@ -201,44 +201,44 @@ func TestCustomSAConfigAliases(t *testing.T) {
 	}
 }
 
-func TestCustomSAConfigAliasesEmptyConfig(t *testing.T) {
-	var cfg CustomSAConfig
+func TestCustomSAAliasConfigAliasesEmptyConfig(t *testing.T) {
+	var cfg CustomSAAliasConfig
 	require.False(t, cfg.IsEnabled())
 	require.Nil(t, cfg.Aliases("namespace1"))
 }
 
-// Two search attribute names mapped to the same internal field name cannot both be
-// represented in the reversed map, so one of them is dropped. Which one survives is
-// not deterministic, so this only pins down that the result stays well formed.
-func TestCustomSAConfigAliasesDuplicateInternalName(t *testing.T) {
-	cfg := CustomSAConfig{
-		NamespaceMappings: []CustomSANamespaceMapping{
+// Distinct internal fields may share an alias name. Both entries are preserved; the server is
+// responsible for rejecting the namespace config if that is invalid.
+func TestCustomSAAliasConfigAliasesDuplicateAliasName(t *testing.T) {
+	cfg := CustomSAAliasConfig{
+		NamespaceMappings: []CustomSAAliasNamespaceMapping{
 			{
 				Name: "namespace1",
-				CustomSearchAttributes: map[string]string{
-					"MyKeyword":    "Keyword01",
-					"OtherKeyword": "Keyword01",
+				CustomSearchAttributeAliases: map[string]string{
+					"Keyword01": "MyKeyword",
+					"Keyword02": "MyKeyword",
 				},
 			},
 		},
 	}
 
-	aliases := cfg.Aliases("namespace1")
-	require.Len(t, aliases, 1)
-	require.Contains(t, []string{"MyKeyword", "OtherKeyword"}, aliases["Keyword01"])
+	require.Equal(t, map[string]string{
+		"Keyword01": "MyKeyword",
+		"Keyword02": "MyKeyword",
+	}, cfg.Aliases("namespace1"))
 }
 
 // The first mapping wins when a namespace is listed more than once.
-func TestCustomSAConfigAliasesDuplicateNamespace(t *testing.T) {
-	cfg := CustomSAConfig{
-		NamespaceMappings: []CustomSANamespaceMapping{
+func TestCustomSAAliasConfigAliasesDuplicateNamespace(t *testing.T) {
+	cfg := CustomSAAliasConfig{
+		NamespaceMappings: []CustomSAAliasNamespaceMapping{
 			{
-				Name:                   "namespace1",
-				CustomSearchAttributes: map[string]string{"MyKeyword": "Keyword01"},
+				Name:                         "namespace1",
+				CustomSearchAttributeAliases: map[string]string{"Keyword01": "MyKeyword"},
 			},
 			{
-				Name:                   "namespace1",
-				CustomSearchAttributes: map[string]string{"MyText": "Text01"},
+				Name:                         "namespace1",
+				CustomSearchAttributeAliases: map[string]string{"Text01": "MyText"},
 			},
 		},
 	}
@@ -247,12 +247,12 @@ func TestCustomSAConfigAliasesDuplicateNamespace(t *testing.T) {
 }
 
 // Aliases must not alias the configured map: mutating the result cannot corrupt config.
-func TestCustomSAConfigAliasesReturnsCopy(t *testing.T) {
-	cfg := CustomSAConfig{
-		NamespaceMappings: []CustomSANamespaceMapping{
+func TestCustomSAAliasConfigAliasesReturnsCopy(t *testing.T) {
+	cfg := CustomSAAliasConfig{
+		NamespaceMappings: []CustomSAAliasNamespaceMapping{
 			{
-				Name:                   "namespace1",
-				CustomSearchAttributes: map[string]string{"MyKeyword": "Keyword01"},
+				Name:                         "namespace1",
+				CustomSearchAttributeAliases: map[string]string{"Keyword01": "MyKeyword"},
 			},
 		},
 	}
@@ -262,7 +262,7 @@ func TestCustomSAConfigAliasesReturnsCopy(t *testing.T) {
 	delete(aliases, "Keyword01")
 
 	require.Equal(t, map[string]string{"Keyword01": "MyKeyword"}, cfg.Aliases("namespace1"))
-	require.Equal(t, map[string]string{"MyKeyword": "Keyword01"}, cfg.NamespaceMappings[0].CustomSearchAttributes)
+	require.Equal(t, map[string]string{"Keyword01": "MyKeyword"}, cfg.NamespaceMappings[0].CustomSearchAttributeAliases)
 }
 
 func TestDefaultChart(t *testing.T) {

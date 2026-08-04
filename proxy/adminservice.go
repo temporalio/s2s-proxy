@@ -48,9 +48,9 @@ type (
 		// Failover Version Increment. Overrides the value returned by DescribeCluster
 		FVI                 int64
 		ReplicationEndpoint string
-		// CustomSearchAttributes are the per-namespace custom search attributes
-		// (customer-provided name -> internal field name). Inbound only.
-		CustomSearchAttributes config.CustomSAConfig
+		// CustomSearchAttributeAliases are the per-namespace custom search attribute aliases
+		// (internal field name -> customer-provided name). Inbound only.
+		CustomSearchAttributeAliases config.CustomSAAliasConfig
 	}
 )
 
@@ -224,17 +224,15 @@ func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Co
 		// This is a duplicate of the grpc client metrics, but not everyone has metrics set up
 		s.loggers.Get(logging.AdminService).Error("Failed to get namespace replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
 			tag.Error(err), tag.Operation("GetNamespaceReplicationMessages"))
-	} else if s.overrides.CustomSearchAttributes.IsEnabled() {
+	} else if s.overrides.CustomSearchAttributeAliases.IsEnabled() {
 		// Set the custom search attribute aliases on namespace replication tasks for namespaces
-		// configured with custom search attributes. The aliases are the reverse of the configured
-		// mapping: customer-provided name -> internal field name becomes internal field name ->
-		// customer-provided name.
+		// configured with custom search attribute aliases.
 		for _, task := range resp.GetMessages().GetReplicationTasks() {
 			attrs := task.GetNamespaceTaskAttributes()
 			if attrs == nil {
 				continue
 			}
-			aliases := s.overrides.CustomSearchAttributes.Aliases(attrs.GetInfo().GetName())
+			aliases := s.overrides.CustomSearchAttributeAliases.Aliases(attrs.GetInfo().GetName())
 			if len(aliases) == 0 {
 				continue
 			}
