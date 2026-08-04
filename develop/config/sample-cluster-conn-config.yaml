@@ -60,6 +60,15 @@ clusterConnections:
           mappings:
             - localFieldName: "localSearchAttribute"
               remoteFieldName: "remoteSearchAttribute"
+    customSearchAttributeAliases:
+      namespaceMappings:
+        - name: "namespace1"
+          # internal field name -> search attribute name provided by customer
+          customSearchAttributeAliases:
+            Keyword01: "MyKeyword"
+            Keyword02: "CustomKeywordField"
+            Text01: "MyText"
+            Text02: "CustomStringField"
     remoteClusterHealthCheck:
       protocol: "http"
       listenAddress: "127.0.0.1:911"

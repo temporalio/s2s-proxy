@@ -8,18 +8,19 @@ import (
 // Looking for examples? Check ./develop/sample-cluster-conn-config.yaml
 type (
 	ClusterConnConfig struct {
-		Name                       string              `yaml:"name"`
-		Local                      ClusterDefinition   `yaml:"local"`
-		Remote                     ClusterDefinition   `yaml:"remote"`
-		ReplicationEndpoint        string              `yaml:"replicationEndpoint"`
-		FVITranslation             IntMapping          `yaml:"failoverVersionIncrementTranslation"`
-		ACLPolicy                  *ACLPolicy          `yaml:"aclPolicy"`
-		NamespaceTranslation       StringTranslator    `yaml:"namespaceTranslation"`
-		SearchAttributeTranslation SATranslationConfig `yaml:"searchAttributeTranslation"`
-		RemoteClusterHealthCheck   HealthCheckConfig   `yaml:"remoteClusterHealthCheck"`
-		LocalClusterHealthCheck    HealthCheckConfig   `yaml:"localClusterHealthCheck"`
-		ShardCountConfig           ShardCountConfig    `yaml:"shardCount"`
-		MemberlistConfig           *MemberlistConfig   `yaml:"memberlist"`
+		Name                         string              `yaml:"name"`
+		Local                        ClusterDefinition   `yaml:"local"`
+		Remote                       ClusterDefinition   `yaml:"remote"`
+		ReplicationEndpoint          string              `yaml:"replicationEndpoint"`
+		FVITranslation               IntMapping          `yaml:"failoverVersionIncrementTranslation"`
+		ACLPolicy                    *ACLPolicy          `yaml:"aclPolicy"`
+		NamespaceTranslation         StringTranslator    `yaml:"namespaceTranslation"`
+		SearchAttributeTranslation   SATranslationConfig `yaml:"searchAttributeTranslation"`
+		CustomSearchAttributeAliases CustomSAAliasConfig `yaml:"customSearchAttributeAliases"`
+		RemoteClusterHealthCheck     HealthCheckConfig   `yaml:"remoteClusterHealthCheck"`
+		LocalClusterHealthCheck      HealthCheckConfig   `yaml:"localClusterHealthCheck"`
+		ShardCountConfig             ShardCountConfig    `yaml:"shardCount"`
+		MemberlistConfig             *MemberlistConfig   `yaml:"memberlist"`
 	}
 	StringTranslator struct {
 		Mappings    []StringMapping `yaml:"mappings"`

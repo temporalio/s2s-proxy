@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"maps"
 	"os"
 
 	"github.com/urfave/cli/v2"
@@ -64,6 +65,20 @@ type (
 	SAMapping struct {
 		LocalName  string `yaml:"localFieldName"`
 		RemoteName string `yaml:"remoteFieldName"`
+	}
+
+	// CustomSAAliasConfig holds the custom search attribute aliases registered per namespace.
+	CustomSAAliasConfig struct {
+		NamespaceMappings []CustomSAAliasNamespaceMapping `yaml:"namespaceMappings"`
+	}
+
+	// CustomSAAliasNamespaceMapping is the custom search attribute alias mapping for a single
+	// namespace. CustomSearchAttributeAliases maps the internal field name to the search
+	// attribute name provided by the customer, e.g. {"Keyword02": "CustomKeywordField",
+	// "Text01": "MyText"}.
+	CustomSAAliasNamespaceMapping struct {
+		Name                         string            `yaml:"name"`
+		CustomSearchAttributeAliases map[string]string `yaml:"customSearchAttributeAliases"`
 	}
 
 	ProfilingConfig struct {
@@ -199,6 +214,28 @@ func (c *ProfilingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error
 	// Alias to avoid infinite recursion
 	type plain ProfilingConfig
 	return unmarshal((*plain)(c))
+}
+
+func (c *CustomSAAliasConfig) IsEnabled() bool {
+	return len(c.NamespaceMappings) > 0
+}
+
+// Aliases returns a copy of the configured search attribute aliases for the given namespace,
+// i.e. internal field name -> customer-provided search attribute name. It returns nil if the
+// namespace has no custom search attribute aliases configured.
+func (c *CustomSAAliasConfig) Aliases(namespace string) map[string]string {
+	for _, ns := range c.NamespaceMappings {
+		if ns.Name != namespace {
+			continue
+		}
+		if len(ns.CustomSearchAttributeAliases) == 0 {
+			return nil
+		}
+		aliases := make(map[string]string, len(ns.CustomSearchAttributeAliases))
+		maps.Copy(aliases, ns.CustomSearchAttributeAliases)
+		return aliases
+	}
+	return nil
 }
 
 func (s *SATranslationConfig) IsEnabled() bool {

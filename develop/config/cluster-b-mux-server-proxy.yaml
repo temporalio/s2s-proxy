@@ -10,3 +10,10 @@ clusterConnections:
       connectionType: "mux-server"
       muxAddressInfo:
         address: "0.0.0.0:6334"
+    customSearchAttributeAliases:
+      namespaceMappings:
+        - name: "actions-b"
+          # internal field name -> search attribute name provided by customer
+          customSearchAttributeAliases:
+            Keyword03: "CustomKeywordField"
+            Text02: "CustomStringField"

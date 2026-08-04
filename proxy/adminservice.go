@@ -48,6 +48,9 @@ type (
 		// Failover Version Increment. Overrides the value returned by DescribeCluster
 		FVI                 int64
 		ReplicationEndpoint string
+		// CustomSearchAttributeAliases are the per-namespace custom search attribute aliases
+		// (internal field name -> customer-provided name). Inbound only.
+		CustomSearchAttributeAliases config.CustomSAAliasConfig
 	}
 )
 
@@ -219,18 +222,38 @@ func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Co
 	resp, err = s.adminClient.GetNamespaceReplicationMessages(ctx, in0)
 	if err != nil {
 		// This is a duplicate of the grpc client metrics, but not everyone has metrics set up
-		s.loggers.Get(logging.ReplicationStreams).Error("Failed to get namespace replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
+		s.loggers.Get(logging.AdminService).Error("Failed to get namespace replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
 			tag.Error(err), tag.Operation("GetNamespaceReplicationMessages"))
+	} else if s.overrides.CustomSearchAttributeAliases.IsEnabled() {
+		// Set the custom search attribute aliases on namespace replication tasks for namespaces
+		// configured with custom search attribute aliases.
+		for _, task := range resp.GetMessages().GetReplicationTasks() {
+			attrs := task.GetNamespaceTaskAttributes()
+			if attrs == nil {
+				continue
+			}
+			aliases := s.overrides.CustomSearchAttributeAliases.Aliases(attrs.GetInfo().GetName())
+			if len(aliases) == 0 {
+				continue
+			}
+			if attrs.Config != nil {
+				attrs.Config.CustomSearchAttributeAliases = aliases
+				s.loggers.Get(logging.AdminService).Info("Overrode custom search attribute aliases",
+					tag.WorkflowNamespace(attrs.GetInfo().GetName()), tag.Operation("GetNamespaceReplicationMessages"))
+			}
+		}
 	}
+
 	return
 }
 
 func (s *adminServiceProxyServer) GetReplicationMessages(ctx context.Context, in0 *adminservice.GetReplicationMessagesRequest) (resp *adminservice.GetReplicationMessagesResponse, err error) {
 	resp, err = s.adminClient.GetReplicationMessages(ctx, in0)
 	if err != nil {
-		s.loggers.Get(logging.ReplicationStreams).Error("Failed to get replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
+		s.loggers.Get(logging.AdminService).Error("Failed to get replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
 			tag.Error(err), tag.Operation("GetReplicationMessages"))
 	}
+
 	return
 }
 
