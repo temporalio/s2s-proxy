@@ -1,6 +1,8 @@
 package mux
 
 import (
+	"fmt"
+
 	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
@@ -26,4 +28,41 @@ func SessionStateName(info *session.MuxSessionInfo) string {
 		return SessionStateErrored
 	}
 	return SessionStateUnknown
+}
+
+// SessionCounts summarises the sessions held by a MultiMuxManager.
+type SessionCounts struct {
+	Connected int
+	Errored   int
+	Closed    int
+	Total     int
+}
+
+// CountSessions summarises a mux manager's sessions.
+func CountSessions(m MultiMuxManager) SessionCounts {
+	var c SessionCounts
+	if m == nil {
+		return c
+	}
+	for _, conn := range m.GetMuxConnections() {
+		c.Total++
+		state := conn.State()
+		if state == nil {
+			continue
+		}
+		switch state.State {
+		case session.Connected:
+			c.Connected++
+		case session.Error:
+			c.Errored++
+		case session.Closed:
+			c.Closed++
+		}
+	}
+	return c
+}
+
+// String renders the counts for a log line, as "connected=3/4 errored=0 closed=1".
+func (c SessionCounts) String() string {
+	return fmt.Sprintf("connected=%d/%d errored=%d closed=%d", c.Connected, c.Total, c.Errored, c.Closed)
 }

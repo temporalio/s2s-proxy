@@ -19,8 +19,6 @@ type ConnListener interface {
 	OnConnectionListUpdate(map[string]session.ManagedMuxSession)
 }
 
-// NewGRPCMuxManager starts a MuxManager that will start a grpc.Server using the provided definition on every generated mux,
-// and will manage the mux connections of the provided grpcutil.MultiClientConn such that they match the list of available muxes
 // DesiredMuxCount is how many sessions a cluster definition asks for.
 func DesiredMuxCount(cd config.ClusterDefinition) int {
 	// sane default for existing configs
@@ -30,6 +28,9 @@ func DesiredMuxCount(cd config.ClusterDefinition) int {
 	return cd.MuxCount
 }
 
+// NewGRPCMuxManager starts a MuxManager that will start a grpc.Server using the provided definition on every generated mux,
+// and will manage the mux connections of the provided grpcutil.MultiClientConn such that they match the list of available muxes
+//
 // Caller usage: 1. Create the MultiClientConn, 2. call NewGRPCMuxManager, 3. MultiMuxManager.Start, 4. Use the grpcutil.MultiClientConn
 // grpc.Server's will be started on every inbound mux automatically.
 func NewGRPCMuxManager(ctx context.Context, name string, cd config.ClusterDefinition, listener ConnListener, serverDefinition *grpc.Server, logger log.Logger) (MultiMuxManager, error) {
