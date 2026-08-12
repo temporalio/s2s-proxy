@@ -18,6 +18,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/temporalio/s2s-proxy/adminplane"
+	proxyadminv1 "github.com/temporalio/s2s-proxy/api/proxyadmin/v1"
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/collect"
 	"github.com/temporalio/s2s-proxy/common"
@@ -37,6 +39,8 @@ const (
 	LogClusterConnection = "clusterConnection"
 	LogInterceptor       = "interceptor"
 	LogTLSHandshake      = "tlsHandshake"
+	LogProxyAdmin        = "proxyAdmin"
+	LogProxyAdminPeer    = "proxyAdminPeer"
 )
 
 type (
@@ -59,6 +63,12 @@ type (
 	ClusterConnection struct {
 		// When lifetime closes, all clients and servers in ClusterConnection will stop.
 		lifetime context.Context
+		// name is the configured name, unsanitized.
+		// It is what the admin API reports and what routes an admin call to a peer.
+		// It must not be the prometheus-safe variant.
+		name string
+		// remoteDefinition is kept for the session count this connection is configured to hold.
+		remoteDefinition config.ClusterDefinition
 		// outboundServer receives connections from the local Temporal and makes calls using outboundClient.
 		outboundServer contextAwareServer
 		// outboundClient is connected to a remote Temporal server somewhere.
@@ -106,6 +116,11 @@ type (
 		aclPolicy        *config.ACLPolicy
 		shardCountConfig config.ShardCountConfig
 		loggers          logging.LoggerProvider
+		// adminService is registered on this server when non-nil, under adminOptions.
+		// Only the inbound mux server sets it.
+		// That is the one a peer cluster can reach.
+		adminService proxyadminv1.ProxyAdminServiceServer
+		adminOptions adminplane.ServerOptions
 
 		shardManager      ShardManager
 		lcmParameters     LCMParameters
@@ -119,14 +134,38 @@ func sanitizeConnectionName(name string) string {
 }
 
 // NewClusterConnection unpacks the connConfig and creates the inbound and outbound clients and servers.
-func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logProvider logging.LoggerProvider) (*ClusterConnection, error) {
+//
+// adminService is registered on the inbound mux server so that a peer cluster can describe this proxy.
+// Nil serves no admin API on this connection.
+func NewClusterConnection(
+	lifetime context.Context,
+	connConfig config.ClusterConnConfig,
+	adminService proxyadminv1.ProxyAdminServiceServer,
+	logProvider logging.LoggerProvider,
+) (*ClusterConnection, error) {
+	// Resolved before anything is built.
+	// An operator's typo fails startup rather than silently denying a method at request time.
+	//
+	// config cannot do this itself.
+	// adminplane owns the ceiling and already imports config.
+	// The check has to live on this side of that edge.
+	var err error
+	var counterpartyMethods []string
+	if connConfig.ACLPolicy != nil {
+		counterpartyMethods, err = adminplane.ResolveCounterpartyMethods(connConfig.ACLPolicy.AllowedMethods.ProxyAdmin)
+		if err != nil {
+			return nil, fmt.Errorf("aclPolicy.allowedMethods.proxyAdmin: %w", err)
+		}
+	}
+
 	// The name is used in metrics and in the protocol for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
 	sanitizedConnectionName := sanitizeConnectionName(connConfig.Name)
 	cc := &ClusterConnection{
-		lifetime: lifetime,
-		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
+		lifetime:         lifetime,
+		name:             connConfig.Name,
+		remoteDefinition: connConfig.Remote,
+		loggers:          logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
-	var err error
 	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound")
 	if err != nil {
 		return nil, err
@@ -194,9 +233,18 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 			CustomSearchAttributeAliases: connConfig.CustomSearchAttributeAliases,
 		},
 		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
-		aclPolicy:         connConfig.ACLPolicy,
-		shardCountConfig:  connConfig.ShardCountConfig,
-		loggers:           cc.loggers,
+		aclPolicy:        connConfig.ACLPolicy,
+		shardCountConfig: connConfig.ShardCountConfig,
+		loggers:          cc.loggers,
+		adminService:     adminService,
+		adminOptions: adminplane.ServerOptions{
+			// The far end of a mux belongs to another organization.
+			// Answers are narrowed to this one connection.
+			// Only explicitly listed methods are served.
+			Role:           adminplane.RoleCounterparty,
+			ConnectionName: connConfig.Name,
+			Methods:        counterpartyMethods,
+		},
 		shardManager:      cc.shardManager,
 		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, true),
 		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, true, "inbound"),
@@ -253,6 +301,10 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 		if err != nil {
 			return nil, nil, err
 		}
+
+		if c.adminService != nil {
+			proxyadminv1.RegisterProxyAdminServiceServer(grpcServer, c.adminService)
+		}
 		// The Mux manager needs to update its associated client
 		muxMgr, err := mux.NewGRPCMuxManager(lifetime, c.name, c.clusterDefinition,
 			c.managedClient.(*grpcutil.MultiClientConn), grpcServer, c.loggers.Get(LogMuxManager))
@@ -271,7 +323,11 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid configuration for inbound server: %w", err)
 	}
-	// Ending the lifetime releases the port.
+	// The socket is bound here, before Start.
+	// Registering the close now stops an abandoned proxy from holding the port.
+	// A proxy is abandoned when a later cluster connection fails to build.
+	// Start registers its own close.
+	// The second one is a no-op.
 	context.AfterFunc(lifetime, func() { _ = listener.Close() })
 	grpcServer, err := buildProxyServer(c, c.clusterDefinition.TcpServer.TLSConfig, observer.ReportStreamValue, lifetime)
 	if err != nil {
@@ -325,6 +381,73 @@ func (c *ClusterConnection) Start() {
 func (c *ClusterConnection) Describe() string {
 	return fmt.Sprintf("[ClusterConnection connects outbound server %s to outbound client %s, inbound server %s to inbound client %s]",
 		c.outboundServer.Describe(), c.outboundClient.Describe(), c.inboundServer.Describe(), c.inboundClient.Describe())
+}
+
+// inboundMux returns the mux manager on the inbound server, if the connection is multiplexed.
+// A TCP connection has no mux manager and reports false.
+func (c *ClusterConnection) inboundMux() (mux.MultiMuxManager, bool) {
+	muxMgr, ok := c.inboundServer.(mux.MultiMuxManager)
+	return muxMgr, ok
+}
+
+// describeAdmin reports this connection as one member's contribution to an admin response.
+//
+// memberID and version identify the reporting pod.
+// They are the same for every connection it reports.
+// They are passed in rather than looked up here.
+func (c *ClusterConnection) describeAdmin(memberID, version string) *proxyadminv1.ClusterConnection {
+	// self is true from this pod's point of view.
+	// A merge clears it on rows from other members.
+	// Only the aggregator knows which pod actually served the response.
+	member := &proxyadminv1.ClusterConnectionMember{
+		Identity: &proxyadminv1.Member{
+			Id:      memberID,
+			Self:    true,
+			Version: version,
+		},
+	}
+
+	muxMgr, multiplexed := c.inboundMux()
+	if !multiplexed {
+		// Not multiplexed.
+		// It is reported by name so that a plainly configured connection does not look absent.
+		// There is no session state to describe.
+		// The admin API does not support these connections.
+		member.State = proxyadminv1.ConnectionState_CONNECTION_STATE_UNSPECIFIED
+		return &proxyadminv1.ClusterConnection{
+			Name:    c.name,
+			State:   member.GetState(),
+			Members: []*proxyadminv1.ClusterConnectionMember{member},
+		}
+	}
+
+	counts := mux.CountSessions(muxMgr)
+	target := mux.DesiredMuxCount(c.remoteDefinition)
+	member.MuxSessionsConnected = int32(counts.Connected)
+	member.MuxSessionsTotal = int32(counts.Total)
+	member.MuxSessionsTarget = int32(target)
+	member.State = sessionState(counts, target)
+
+	return &proxyadminv1.ClusterConnection{
+		Name:                 c.name,
+		State:                member.GetState(),
+		MuxSessionsConnected: member.GetMuxSessionsConnected(),
+		MuxSessionsTotal:     member.GetMuxSessionsTotal(),
+		MuxSessionsTarget:    member.GetMuxSessionsTarget(),
+		Members:              []*proxyadminv1.ClusterConnectionMember{member},
+	}
+}
+
+// sessionState reduces one member's sessions to a state.
+//
+// Anything short of every configured session being connected is ERROR.
+// A session that never established was never added to the manager.
+// Counting only the sessions held would report a connection running at a third of its configured capacity as healthy.
+func sessionState(counts mux.SessionCounts, target int) proxyadminv1.ConnectionState {
+	if target > 0 && counts.Connected == target {
+		return proxyadminv1.ConnectionState_CONNECTION_STATE_CONNECTED
+	}
+	return proxyadminv1.ConnectionState_CONNECTION_STATE_ERROR
 }
 
 func (c *ClusterConnection) AcceptingInboundTraffic() bool {
@@ -410,6 +533,13 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 			c.aclPolicy.AllowedMethods.AdminService, c.aclPolicy.AllowedNamespaces)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
 		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
+	}
+
+	if c.adminService != nil {
+		// This server also carries replication traffic.
+		// The admin interceptors deliberately pass through any method outside the admin service.
+		unaryInterceptors = append(unaryInterceptors, adminplane.UnaryInterceptor(c.adminOptions))
+		streamInterceptors = append(streamInterceptors, adminplane.StreamInterceptor(c.adminOptions))
 	}
 
 	opts := []grpc.ServerOption{

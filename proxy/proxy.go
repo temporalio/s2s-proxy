@@ -2,15 +2,29 @@ package proxy
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
+	"slices"
 	"strings"
+	"time"
 
 	"go.temporal.io/server/common/log/tag"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/temporalio/s2s-proxy/adminplane"
+	proxyadminv1 "github.com/temporalio/s2s-proxy/api/proxyadmin/v1"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
 )
@@ -29,15 +43,49 @@ type (
 		remoteHealthCheckConfig *config.HealthCheckConfig
 		metricsConfig           *config.MetricsConfig
 		profilingConfig         *config.ProfilingConfig
+		proxyAdminConfig        config.ProxyAdminConfig
 		clusterConnections      map[migrationId]*ClusterConnection
 		localHealthCheckServer  *http.Server
 		remoteHealthCheckServer *http.Server
 		metricsServer           *http.Server
+		adminServers            []*adminplane.Server
+		adminService            proxyadminv1.ProxyAdminServiceServer
+		version                 string
+		memberID                string
+		startTime               time.Time
 		logProvider             logging.LoggerProvider
+	}
+
+	// Identity is who this process says it is in admin responses.
+	//
+	// MemberID must differ between processes.
+	// It is supplied rather than read from the shared config file.
+	// A value in that file would be identical on every replica.
+	// Deduplication by id would then collapse the whole deployment into a single member.
+	Identity struct {
+		Version  string
+		MemberID string
 	}
 )
 
-func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider) (*Proxy, error) {
+// DefaultIdentity derives this process's identity from its environment.
+// $POD_NAME comes first.
+// A Kubernetes deployment can then be explicit.
+// The hostname is the fallback.
+// Inside a pod that is the pod name.
+func DefaultIdentity(version string) Identity {
+	id := Identity{Version: version}
+	if name := os.Getenv("POD_NAME"); name != "" {
+		id.MemberID = name
+		return id
+	}
+	if host, err := os.Hostname(); err == nil {
+		id.MemberID = host
+	}
+	return id
+}
+
+func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider, identity Identity) (*Proxy, error) {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	if err := s2sConfig.Validate(); err != nil {
 		return nil, fmt.Errorf("cannot create proxy: invalid config: %w", err)
@@ -49,6 +97,9 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 		cancel:             cancel,
 		clusterConnections: make(map[migrationId]*ClusterConnection, len(s2sConfig.ClusterConnections)),
 		logProvider:        logProvider,
+		version:            identity.Version,
+		memberID:           identity.MemberID,
+		startTime:          time.Now(),
 	}
 	if len(s2sConfig.ClusterConnections) == 0 {
 		cancel()
@@ -58,15 +109,28 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 		proxy.metricsConfig = s2sConfig.Metrics
 	}
 	proxy.profilingConfig = s2sConfig.ProfilingConfig
+	proxy.proxyAdminConfig = s2sConfig.ProxyAdmin
+
+	plane, err := proxy.newAdminPlane()
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("cannot create proxy: %w", err)
+	}
+	proxy.adminService = NewProxyAdminServiceServer(proxy, plane)
 
 	for _, clusterCfg := range s2sConfig.ClusterConnections {
 		id := migrationId{clusterCfg.Name}
-		// Error on duplicate cluster connection names
+		// The name identifies the connection to the admin API and selects which peer a forwarded call reaches.
+		// A duplicate is not merely confusing.
+		// The second connection would take over the first one's traffic silently.
 		if _, duplicate := proxy.clusterConnections[id]; duplicate {
+			// Earlier connections have already bound listeners and dialed clients.
+			// Their cleanup hangs off the lifetime.
+			// Cancel it or the ports stay bound.
 			cancel()
 			return nil, fmt.Errorf("cannot create proxy: duplicate cluster connection name %q", clusterCfg.Name)
 		}
-		cc, err := NewClusterConnection(ctx, clusterCfg, logProvider)
+		cc, err := NewClusterConnection(ctx, clusterCfg, proxy.adminService, logProvider)
 		if err != nil {
 			cancel()
 			return nil, fmt.Errorf("cannot create cluster connection %q: %w", clusterCfg.Name, err)
@@ -84,6 +148,9 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 	metrics.NewProxyCount.Inc()
 	return proxy, nil
 }
+
+// MemberID reports how this process identifies itself in admin responses.
+func (s *Proxy) MemberID() string { return s.memberID }
 
 func (s *Proxy) startHealthCheckHandler(lifetime context.Context, healthChecker HealthChecker, cfg config.HealthCheckConfig) (*http.Server, error) {
 	if cfg.Protocol != config.HTTP {
@@ -128,6 +195,103 @@ func (s *Proxy) startPProfHTTPServer() {
 	}()
 }
 
+// startAdminServers serves ProxyAdminService on the local operator listener and, when configured,
+// on the peer listener that sibling pods use.
+//
+// The service is otherwise reachable only over a mux.
+// A plain gRPC client cannot speak that.
+//
+// Neither listener is required for the proxy to do its job.
+// A bind failure is logged and startup continues, as it does for metrics and health checks.
+func (s *Proxy) startAdminServers() {
+	if addr := s.proxyAdminConfig.ListenAddress; addr != "" {
+		// Trusted local endpoint.
+		// Reflection is registered so grpcurl works without a descriptor.
+		s.startAdminServer(LogProxyAdmin, addr, adminplane.ServerOptions{Role: adminplane.RoleOperator},
+			nil, true)
+	}
+
+	peerCfg := s.proxyAdminConfig.Peer
+	if peerCfg == nil || peerCfg.ListenAddress == "" {
+		return
+	}
+	var creds credentials.TransportCredentials
+	if peerCfg.TLS != nil && peerCfg.TLS.IsEnabled() {
+		tlsConfig, err := peerServerTLSConfig(*peerCfg.TLS)
+		if err != nil {
+			s.logProvider.Get(LogProxyAdminPeer).Error("Failed to build peer TLS config", tag.Error(err))
+			return
+		}
+		creds = credentials.NewTLS(tlsConfig)
+	}
+	// No reflection.
+	// This listener is reachable from the pod network and only ever talks to other pods of this deployment.
+	// Those pods know the schema.
+	s.startAdminServer(LogProxyAdminPeer, peerCfg.ListenAddress,
+		adminplane.ServerOptions{Role: adminplane.RolePeer}, creds, false)
+}
+
+func (s *Proxy) startAdminServer(
+	component logging.LogComponentName,
+	address string,
+	opts adminplane.ServerOptions,
+	creds credentials.TransportCredentials,
+	withReflection bool,
+) {
+	logger := s.logProvider.Get(component)
+	name := string(component)
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		logger.Error("Failed to listen for ProxyAdminService", tag.Address(address), tag.Error(err))
+		return
+	}
+	serverOpts := []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(adminplane.UnaryInterceptor(opts)),
+		grpc.ChainStreamInterceptor(adminplane.StreamInterceptor(opts)),
+	}
+	if creds != nil {
+		serverOpts = append(serverOpts, grpc.Creds(creds))
+	}
+	grpcServer := grpc.NewServer(serverOpts...)
+	proxyadminv1.RegisterProxyAdminServiceServer(grpcServer, s.adminService)
+	if withReflection {
+		reflection.Register(grpcServer)
+	}
+	server := adminplane.NewServer(name, s.lifetime, listener, grpcServer, logger)
+	s.adminServers = append(s.adminServers, server)
+	server.Start()
+}
+
+// peerServerTLSConfig builds the peer listener's TLS config.
+//
+// encryption.GetServerTLSConfig is deliberately not reused.
+// It sets RequireAnyClientCert and replaces VerifyPeerCertificate with a function that logs the subject and returns nil.
+// The client chain is never checked.
+//
+// That is acceptable where TLS is only providing encryption.
+// This listener is bound to the pod network.
+// The certificate is the only thing distinguishing a sibling pod from anything else that can reach it.
+func peerServerTLSConfig(cfg encryption.TLSConfig) (*tls.Config, error) {
+	certificate, err := tls.LoadX509KeyPair(cfg.CertificatePath, cfg.KeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading peer key pair: %w", err)
+	}
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{certificate},
+		MinVersion:   tls.VersionTLS12,
+	}
+	if cfg.RemoteCAPath == "" {
+		return nil, errors.New("peer tls requires remoteCAPath to verify sibling certificates")
+	}
+	pool, err := encryption.LoadCACert(cfg.RemoteCAPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading peer CA: %w", err)
+	}
+	tlsConfig.ClientCAs = pool
+	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+	return tlsConfig, nil
+}
+
 func (s *Proxy) startMetricsHandler(lifetime context.Context, cfg config.MetricsConfig) error {
 	// Why not use the global ServeMux? So that it can be used in unit tests
 	mux := http.NewServeMux()
@@ -147,6 +311,86 @@ func (s *Proxy) startMetricsHandler(lifetime context.Context, cfg config.Metrics
 		_ = s.metricsServer.Close()
 	})
 	return nil
+}
+
+// SelfClusterConnections describes this process alone.
+// It reports every cluster connection this process is configured with, as one member's contribution to a deployment-wide answer.
+func (s *Proxy) SelfClusterConnections(context.Context) *proxyadminv1.DescribeClusterConnectionsResponse {
+	resp := &proxyadminv1.DescribeClusterConnectionsResponse{}
+	startTime := timestamppb.New(s.startTime)
+	for _, cc := range s.clusterConnections {
+		described := cc.describeAdmin(s.memberID, s.version)
+		for _, m := range described.GetMembers() {
+			m.GetIdentity().StartTime = startTime
+		}
+		resp.ClusterConnections = append(resp.ClusterConnections, described)
+	}
+	// Sorted so repeated calls return the same order.
+	slices.SortFunc(resp.ClusterConnections, func(a, b *proxyadminv1.ClusterConnection) int {
+		return strings.Compare(a.GetName(), b.GetName())
+	})
+	return resp
+}
+
+// PeerConn returns a client for the peer proxy of a named cluster connection.
+//
+// The two failure modes are distinguished because they mean different things to whoever is debugging.
+// An unknown name is a typo.
+// A known name that cannot carry a call is a link that is down.
+//
+// Reporting a down link immediately also avoids spending the whole forward budget on a resolver that will never produce an address.
+func (s *Proxy) PeerConn(name string) (grpc.ClientConnInterface, error) {
+	cc, ok := s.clusterConnections[migrationId{name}]
+	if !ok {
+		return nil, status.Errorf(codes.InvalidArgument, "unknown cluster connection %q", name)
+	}
+	if _, multiplexed := cc.inboundMux(); !multiplexed {
+		// The admin service is only registered on a mux server.
+		// Forwarding over a TCP connection would reach a server that never registered it and return a bare Unimplemented.
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"cluster connection %q is not multiplexed", name)
+	}
+	if !cc.outboundClient.CanMakeCalls() {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"cluster connection %q has no established mux session", name)
+	}
+	return cc.outboundClient, nil
+}
+
+// newAdminPlane assembles the discovery and dialing an admin endpoint needs to answer for the whole deployment.
+// Peer discovery is optional.
+// Without it a proxy only ever describes itself.
+func (s *Proxy) newAdminPlane() (*adminplane.Plane, error) {
+	plane := &adminplane.Plane{
+		Peers:     s,
+		MemberID:  s.memberID,
+		Discovery: adminplane.NoDiscovery(),
+	}
+
+	peerCfg := s.proxyAdminConfig.Peer
+	if peerCfg == nil {
+		return plane, nil
+	}
+
+	discovery, err := adminplane.NewDiscovery(peerCfg.Discovery, peerCfg.PeerPort())
+	if err != nil {
+		return nil, err
+	}
+	plane.Discovery = discovery
+
+	// Built once.
+	// GetClientTLSConfig re-reads the key pair from disk on every call.
+	var peerTLS *tls.Config
+	if peerCfg.TLS != nil && peerCfg.TLS.IsEnabled() {
+		peerTLS, err = encryption.GetClientTLSConfig(*peerCfg.TLS)
+		if err != nil {
+			return nil, fmt.Errorf("peer client TLS: %w", err)
+		}
+	}
+	plane.Dial = func(ctx context.Context, address string) (grpc.ClientConnInterface, func(), error) {
+		return adminplane.DialOnce(address, peerTLS)
+	}
+	return plane, nil
 }
 
 func (s *Proxy) Start() error {
@@ -188,6 +432,8 @@ func (s *Proxy) Start() error {
 		s.logProvider.Get("init").Warn(`Started up without metrics! Double-check the YAML config,` +
 			` it needs at least the following path: metrics.prometheus.listenAddress`)
 	}
+
+	s.startAdminServers()
 
 	for _, v := range s.clusterConnections {
 		v.Start()

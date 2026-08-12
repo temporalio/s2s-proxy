@@ -353,7 +353,7 @@ func createProxy(
 	}
 
 	configProvider := &simpleConfigProvider{cfg: *cfg}
-	proxy, err := s2sproxy.NewProxy(configProvider, logging.NewLoggerProvider(logger, configProvider))
+	proxy, err := s2sproxy.NewProxy(configProvider, logging.NewLoggerProvider(logger, configProvider), s2sproxy.Identity{Version: "test", MemberID: name})
 	if err != nil {
 		t.Fatalf("Failed to create proxy %s: %v", name, err)
 	}

@@ -78,6 +78,12 @@ func withACLPolicy(aclPolicy *config.ACLPolicy) cfgOption {
 	return func(c *config.S2SProxyConfig) { conn(c).ACLPolicy = aclPolicy }
 }
 
+func withProxyAdmin(address string) cfgOption {
+	return func(c *config.S2SProxyConfig) {
+		c.ProxyAdmin = config.ProxyAdminConfig{ListenAddress: address}
+	}
+}
+
 func withRemoteMuxClient(address string) cfgOption {
 	return func(c *config.S2SProxyConfig) {
 		conn(c).Remote.ConnectionType = config.ConnTypeMuxClient

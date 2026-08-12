@@ -123,6 +123,7 @@ func NewEchoServer(
 		proxy, err = s2sproxy.NewProxy(
 			configProvider,
 			logging.NewLoggerProvider(logger, configProvider),
+			s2sproxy.Identity{Version: "test", MemberID: serviceName},
 		)
 		if err != nil {
 			panic(err)

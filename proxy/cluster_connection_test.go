@@ -183,25 +183,25 @@ func newPairedLocalClusterConnection(t *testing.T, isMux bool, loggers logging.L
 		var localCtx context.Context
 		localCtx, cancelLocalCC = context.WithCancel(t.Context())
 		localCC, err = NewClusterConnection(localCtx, makeTCPClusterConfig("TCP-only Connection Local Proxy",
-			localFVI, remoteFVI, a.localProxyOutbound, a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound), loggers)
+			localFVI, remoteFVI, a.localProxyOutbound, a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound), nil, loggers)
 		require.NoError(t, err)
 
 		var remoteCtx context.Context
 		remoteCtx, cancelRemoteCC = context.WithCancel(t.Context())
 		remoteCC, err = NewClusterConnection(remoteCtx, makeTCPClusterConfig("TCP-only Connection Remote Proxy",
-			remoteFVI, localFVI, a.remoteProxyOutbound, a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound), loggers)
+			remoteFVI, localFVI, a.remoteProxyOutbound, a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound), nil, loggers)
 		require.NoError(t, err)
 	} else {
 		var localCtx context.Context
 		localCtx, cancelLocalCC = context.WithCancel(t.Context())
 		localCC, err = NewClusterConnection(localCtx, makeMuxClusterConfig("Mux Connection Local Establishing Proxy",
-			config.ConnTypeMuxClient, localFVI, remoteFVI, a.localProxyOutbound, a.localTemporalAddr, a.localProxyOutbound, a.remoteProxyInbound), loggers)
+			config.ConnTypeMuxClient, localFVI, remoteFVI, a.localProxyOutbound, a.localTemporalAddr, a.localProxyOutbound, a.remoteProxyInbound), nil, loggers)
 		require.NoError(t, err)
 
 		var remoteCtx context.Context
 		remoteCtx, cancelRemoteCC = context.WithCancel(t.Context())
 		remoteCC, err = NewClusterConnection(remoteCtx, makeMuxClusterConfig("Mux Connection Remote Receiving Proxy",
-			config.ConnTypeMuxServer, remoteFVI, localFVI, a.remoteProxyOutbound, a.remoteTemporalAddr, a.remoteProxyOutbound, a.remoteProxyInbound), loggers)
+			config.ConnTypeMuxServer, remoteFVI, localFVI, a.remoteProxyOutbound, a.remoteTemporalAddr, a.remoteProxyOutbound, a.remoteProxyInbound), nil, loggers)
 		require.NoError(t, err)
 	}
 	clientFromLocal, err := grpc.NewClient(a.localProxyOutbound, grpcutil.MakeDialOptions(nil, metrics.GetStandardGRPCClientInterceptor("outbound-local"))...)
@@ -275,7 +275,7 @@ func TestMuxCCFailover(t *testing.T) {
 	newConnection, err := NewClusterConnection(t.Context(),
 		makeMuxClusterConfig("newRemoteMux", config.ConnTypeMuxServer, remoteFVI, localFVI, plcc.addresses.remoteProxyOutbound,
 			plcc.addresses.remoteTemporalAddr, plcc.addresses.remoteProxyOutbound, plcc.addresses.remoteProxyInbound,
-			func(cc *config.ClusterConnConfig) { cc.Remote.MuxCount = 5 }), loggerProvider)
+			func(cc *config.ClusterConnConfig) { cc.Remote.MuxCount = 5 }), nil, loggerProvider)
 	require.NoError(t, err)
 	newConnection.Start()
 	// Wait for localCC's client retry...
@@ -304,7 +304,7 @@ func TestNewProxyReportsConfigurationErrors(t *testing.T) {
 	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
 
 	t.Run("no cluster connections", func(t *testing.T) {
-		_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{}), loggers)
+		_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{}), loggers, Identity{Version: "test", MemberID: "pod-test"})
 		require.EqualError(t, err, "cannot create proxy: clusterConnections is empty")
 	})
 
@@ -316,7 +316,7 @@ func TestNewProxyReportsConfigurationErrors(t *testing.T) {
 
 		_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{
 			ClusterConnections: []config.ClusterConnConfig{broken},
-		}), loggers)
+		}), loggers, Identity{Version: "test", MemberID: "pod-test"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), `cannot create cluster connection "broken"`)
 	})
@@ -334,7 +334,7 @@ func TestNewProxyReportsConfigurationErrors(t *testing.T) {
 		// listeners and the error names the field that caused it.
 		_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{
 			ClusterConnections: []config.ClusterConnConfig{cc},
-		}), loggers)
+		}), loggers, Identity{Version: "test", MemberID: "pod-test"})
 		require.ErrorContains(t, err, "cannot create proxy: invalid config: ")
 		require.ErrorContains(t, err, "clusterConnections[0].encryption.default: uri: invalid key URI: vault://typo")
 	})
@@ -350,7 +350,7 @@ func TestNewProxyRejectsDuplicateClusterConnectionNames(t *testing.T) {
 
 	_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{
 		ClusterConnections: []config.ClusterConnConfig{first, second},
-	}), loggers)
+	}), loggers, Identity{Version: "test", MemberID: "pod-test"})
 	require.EqualError(t, err, `cannot create proxy: duplicate cluster connection name "same"`)
 }
 
@@ -359,9 +359,11 @@ func TestTCPListenerIsReleasedWhenNeverStarted(t *testing.T) {
 	a := getDynamicPlccAddresses(t)
 
 	ctx, cancel := context.WithCancel(t.Context())
+	// nil admin service: this test is about the listener.
+	// The service is registered only on a mux server.
 	cc, err := NewClusterConnection(ctx, makeTCPClusterConfig("abandoned", localFVI, remoteFVI,
 		a.localProxyOutbound, a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound,
-		a.remoteProxyInbound), loggers)
+		a.remoteProxyInbound), nil, loggers)
 	require.NoError(t, err)
 
 	cancel() // never Started
@@ -378,4 +380,31 @@ func TestTCPListenerIsReleasedWhenNeverStarted(t *testing.T) {
 		}, 5*time.Second, 50*time.Millisecond, "listener on %s was never released", address)
 	}
 	runtime.KeepAlive(cc)
+}
+
+// By the time the duplicate is found, earlier connections have already bound listeners.
+// Their cleanup hangs off the lifetime context.
+// The failed Proxy is discarded.
+// NewProxy has to cancel that lifetime on the way out or the ports stay bound.
+func TestNewProxyErrorReleasesEarlierListeners(t *testing.T) {
+	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	a := getDynamicPlccAddresses(t)
+	first := makeTCPClusterConfig("first", localFVI, remoteFVI, a.localProxyOutbound,
+		a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound)
+	dup := makeTCPClusterConfig("dup", localFVI, remoteFVI, a.remoteProxyOutbound,
+		a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound)
+
+	_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{
+		ClusterConnections: []config.ClusterConnConfig{first, dup, dup},
+	}), loggers, Identity{Version: "test", MemberID: "pod-test"})
+	require.Error(t, err)
+
+	require.Eventually(t, func() bool {
+		l, err := net.Listen("tcp", a.localProxyInbound)
+		if err != nil {
+			return false
+		}
+		_ = l.Close()
+		return true
+	}, 5*time.Second, 50*time.Millisecond, "the first connection's listener was never released")
 }

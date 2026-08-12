@@ -82,6 +82,7 @@ func (a *App) startProxy(runCtx context.Context, cliCtx *urcli.Context) error {
 
 	fxApp := fx.New(
 		fx.Provide(func() *urcli.Context { return cliCtx }),
+		fx.Supply(proxy.DefaultIdentity(a.version)),
 		fx.Provide(func() log.Logger {
 			return log.NewZapLogger(log.BuildZapLogger(logCfg))
 		}),

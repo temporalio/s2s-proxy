@@ -99,6 +99,86 @@ Start proxies
 ./bins/s2s-proxy start --config develop/config/cluster-b-mux-server-proxy.yaml
 ```
 
+## Query a running proxy
+
+`ProxyAdminService` reports the proxy's version and its cluster connections to other proxies. It is served on the proxy-to-proxy mux. A plain gRPC client cannot speak a mux. Reaching the service therefore needs a local listener.
+
+Add a listen address to the proxy's config:
+
+```yaml
+proxyAdmin:
+  listenAddress: "localhost:6061"
+```
+
+Absent or empty means no server runs. The listener has no TLS and no authorization, so bind it to loopback.
+
+Server reflection is registered. `grpcurl` therefore needs no descriptor:
+
+```bash
+A=temporal.s2sproxy.proxyadmin.v1.ProxyAdminService/DescribeClusterConnections
+grpcurl -plaintext localhost:6061 list
+grpcurl -plaintext localhost:6061 $A
+```
+
+### Scope and target
+
+The request message is empty. Two pieces of gRPC metadata control how far a call travels, so that every
+admin RPC inherits the same rules and each listener can enforce them in one interceptor rather than in
+every handler.
+
+`s2s-proxy-scope` is `member` or `group`. Absent means `group`.
+
+```bash
+# This process only.
+grpcurl -plaintext -H 's2s-proxy-scope: member' localhost:6061 $A
+
+# Every pod of this proxy deployment, aggregated. This is the default.
+grpcurl -plaintext localhost:6061 $A
+```
+
+`s2s-proxy-target` names a cluster connection. The call is forwarded once to that connection's peer proxy,
+which answers for its own deployment:
+
+```bash
+grpcurl -plaintext -H 's2s-proxy-target: cluster-b' localhost:6061 $A
+```
+
+`topology`, a scope that would also cover the far side of every cluster connection, is reserved but not
+implemented; asking for it returns `Unimplemented` rather than a narrower answer.
+
+### Peer discovery
+
+Group scope needs a way to reach the other pods. Configure a peer listener and a discovery provider:
+
+```yaml
+proxyAdmin:
+  listenAddress: "127.0.0.1:6061"
+  peer:
+    listenAddress: "0.0.0.0:9234"
+    tls:
+      certificatePath: /certs/peer.pem
+      keyPath: /certs/peer.key
+      # Every pod's certificate must carry this as a SAN.
+      # Peers are dialed by IP.
+      # A per-pod SAN scheme fails every handshake.
+      caServerName: s2s-proxy-peers
+      remoteCAPath: /certs/ca.pem
+    discovery:
+      provider: dns          # dns | static | none
+      dns:
+        name: s2s-proxy.default.svc.cluster.local
+```
+
+Each provider reads only its own block, so a block belonging to an unselected provider is ignored. That
+matters because layered configuration deep-merges and cannot delete keys: switching `provider` from `dns` to
+`static` through a Helm override leaves the `dns` block behind, and it has to stay inert.
+
+Without `peer`, a proxy only ever describes itself: every response carries a single member, and that
+member is always this one.
+
+A non-loopback peer listener with no TLS is refused at startup unless `allowInsecure: true` is set, because
+it publishes the deployment's topology to anything that can reach the pod network.
+
 ## Code Generation
 
 ### gRPC client generation
@@ -106,6 +186,14 @@ Start proxies
 Run `make generate-rpcwrappers` to re-generate the clients
 
 This uses the `cmd/tools/genrpcwrappers` tool to generates frontend and admin clients.
+
+### Proxy proto generation
+
+Run `make generate-proxy-proto` to re-generate the Go stubs for the proxy's own protos.
+
+The protos live under `proto/temporal/`. The generated Go is written to `api/`.
+
+This needs [buf](https://buf.build/docs/installation) on `PATH`. The plugins are remote. No local `protoc` or plugin binaries are required. CI fails if the checked-in stubs do not match the protos.
 
 ### Invalid UTF-8 Repair Functions
 
