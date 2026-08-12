@@ -72,6 +72,32 @@ Merge default config with overrides
 {{- end }}
 {{- $_ := set $merged "clusterConnections" $mergedClusterConnections -}}
 
+{{/*
+Merge every other top-level key. Without this, only clusterConnections is written back and
+everything else in configOverride is silently discarded.
+deepCopy the source: sprig mergeOverwrite mutates its first argument, and the loop above already
+writes defaults into .Values.configOverride.clusterConnections in place.
+*/}}
+{{- $merged = mergeOverwrite $merged (omit $overrides "clusterConnections" | deepCopy) -}}
+
+{{/*
+Point dns peer discovery at this release's headless Service unless the operator named something
+else. Otherwise every install has to hand-write a cluster-internal DNS name, which is exactly the
+configuration back and forth this endpoint exists to remove.
+*/}}
+{{- $peer := (($merged.proxyAdmin).peer) }}
+{{- if $peer }}
+{{-   $discovery := $peer.discovery | default dict }}
+{{-   if eq ($discovery.provider | default "") "dns" }}
+{{-     $dns := $discovery.dns | default dict }}
+{{-     if not $dns.name }}
+{{-       $_ := set $dns "name" (printf "%s.%s.svc.cluster.local" (include "s2s-proxy.fullname" .) .Release.Namespace) }}
+{{-       $_ := set $discovery "dns" $dns }}
+{{-       $_ := set $peer "discovery" $discovery }}
+{{-     end }}
+{{-   end }}
+{{- end }}
+
 {{- $merged | toYaml }}
 {{- end }}
 
@@ -90,5 +116,15 @@ Parse port numbers from merged config
 {{- $metrics := ($firstCluster.metrics).prometheus.listenAddress | default $config.metrics.prometheus.listenAddress }}
 {{- $metricsPort := (split ":" $metrics)._1 }}
 
-{{- dict "egress" $egressPort "health" $healthPort "metrics" $metricsPort | toYaml }}
+{{/*
+The peer listener is optional. The loopback operator listener is deliberately never turned into a
+containerPort or a Service port.
+*/}}
+{{- $peerPort := "" }}
+{{- $peerAddress := ((($config.proxyAdmin).peer).listenAddress) }}
+{{- if $peerAddress }}
+{{-   $peerPort = (split ":" $peerAddress)._1 }}
+{{- end }}
+
+{{- dict "egress" $egressPort "health" $healthPort "metrics" $metricsPort "peer" $peerPort | toYaml }}
 {{- end }}

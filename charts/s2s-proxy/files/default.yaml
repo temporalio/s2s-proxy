@@ -51,6 +51,13 @@ clusterConnections:
           - ReapplyEvents
           - GetNamespace
           - SyncWorkflowState
+        # Optional. Narrows what the remote cluster may call on this proxy's own admin API.
+        # Absent means the built-in default: DescribeClusterConnections and nothing else.
+        # An empty list serves nothing.
+        # That is how an operator declines to answer this counterparty at all.
+        # This differs from adminService above, where an empty list allows everything.
+        # proxyAdmin:
+        #   - DescribeClusterConnections
       allowedNamespaces:
         # Optional. If configured, the temporal-system namespace must be included to allow migration workflows to run.
         - "temporal-system"
@@ -78,6 +85,32 @@ clusterConnections:
 #    localClusterHealthCheck:
 #      protocol: "http"
 #      listenAddress: "0.0.0.0:8235"
+
+proxyAdmin:
+  # Serves ProxyAdminService for operator queries.
+  # It has no TLS and no authorization.
+  # A non-loopback address is refused at startup.
+  # Reach it with `kubectl exec` or a port-forward.
+  listenAddress: "localhost:6061"
+  # Uncomment to let one pod answer for the whole deployment.
+  # Without this, a query describes only the pod that received it.
+  # The dns name defaults to this release's headless Service.
+  #
+  # A non-loopback listener with no tls is refused at startup unless allowInsecure is set.
+  # It publishes the deployment's topology to anything that can reach the pod network.
+  #
+  # peer:
+  #   listenAddress: "0.0.0.0:9234"
+  #   tls:
+  #     certificatePath: /certs/peer.pem
+  #     keyPath: /certs/peer.key
+  #     remoteCAPath: /certs/ca.pem
+  #     # Every pod's certificate must carry this as a SAN.
+  #     # Peers are dialed by IP.
+  #     # A per-pod SAN scheme fails every handshake.
+  #     caServerName: s2s-proxy-peers
+  #   discovery:
+  #     provider: dns
 
 metrics:
   prometheus:

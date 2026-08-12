@@ -43,3 +43,38 @@ tests:
             - containerPort: 3333
               name: rpc-metrics
               protocol: TCP
+
+  # The peer listener is opt-in.
+  # The default install exposes no extra port.
+  - it: should not expose a peer port by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: rpc-peer
+          any: true
+
+  - it: should expose a peer port when peer discovery is enabled
+    set:
+      configOverride:
+        proxyAdmin:
+          peer:
+            listenAddress: "0.0.0.0:9234"
+            allowInsecure: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 9234
+            name: rpc-peer
+            protocol: TCP
+
+  - it: should identify each pod for admin responses
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name

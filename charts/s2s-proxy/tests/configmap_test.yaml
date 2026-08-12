@@ -36,3 +36,39 @@ tests:
           pattern: |-
             muxAddressInfo:
               \s*address: addr:3333
+
+  # Layered configuration deep-merges and cannot delete keys.
+  # Switching provider leaves the previous provider's block behind.
+  # The rendered config must still select the new provider.
+  # The binary ignores the leftover block.
+  - it: should switch discovery provider without removing the previous block
+    set:
+      configOverride:
+        proxyAdmin:
+          peer:
+            listenAddress: "0.0.0.0:9234"
+            allowInsecure: true
+            discovery:
+              provider: static
+              dns:
+                name: leftover.svc
+              static:
+                addresses: ["p0:9234"]
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "provider: static"
+
+  - it: should default dns discovery to this release's headless service
+    set:
+      configOverride:
+        proxyAdmin:
+          peer:
+            listenAddress: "0.0.0.0:9234"
+            allowInsecure: true
+            discovery:
+              provider: dns
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "name: RELEASE-NAME-s2s-proxy\\.NAMESPACE\\.svc\\.cluster\\.local"

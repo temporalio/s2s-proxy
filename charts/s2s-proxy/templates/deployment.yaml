@@ -48,9 +48,22 @@ spec:
           - containerPort: {{ $ports.metrics }}
             name: rpc-metrics
             protocol: TCP
+          {{- if $ports.peer }}
+          - containerPort: {{ $ports.peer }}
+            name: rpc-peer
+            protocol: TCP
+          {{- end }}
           env:
             - name: CONFIG_YML
               value: "/config/config.yaml"
+            # Identifies this pod in admin responses.
+            # Without it every replica reports its container hostname.
+            # That is the pod name anyway.
+            # Being explicit survives a change to how the container is named.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
