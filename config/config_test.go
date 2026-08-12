@@ -322,3 +322,83 @@ func TestExampleChart(t *testing.T) {
 	require.Equal(t, ConnectionType("mux-client"), cc.Remote.ConnectionType)
 	require.Equal(t, "s2s-proxy-sample.example.tmprl.cloud:8233", cc.Remote.MuxAddressInfo.ConnectionString)
 }
+
+// TestProxyAdminConfig covers decoding only.
+// The validation rules are TestProxyAdminValidate, in validate_test.go.
+func TestProxyAdminConfig(t *testing.T) {
+	load := func(t *testing.T, body string) S2SProxyConfig {
+		t.Helper()
+		cfg, err := LoadConfig[S2SProxyConfig](writeYAML(t, body))
+		require.NoError(t, err)
+		return cfg
+	}
+
+	const clusterConnections = `
+clusterConnections:
+  - name: only
+`
+
+	t.Run("absent means disabled", func(t *testing.T) {
+		cfg := load(t, clusterConnections)
+		require.Empty(t, cfg.ProxyAdmin.ListenAddress)
+		require.Nil(t, cfg.ProxyAdmin.Peer)
+	})
+
+	t.Run("listen address round-trips", func(t *testing.T) {
+		cfg := load(t, clusterConnections+"proxyAdmin:\n  listenAddress: \"localhost:6061\"\n")
+		require.Equal(t, "localhost:6061", cfg.ProxyAdmin.ListenAddress)
+	})
+
+	// KnownFields(true) makes an unrecognized key fatal.
+	// The Go field has to exist before any YAML can set it.
+	t.Run("unknown keys are rejected", func(t *testing.T) {
+		for name, body := range map[string]string{
+			"under proxyAdmin": "proxyAdmin:\n  nope: 1\n",
+			"under discovery": `
+proxyAdmin:
+  peer:
+    listenAddress: "127.0.0.1:9234"
+    discovery:
+      provider: dns
+      nmae: typo
+`,
+		} {
+			t.Run(name, func(t *testing.T) {
+				_, err := LoadConfig[S2SProxyConfig](writeYAML(t, clusterConnections+body))
+				require.Error(t, err)
+			})
+		}
+	})
+
+	// Every layered configuration tool deep-merges and cannot delete keys.
+	// Switching provider leaves the previous provider's block behind.
+	// Strict decoding has to accept it, or there is no way to change provider through an override.
+	t.Run("an unselected provider's block still decodes", func(t *testing.T) {
+		cfg := load(t, clusterConnections+`
+proxyAdmin:
+  peer:
+    listenAddress: "127.0.0.1:9234"
+    discovery:
+      provider: static
+      dns:
+        name: leftover.svc.cluster.local
+      static:
+        addresses: ["a:9234", "b:9234"]
+`)
+		require.Equal(t, DiscoveryStatic, cfg.ProxyAdmin.Peer.Discovery.Provider)
+		require.Equal(t, "leftover.svc.cluster.local", cfg.ProxyAdmin.Peer.Discovery.DNS.Name)
+	})
+
+	t.Run("peer port defaults the dns port", func(t *testing.T) {
+		cfg := load(t, clusterConnections+`
+proxyAdmin:
+  peer:
+    listenAddress: "127.0.0.1:9234"
+    discovery:
+      provider: dns
+      dns:
+        name: peers.svc.cluster.local
+`)
+		require.Equal(t, 9234, cfg.ProxyAdmin.Peer.PeerPort())
+	})
+}

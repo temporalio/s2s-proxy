@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/temporalio/s2s-proxy/collect"
+	"github.com/temporalio/s2s-proxy/encryption"
 )
 
 const (
@@ -47,9 +48,73 @@ type (
 	S2SProxyConfig struct {
 		Metrics            *MetricsConfig           `yaml:"metrics"`
 		ProfilingConfig    *ProfilingConfig         `yaml:"profiling"`
+		ProxyAdmin         ProxyAdminConfig         `yaml:"proxyAdmin"`
 		Logging            LoggingConfig            `yaml:"logging"`
 		LogConfigs         map[string]LoggingConfig `yaml:"logConfigs"`
 		ClusterConnections []ClusterConnConfig      `yaml:"clusterConnections"`
+	}
+
+	ProxyAdminConfig struct {
+		// ListenAddress serves ProxyAdminService for local operator queries.
+		// Empty or absent means no server runs.
+		// This listener has no TLS and no authorization.
+		// Validate rejects anything but a loopback address.
+		ListenAddress string `yaml:"listenAddress"`
+
+		// Peer serves ProxyAdminService to the other pods of this proxy deployment.
+		// One pod can then answer for all of them.
+		// Absent means this pod only ever describes itself.
+		Peer *ProxyAdminPeerConfig `yaml:"peer"`
+	}
+
+	ProxyAdminPeerConfig struct {
+		// ListenAddress must be reachable from sibling pods.
+		// Unlike the operator listener it is normally not loopback.
+		ListenAddress string `yaml:"listenAddress"`
+
+		// AllowInsecure permits a non-loopback ListenAddress with no TLS.
+		// Without it that combination is a startup error.
+		// It publishes an unauthenticated view of the deployment's topology to anything that can reach the pod network.
+		AllowInsecure bool `yaml:"allowInsecure"`
+
+		// TLS secures peer traffic.
+		// Unlike the mux listener this verifies the client chain.
+		// CAServerName must name a SAN that every pod's certificate carries.
+		// Peers are dialed by IP.
+		// A per-pod SAN scheme fails every handshake.
+		TLS *encryption.TLSConfig `yaml:"tls"`
+
+		Discovery DiscoveryConfig `yaml:"discovery"`
+	}
+
+	// DiscoveryConfig selects one provider by name.
+	// Each provider reads only its own block.
+	// A block left behind by an unselected provider is inert.
+	//
+	// Every layered configuration tool in this stack deep-merges and cannot delete keys.
+	// Switching Provider from "dns" to "static" through a Helm values override cannot remove the dns block.
+	// Strict decoding would reject the config if the two shared a namespace.
+	DiscoveryConfig struct {
+		// Provider is "dns", "static", or "none".
+		// Empty means "none".
+		Provider string `yaml:"provider"`
+
+		DNS    DNSDiscoveryConfig    `yaml:"dns"`
+		Static StaticDiscoveryConfig `yaml:"static"`
+	}
+
+	DNSDiscoveryConfig struct {
+		// Name resolves to one address per sibling pod, as a Kubernetes headless Service does.
+		// Such a Service publishes ready endpoints only.
+		// A crash-looping pod is invisible to discovery rather than reported as unreachable.
+		Name string `yaml:"name"`
+
+		// Port defaults to the port in the peer ListenAddress.
+		Port int `yaml:"port"`
+	}
+
+	StaticDiscoveryConfig struct {
+		Addresses []string `yaml:"addresses"`
 	}
 
 	SATranslationConfig struct {
@@ -93,6 +158,25 @@ type (
 
 	AllowedMethods struct {
 		AdminService []string `yaml:"adminService"`
+
+		// ProxyAdmin narrows what the remote cluster may call on this proxy's own admin API.
+		// Short method names, like AdminService above.
+		//
+		// Absent means the built-in ceiling applies.
+		// That ceiling is DescribeClusterConnections and nothing else.
+		// A present-but-empty list means serve nothing.
+		// An operator declines to answer this counterparty at all by writing the empty list.
+		// A name the counterparty could never be served is a startup error.
+		// Configuration can only narrow.
+		//
+		// AdminService differs: its empty list means allow everything.
+		// That asymmetry is deliberate.
+		// The replication ACL's fail-open default is a compatibility promise.
+		// Repeating it here would make the natural spelling of "off" the widest possible setting.
+		//
+		// Writing "proxyAdmin:" with no value is absent, not empty.
+		// Write "proxyAdmin: []" to serve nothing.
+		ProxyAdmin []string `yaml:"proxyAdmin"`
 	}
 
 	ACLPolicy struct {
@@ -366,5 +450,6 @@ func (c *S2SProxyConfig) Validate() error {
 	return validation.Validate(
 		"",
 		validation.Children("clusterConnections", c.ClusterConnections, (*ClusterConnConfig).Validate),
+		validation.Nested("proxyAdmin", &c.ProxyAdmin),
 	)
 }
