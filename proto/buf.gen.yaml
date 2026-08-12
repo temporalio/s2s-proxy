@@ -1,0 +1,12 @@
+version: v2
+clean: true
+
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.11
+    out: ../api
+    opt: module=github.com/temporalio/s2s-proxy/api
+  - remote: buf.build/grpc/go:v1.5.1
+    out: ../api
+    opt:
+      - module=github.com/temporalio/s2s-proxy/api
+      - require_unimplemented_servers=true

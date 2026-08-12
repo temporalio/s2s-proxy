@@ -8,6 +8,8 @@ GOLANGCI_LINT ?= $(shell which golangci-lint)
 
 TOOLS_MOD_FILE = develop/tools.mod
 GO_TOOL        = go tool -modfile=$(TOOLS_MOD_FILE)
+BUF_MOD_FILE   = develop/buf.mod
+BUF            = go tool -modfile=$(abspath $(BUF_MOD_FILE)) buf
 GO_GET_TOOL    = go get -tool -modfile=$(TOOLS_MOD_FILE)
 
 # Disable cgo by default.
@@ -91,6 +93,18 @@ generate-rpcwrappers:
 
 	rm -rf ./cmd/tools/genrpcwrappers/*_gen.go
 	go fmt ./client/... ./proto/compat/...
+
+.PHONY: generate-proxy-proto
+generate-proxy-proto:
+	cd proto && $(BUF) generate
+
+.PHONY: proto-lint
+proto-lint:
+	cd proto && $(BUF) lint
+
+.PHONY: proto-breaking
+proto-breaking:
+	cd proto && $(BUF) breaking --against '../.git#ref=origin/main,subdir=proto'
 
 test: fmt lint generate-test-certs
 	go test $(TEST_ARG) ./...
