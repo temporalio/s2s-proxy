@@ -376,6 +376,7 @@ func (c *ClusterConnection) Start() {
 	c.inboundObserver.Start(c.lifetime, c.inboundServer.Name(), "inbound")
 	c.outboundServer.Start()
 	c.outboundObserver.Start(c.lifetime, c.outboundServer.Name(), "outbound")
+	c.sampleMetrics(c.lifetime)
 }
 
 func (c *ClusterConnection) Describe() string {

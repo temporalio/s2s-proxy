@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -146,6 +148,7 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 	}
 
 	metrics.NewProxyCount.Inc()
+	metrics.ProxyBuildInfo.WithLabelValues(identity.Version).Set(1)
 	return proxy, nil
 }
 
@@ -245,9 +248,32 @@ func (s *Proxy) startAdminServer(
 		logger.Error("Failed to listen for ProxyAdminService", tag.Address(address), tag.Error(err))
 		return
 	}
+	// Reuse the registered server metrics rather than declaring a second collector.
+	// A second grpcprom.ServerMetrics under the same namespace and subsystem panics at process start.
+	// The registry rejects a duplicate fully-qualified name, whether or not the label lists match.
+	// grpc_service already distinguishes ProxyAdminService from the replication services.
+	//
+	// The map key has to be "direction".
+	// GRPCServerMetrics was built with WithContextLabels("direction").
+	// grpcprom resolves this map by name.
+	// It substitutes an empty value for an unrecognized key rather than failing.
+	adminLabels := grpcprom.WithLabelsFromContext(func(context.Context) prometheus.Labels {
+		return prometheus.Labels{"direction": "admin_" + opts.Role.String()}
+	})
+	// Ordering matters, same convention as makeServerOptions.
+	// ChainUnaryInterceptor runs its arguments outermost first.
+	// Metrics therefore wrap adminplane.
+	// Its PermissionDenied and Unimplemented rejections land in grpc_code.
+	// Those rejections are the most useful thing this listener reports.
 	serverOpts := []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(adminplane.UnaryInterceptor(opts)),
-		grpc.ChainStreamInterceptor(adminplane.StreamInterceptor(opts)),
+		grpc.ChainUnaryInterceptor(
+			metrics.GRPCServerMetrics.UnaryServerInterceptor(adminLabels),
+			adminplane.UnaryInterceptor(opts),
+		),
+		grpc.ChainStreamInterceptor(
+			metrics.GRPCServerMetrics.StreamServerInterceptor(adminLabels),
+			adminplane.StreamInterceptor(opts),
+		),
 	}
 	if creds != nil {
 		serverOpts = append(serverOpts, grpc.Creds(creds))

@@ -78,6 +78,31 @@ var (
 	EncryptionDEKOpDur       = BucketedHistogramVec("enc_dek_op_duration_secs", "Duration of the AES-256-GCM step alone in seconds, excluding any KEK wrap or unwrap, labeled by operation", prometheus.ExponentialBuckets(0.00001, 4, 7), "operation")
 	EncryptionDEKRotations   = DefaultCounterVec("enc_dek_rotations_total", "Total DEK rotations, labeled by reason", "reason")
 
+	// Cluster connection health, sampled in /proxy/connection_metrics.go
+
+	// config_name carries the same value as the mux metrics' config_name, sanitizeConnectionName of
+	// the configured name.
+	// A dashboard variable built from num_muxes_active therefore also populates these.
+	//
+	// This is the state breakdown nothing else exports.
+	// mux_connection_active is set to 1 on every observer tick until the session's lifetime ends.
+	// num_muxes_active is the size of the session map.
+	// A session failing its ping but still in the map reads as healthy in both.
+	ClusterConnectionMuxSessions = DefaultGaugeVec("cluster_connection_mux_sessions",
+		"Mux sessions this pod holds for a cluster connection, by session state. State is refreshed by the session's own health check about once a minute, so an errored session can take that long to appear here. Not reported for a connection whose remote is plain tcp.",
+		"config_name", "state")
+	// The denominator that makes the state breakdown alertable.
+	// A session that never established was never added to the manager.
+	// The sessions held say nothing on their own about how many were meant to exist.
+	ClusterConnectionMuxSessionsTarget = DefaultGaugeVec("cluster_connection_mux_sessions_target",
+		"Mux sessions this pod is configured to hold for a cluster connection.",
+		"config_name")
+	// Version skew during a rollout.
+	// collectors.NewBuildInfoCollector reports the module version.
+	// This is the -X main.Version stamp the binary was actually built with.
+	ProxyBuildInfo = DefaultGaugeVec("build_info",
+		"Always 1, labelled with the build this process is running.", "version")
+
 	// Translation interceptor
 
 	translationLabels  = []string{"kind", "message_type"}
@@ -158,6 +183,10 @@ func init() {
 		EncryptionDEKOpDur,
 		EncryptionDEKRotations,
 	)
+
+	prometheus.MustRegister(ClusterConnectionMuxSessions)
+	prometheus.MustRegister(ClusterConnectionMuxSessionsTarget)
+	prometheus.MustRegister(ProxyBuildInfo)
 
 	prometheus.MustRegister(TranslationCount)
 	prometheus.MustRegister(TranslationErrors)
