@@ -265,21 +265,6 @@ func TestCustomSAAliasConfigAliasesReturnsCopy(t *testing.T) {
 	require.Equal(t, map[string]string{"Keyword01": "MyKeyword"}, cfg.NamespaceMappings[0].CustomSearchAttributeAliases)
 }
 
-func TestDefaultChart(t *testing.T) {
-	samplePath := filepath.Join("..", "charts", "s2s-proxy", "files", "default.yaml")
-	proxyConfig, err := LoadConfig[S2SProxyConfig](samplePath)
-	require.NoError(t, err)
-	require.Equal(t, 1, len(proxyConfig.ClusterConnections))
-	cc := proxyConfig.ClusterConnections[0]
-	require.Equal(t, ConnectionType("tcp"), cc.Local.ConnectionType)
-	require.Equal(t, "0.0.0.0:9233", cc.Local.TcpServer.ConnectionString)
-	require.Equal(t, "frontend-ingress.temporal.svc.cluster.local:7233", cc.Local.TcpClient.ConnectionString)
-	require.Equal(t, ConnectionType("mux-client"), cc.Remote.ConnectionType)
-	require.Equal(t, "remote_proxy_service:8233", cc.Remote.MuxAddressInfo.ConnectionString)
-	require.Equal(t, "my-s2s-proxy.svc.cluster.local:9233", cc.ReplicationEndpoint)
-	require.False(t, cc.Remote.MuxAddressInfo.TLSConfig.IsEnabled())
-}
-
 func TestExampleChart(t *testing.T) {
 	samplePath := filepath.Join("..", "charts", "s2s-proxy", "example.yaml")
 	data, err := os.ReadFile(samplePath)
@@ -321,4 +306,7 @@ func TestExampleChart(t *testing.T) {
 	require.Equal(t, "frontend-address:7233", cc.Local.TcpClient.ConnectionString)
 	require.Equal(t, ConnectionType("mux-client"), cc.Remote.ConnectionType)
 	require.Equal(t, "s2s-proxy-sample.example.tmprl.cloud:8233", cc.Remote.MuxAddressInfo.ConnectionString)
+	// Inherited from clusterConnectionDefaults rather than named by the example.
+	require.Equal(t, 10, cc.Remote.MuxCount)
+	require.Len(t, cc.ACLPolicy.AllowedMethods.AdminService, 11)
 }

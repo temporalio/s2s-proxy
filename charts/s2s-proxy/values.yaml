@@ -74,7 +74,53 @@ tolerations: []
 
 affinity: {}
 
-# Overrides for the s2s-proxy config file.
-# This is deep merged with default values in files/default.yaml
-configOverride: {}
+# The proxy's cluster connections, keyed by name. The key becomes the connection's name in the
+# rendered config, so it appears in log labels and metrics. Pick a name no other s2s-proxy
+# deployment shares.
+#
+# Every install has to supply at least one. See values.example.yaml for a worked example.
+#
+# Each entry is merged over clusterConnectionDefaults below, so an entry only has to carry what
+# differs from those defaults.
+clusterConnections: {}
+
+# Applied to every entry in clusterConnections. An entry that sets any of these replaces only the
+# keys it names.
+clusterConnectionDefaults:
+  local:
+    # Unless you are daisy-chaining proxies, the local cluster is always tcp.
+    connectionType: "tcp"
+    tcpServer:
+      address: "0.0.0.0:9233"
+  remote:
+    # Remotes are usually mux-client or mux-server. tcp is supported.
+    connectionType: "mux-client"
+    # How many connections to open to the remote mux server. At least 10 is recommended.
+    muxCount: 10
+  aclPolicy:
+    allowedMethods:
+      # These methods are what multi-cluster replication needs. An empty list allows everything.
+      adminService:
+        - AddOrUpdateRemoteCluster
+        - RemoveRemoteCluster
+        - DescribeCluster
+        - DescribeMutableState
+        - GetNamespaceReplicationMessages
+        - GetWorkflowExecutionRawHistoryV2
+        - ListClusters
+        - StreamWorkflowReplicationMessages
+        - ReapplyEvents
+        - GetNamespace
+        - SyncWorkflowState
+  remoteClusterHealthCheck:
+    protocol: "http"
+    listenAddress: "0.0.0.0:8234"
+
+# Everything in the proxy's config file outside clusterConnections.
+config:
+  metrics:
+    prometheus:
+      listenAddress: "0.0.0.0:9090"
+  profiling:
+    pprofAddress: "localhost:6060"
 

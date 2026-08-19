@@ -6,6 +6,8 @@ tests:
     set:
       image.repository: "testrepo/test"
       image.tag: "1.2.3"
+      clusterConnections:
+        only: {}
     asserts:
       - isKind:
           of: Deployment
@@ -16,18 +18,19 @@ tests:
           path: spec.template.spec.containers[0].image
           value: testrepo/test:1.2.3
 
-  - it: should set container ports based on configOverride
+  - it: should set container ports from the rendered config
     set:
-      configOverride:
-        clusterConnections:
-          - remoteClusterHealthCheck:
-              listenAddress: "0.0.0.0:1111"
-            local:
-              tcpServer:
-                address: "127.0.0.1:2222"
-            metrics:
-              prometheus:
-                listenAddress: ":3333"
+      config:
+        metrics:
+          prometheus:
+            listenAddress: ":3333"
+      clusterConnections:
+        only:
+          local:
+            tcpServer:
+              address: "127.0.0.1:2222"
+          remoteClusterHealthCheck:
+            listenAddress: "0.0.0.0:1111"
     asserts:
       - isKind:
           of: Deployment
@@ -35,10 +38,10 @@ tests:
           path: spec.template.spec.containers[0].ports
           value:
             - containerPort: 2222
-              name: rpc-egress
+              name: rpc-egress-0
               protocol: TCP
             - containerPort: 1111
-              name: rpc-healthcheck
+              name: rpc-health-0
               protocol: TCP
             - containerPort: 3333
               name: rpc-metrics

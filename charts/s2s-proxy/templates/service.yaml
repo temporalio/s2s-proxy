@@ -12,9 +12,11 @@ spec:
   clusterIP: None
   ports:
   {{- $ports := (include "s2s-proxy.parsedPorts" . | fromYaml) }}
-    - port: {{ $ports.egress }}
-      targetPort: {{ $ports.egress }}
+  {{- range $index, $port := $ports.egress }}
+    - port: {{ $port }}
+      targetPort: {{ $port }}
       protocol: TCP
-      name: rpc-egress
+      name: rpc-egress-{{ $index }}
+  {{- end }}
   selector:
     {{- include "s2s-proxy.selectorLabels" . | nindent 4 }}

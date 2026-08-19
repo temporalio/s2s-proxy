@@ -52,43 +52,42 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 
 {{/*
-Merge default config with overrides
+The proxy's config file. Helm merges .Values itself, so this only assembles what the file needs:
+everything under config, plus clusterConnections turned from a keyed map into the list the proxy
+reads. Each entry is merged over clusterConnectionDefaults.
 */}}
-{{- define "s2s-proxy.mergedConfig" -}}
-{{- $defaults := .Files.Get "files/default.yaml" | fromYaml }}
-{{- $overrides := .Values.configOverride }}
-{{- $merged := deepCopy $defaults -}}
-
-{{/* Merge the clusterConnections list - each override item merges with its matching index in defaults */}}
-{{- $mergedClusterConnections := list }}
-{{- $overrideClusterConnections := $overrides.clusterConnections | default list }}
-{{- range $index, $defaultItem := $defaults.clusterConnections }}
-    {{- $overrideItem := dict }}
-    {{- if lt $index (len $overrideClusterConnections) }}
-        {{- $overrideItem = index $overrideClusterConnections $index }}
-    {{- end }}
-    {{- $mergedItem := deepCopy $defaultItem | merge $overrideItem }}
-    {{- $mergedClusterConnections = append $mergedClusterConnections $mergedItem }}
+{{- define "s2s-proxy.config" -}}
+{{- if not .Values.clusterConnections }}
+    {{- fail "clusterConnections is empty. Set at least one, keyed by name. See values.example.yaml." }}
 {{- end }}
-{{- $_ := set $merged "clusterConnections" $mergedClusterConnections -}}
-
-{{- $merged | toYaml }}
+{{- $config := deepCopy .Values.config }}
+{{- $connections := list }}
+{{- range $name, $connection := .Values.clusterConnections }}
+    {{- $merged := deepCopy $.Values.clusterConnectionDefaults | merge (deepCopy $connection) }}
+    {{- $_ := set $merged "name" $name }}
+    {{- $connections = append $connections $merged }}
+{{- end }}
+{{- $_ := set $config "clusterConnections" $connections }}
+{{- $config | toYaml }}
 {{- end }}
 
 {{/*
-Parse port numbers from merged config
+The ports the container listens on, read back out of the rendered config.
+
+Every cluster connection binds its own egress port, so they are returned as a list. The health and
+metrics listeners are per process.
 */}}
 {{- define "s2s-proxy.parsedPorts" -}}
-{{- $config := (include "s2s-proxy.mergedConfig" . | fromYaml) }}
+{{- $config := (include "s2s-proxy.config" . | fromYaml) }}
 
-{{- $firstCluster := index $config.clusterConnections 0 }}
-{{- $egress := $firstCluster.local.tcpServer.address }}
-{{- $egressPort := (split ":" $egress)._1 }}
-{{- $health := $firstCluster.remoteClusterHealthCheck.listenAddress }}
-{{- $healthPort := (split ":" $health)._1 }}
+{{- $egressPorts := list }}
+{{- $healthPorts := list }}
+{{- range $config.clusterConnections }}
+    {{- $egressPorts = append $egressPorts (split ":" .local.tcpServer.address)._1 }}
+    {{- $healthPorts = append $healthPorts (split ":" .remoteClusterHealthCheck.listenAddress)._1 }}
+{{- end }}
 
-{{- $metrics := ($firstCluster.metrics).prometheus.listenAddress | default $config.metrics.prometheus.listenAddress }}
-{{- $metricsPort := (split ":" $metrics)._1 }}
+{{- $metricsPort := (split ":" $config.metrics.prometheus.listenAddress)._1 }}
 
-{{- dict "egress" $egressPort "health" $healthPort "metrics" $metricsPort | toYaml }}
+{{- dict "egress" (uniq $egressPorts) "health" (uniq $healthPorts) "metrics" $metricsPort | toYaml }}
 {{- end }}

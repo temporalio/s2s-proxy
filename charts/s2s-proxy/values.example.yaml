@@ -10,28 +10,38 @@ volumeMounts:
     mountPath: "/s2c-server-tls"
     readOnly: true
 
-# Provide s2s-proxy config file overrides.
-# - Configure the server address
-# - Configure namespace name translations
-configOverride:
-  clusterConnections:
-    - name: "my-migration-cluster"
-      local:
-        tcpClient:
-          # Address of your Temporal server's frontend.
-          address: "frontend-address:7233"
-      remote:
-        muxAddressInfo:
-          # Address of the migration endpoint.
-          address: "s2s-proxy-sample.example.tmprl.cloud:8233"
-          tls:
-            # Path to your client certificate for mTLS authentication.
-            certificatePath: "/s2c-server-tls/tls.crt"
-            # Path to your private key corresponding to the client certificate.
-            keyPath: "/s2c-server-tls/tls.key"
-      # Your s2s-proxy service address. This will be called by your Temporal server during namespace migration.
-      replicationEndpoint: "address-of-your-s2s-proxy-deployment:9233"
-      namespaceTranslation:
-        mappings:
-          - local: my-local       # Name of the namespace in your self-hosted Temporal.
-            remote: my-cloud.acct # Corresponding namespace pre-created in Temporal Cloud.
+# The cluster connections this proxy serves, keyed by name. The key becomes the connection's name
+# in the rendered config.
+#
+# Only the fields that differ from clusterConnectionDefaults in values.yaml appear here. Everything
+# else, including the connection types, the mux count and the ACL method list, comes from there.
+clusterConnections:
+  my-migration-cluster:
+    local:
+      tcpClient:
+        # Your Temporal server's frontend.
+        address: "frontend-address:7233"
+    remote:
+      muxAddressInfo:
+        # The migration endpoint.
+        address: "s2s-proxy-sample.example.tmprl.cloud:8233"
+        tls:
+          # Your client certificate for mTLS authentication.
+          certificatePath: "/s2c-server-tls/tls.crt"
+          # The private key for that certificate.
+          keyPath: "/s2c-server-tls/tls.key"
+          # Must match a SAN or CN on the remote server's certificate.
+          caServerName: "s2s-proxy-sample.example.tmprl.cloud"
+    # Where the remote cluster reaches this proxy.
+    replicationEndpoint: "my-s2s-proxy.svc.cluster.local:9233"
+    aclPolicy:
+      # Namespaces the remote cluster may act on. temporal-system is required for migration
+      # workflows to run.
+      allowedNamespaces:
+        - "temporal-system"
+        - "myNamespace"
+    # Namespace translations apply in both directions.
+    namespaceTranslation:
+      mappings:
+        - local: "myNamespace"
+          remote: "myNamespace.accountid"

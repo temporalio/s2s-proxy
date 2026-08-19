@@ -30,22 +30,21 @@ data:
       name: my-migration-cluster
       namespaceTranslation:
         mappings:
-        - local: my-local
-          remote: my-cloud.acct
+        - local: myNamespace
+          remote: myNamespace.accountid
       remote:
         connectionType: mux-client
         muxAddressInfo:
           address: s2s-proxy-sample.example.tmprl.cloud:8233
           tls:
-            caServerName: ""
+            caServerName: s2s-proxy-sample.example.tmprl.cloud
             certificatePath: /s2c-server-tls/tls.crt
             keyPath: /s2c-server-tls/tls.key
-            remoteCAPath: ""
         muxCount: 10
       remoteClusterHealthCheck:
         listenAddress: 0.0.0.0:8234
         protocol: http
-      replicationEndpoint: address-of-your-s2s-proxy-deployment:9233
+      replicationEndpoint: my-s2s-proxy.svc.cluster.local:9233
     metrics:
       prometheus:
         listenAddress: 0.0.0.0:9090
@@ -76,7 +75,7 @@ spec:
     - port: 9233
       targetPort: 9233
       protocol: TCP
-      name: rpc-egress
+      name: rpc-egress-0
   selector:
     app.kubernetes.io/name: s2s-proxy
     app.kubernetes.io/instance: example
@@ -113,10 +112,10 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 9233
-            name: rpc-egress
+            name: rpc-egress-0
             protocol: TCP
           - containerPort: 8234
-            name: rpc-healthcheck
+            name: rpc-health-0
             protocol: TCP
           - containerPort: 9090
             name: rpc-metrics

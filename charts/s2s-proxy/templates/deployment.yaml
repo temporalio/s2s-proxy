@@ -39,12 +39,16 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
           {{- $ports := (include "s2s-proxy.parsedPorts" . | fromYaml) }}
-          - containerPort: {{ $ports.egress }}
-            name: rpc-egress
+          {{- range $index, $port := $ports.egress }}
+          - containerPort: {{ $port }}
+            name: rpc-egress-{{ $index }}
             protocol: TCP
-          - containerPort: {{ $ports.health }}
-            name: rpc-healthcheck
+          {{- end }}
+          {{- range $index, $port := $ports.health }}
+          - containerPort: {{ $port }}
+            name: rpc-health-{{ $index }}
             protocol: TCP
+          {{- end }}
           - containerPort: {{ $ports.metrics }}
             name: rpc-metrics
             protocol: TCP

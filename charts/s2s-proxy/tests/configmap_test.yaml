@@ -2,37 +2,91 @@ suite: test configmap
 templates:
   - configmap.yaml
 tests:
-  - it: should override s2s-proxy config
+  - it: should name each cluster connection after its key
     set:
-      configOverride:
-        clusterConnections:
-          - remoteClusterHealthCheck:
-              listenAddress: 0.0.0.0:1111
-            local:
-              tcpClient:
-                address: "frontend-other:2222"
-            remote:
-              muxAddressInfo:
-                address: "addr:3333"
-    asserts:
-      - isKind:
-          of: ConfigMap
-      - matchRegex:
-          path: metadata.name
-          pattern: RELEASE-NAME-s2s-proxy
-      # Brittle regex matching. Not sure how better to check yaml inside of a string though.
-      - matchRegex:
-          path: data["config.yaml"]
-          pattern: |-
-            remoteClusterHealthCheck:
-              \s*listenAddress: 0.0.0.0:1111
-      - matchRegex:
-          path: data["config.yaml"]
-          pattern: |-
+      clusterConnections:
+        acme-migration:
+          local:
             tcpClient:
-              \s*address: frontend-other:2222
+              address: "frontend.acme.svc:7233"
+    asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: |-
-            muxAddressInfo:
-              \s*address: addr:3333
+          pattern: "name: acme-migration"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "address: frontend.acme.svc:7233"
+
+  - it: should render every cluster connection
+    set:
+      clusterConnections:
+        first:
+          local:
+            tcpClient:
+              address: "a:7233"
+        second:
+          local:
+            tcpClient:
+              address: "b:7233"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "name: first"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "name: second"
+
+  # A connection carries only what differs from clusterConnectionDefaults.
+  - it: should apply the connection defaults to every connection
+    set:
+      clusterConnections:
+        acme:
+          local:
+            tcpClient:
+              address: "frontend.acme.svc:7233"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "connectionType: mux-client"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "muxCount: 10"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "address: 0.0.0.0:9233"
+
+  - it: should let a connection override a default
+    set:
+      clusterConnections:
+        acme:
+          remote:
+            muxCount: 4
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "muxCount: 4"
+
+  - it: should apply config keys outside clusterConnections
+    set:
+      clusterConnections:
+        acme: {}
+      config:
+        metrics:
+          prometheus:
+            listenAddress: ":7777"
+        profiling:
+          pprofAddress: "localhost:7000"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "listenAddress: :7777"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "pprofAddress: localhost:7000"
+
+  # The proxy rejects a config with no cluster connections. Failing the render says so at install
+  # time rather than at the first container start.
+  - it: should fail when no cluster connection is configured
+    asserts:
+      - failedTemplate:
+          errorMessage: "clusterConnections is empty. Set at least one, keyed by name. See values.example.yaml."
