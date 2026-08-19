@@ -10,7 +10,6 @@ import (
 	"go.temporal.io/server/common/log/tag"
 
 	"github.com/temporalio/s2s-proxy/transport/mux"
-	"github.com/temporalio/s2s-proxy/transport/mux/session"
 )
 
 // HandleDebugInfo is the HTTP handler for the proxy debug endpoint.
@@ -168,18 +167,7 @@ func getMuxConnectionsInfo(server contextAwareServer, direction string) []MuxCon
 	var connInfos []MuxConnectionInfo
 	for id, muxSession := range connections {
 		localAddr, remoteAddr := muxSession.GetConnectionInfo()
-		state := muxSession.State()
-		stateStr := "unknown"
-		if state != nil {
-			switch state.State {
-			case session.Connected:
-				stateStr = "connected"
-			case session.Closed:
-				stateStr = "closed"
-			case session.Error:
-				stateStr = "error"
-			}
-		}
+		stateStr := mux.SessionStateName(muxSession.State())
 
 		localAddrStr := ""
 		if localAddr != nil {
