@@ -119,10 +119,14 @@ func NewEchoServer(
 		}
 
 		configProvider := config.NewMockConfigProvider(*localClusterInfo.S2sProxyConfig)
-		proxy = s2sproxy.NewProxy(
+		var err error
+		proxy, err = s2sproxy.NewProxy(
 			configProvider,
 			logging.NewLoggerProvider(logger, configProvider),
 		)
+		if err != nil {
+			panic(err)
+		}
 
 		clientAddress = localProxyCfg.ClusterConnections[0].Local.TcpServer.ConnectionString
 	} else {

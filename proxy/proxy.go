@@ -37,7 +37,7 @@ type (
 	}
 )
 
-func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider) *Proxy {
+func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider) (*Proxy, error) {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
@@ -47,7 +47,8 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 		logProvider:        logProvider,
 	}
 	if len(s2sConfig.ClusterConnections) == 0 {
-		panic(errors.New("cannot create proxy: clusterConnections is empty"))
+		cancel()
+		return nil, errors.New("cannot create proxy: clusterConnections is empty")
 	}
 	if s2sConfig.Metrics != nil {
 		proxy.metricsConfig = s2sConfig.Metrics
@@ -55,13 +56,18 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 	proxy.profilingConfig = s2sConfig.ProfilingConfig
 
 	for _, clusterCfg := range s2sConfig.ClusterConnections {
+		id := migrationId{clusterCfg.Name}
+		// Error on duplicate cluster connection names
+		if _, duplicate := proxy.clusterConnections[id]; duplicate {
+			cancel()
+			return nil, fmt.Errorf("cannot create proxy: duplicate cluster connection name %q", clusterCfg.Name)
+		}
 		cc, err := NewClusterConnection(ctx, clusterCfg, logProvider)
 		if err != nil {
-			logProvider.Get("init").Fatal("Incorrectly configured Mux cluster connection", tag.Error(err), tag.NewStringTag("name", clusterCfg.Name))
-			continue
+			cancel()
+			return nil, fmt.Errorf("cannot create cluster connection %q: %w", clusterCfg.Name, err)
 		}
-		migrationId := migrationId{clusterCfg.Name}
-		proxy.clusterConnections[migrationId] = cc
+		proxy.clusterConnections[id] = cc
 	}
 	// TODO: correctly host multiple health checks
 	if len(s2sConfig.ClusterConnections) > 0 && s2sConfig.ClusterConnections[0].LocalClusterHealthCheck.ListenAddress != "" {
@@ -72,7 +78,7 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 	}
 
 	metrics.NewProxyCount.Inc()
-	return proxy
+	return proxy, nil
 }
 
 func (s *Proxy) startHealthCheckHandler(lifetime context.Context, healthChecker HealthChecker, cfg config.HealthCheckConfig) (*http.Server, error) {
