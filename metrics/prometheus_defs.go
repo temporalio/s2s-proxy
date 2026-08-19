@@ -118,6 +118,7 @@ func init() {
 
 	prometheus.MustRegister(GRPCOutboundClientMetrics)
 	prometheus.MustRegister(GRPCInboundClientMetrics)
+	prometheus.MustRegister(GRPCIntraProxyClientMetrics)
 
 	// Mux Session
 	prometheus.MustRegister(MuxSessionOpen)
