@@ -271,6 +271,10 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid configuration for inbound server: %w", err)
 	}
+	// The socket is bound here, before Start. Close it when the lifetime ends so that a server
+	// which is built and then abandoned does not hold the port. Start registers its own close, and
+	// the second one is a no-op.
+	context.AfterFunc(lifetime, func() { _ = listener.Close() })
 	grpcServer, err := buildProxyServer(c, c.clusterDefinition.TcpServer.TLSConfig, observer.ReportStreamValue, lifetime)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create inbound server: %w", err)

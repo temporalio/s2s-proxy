@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -297,4 +298,37 @@ func TestMuxCCFailover(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "remote-EchoAdminService", resp.ClusterName, "Local cluster connection should have reconnected")
 	cancel()
+}
+
+// A cluster connection binds its sockets when it is built. Ending its lifetime releases them.
+// Nothing has to start for that to hold.
+//
+// The connection stays reachable across the assertion on purpose. An unreachable listener is closed
+// by its finalizer on the next GC cycle. That would report success whether or not the lifetime
+// released the port. A proxy holds its connections in a map for its whole life, so no finalizer
+// runs there.
+func TestTCPListenerIsReleasedWhenNeverStarted(t *testing.T) {
+	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	a := getDynamicPlccAddresses(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cc, err := NewClusterConnection(ctx, makeTCPClusterConfig("abandoned", localFVI, remoteFVI,
+		a.localProxyOutbound, a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound,
+		a.remoteProxyInbound), loggers)
+	require.NoError(t, err)
+
+	cancel() // never Started
+
+	// A TCP connection builds an inbound and an outbound server, and both bind a socket.
+	for _, address := range []string{a.localProxyInbound, a.localProxyOutbound} {
+		require.Eventually(t, func() bool {
+			l, err := net.Listen("tcp", address)
+			if err != nil {
+				return false
+			}
+			_ = l.Close()
+			return true
+		}, 5*time.Second, 50*time.Millisecond, "listener on %s was never released", address)
+	}
+	runtime.KeepAlive(cc)
 }
