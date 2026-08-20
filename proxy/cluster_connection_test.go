@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -297,4 +298,66 @@ func TestMuxCCFailover(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "remote-EchoAdminService", resp.ClusterName, "Local cluster connection should have reconnected")
 	cancel()
+}
+
+func TestNewProxyReportsConfigurationErrors(t *testing.T) {
+	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+
+	t.Run("no cluster connections", func(t *testing.T) {
+		_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{}), loggers)
+		require.EqualError(t, err, "cannot create proxy: clusterConnections is empty")
+	})
+
+	t.Run("a cluster connection that cannot be built", func(t *testing.T) {
+		a := getDynamicPlccAddresses(t)
+		broken := makeTCPClusterConfig("broken", localFVI, remoteFVI, a.localProxyOutbound,
+			a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound)
+		broken.Local.ConnectionType = "not-a-connection-type"
+
+		_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{
+			ClusterConnections: []config.ClusterConnConfig{broken},
+		}), loggers)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `cannot create cluster connection "broken"`)
+	})
+}
+
+func TestNewProxyRejectsDuplicateClusterConnectionNames(t *testing.T) {
+	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	a := getDynamicPlccAddresses(t)
+	first := makeTCPClusterConfig("same", localFVI, remoteFVI, a.localProxyOutbound,
+		a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound)
+	second := makeTCPClusterConfig("same", remoteFVI, localFVI, a.remoteProxyOutbound,
+		a.remoteTemporalAddr, a.remoteProxyInbound, a.remoteProxyOutbound, a.localProxyInbound)
+
+	_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{
+		ClusterConnections: []config.ClusterConnConfig{first, second},
+	}), loggers)
+	require.EqualError(t, err, `cannot create proxy: duplicate cluster connection name "same"`)
+}
+
+func TestTCPListenerIsReleasedWhenNeverStarted(t *testing.T) {
+	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	a := getDynamicPlccAddresses(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cc, err := NewClusterConnection(ctx, makeTCPClusterConfig("abandoned", localFVI, remoteFVI,
+		a.localProxyOutbound, a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound,
+		a.remoteProxyInbound), loggers)
+	require.NoError(t, err)
+
+	cancel() // never Started
+
+	// A TCP connection builds an inbound and an outbound server, and both bind a socket.
+	for _, address := range []string{a.localProxyInbound, a.localProxyOutbound} {
+		require.Eventually(t, func() bool {
+			l, err := net.Listen("tcp", address)
+			if err != nil {
+				return false
+			}
+			_ = l.Close()
+			return true
+		}, 5*time.Second, 50*time.Millisecond, "listener on %s was never released", address)
+	}
+	runtime.KeepAlive(cc)
 }
