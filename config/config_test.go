@@ -343,7 +343,6 @@ func TestSATranslationConfigValidate(t *testing.T) {
 			cfg:  SATranslationConfig{},
 			verify: func(t *testing.T, saTranslation SearchAttributeTranslation) {
 				require.Equal(t, 0, saTranslation.LenNamespaces())
-				require.False(t, saTranslation.HasLegacyWildcard())
 			},
 		},
 		{
@@ -387,7 +386,7 @@ func TestSATranslationConfigValidate(t *testing.T) {
 			},
 			wantValidateErr: []string{
 				`namespaceMappings[name="legacyNamespace"]`,
-				"namespaceId is required when more than one namespace is configured",
+				"has no namespaceId",
 			},
 		},
 		{
@@ -408,13 +407,13 @@ func TestSATranslationConfigValidate(t *testing.T) {
 			},
 			wantValidateErr: []string{
 				`namespaceMappings[name="namespace1"]`,
-				"namespaceId is required",
+				"has no namespaceId",
 			},
 			wantValidateErrExcludes: []string{"duplicate namespaceId"},
 		},
 		{
-			// Configs written before per-namespace translation omit the namespaceId entirely.
-			// A single such mapping keeps working and is applied to every namespace.
+			// namespaceId is required even for one namespace: there is no mapping that applies
+			// to every namespace, so an omitted id has nothing to match against.
 			name: "single mapping with empty namespaceId",
 			cfg: SATranslationConfig{
 				NamespaceMappings: []SANamespaceMapping{
@@ -423,15 +422,12 @@ func TestSATranslationConfigValidate(t *testing.T) {
 					},
 				},
 			},
-			verify: func(t *testing.T, saTranslation SearchAttributeTranslation) {
-				require.Equal(t, 1, saTranslation.LenNamespaces())
-				require.True(t, saTranslation.HasLegacyWildcard())
-				require.Equal(t, "remoteOne", saTranslation.Get(LegacyWildcardNamespaceID, "localOne"))
-				require.Equal(t, "localOne", saTranslation.Inverse().Get(LegacyWildcardNamespaceID, "remoteOne"))
-			},
+			wantValidateErr: []string{"has no namespaceId", "namespaceId is required"},
 		},
 		{
-			// The shape deployed today: the namespace is named but the namespaceId is blank.
+			// The shape the migration tooling emits today: the namespace is named but the
+			// namespaceId is blank. It must fail at startup naming the entry, rather than
+			// translating some arbitrary namespace.
 			name: "named mapping with empty namespaceId",
 			cfg: SATranslationConfig{
 				NamespaceMappings: []SANamespaceMapping{
@@ -444,12 +440,9 @@ func TestSATranslationConfigValidate(t *testing.T) {
 					},
 				},
 			},
-			verify: func(t *testing.T, saTranslation SearchAttributeTranslation) {
-				require.Equal(t, 1, saTranslation.LenNamespaces())
-				require.True(t, saTranslation.HasLegacyWildcard())
-				require.Equal(t, 2, saTranslation.Len(LegacyWildcardNamespaceID))
-				require.Equal(t, "Keyword01", saTranslation.Get(LegacyWildcardNamespaceID, "CustomKeywordField"))
-				require.Equal(t, "Text01", saTranslation.Get(LegacyWildcardNamespaceID, "CustomStringField"))
+			wantValidateErr: []string{
+				`namespaceMappings[name="migration-namespace"]`,
+				"has no namespaceId",
 			},
 		},
 		{
@@ -508,13 +501,12 @@ func TestSATranslationConfigValidate(t *testing.T) {
 			},
 			verify: func(t *testing.T, saTranslation SearchAttributeTranslation) {
 				require.Equal(t, 2, saTranslation.LenNamespaces())
-				require.False(t, saTranslation.HasLegacyWildcard())
 				require.Equal(t, "remoteOne", saTranslation.Get("namespace-id-1", "localOne"))
 				require.Equal(t, "remoteTwo", saTranslation.Get("namespace-id-2", "localTwo"))
 				// Each namespace only knows its own attributes.
 				require.Equal(t, "", saTranslation.Get("namespace-id-1", "localTwo"))
 				require.Equal(t, "", saTranslation.Get("namespace-id-2", "localOne"))
-				require.Equal(t, NewTuple("", false), NewTuple(saTranslation.GetExists(LegacyWildcardNamespaceID, "localOne")))
+				require.Equal(t, NewTuple("", false), NewTuple(saTranslation.GetExists("", "localOne")))
 				require.Equal(t, "localOne", saTranslation.Inverse().Get("namespace-id-1", "remoteOne"))
 				require.Equal(t, "localTwo", saTranslation.Inverse().Get("namespace-id-2", "remoteTwo"))
 			},

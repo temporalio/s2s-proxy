@@ -34,11 +34,6 @@ const (
 	HTTP HealthCheckProtocol = "http"
 )
 
-// LegacyWildcardNamespaceID is the empty namespaceId used by older configs that predate
-// per-namespace search attribute translation. When it is the sole mapping it is applied to
-// every namespace, preserving the behaviour those configs shipped with.
-const LegacyWildcardNamespaceID = ""
-
 type (
 	ConfigProvider interface {
 		GetS2SProxyConfig() S2SProxyConfig
@@ -250,16 +245,15 @@ func (s *SATranslationConfig) IsEnabled() bool {
 
 // Validate reports the first reason the configured namespace mappings cannot be applied per
 // namespace: search attributes are translated by namespaceId, so every mapping needs an id that
-// is present and unique. A single mapping is allowed to omit the namespaceId, in which case it is
-// applied to every namespace, see LegacyWildcardNamespaceID.
+// is present and unique.
 func (s *SATranslationConfig) Validate() error {
 	namesByNamespaceId := make(map[string]string, len(s.NamespaceMappings))
 	seenNames := make(map[string]struct{}, len(s.NamespaceMappings))
 	for _, m := range s.NamespaceMappings {
-		// The missing id is reported before the duplicate id so that a config with several
-		// mappings and no ids gets the actionable message rather than `duplicate namespaceId ""`.
-		if m.NamespaceId == LegacyWildcardNamespaceID && len(s.NamespaceMappings) > 1 {
-			return fmt.Errorf("searchAttributeTranslation: namespaceMappings[name=%q] has an empty namespaceId; namespaceId is required when more than one namespace is configured", m.Name)
+		// Reported before the duplicate check so that a config with several mappings and no ids
+		// gets the actionable message rather than `duplicate namespaceId ""`.
+		if m.NamespaceId == "" {
+			return fmt.Errorf("searchAttributeTranslation: namespaceMappings[name=%q] has no namespaceId; search attributes are translated per namespace so namespaceId is required", m.Name)
 		}
 		if existing, found := namesByNamespaceId[m.NamespaceId]; found {
 			return fmt.Errorf("searchAttributeTranslation: namespaceMappings[name=%q] and namespaceMappings[name=%q] have duplicate namespaceId %q", existing, m.Name, m.NamespaceId)
@@ -358,13 +352,6 @@ func (s SearchAttributeTranslation) FlattenMaps() map[string]map[string]string {
 		raw[ns] = mappings.AsMap()
 	}
 	return raw
-}
-
-// HasLegacyWildcard reports whether the translation was built from a config that omitted the
-// namespaceId, in which case its mappings apply to every namespace. See LegacyWildcardNamespaceID.
-func (s SearchAttributeTranslation) HasLegacyWildcard() bool {
-	_, found := s.inner[LegacyWildcardNamespaceID]
-	return found
 }
 
 // AsLocalToRemoteSATranslation converts the flat list of namespace + local/remote pairs into a map of BiMaps, with local->remote

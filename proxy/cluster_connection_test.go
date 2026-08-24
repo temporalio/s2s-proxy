@@ -396,11 +396,11 @@ func TestMakeServerOptionsMultiNamespaceSATranslation(t *testing.T) {
 			),
 		},
 		{
-			// The shape shipped by configs that predate per-namespace translation.
-			name: "legacy wildcard, empty namespaceId",
+			name: "one namespace",
 			saTranslator: saMappings(config.SANamespaceMapping{
-				Name:     "ns-a",
-				Mappings: []config.SAMapping{{LocalName: "Keyword01", RemoteName: "TestSA"}},
+				Name:        "ns-a",
+				NamespaceId: "11111111-1111-1111-1111-111111111111",
+				Mappings:    []config.SAMapping{{LocalName: "Keyword01", RemoteName: "TestSA"}},
 			}),
 		},
 	} {

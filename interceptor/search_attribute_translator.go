@@ -66,18 +66,9 @@ func (s *saTranslator) TranslateResponse(req, resp any) (bool, error) {
 func newSAMatcherResolver(nsMappings map[string]map[string]string) saMatcherResolver {
 	matchers := createStringMatchers(nsMappings)
 
-	// Legacy configs express a single mapping keyed by an empty namespace id, meaning "apply to
-	// every namespace". Mirrors config.LegacyWildcardNamespaceID.
-	wildcard, hasWildcard := matchers[""]
-
 	return func(nsID string) (stringMatcher, bool) {
-		if match, ok := matchers[nsID]; ok {
-			return match, true
-		}
-		if hasWildcard {
-			return wildcard, true
-		}
-		return nil, false
+		match, ok := matchers[nsID]
+		return match, ok
 	}
 }
 

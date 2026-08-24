@@ -530,51 +530,45 @@ func TestTranslateSearchAttributeRawHistoryUsesPairedRequest(t *testing.T) {
 	})
 }
 
-func TestTranslateSearchAttributeLegacyWildcard(t *testing.T) {
-	// A sole mapping keyed by an empty namespace id means "every namespace". Deployed configs
-	// rely on this, so it must keep behaving exactly as it did before per-namespace support.
+func TestTranslateSearchAttributeEmptyNamespaceIdMatchesNothing(t *testing.T) {
+	// There is no mapping that applies to every namespace: an entry keyed by an empty namespace
+	// id matches only an unresolved namespace, which no well formed replication task produces.
+	// config.SATranslationConfig.Validate rejects such a config before it gets this far; this is
+	// the second line of defence, and it fails if a wildcard fallback is ever reintroduced.
 	tr := newTestSATranslator(t, map[string]map[string]string{"": {testSAName: keywordA}})
 
 	frame := makeMultiNamespaceFrame(testSAName)
 	changed, err := tr.TranslateResponse(nil, frame)
 	require.NoError(t, err)
-	require.True(t, changed)
+	require.False(t, changed)
 
 	tasks := frame.GetMessages().GetReplicationTasks()
 	require.Len(t, tasks, 4)
-
-	nsATask := tasks[0].GetHistoryTaskAttributes()
-	require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, nsATask.GetEvents()))
-	require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, nsATask.GetNewRunEvents()))
-	require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, tasks[1].GetHistoryTaskAttributes().GetEvents()))
-	require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, tasks[3].GetHistoryTaskAttributes().GetEvents()),
-		"the wildcard mapping applies even to namespaces with no entry of their own")
-
-	execInfo := tasks[2].GetSyncWorkflowStateTaskAttributes().GetWorkflowState().GetExecutionInfo()
-	require.Equal(t, []string{keywordA}, mapKeys(execInfo.GetSearchAttributes()))
-	require.Equal(t, []string{testSAName}, mapKeys(execInfo.GetMemo()), "Memo must not be rewritten")
+	for i, task := range tasks {
+		if hta := task.GetHistoryTaskAttributes(); hta != nil {
+			require.Equal(t, []string{testSAName, testSAName}, blobSAKeys(t, hta.GetEvents()),
+				"task %d must be untouched", i)
+			continue
+		}
+		execInfo := task.GetSyncWorkflowStateTaskAttributes().GetWorkflowState().GetExecutionInfo()
+		require.Equal(t, []string{testSAName}, mapKeys(execInfo.GetSearchAttributes()),
+			"task %d must be untouched", i)
+	}
 }
-
 func TestTranslateSearchAttributeUnsupportedFieldTypes(t *testing.T) {
 	// Add- and RemoveSearchAttributesRequest name their fields SearchAttributes too, but hold a
-	// map[string]enums.IndexedValueType and a []string. They must be skipped, not treated as an
-	// error that aborts translation of the message.
+	// map[string]enums.IndexedValueType and a []string, so neither must be treated as an error
+	// that aborts translation of the whole message.
 	//
-	// The two configs reach that outcome down different paths, so both are needed:
-	//   - namespace keyed: neither request type is enclosed by a namespace owner, so the
-	//     namespace resolves to "", no matcher resolves, and the field is skipped before the
-	//     type switch runs. The unsupported-type branch is unreachable in this configuration.
-	//   - legacy wildcard: the wildcard matcher resolves for every namespace, so the type
-	//     switch does run and its unsupported-type branch is what prevents the error. This is
-	//     the configuration deployed proxies use, which is what makes that branch load-bearing.
-	configs := map[string]map[string]map[string]string{
-		"namespace keyed": testSAMappings(),
-		"legacy wildcard": {"": {testSAName: keywordA}},
-	}
-
-	for name, nsMappings := range configs {
-		t.Run(name, func(t *testing.T) {
-			tr := newTestSATranslator(t, nsMappings)
+	// Neither request type is enclosed by a namespace owner, so the namespace resolves to "",
+	// no matcher resolves, and the field is skipped before the type switch runs. That makes
+	// visitSearchAttributes' unsupported-type branch defensive rather than load-bearing: it
+	// only matters if a future message carries an odd SearchAttributes type *inside* a
+	// namespace owner. Skipping is still the right outcome there, which is why it warns and
+	// continues instead of returning visit.Stop.
+	{
+		t.Run("namespace keyed", func(t *testing.T) {
+			tr := newTestSATranslator(t, testSAMappings())
 
 			addReq := &adminservice.AddSearchAttributesRequest{
 				SearchAttributes: map[string]enums.IndexedValueType{
