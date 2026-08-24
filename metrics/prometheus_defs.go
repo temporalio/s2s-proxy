@@ -107,7 +107,6 @@ var (
 	SearchAttrTranslationKind = "search-attribute"
 	HistoryBlobMessageType    = "HistoryEventBlob"
 
-	// Reasons for SearchAttrTranslationSkipped.
 	SkipReasonUnresolvedNamespace = "unresolved_namespace"
 	SkipReasonUnsupportedType     = "unsupported_type"
 )

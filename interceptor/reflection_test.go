@@ -244,3 +244,9 @@ func BenchmarkVisitSearchAttributes(b *testing.B) {
 		})
 	}
 }
+
+// constMatcherResolver applies one matcher to every namespace, for tests that are not
+// exercising per-namespace resolution.
+func constMatcherResolver(match stringMatcher) saMatcherResolver {
+	return func(string) (stringMatcher, bool) { return match, true }
+}
