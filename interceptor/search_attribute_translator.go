@@ -53,17 +53,16 @@ func (s *saTranslator) TranslateRequest(req any) (bool, error) {
 // This relies on NamespaceId surviving TranslateRequest: the namespace name translator rewrites
 // Namespace, never NamespaceId. Adding namespace id translation later would silently break it.
 func (s *saTranslator) TranslateResponse(req, resp any) (bool, error) {
-	var boundNamespaceID string
+	var fallbackNamespaceID string
 	switch r := req.(type) {
 	case *adminservice.GetWorkflowExecutionRawHistoryV2Request:
-		boundNamespaceID = r.NamespaceId
+		fallbackNamespaceID = r.NamespaceId
 	case *adminservice.GetWorkflowExecutionRawHistoryRequest:
-		boundNamespaceID = r.NamespaceId
+		fallbackNamespaceID = r.NamespaceId
 	}
-	return visitSearchAttributes(s.logger, resp, s.resolveResp, boundNamespaceID)
+	return visitSearchAttributes(s.logger, resp, s.resolveResp, fallbackNamespaceID)
 }
 
-// newSAMatcherResolver builds a resolver over per-namespace search attribute mappings.
 func newSAMatcherResolver(nsMappings map[string]map[string]string) saMatcherResolver {
 	matchers := createStringMatchers(nsMappings)
 

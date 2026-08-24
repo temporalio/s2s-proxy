@@ -156,20 +156,12 @@ type stringMatcher func(name string) (string, bool)
 type visitor func(logger log.Logger, obj any, match stringMatcher) (bool, error)
 
 // saMatcherResolver returns the search attribute matcher configured for a namespace id.
-// The second return value is false when that namespace has no mapping, in which case the
-// search attributes at hand must be left untouched.
+// false means the namespace has no mapping and its search attributes must be left untouched.
 type saMatcherResolver func(namespaceID string) (stringMatcher, bool)
 
-// constMatcherResolver adapts a single matcher to saMatcherResolver, for callers that
-// intentionally apply one mapping to every namespace.
-func constMatcherResolver(match stringMatcher) saMatcherResolver {
-	return func(string) (stringMatcher, bool) { return match, true }
-}
-
-// blobVisitor visits the history events deserialized from a data blob.
-// It returns whether anything was matched and any error it encountered.
-// Callers close over whatever matching state they need, since a data blob
-// starts a fresh traversal that cannot see the enclosing message.
+// blobVisitor visits the history events deserialized from a data blob. Callers close over
+// whatever matching state they need, since a data blob starts a fresh traversal that cannot
+// see the enclosing message.
 type blobVisitor func(events []*history.HistoryEvent) (bool, error)
 
 // visitNamespace uses reflection to recursively visit all fields
@@ -244,13 +236,12 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 	return matched, err
 }
 
-// visitSearchAttributes uses reflection to recursively visit all fields
-// in the given object. When it finds search attribute fields, it resolves the namespace
-// that owns them and applies the matcher configured for that namespace, if any.
+// visitSearchAttributes translates the search attributes in obj using the mapping configured
+// for whichever namespace owns them.
 //
-// boundNamespaceID is the namespace to fall back on when the parent chain reaches no
-// namespace owner. See resolveNamespaceID.
-func visitSearchAttributes(logger log.Logger, obj any, resolve saMatcherResolver, boundNamespaceID string) (bool, error) {
+// fallbackNamespaceID is used when the parent chain reaches no namespace owner. See
+// resolveNamespaceID.
+func visitSearchAttributes(logger log.Logger, obj any, resolve saMatcherResolver, fallbackNamespaceID string) (bool, error) {
 	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
@@ -269,7 +260,7 @@ func visitSearchAttributes(logger log.Logger, obj any, resolve saMatcherResolver
 			// events inside the blob are visited in a fresh traversal that cannot see the
 			// enclosing namespace owner. Descend even when the namespace is unresolved, since
 			// visitDataBlobs also repairs invalid UTF-8 independently of any translation.
-			nsID := resolveNamespaceID(vwp, boundNamespaceID)
+			nsID := resolveNamespaceID(vwp, fallbackNamespaceID)
 			changed, err := visitDataBlobs(logger, vwp, func(events []*history.HistoryEvent) (bool, error) {
 				return visitSearchAttributes(logger, events, resolve, nsID)
 			})
@@ -278,12 +269,10 @@ func visitSearchAttributes(logger log.Logger, obj any, resolve saMatcherResolver
 				return visit.Stop, err
 			}
 		} else if searchAttributeFieldNames[fieldType.Name] {
-			nsID := resolveNamespaceID(vwp, boundNamespaceID)
+			nsID := resolveNamespaceID(vwp, fallbackNamespaceID)
 			match, ok := resolve(nsID)
 			if !ok {
 				logSkippedSearchAttributes(logger, obj, nsID)
-
-				// Leave these search attributes untouched.
 				return visit.Continue, nil
 			}
 
@@ -320,8 +309,6 @@ func visitSearchAttributes(logger log.Logger, obj any, resolve saMatcherResolver
 	return matched, err
 }
 
-// logSkippedSearchAttributes reports search attributes left untranslated because no matcher
-// resolved for their namespace.
 func logSkippedSearchAttributes(logger log.Logger, obj any, nsID string) {
 	msgType := metrics.SanitizedTypeName(obj)
 	if nsID == "" {
