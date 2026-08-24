@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"maps"
 	"os"
 
@@ -32,6 +33,11 @@ type HealthCheckProtocol string
 const (
 	HTTP HealthCheckProtocol = "http"
 )
+
+// LegacyWildcardNamespaceID is the empty namespaceId used by older configs that predate
+// per-namespace search attribute translation. When it is the sole mapping it is applied to
+// every namespace, preserving the behaviour those configs shipped with.
+const LegacyWildcardNamespaceID = ""
 
 type (
 	ConfigProvider interface {
@@ -242,6 +248,36 @@ func (s *SATranslationConfig) IsEnabled() bool {
 	return len(s.NamespaceMappings) > 0
 }
 
+// Validate reports the first reason the configured namespace mappings cannot be applied per
+// namespace: search attributes are translated by namespaceId, so every mapping needs an id that
+// is present and unique. A single mapping is allowed to omit the namespaceId, in which case it is
+// applied to every namespace, see LegacyWildcardNamespaceID.
+func (s *SATranslationConfig) Validate() error {
+	namesByNamespaceId := make(map[string]string, len(s.NamespaceMappings))
+	seenNames := make(map[string]struct{}, len(s.NamespaceMappings))
+	for _, m := range s.NamespaceMappings {
+		// The missing id is reported before the duplicate id so that a config with several
+		// mappings and no ids gets the actionable message rather than `duplicate namespaceId ""`.
+		if m.NamespaceId == LegacyWildcardNamespaceID && len(s.NamespaceMappings) > 1 {
+			return fmt.Errorf("searchAttributeTranslation: namespaceMappings[name=%q] has an empty namespaceId; namespaceId is required when more than one namespace is configured", m.Name)
+		}
+		if existing, found := namesByNamespaceId[m.NamespaceId]; found {
+			return fmt.Errorf("searchAttributeTranslation: namespaceMappings[name=%q] and namespaceMappings[name=%q] have duplicate namespaceId %q", existing, m.Name, m.NamespaceId)
+		}
+		namesByNamespaceId[m.NamespaceId] = m.Name
+
+		// The name is informational, so only reject duplicates of a name that was actually set.
+		if m.Name == "" {
+			continue
+		}
+		if _, found := seenNames[m.Name]; found {
+			return fmt.Errorf("searchAttributeTranslation: namespaceMappings has duplicate name %q", m.Name)
+		}
+		seenNames[m.Name] = struct{}{}
+	}
+	return nil
+}
+
 // ToMaps returns request and response mappings.
 func (s *SATranslationConfig) ToMaps(inBound bool) (map[string]map[string]string, map[string]map[string]string) {
 	reqMap := make(map[string]map[string]string)
@@ -324,18 +360,28 @@ func (s SearchAttributeTranslation) FlattenMaps() map[string]map[string]string {
 	return raw
 }
 
+// HasLegacyWildcard reports whether the translation was built from a config that omitted the
+// namespaceId, in which case its mappings apply to every namespace. See LegacyWildcardNamespaceID.
+func (s SearchAttributeTranslation) HasLegacyWildcard() bool {
+	_, found := s.inner[LegacyWildcardNamespaceID]
+	return found
+}
+
 // AsLocalToRemoteSATranslation converts the flat list of namespace + local/remote pairs into a map of BiMaps, with local->remote
 // as the direction returned. The remote->local mapping can be accessed with saTranslator[namespaceId].Inverse()
 func (s *SATranslationConfig) AsLocalToRemoteSATranslation() (SearchAttributeTranslation, error) {
 	if s.cachedBiMap.inner != nil {
 		return s.cachedBiMap, nil
 	}
+	// This is the only path that builds the translation, so it is where the config is checked.
+	if err := s.Validate(); err != nil {
+		return SearchAttributeTranslation{}, err
+	}
 	saTranslation := SearchAttributeTranslation{
 		inner: make(map[string]collect.StaticBiMap[string, string], len(s.NamespaceMappings)),
 	}
 	for _, mapping := range s.NamespaceMappings {
-		var err error
-		saTranslation.inner[mapping.NamespaceId], err = collect.NewStaticBiMap(func(yield func(string, string) bool) {
+		nsBiMap, err := collect.NewStaticBiMap(func(yield func(string, string) bool) {
 			for _, attrPair := range mapping.Mappings {
 				if !yield(attrPair.LocalName, attrPair.RemoteName) {
 					return
@@ -343,8 +389,11 @@ func (s *SATranslationConfig) AsLocalToRemoteSATranslation() (SearchAttributeTra
 			}
 		}, len(mapping.Mappings))
 		if err != nil {
-			return SearchAttributeTranslation{}, err
+			return SearchAttributeTranslation{}, fmt.Errorf(
+				"searchAttributeTranslation: namespaceMappings[name=%q namespaceId=%q]: %w",
+				mapping.Name, mapping.NamespaceId, err)
 		}
+		saTranslation.inner[mapping.NamespaceId] = nsBiMap
 	}
 	s.cachedBiMap = saTranslation
 	return saTranslation, nil

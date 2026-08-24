@@ -75,10 +75,21 @@ var (
 	TranslationErrors  = DefaultCounterVec("translation_error", "Count of message translation errors", translationLabels...)
 	TranslationLatency = DefaultHistogramVec("translation_latency", "Latency of message translations", translationLabels...)
 
+	// SearchAttrTranslationSkipped counts search attribute sites the translator deliberately
+	// left alone. It is not emitted for the expected steady state where a namespace resolves
+	// but has no configured mapping, which is true of every namespace not being migrated.
+	// The namespace id is logged rather than labelled, since its cardinality is unbounded.
+	SearchAttrTranslationSkipped = DefaultCounterVec("search_attribute_translation_skipped",
+		"Count of search attribute sites left untranslated", "reason", "message_type")
+
 	UTF8RepairTranslationKind = "utf8repair"
 	NamespaceTranslationKind  = "namespace"
 	SearchAttrTranslationKind = "search-attribute"
 	HistoryBlobMessageType    = "HistoryEventBlob"
+
+	// Reasons for SearchAttrTranslationSkipped.
+	SkipReasonUnresolvedNamespace = "unresolved_namespace"
+	SkipReasonUnsupportedType     = "unsupported_type"
 )
 
 // GetGRPCClientMetrics helps the GRPC client metrics objects feel more like the server one
@@ -139,4 +150,5 @@ func init() {
 	prometheus.MustRegister(TranslationCount)
 	prometheus.MustRegister(TranslationErrors)
 	prometheus.MustRegister(TranslationLatency)
+	prometheus.MustRegister(SearchAttrTranslationSkipped)
 }

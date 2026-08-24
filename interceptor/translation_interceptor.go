@@ -61,7 +61,7 @@ func (i *TranslationInterceptor) Intercept(
 	for _, tr := range i.translators {
 		if tr.MatchMethod(info.FullMethod) {
 			start := time.Now()
-			changed, trErr := tr.TranslateResponse(resp)
+			changed, trErr := tr.TranslateResponse(req, resp)
 			logTranslateResult(tr, i.logger, changed, trErr, methodName+"Response", resp, time.Since(start))
 		}
 	}
@@ -106,7 +106,8 @@ func (w *streamTranslator) RecvMsg(m any) error {
 func (w *streamTranslator) SendMsg(m any) error {
 	for _, tr := range w.translators {
 		start := time.Now()
-		changed, trErr := tr.TranslateResponse(m)
+		// Streams have no request to pair with this message.
+		changed, trErr := tr.TranslateResponse(nil, m)
 		logTranslateResult(tr, w.logger, changed, trErr, "SendMsg", m, time.Since(start))
 	}
 	return w.ServerStream.SendMsg(m)

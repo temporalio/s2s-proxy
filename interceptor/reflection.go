@@ -10,6 +10,8 @@ import (
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	persistencespb "go.temporal.io/server/api/persistence/v1"
+	replicationspb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"go.temporal.io/server/common/persistence/serialization"
@@ -128,6 +130,22 @@ var (
 	}
 )
 
+const namespaceIDFieldName = "NamespaceId"
+
+// namespaceIDOwners maps struct types that OWN a namespace to their NamespaceId field index.
+// Deliberately an allowlist, not a name match: other types have a NamespaceId naming a
+// DIFFERENT namespace -- notably history.StartChildWorkflowExecutionInitiatedEventAttributes,
+// whose NamespaceId is the *child's* and which also carries SearchAttributes. Matching on the
+// field name would translate a parent's history event with the child's mapping.
+//
+// Built once at init and never mutated afterwards, so reads need no lock.
+var namespaceIDOwners = mustBuildNamespaceIDOwners(
+	reflect.TypeFor[replicationspb.HistoryTaskAttributes](),
+	reflect.TypeFor[replicationspb.BackfillHistoryTaskAttributes](),
+	reflect.TypeFor[replicationspb.SyncVersionedTransitionTaskAttributes](),
+	reflect.TypeFor[persistencespb.WorkflowExecutionInfo](),
+)
+
 // stringMatcher returns 2 values:
 //  1. new name. If there is no change, new name equals to input name
 //  2. whether or not the input name matches the defined rule(s).
@@ -136,6 +154,23 @@ type stringMatcher func(name string) (string, bool)
 // visitor visits each field in obj matching the matcher.
 // It returns whether anything was matched and any error it encountered.
 type visitor func(logger log.Logger, obj any, match stringMatcher) (bool, error)
+
+// saMatcherResolver returns the search attribute matcher configured for a namespace id.
+// The second return value is false when that namespace has no mapping, in which case the
+// search attributes at hand must be left untouched.
+type saMatcherResolver func(namespaceID string) (stringMatcher, bool)
+
+// constMatcherResolver adapts a single matcher to saMatcherResolver, for callers that
+// intentionally apply one mapping to every namespace.
+func constMatcherResolver(match stringMatcher) saMatcherResolver {
+	return func(string) (stringMatcher, bool) { return match, true }
+}
+
+// blobVisitor visits the history events deserialized from a data blob.
+// It returns whether anything was matched and any error it encountered.
+// Callers close over whatever matching state they need, since a data blob
+// starts a fresh traversal that cannot see the enclosing message.
+type blobVisitor func(events []*history.HistoryEvent) (bool, error)
 
 // visitNamespace uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
@@ -180,7 +215,9 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 			}
 			return visit.Skip, nil
 		} else if dataBlobFieldNames[fieldType.Name] {
-			changed, err := visitDataBlobs(logger, vwp, match, visitNamespace)
+			changed, err := visitDataBlobs(logger, vwp, func(events []*history.HistoryEvent) (bool, error) {
+				return visitNamespace(logger, events, match)
+			})
 			matched = matched || changed
 			if err != nil {
 				return visit.Stop, err
@@ -208,9 +245,12 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 }
 
 // visitSearchAttributes uses reflection to recursively visit all fields
-// in the given object. When it finds namespace string fields, it invokes
-// the provided match function.
-func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (bool, error) {
+// in the given object. When it finds search attribute fields, it resolves the namespace
+// that owns them and applies the matcher configured for that namespace, if any.
+//
+// boundNamespaceID is the namespace to fall back on when the parent chain reaches no
+// namespace owner. See resolveNamespaceID.
+func visitSearchAttributes(logger log.Logger, obj any, resolve saMatcherResolver, boundNamespaceID string) (bool, error) {
 	var matched bool
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
@@ -225,12 +265,28 @@ func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (boo
 			return action, nil
 		}
 		if dataBlobFieldNames[fieldType.Name] {
-			changed, err := visitDataBlobs(logger, vwp, match, visitSearchAttributes)
+			// Resolve once, here at the boundary: the parent chain is still intact, whereas the
+			// events inside the blob are visited in a fresh traversal that cannot see the
+			// enclosing namespace owner. Descend even when the namespace is unresolved, since
+			// visitDataBlobs also repairs invalid UTF-8 independently of any translation.
+			nsID := resolveNamespaceID(vwp, boundNamespaceID)
+			changed, err := visitDataBlobs(logger, vwp, func(events []*history.HistoryEvent) (bool, error) {
+				return visitSearchAttributes(logger, events, resolve, nsID)
+			})
 			matched = matched || changed
 			if err != nil {
 				return visit.Stop, err
 			}
 		} else if searchAttributeFieldNames[fieldType.Name] {
+			nsID := resolveNamespaceID(vwp, boundNamespaceID)
+			match, ok := resolve(nsID)
+			if !ok {
+				logSkippedSearchAttributes(logger, obj, nsID)
+
+				// Leave these search attributes untouched.
+				return visit.Continue, nil
+			}
+
 			// This could be *common.SearchAttributes, or it could be map[string]*common.Payload (indexed fields)
 			var changed bool
 			switch attrs := vwp.Interface().(type) {
@@ -244,7 +300,14 @@ func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (boo
 					}
 				}
 			default:
-				return visit.Stop, fmt.Errorf("unhandled search attribute type: %T", attrs)
+				// Reachable: Add- and RemoveSearchAttributesRequest name their fields
+				// SearchAttributes too, but they hold a map[string]enums.IndexedValueType and a
+				// []string. Skip them instead of aborting translation of the whole message.
+				logger.Warn("unhandled search attribute type",
+					tag.NewStringTag("type", fmt.Sprintf("%T", attrs)))
+				metrics.SearchAttrTranslationSkipped.WithLabelValues(
+					metrics.SkipReasonUnsupportedType, metrics.SanitizedTypeName(obj)).Inc()
+				return visit.Continue, nil
 			}
 			matched = matched || changed
 
@@ -255,6 +318,26 @@ func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (boo
 		return visit.Continue, nil
 	})
 	return matched, err
+}
+
+// logSkippedSearchAttributes reports search attributes left untranslated because no matcher
+// resolved for their namespace.
+func logSkippedSearchAttributes(logger log.Logger, obj any, nsID string) {
+	msgType := metrics.SanitizedTypeName(obj)
+	if nsID == "" {
+		// No enclosing namespace owner and nothing seeded a fallback. That is a gap in
+		// namespaceIDOwners or an unpaired response, not a configuration decision.
+		logger.Warn("could not resolve namespace for search attributes",
+			tag.NewStringTag("type", msgType))
+		metrics.SearchAttrTranslationSkipped.WithLabelValues(
+			metrics.SkipReasonUnresolvedNamespace, msgType).Inc()
+		return
+	}
+
+	// A namespace with no configured mapping is the expected steady state for every namespace
+	// that is not being migrated, so it is not counted.
+	logger.Debug("no search attribute mapping configured for namespace",
+		tag.NewStringTag("namespace-id", nsID), tag.NewStringTag("type", msgType))
 }
 
 func translateIndexedFields(fields map[string]*common.Payload, match stringMatcher) (map[string]*common.Payload, bool) {
@@ -287,10 +370,56 @@ func getParentFieldType(vwp visit.ValueWithParent) (result reflect.StructField, 
 	return fieldType, action
 }
 
-func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMatcher, visitor visitor) (bool, error) {
+// mustBuildNamespaceIDOwners resolves each owner's NamespaceId to a field index up front, so
+// that resolveNamespaceID never calls reflect.Type.FieldByName on the hot path: that linear
+// scans the 20+ fields of a generated proto struct on every hop. The owner set is fixed at
+// compile time, so an absent or retyped field is a programmer error (or an upstream proto
+// rename) and panics here rather than silently disabling translation.
+func mustBuildNamespaceIDOwners(ownerTypes ...reflect.Type) map[reflect.Type]int {
+	owners := make(map[reflect.Type]int, len(ownerTypes))
+	for _, ownerType := range ownerTypes {
+		field, ok := ownerType.FieldByName(namespaceIDFieldName)
+		if !ok {
+			panic(fmt.Sprintf("namespace owner %v has no %s field", ownerType, namespaceIDFieldName))
+		}
+		if len(field.Index) != 1 || field.Type.Kind() != reflect.String {
+			panic(fmt.Sprintf("namespace owner %v has a %s field that is not a direct string: %v",
+				ownerType, namespaceIDFieldName, field.Type))
+		}
+		owners[ownerType] = field.Index[0]
+	}
+	return owners
+}
+
+// resolveNamespaceID walks UP from vwp to the nearest enclosing namespace owner and returns its
+// NamespaceId. Walking only upward keeps the result independent of traversal order, which is
+// unspecified: visit.ValuesUnsafe pops the front of its worklist but swaps in the last element,
+// so it is neither breadth- nor depth-first. Tracking the most recent NamespaceId seen while
+// descending would be non-deterministic.
+//
+// fallback carries context across a boundary the parent chain cannot cross: a data blob, whose
+// events are visited in a fresh traversal, or a unary response whose paired request holds the
+// only namespace id.
+func resolveNamespaceID(vwp visit.ValueWithParent, fallback string) string {
+	for p := vwp.Parent; p != nil; p = p.Parent {
+		if p.Kind() != reflect.Struct {
+			continue
+		}
+		fieldIdx, ok := namespaceIDOwners[p.Type()]
+		if !ok {
+			continue
+		}
+		if nsID := p.Field(fieldIdx).String(); nsID != "" {
+			return nsID
+		}
+	}
+	return fallback
+}
+
+func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, bv blobVisitor) (bool, error) {
 	switch evt := vwp.Interface().(type) {
 	case []*common.DataBlob:
-		newEvts, matched, changed, err := translateDataBlobs(logger, match, visitor, evt...)
+		newEvts, matched, changed, err := translateDataBlobs(logger, bv, evt...)
 		if err != nil {
 			return matched, err
 		}
@@ -301,7 +430,7 @@ func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMa
 		}
 		return matched, nil
 	case *common.DataBlob:
-		newEvt, matched, changed, err := translateOneDataBlob(logger, match, visitor, evt)
+		newEvt, matched, changed, err := translateOneDataBlob(logger, bv, evt)
 		if err != nil {
 			return matched, err
 		}
@@ -316,9 +445,9 @@ func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMa
 	}
 }
 
-func translateDataBlobs(logger log.Logger, match stringMatcher, visitor visitor, blobs ...*common.DataBlob) (result []*common.DataBlob, anyMatched, anyChanged bool, retErr error) {
+func translateDataBlobs(logger log.Logger, bv blobVisitor, blobs ...*common.DataBlob) (result []*common.DataBlob, anyMatched, anyChanged bool, retErr error) {
 	for i, blob := range blobs {
-		newBlob, matched, changed, err := translateOneDataBlob(logger, match, visitor, blob)
+		newBlob, matched, changed, err := translateOneDataBlob(logger, bv, blob)
 		anyChanged = anyChanged || changed
 		anyMatched = anyMatched || matched
 		if err != nil {
@@ -329,7 +458,7 @@ func translateDataBlobs(logger log.Logger, match stringMatcher, visitor visitor,
 	return blobs, anyMatched, anyChanged, nil
 }
 
-func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visitor, blob *common.DataBlob) (result *common.DataBlob, matched, changed bool, retErr error) {
+func translateOneDataBlob(logger log.Logger, bv blobVisitor, blob *common.DataBlob) (result *common.DataBlob, matched, changed bool, retErr error) {
 	if blob == nil || len(blob.Data) == 0 {
 		return blob, matched, changed, nil
 	}
@@ -356,7 +485,7 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 		}
 	}
 
-	m, err := visitor(logger, events, match)
+	m, err := bv(events)
 	matched = matched || m
 	if err != nil {
 		return blob, matched, changed, err

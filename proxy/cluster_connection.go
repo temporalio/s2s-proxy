@@ -388,8 +388,11 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 
 	if c.saTranslations.LenNamespaces() > 0 {
 		c.loggers.Get(LogClusterConnection).Info("search attribute translation enabled", tag.NewAnyTag("mappings", c.saTranslations))
-		if c.saTranslations.LenNamespaces() > 1 {
-			panic("multiple namespace search attribute mappings are not supported")
+		if c.saTranslations.HasLegacyWildcard() {
+			// Validated as the sole mapping (see config.SATranslationConfig.Validate), so it is applied
+			// to every namespace. Set namespaceId to translate more than one namespace concurrently.
+			c.loggers.Get(LogClusterConnection).Warn("DEPRECATED: searchAttributeTranslation has a " +
+				"namespaceMappings entry with an empty namespaceId; its mappings are applied to every namespace")
 		}
 		translators = append(translators, interceptor.NewSearchAttributeTranslator(c.loggers.Get(LogInterceptor),
 			c.saTranslations.FlattenMaps(), c.saTranslations.Inverse().FlattenMaps()))
