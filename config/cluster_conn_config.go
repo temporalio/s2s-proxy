@@ -1,6 +1,8 @@
 package config
 
 import (
+	"github.com/temporalio/temporal-proxy/pkg/validation"
+
 	"github.com/temporalio/s2s-proxy/collect"
 	"github.com/temporalio/s2s-proxy/encryption"
 )
@@ -21,20 +23,26 @@ type (
 		LocalClusterHealthCheck      HealthCheckConfig   `yaml:"localClusterHealthCheck"`
 		ShardCountConfig             ShardCountConfig    `yaml:"shardCount"`
 		MemberlistConfig             *MemberlistConfig   `yaml:"memberlist"`
+		EncryptionConfig             EncryptionConfig    `yaml:"encryption"`
 	}
+
 	StringTranslator struct {
 		Mappings    []StringMapping `yaml:"mappings"`
 		cachedBiMap collect.StaticBiMap[string, string]
 	}
+
 	StringMapping struct {
 		Local  string `yaml:"local"`
 		Remote string `yaml:"remote"`
 	}
+
 	IntMapping struct {
 		Local  int64 `yaml:"local"`
 		Remote int64 `yaml:"remote"`
 	}
-	ConnectionType    string
+
+	ConnectionType string
+
 	ClusterDefinition struct {
 		ConnectionType ConnectionType `yaml:"connectionType"`
 		TcpClient      TCPTLSInfo     `yaml:"tcpClient"`
@@ -77,4 +85,13 @@ func (config *StringTranslator) AsLocalToRemoteBiMap() (collect.StaticBiMap[stri
 	}
 	config.cachedBiMap = mapping
 	return config.cachedBiMap, nil
+}
+
+// Validate reports problems in this connection's config. Only the encryption
+// block is covered so far; the checks NewProxy makes inline could move here.
+func (c *ClusterConnConfig) Validate() error {
+	return validation.Validate(
+		"",
+		validation.Nested("encryption", &c.EncryptionConfig),
+	)
 }

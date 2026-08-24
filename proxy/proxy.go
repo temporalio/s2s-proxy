@@ -39,6 +39,10 @@ type (
 
 func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider) (*Proxy, error) {
 	s2sConfig := configProvider.GetS2SProxyConfig()
+	if err := s2sConfig.Validate(); err != nil {
+		return nil, fmt.Errorf("cannot create proxy: invalid config: %w", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	proxy := &Proxy{
 		lifetime:           ctx,
