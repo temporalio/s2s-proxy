@@ -100,12 +100,14 @@ type (
 		// managedClient is updated by the multi-mux-manager that also owns the server. Needs some more cleanup.
 		managedClient closableClientConn
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
-		nsTranslations   collect.StaticBiMap[string, string]
-		saTranslations   config.SearchAttributeTranslation
-		overrides        AdminServiceOverrides
-		aclPolicy        *config.ACLPolicy
-		shardCountConfig config.ShardCountConfig
-		loggers          logging.LoggerProvider
+		nsTranslations collect.StaticBiMap[string, string]
+		saTranslations config.SearchAttributeTranslation
+		overrides      AdminServiceOverrides
+		// Inbound only. See interceptor.NewForceReplicationEndpointTranslator.
+		forceReplicationEndpointOverride bool
+		aclPolicy                        *config.ACLPolicy
+		shardCountConfig                 config.ShardCountConfig
+		loggers                          logging.LoggerProvider
 
 		shardManager      ShardManager
 		lcmParameters     LCMParameters
@@ -193,6 +195,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 			ReplicationEndpoint:          connConfig.ReplicationEndpoint,
 			CustomSearchAttributeAliases: connConfig.CustomSearchAttributeAliases,
 		},
+		forceReplicationEndpointOverride: connConfig.ForceReplicationEndpointOverride,
 		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
 		aclPolicy:         connConfig.ACLPolicy,
 		shardCountConfig:  connConfig.ShardCountConfig,
@@ -393,6 +396,13 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 		}
 		translators = append(translators, interceptor.NewSearchAttributeTranslator(c.loggers.Get(LogInterceptor),
 			c.saTranslations.FlattenMaps(), c.saTranslations.Inverse().FlattenMaps()))
+	}
+
+	if c.forceReplicationEndpointOverride && c.overrides.ReplicationEndpoint != "" {
+		c.loggers.Get(LogClusterConnection).Info("force replication endpoint override enabled",
+			tag.Address(c.overrides.ReplicationEndpoint))
+		translators = append(translators, interceptor.NewForceReplicationEndpointTranslator(
+			c.loggers.Get(LogInterceptor), c.overrides.ReplicationEndpoint))
 	}
 
 	if len(translators) > 0 {

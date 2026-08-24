@@ -97,6 +97,7 @@ func TestBasic(t *testing.T) {
 
 	cc := proxyConfig.ClusterConnections[0]
 	require.Equal(t, "127.0.0.1:9002", cc.ReplicationEndpoint)
+	require.True(t, cc.ForceReplicationEndpointOverride)
 	require.Equal(t, IntMapping{Local: 100, Remote: 1000000}, cc.FVITranslation)
 	require.NotNil(t, cc.ACLPolicy)
 	require.Contains(t, cc.ACLPolicy.AllowedMethods.AdminService, "AddOrUpdateRemoteCluster")
@@ -277,6 +278,8 @@ func TestDefaultChart(t *testing.T) {
 	require.Equal(t, ConnectionType("mux-client"), cc.Remote.ConnectionType)
 	require.Equal(t, "remote_proxy_service:8233", cc.Remote.MuxAddressInfo.ConnectionString)
 	require.Equal(t, "my-s2s-proxy.svc.cluster.local:9233", cc.ReplicationEndpoint)
+	// Opt-in: present but commented out in the chart default.
+	require.False(t, cc.ForceReplicationEndpointOverride)
 	require.False(t, cc.Remote.MuxAddressInfo.TLSConfig.IsEnabled())
 }
 
