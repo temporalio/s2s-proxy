@@ -78,7 +78,10 @@ var (
 	UTF8RepairTranslationKind = "utf8repair"
 	NamespaceTranslationKind  = "namespace"
 	SearchAttrTranslationKind = "search-attribute"
-	HistoryBlobMessageType    = "HistoryEventBlob"
+	// ForceReplicationEndpointTranslationKind labels the rewrite of the force replication
+	// workflow's TargetClusterEndpoint argument.
+	ForceReplicationEndpointTranslationKind = "force-replication-endpoint"
+	HistoryBlobMessageType                  = "HistoryEventBlob"
 )
 
 // GetGRPCClientMetrics helps the GRPC client metrics objects feel more like the server one

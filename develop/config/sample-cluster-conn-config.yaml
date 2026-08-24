@@ -49,6 +49,9 @@ clusterConnections:
       local: 100
       remote: 1000000
     replicationEndpoint: "127.0.0.1:9002"
+    # Rewrite force replication's verify target for local servers older than v1.22.2.
+    # Requires replicationEndpoint to be set.
+    forceReplicationEndpointOverride: true
     namespaceTranslation:
       mappings:
         - local: "localName"

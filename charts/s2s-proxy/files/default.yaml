@@ -35,6 +35,11 @@ clusterConnections:
           caServerName: "" # required unless skipCAVerification: true; must match the remote cert's SAN/CN
     # This should be the routable address
     replicationEndpoint: "my-s2s-proxy.svc.cluster.local:9233"
+    # If your local Temporal server is older than v1.22.2, uncomment this. Those versions dial the
+    # force replication workflow's TargetClusterEndpoint argument directly instead of resolving the
+    # target cluster by name, and the address the cloud sends is not routable from your network.
+    # With this on, the proxy rewrites that argument to replicationEndpoint above.
+    # forceReplicationEndpointOverride: true
     # This is what the remote cluster is allowed to access on your local cluster
     aclPolicy:
       allowedMethods:
