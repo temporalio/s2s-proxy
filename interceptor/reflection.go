@@ -296,10 +296,10 @@ func getParentFieldType(vwp visit.ValueWithParent) (result reflect.StructField, 
 	return fieldType, action
 }
 
-func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, bv blobVisitor) (bool, error) {
+func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, visitEvents blobVisitor) (bool, error) {
 	switch evt := vwp.Interface().(type) {
 	case []*common.DataBlob:
-		newEvts, matched, changed, err := translateDataBlobs(logger, bv, evt...)
+		newEvts, matched, changed, err := translateDataBlobs(logger, visitEvents, evt...)
 		if err != nil {
 			return matched, err
 		}
@@ -310,7 +310,7 @@ func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, bv blobVisitor
 		}
 		return matched, nil
 	case *common.DataBlob:
-		newEvt, matched, changed, err := translateOneDataBlob(logger, bv, evt)
+		newEvt, matched, changed, err := translateOneDataBlob(logger, visitEvents, evt)
 		if err != nil {
 			return matched, err
 		}
@@ -325,9 +325,9 @@ func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, bv blobVisitor
 	}
 }
 
-func translateDataBlobs(logger log.Logger, bv blobVisitor, blobs ...*common.DataBlob) (result []*common.DataBlob, anyMatched, anyChanged bool, retErr error) {
+func translateDataBlobs(logger log.Logger, visitEvents blobVisitor, blobs ...*common.DataBlob) (result []*common.DataBlob, anyMatched, anyChanged bool, retErr error) {
 	for i, blob := range blobs {
-		newBlob, matched, changed, err := translateOneDataBlob(logger, bv, blob)
+		newBlob, matched, changed, err := translateOneDataBlob(logger, visitEvents, blob)
 		anyChanged = anyChanged || changed
 		anyMatched = anyMatched || matched
 		if err != nil {
@@ -338,7 +338,7 @@ func translateDataBlobs(logger log.Logger, bv blobVisitor, blobs ...*common.Data
 	return blobs, anyMatched, anyChanged, nil
 }
 
-func translateOneDataBlob(logger log.Logger, bv blobVisitor, blob *common.DataBlob) (result *common.DataBlob, matched, changed bool, retErr error) {
+func translateOneDataBlob(logger log.Logger, visitEvents blobVisitor, blob *common.DataBlob) (result *common.DataBlob, matched, changed bool, retErr error) {
 	if blob == nil || len(blob.Data) == 0 {
 		return blob, matched, changed, nil
 	}
@@ -365,7 +365,7 @@ func translateOneDataBlob(logger log.Logger, bv blobVisitor, blob *common.DataBl
 		}
 	}
 
-	m, err := bv(events)
+	m, err := visitEvents(events)
 	matched = matched || m
 	if err != nil {
 		return blob, matched, changed, err
