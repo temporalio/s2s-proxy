@@ -116,7 +116,18 @@ func DefaultHistogramVec(name string, help string, labels ...string) *prometheus
 		Name:      SanitizeForPrometheus(name),
 		Help:      help,
 		// TODO: Native histograms aren't supported in our Grafana just yet
-		//NativeHistogramBucketFactor: 1.1,
+		// NativeHistogramBucketFactor: 1.1,
+	}, labels)
+}
+
+// BucketedHistogramVec provides a HistogramVec similar to [DefaultHistogramVec] but with the custom bucket sizes.
+func BucketedHistogramVec(name string, help string, buckets []float64, labels ...string) *prometheus.HistogramVec {
+	return prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "temporal",
+		Subsystem: "s2s_proxy",
+		Name:      SanitizeForPrometheus(name),
+		Buckets:   buckets,
+		Help:      help,
 	}, labels)
 }
 

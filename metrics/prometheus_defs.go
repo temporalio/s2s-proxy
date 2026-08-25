@@ -8,7 +8,7 @@ import (
 
 var (
 	// This file is structured by package first, then by file.
-	//So /proxy/health_check.go, /proxy/proxy.go, and then /transport/mux_connection_manager.go
+	// So /proxy/health_check.go, /proxy/proxy.go, and then /transport/mux_connection_manager.go
 
 	// /proxy/adminservice.go
 
@@ -67,6 +67,16 @@ var (
 	// Connection provider
 	ReceiverError    = DefaultCounterVec("receiver_error", "Number of errors observed from connection receiver", append(muxManagerLabels, "error")...)
 	EstablisherError = DefaultCounterVec("establisher_error", "Number of errors observed from connection establisher", muxManagerLabels...)
+
+	// Encryption
+	EncryptionKEKOps         = DefaultCounterVec("enc_kek_ops_total", "Total KEK operations (DEK wrap/unwrap), labeled by provider, operation, and result", "provider", "operation", "result")
+	EncryptionKEKOpDur       = DefaultHistogramVec("enc_kek_op_duration_secs", "Duration of KEK operations in seconds, labeled by provider and operation", "provider", "operation")
+	EncryptionDEKCacheHits   = DefaultCounterVec("enc_dek_cache_hits_total", "Total DEK cache hits").WithLabelValues()
+	EncryptionDEKCacheMisses = DefaultCounterVec("enc_dek_cache_misses_total", "Total DEK cache misses").WithLabelValues()
+	EncryptionDEKCacheSize   = DefaultGauge("enc_dek_cache_size", "Current number of entries in the DEK cache")
+	EncryptionDEKOps         = DefaultCounterVec("enc_dek_ops_total", "Total DEK operations (payload encrypt/decrypt), labeled by operation and result", "operation", "result")
+	EncryptionDEKOpDur       = BucketedHistogramVec("enc_dek_op_duration_secs", "Duration of the AES-256-GCM step alone in seconds, excluding any KEK wrap or unwrap, labeled by operation", prometheus.ExponentialBuckets(0.00001, 4, 7), "operation")
+	EncryptionDEKRotations   = DefaultCounterVec("enc_dek_rotations_total", "Total DEK rotations, labeled by reason", "reason")
 
 	// Translation interceptor
 
@@ -135,6 +145,19 @@ func init() {
 	prometheus.MustRegister(EstablisherError)
 	prometheus.MustRegister(MuxServerDisconnected)
 	prometheus.MustRegister(NumMuxesActive)
+
+	// Encryption
+	prometheus.MustRegister(
+
+		EncryptionKEKOps,
+		EncryptionKEKOpDur,
+		EncryptionDEKCacheHits,
+		EncryptionDEKCacheMisses,
+		EncryptionDEKCacheSize,
+		EncryptionDEKOps,
+		EncryptionDEKOpDur,
+		EncryptionDEKRotations,
+	)
 
 	prometheus.MustRegister(TranslationCount)
 	prometheus.MustRegister(TranslationErrors)
