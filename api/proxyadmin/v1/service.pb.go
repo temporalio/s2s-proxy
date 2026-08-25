@@ -22,12 +22,9 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ConnectionState is coarse for now. More values will be added.
-//
-//	UNSPECIFIED  No state observed. Either nobody set the field, or this API does not describe
-//	             the connection, such as one that is not multiplexed.
-//	CONNECTED    Every session held is connected.
-//	ERROR        Anything else. None connected, some but not all, or members that disagree.
+// UNSPECIFIED  No state observed.
+// CONNECTED    Every session held is connected.
+// ERROR        Anything else. None connected, some but not all, or members that disagree.
 type ConnectionState int32
 
 const (

@@ -1,4 +1,8 @@
 version: v2
+
+# NOTE: clean deletes everything under out: before generating.
+# api/ is generated in full and holds nothing hand-written.
+# Anything added there by another route will be removed on the next run.
 clean: true
 
 plugins:
