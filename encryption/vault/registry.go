@@ -62,11 +62,16 @@ func createRegistry(ctx context.Context, opts registryConfig) (*crypto.KEKRegist
 }
 
 // closeOpened releases every key opened so far, for the paths where no registry
-// is returned to close them later. A close error is dropped: the error on its
-// way out is why we are here, and it is the one worth reporting.
+// is returned to close them later.
 func (b *registryBuilder) closeOpened() {
 	for _, k := range b.opened {
-		_ = k.Close()
+		if err := k.Close(); err != nil {
+			b.log.Error(
+				"Error closing crypto key",
+				tag.String("id", k.ID()),
+				tag.Error(err),
+			)
+		}
 	}
 }
 
