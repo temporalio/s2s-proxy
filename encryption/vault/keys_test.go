@@ -1,4 +1,4 @@
-package encryption
+package vault
 
 import (
 	"context"
@@ -10,9 +10,11 @@ import (
 )
 
 type (
-	// fakeOpMeter records the KEK operations reported to it, in order.
+	// fakeOpMeter records the KEK operations and vault events reported to it, in
+	// order.
 	fakeOpMeter struct {
-		ops []recordedOp
+		ops    []recordedOp
+		events []crypto.Event
 	}
 
 	recordedOp struct {
@@ -179,6 +181,10 @@ func TestSafeKeyString(t *testing.T) {
 
 func (m *fakeOpMeter) Op(provider, operation, result string, seconds float64) {
 	m.ops = append(m.ops, recordedOp{provider, operation, result, seconds})
+}
+
+func (m *fakeOpMeter) Observe(e crypto.Event) {
+	m.events = append(m.events, e)
 }
 
 // requireOp asserts that meter recorded exactly one operation, matching the
