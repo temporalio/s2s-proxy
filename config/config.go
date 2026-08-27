@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 
+	"github.com/temporalio/temporal-proxy/pkg/validation"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
@@ -180,7 +181,7 @@ func WriteConfig[T any](config T, filePath string) error {
 	}
 
 	// Write the YAML to a file
-	err = os.WriteFile(filePath, data, 0644)
+	err = os.WriteFile(filePath, data, 0o644)
 	if err != nil {
 		return err
 	}
@@ -194,9 +195,7 @@ type (
 	}
 )
 
-var (
-	EmptyConfigProvider MockConfigProvider
-)
+var EmptyConfigProvider MockConfigProvider
 
 func NewMockConfigProvider(config S2SProxyConfig) *MockConfigProvider {
 	return &MockConfigProvider{config: config}
@@ -282,6 +281,7 @@ func (s SearchAttributeTranslation) Inverse() SearchAttributeTranslation {
 		inverted: !s.inverted,
 	}
 }
+
 func (s SearchAttributeTranslation) withInvert(namespace string) (collect.StaticBiMap[string, string], bool) {
 	m, found := s.inner[namespace]
 	if !found {
@@ -292,27 +292,32 @@ func (s SearchAttributeTranslation) withInvert(namespace string) (collect.Static
 	}
 	return m, true
 }
+
 func (s SearchAttributeTranslation) Get(namespace string, searchAttr string) string {
 	if m, ok := s.withInvert(namespace); ok {
 		return m.Get(searchAttr)
 	}
 	return ""
 }
+
 func (s SearchAttributeTranslation) GetExists(namespace string, searchAttr string) (string, bool) {
 	if m, ok := s.withInvert(namespace); ok {
 		return m.GetExists(searchAttr)
 	}
 	return "", false
 }
+
 func (s SearchAttributeTranslation) LenNamespaces() int {
 	return len(s.inner)
 }
+
 func (s SearchAttributeTranslation) Len(namespace string) int {
 	if m, ok := s.withInvert(namespace); ok {
 		return m.Len()
 	}
 	return 0
 }
+
 func (s SearchAttributeTranslation) FlattenMaps() map[string]map[string]string {
 	raw := make(map[string]map[string]string, len(s.inner))
 	for ns, mappings := range s.inner {
@@ -355,4 +360,11 @@ func (l LoggingConfig) GetThrottleMaxRPS() float64 {
 		return l.ThrottleMaxRPS
 	}
 	return DefaultLoggingThrottleMaxRPS
+}
+
+func (c *S2SProxyConfig) Validate() error {
+	return validation.Validate(
+		"",
+		validation.Children("clusterConnections", c.ClusterConnections, (*ClusterConnConfig).Validate),
+	)
 }

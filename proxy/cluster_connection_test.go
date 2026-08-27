@@ -320,6 +320,24 @@ func TestNewProxyReportsConfigurationErrors(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), `cannot create cluster connection "broken"`)
 	})
+
+	t.Run("an invalid encryption config", func(t *testing.T) {
+		a := getDynamicPlccAddresses(t)
+		cc := makeTCPClusterConfig("encrypted", localFVI, remoteFVI, a.localProxyOutbound,
+			a.localTemporalAddr, a.localProxyInbound, a.localProxyOutbound, a.remoteProxyInbound)
+		cc.EncryptionConfig = config.EncryptionConfig{
+			Enabled: true,
+			Default: &config.KeyPolicy{URI: "vault://typo", Duration: time.Hour},
+		}
+
+		// Config is checked before anything is built, so a bad key URI costs no
+		// listeners and the error names the field that caused it.
+		_, err := NewProxy(config.NewMockConfigProvider(config.S2SProxyConfig{
+			ClusterConnections: []config.ClusterConnConfig{cc},
+		}), loggers)
+		require.ErrorContains(t, err, "cannot create proxy: invalid config: ")
+		require.ErrorContains(t, err, "clusterConnections[0].encryption.default: uri: invalid key URI: vault://typo")
+	})
 }
 
 func TestNewProxyRejectsDuplicateClusterConnectionNames(t *testing.T) {
