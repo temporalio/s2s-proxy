@@ -3,6 +3,7 @@ package interceptor
 import (
 	"strings"
 
+	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 
@@ -13,8 +14,8 @@ type (
 	saTranslator struct {
 		logger      log.Logger
 		matchMethod func(string) bool
-		reqMap      map[string]stringMatcher
-		respMap     map[string]stringMatcher
+		resolveReq  saMatcherResolver
+		resolveResp saMatcherResolver
 	}
 )
 
@@ -26,8 +27,10 @@ func NewSearchAttributeTranslator(logger log.Logger, reqMap, respMap map[string]
 			// We should never translate these responses to the search attribute's indexed field.
 			return !strings.HasPrefix(method, api.WorkflowServicePrefix)
 		},
-		reqMap:  createStringMatchers(reqMap),
-		respMap: createStringMatchers(respMap),
+		// The resolvers are built once here and hold no per-message state, so a single
+		// translator serves every concurrent stream.
+		resolveReq:  newSAMatcherResolver(reqMap),
+		resolveResp: newSAMatcherResolver(respMap),
 	}
 }
 
@@ -40,27 +43,33 @@ func (s *saTranslator) MatchMethod(m string) bool {
 }
 
 func (s *saTranslator) TranslateRequest(req any) (bool, error) {
-	return visitSearchAttributes(s.logger, req, s.getNamespaceReqMatcher(""))
+	return visitSearchAttributes(s.logger, req, s.resolveReq, "")
 }
 
-func (s *saTranslator) TranslateResponse(resp any) (bool, error) {
-	return visitSearchAttributes(s.logger, resp, s.getNamespaceRespMatcher(""))
-}
-
-func (s *saTranslator) getNamespaceReqMatcher(namespaceId string) stringMatcher {
-	// Placeholder: Just return the first one (only support one namespace mapping)
-	for _, matcher := range s.reqMap {
-		return matcher
+// TranslateResponse translates the search attributes in resp. Some admin service responses
+// carry history blobs but no namespace field of their own, so the paired request is used to
+// seed the namespace. req is nil for streams, which have no request to pair with.
+//
+// This relies on NamespaceId surviving TranslateRequest: the namespace name translator rewrites
+// Namespace, never NamespaceId. Adding namespace id translation later would silently break it.
+func (s *saTranslator) TranslateResponse(req, resp any) (bool, error) {
+	var fallbackNamespaceID string
+	switch r := req.(type) {
+	case *adminservice.GetWorkflowExecutionRawHistoryV2Request:
+		fallbackNamespaceID = r.NamespaceId
+	case *adminservice.GetWorkflowExecutionRawHistoryRequest:
+		fallbackNamespaceID = r.NamespaceId
 	}
-	return createStringMatcher(nil)
+	return visitSearchAttributes(s.logger, resp, s.resolveResp, fallbackNamespaceID)
 }
 
-func (s *saTranslator) getNamespaceRespMatcher(namespaceId string) stringMatcher {
-	// Placeholder: Just return the first one (only support one namespace mappping)
-	for _, matcher := range s.respMap {
-		return matcher
+func newSAMatcherResolver(nsMappings map[string]map[string]string) saMatcherResolver {
+	matchers := createStringMatchers(nsMappings)
+
+	return func(nsID string) (stringMatcher, bool) {
+		match, ok := matchers[nsID]
+		return match, ok
 	}
-	return createStringMatcher(nil)
 }
 
 func createStringMatchers(nsMappings map[string]map[string]string) map[string]stringMatcher {

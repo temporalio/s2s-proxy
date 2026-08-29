@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"maps"
 	"os"
 
@@ -241,6 +242,35 @@ func (s *SATranslationConfig) IsEnabled() bool {
 	return len(s.NamespaceMappings) > 0
 }
 
+// Validate reports the first reason the configured namespace mappings cannot be applied per
+// namespace: search attributes are translated by namespaceId, so every mapping needs an id that
+// is present and unique.
+func (s *SATranslationConfig) Validate() error {
+	namesByNamespaceId := make(map[string]string, len(s.NamespaceMappings))
+	seenNames := make(map[string]struct{}, len(s.NamespaceMappings))
+	for _, m := range s.NamespaceMappings {
+		// Reported before the duplicate check so that a config with several mappings and no ids
+		// gets the actionable message rather than `duplicate namespaceId ""`.
+		if m.NamespaceId == "" {
+			return fmt.Errorf("searchAttributeTranslation: namespaceMappings[name=%q] has no namespaceId; search attributes are translated per namespace so namespaceId is required", m.Name)
+		}
+		if existing, found := namesByNamespaceId[m.NamespaceId]; found {
+			return fmt.Errorf("searchAttributeTranslation: namespaceMappings[name=%q] and namespaceMappings[name=%q] have duplicate namespaceId %q", existing, m.Name, m.NamespaceId)
+		}
+		namesByNamespaceId[m.NamespaceId] = m.Name
+
+		// The name is informational, so only reject duplicates of a name that was actually set.
+		if m.Name == "" {
+			continue
+		}
+		if _, found := seenNames[m.Name]; found {
+			return fmt.Errorf("searchAttributeTranslation: namespaceMappings has duplicate name %q", m.Name)
+		}
+		seenNames[m.Name] = struct{}{}
+	}
+	return nil
+}
+
 // ToMaps returns request and response mappings.
 func (s *SATranslationConfig) ToMaps(inBound bool) (map[string]map[string]string, map[string]map[string]string) {
 	reqMap := make(map[string]map[string]string)
@@ -335,12 +365,15 @@ func (s *SATranslationConfig) AsLocalToRemoteSATranslation() (SearchAttributeTra
 	if s.cachedBiMap.inner != nil {
 		return s.cachedBiMap, nil
 	}
+	// This is the only path that builds the translation, so it is where the config is checked.
+	if err := s.Validate(); err != nil {
+		return SearchAttributeTranslation{}, err
+	}
 	saTranslation := SearchAttributeTranslation{
 		inner: make(map[string]collect.StaticBiMap[string, string], len(s.NamespaceMappings)),
 	}
 	for _, mapping := range s.NamespaceMappings {
-		var err error
-		saTranslation.inner[mapping.NamespaceId], err = collect.NewStaticBiMap(func(yield func(string, string) bool) {
+		nsBiMap, err := collect.NewStaticBiMap(func(yield func(string, string) bool) {
 			for _, attrPair := range mapping.Mappings {
 				if !yield(attrPair.LocalName, attrPair.RemoteName) {
 					return
@@ -348,8 +381,11 @@ func (s *SATranslationConfig) AsLocalToRemoteSATranslation() (SearchAttributeTra
 			}
 		}, len(mapping.Mappings))
 		if err != nil {
-			return SearchAttributeTranslation{}, err
+			return SearchAttributeTranslation{}, fmt.Errorf(
+				"searchAttributeTranslation: namespaceMappings[name=%q namespaceId=%q]: %w",
+				mapping.Name, mapping.NamespaceId, err)
 		}
+		saTranslation.inner[mapping.NamespaceId] = nsBiMap
 	}
 	s.cachedBiMap = saTranslation
 	return saTranslation, nil
