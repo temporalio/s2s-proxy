@@ -169,7 +169,9 @@ func (m *multiMuxManager) Start() {
 				}
 				m.muxesLock.RUnlock()
 				m.logger.Info("MuxManager status", tag.NewBoolTag("shutdown", m.hasShutDown.IsShutdown()),
-					tag.Name(m.name), tag.NewStringTag("sessions", sb.String()))
+					tag.Name(m.name),
+					tag.NewStringTag("counts", CountSessions(m).String()),
+					tag.NewStringTag("sessions", sb.String()))
 			}
 		}()
 		// Allow the mux provider some time to provide connections
