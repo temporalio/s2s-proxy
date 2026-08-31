@@ -1,0 +1,52 @@
+name: s2s-proxy Proto Pipeline
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  proto:
+    runs-on: ubuntu-latest
+    name: lint, breaking and generation drift - pull request
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Install go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: 'go.mod'
+          cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
+
+      - name: Lint protos
+        run: make proto-lint
+
+      - name: Check protos for breaking changes against main
+        run: |
+          if git cat-file -e origin/main:proto/buf.yaml 2>/dev/null; then
+            make proto-breaking
+          else
+            echo "No proto/buf.yaml on main yet; skipping breaking-change check."
+          fi
+
+      - name: Check generated code is up to date
+        run: |
+          make generate-proxy-proto
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Error: generated proto code is stale. Run 'make generate-proxy-proto' and commit the result."
+            git status --porcelain
+            git diff --color
+            exit 1
+          fi

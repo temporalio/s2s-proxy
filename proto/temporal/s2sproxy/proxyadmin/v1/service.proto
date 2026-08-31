@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package temporal.s2sproxy.proxyadmin.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/temporalio/s2s-proxy/api/proxyadmin/v1;proxyadminv1";
+
+// ProxyAdminService is the s2s-proxy's admin/management API.
+//
+// Requests carry no routing fields.
+// Use gRPC metadata to control call routing:
+//
+//   s2s-proxy-scope    "member" answers for the receiving member only.
+//                      "group" (default) answers for every member of the receiving group,
+//                      aggregated.
+//   s2s-proxy-target   Empty answers for the receiving proxy.
+//                      Else, a cluster connection name. The call is forwarded once to
+//                      that connection's counterparty. The counterparty answers at group
+//                      scope for its own group.
+//
+// Metadata is not propagated to outgoing calls.
+service ProxyAdminService {
+  // DescribeClusterConnections reports a proxy and the cluster connections it has to other proxies.
+  rpc DescribeClusterConnections(DescribeClusterConnectionsRequest) returns (DescribeClusterConnectionsResponse);
+}
+
+message DescribeClusterConnectionsRequest {}
+
+message DescribeClusterConnectionsResponse {
+  repeated ClusterConnection cluster_connections = 1;
+}
+
+// Member is one running proxy. Members of a group answer together at group scope.
+message Member {
+  string id = 1;
+
+  // Whether this row came from the member that served the response.
+  bool self = 2;
+
+  // The address that was dialed. Empty for self.
+  string address = 3;
+
+  // The proxy version this member is running.
+  string version = 4;
+
+  google.protobuf.Timestamp start_time = 5;
+}
+
+message ClusterConnection {
+  // The configured name of this cluster connection.
+  string name = 1;
+
+  // The connection state, rolled up across members.
+  ConnectionState state = 2;
+
+  // Summed over members that report this connection.
+  //
+  // total is the total number of mux connections members hold now.
+  // target is what the config specifies should be shared amongst all members.
+  int32 mux_sessions_connected = 3;
+  int32 mux_sessions_total = 4;
+  int32 mux_sessions_target = 7;
+
+  repeated ClusterConnectionMember members = 6;
+}
+
+// ClusterConnectionMember is one member's view of one cluster connection.
+message ClusterConnectionMember {
+  // The member this entry came from.
+  Member identity = 1;
+
+  ConnectionState state = 2;
+
+  // connected and total are what this member holds now. target is what it was configured to hold.
+  int32 mux_sessions_connected = 3;
+  int32 mux_sessions_total = 4;
+  int32 mux_sessions_target = 5;
+}
+
+//   UNSPECIFIED  No state observed.
+//   CONNECTED    Every session held is connected.
+//   ERROR        Anything else. None connected, some but not all, or members that disagree.
+enum ConnectionState {
+  CONNECTION_STATE_UNSPECIFIED = 0;
+  CONNECTION_STATE_CONNECTED = 1;
+  CONNECTION_STATE_ERROR = 2;
+}

@@ -1,0 +1,16 @@
+version: v2
+
+# NOTE: clean deletes everything under out: before generating.
+# api/ is generated in full and holds nothing hand-written.
+# Anything added there by another route will be removed on the next run.
+clean: true
+
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.11
+    out: ../api
+    opt: module=github.com/temporalio/s2s-proxy/api
+  - remote: buf.build/grpc/go:v1.5.1
+    out: ../api
+    opt:
+      - module=github.com/temporalio/s2s-proxy/api
+      - require_unimplemented_servers=true
