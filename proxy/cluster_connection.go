@@ -380,6 +380,18 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	unaryInterceptors = append(unaryInterceptors, metrics.GRPCServerMetrics.UnaryServerInterceptor(labelGenerator))
 	streamInterceptors = append(streamInterceptors, metrics.GRPCServerMetrics.StreamServerInterceptor(labelGenerator))
 
+	// Ordering matters here too: this records the namespace as the caller sent
+	// it, so it has to run before the translators rewrite the name. Downstream
+	// that value picks the KEK a payload is sealed with, and the encryption
+	// config names local namespaces.
+	//
+	// Unary only, and not for want of a stream interceptor that could peek the
+	// first message. A replication stream is scoped to a shard, and one shard
+	// carries tasks for many namespaces, so there is no single namespace a
+	// stream could be stamped with. Sealing those payloads needs the namespace
+	// resolved per task as the message is walked, not once per stream.
+	unaryInterceptors = append(unaryInterceptors, interceptor.StampNamespace)
+
 	var translators []interceptor.Translator
 	if c.nsTranslations.Len() > 0 {
 		translators = append(translators, interceptor.NewNamespaceNameTranslator(c.loggers.Get(LogInterceptor),
