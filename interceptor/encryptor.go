@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"runtime"
 
 	"github.com/temporalio/temporal-proxy/pkg/codec"
@@ -21,9 +20,8 @@ type (
 	// wanted:
 	//
 	//	e, err := interceptor.NewEncryptor(interceptor.EncryptorConfig{
-	//	    Enabled:      cfg.Encryption.Enabled,
-	//	    Vault:        v,
-	//	    NamespaceKey: namespaceKey,
+	//	    Enabled: cfg.Encryption.Enabled,
+	//	    Vault:   v,
 	//	})
 	//	if err != nil {
 	//	    return err
@@ -39,24 +37,15 @@ type (
 	}
 
 	// EncryptorConfig is everything [NewEncryptor] needs: whether to encrypt at
-	// all, the keys to do it with, and where to find the namespace those keys are
-	// chosen by. Enabled and Vault are separate so encryption can be switched off
-	// without giving up the ability to read what was written while it was on.
+	// all and the keys to do it with. The two are separate so encryption can be
+	// switched off without giving up the ability to read what was written while
+	// it was on.
 	EncryptorConfig struct {
-		// Enabled turns outbound sealing on. Requires a Vault and a NamespaceKey.
+		// Enabled turns outbound sealing on. Requires a Vault.
 		Enabled bool
 		// Vault seals and opens payload data. Required when Enabled, and not
 		// pointless without it: a vault on its own still opens sealed responses.
 		Vault Vault
-		// NamespaceKey is the context key the incoming request's namespace is
-		// stored under, as given to [context.WithValue]. It must be comparable,
-		// for the same reason context.WithValue requires it, and the value it
-		// finds must be a string.
-		//
-		// Required when Enabled and unused otherwise, since only sealing needs a
-		// namespace. There is no default: the namespace picks the KEK, so a
-		// guess means encrypting a tenant's data under a key that is not theirs.
-		NamespaceKey any
 	}
 
 	// Vault is the subset of a key-management backend this interceptor depends
@@ -84,11 +73,6 @@ type (
 	// codecOpt defers a [codec.Option] until the namespace and context are
 	// known, which is not until a payload is in front of us.
 	codecOpt func(ctx context.Context, ns string) codec.Option
-
-	// namespaceResolver reports the namespace a visit's codecs should be built
-	// for, or why it cannot be determined. The two directions resolve
-	// differently: see [namespaceFrom] and [noNamespace].
-	namespaceResolver func(context.Context) (string, error)
 )
 
 // NewEncryptor returns the [Encryptor] cfg describes. The two directions are
@@ -108,25 +92,12 @@ type (
 // both directions: the server indexes and queries them, so a sealed one would
 // be useless to it.
 //
-// Enabled without a vault, or without a usable NamespaceKey, is refused. Both
-// read as "encrypt" while leaving the interceptor unable to encrypt correctly,
-// and a config that is wrong about encryption should not start.
+// Enabled with no vault is refused. It reads as "encrypt" but would put
+// plaintext on the wire, and a config that is wrong about encryption should not
+// start.
 func NewEncryptor(cfg EncryptorConfig) (*Encryptor, error) {
-	if cfg.Enabled {
-		if cfg.Vault == nil {
-			return nil, errors.New("proxy: encryption requires a vault")
-		}
-
-		if cfg.NamespaceKey == nil {
-			return nil, errors.New("proxy: encryption requires a namespace context key")
-		}
-
-		// Looking a value up under an uncomparable key panics, and the lookup
-		// happens inside a visitor goroutine where a panic takes the process with
-		// it. Refuse the key now instead, the way context.WithValue would.
-		if !reflect.TypeOf(cfg.NamespaceKey).Comparable() {
-			return nil, fmt.Errorf("proxy: namespace context key of type %T is not comparable", cfg.NamespaceKey)
-		}
+	if cfg.Enabled && cfg.Vault == nil {
+		return nil, errors.New("proxy: encryption requires a vault")
 	}
 
 	var out, in []codecOpt
@@ -142,40 +113,14 @@ func NewEncryptor(cfg EncryptorConfig) (*Encryptor, error) {
 	}
 
 	unary, err := proxy.NewPayloadVisitorInterceptor(proxy.PayloadVisitorInterceptorOptions{
-		Inbound:  visitPayloads(in, codec.Chain.Decode, noNamespace),
-		Outbound: visitPayloads(out, codec.Chain.Encode, namespaceFrom(cfg.NamespaceKey)),
+		Inbound:  visitPayloads(in, codec.Chain.Decode),
+		Outbound: visitPayloads(out, codec.Chain.Encode),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create encryption interceptor: %w", err)
 	}
 
 	return &Encryptor{UnaryClientInterceptor: unary}, nil
-}
-
-// namespaceFrom returns the resolver for the sealing direction, reading the
-// namespace the server side left on the request context under key.
-//
-// A context with nothing usable there is an error rather than a fallback. The
-// namespace chooses the KEK, so carrying on under "" would seal a tenant's data
-// under whichever key the default policy names, which is the quiet version of
-// the failure this is meant to prevent. Failing the RPC is the loud one.
-func namespaceFrom(key any) namespaceResolver {
-	return func(ctx context.Context) (string, error) {
-		ns, _ := ctx.Value(key).(string)
-		if ns == "" {
-			return "", fmt.Errorf("proxy: no namespace on the request context under key %v", key)
-		}
-
-		return ns, nil
-	}
-}
-
-// noNamespace is the resolver for the opening direction, which needs none: a
-// sealed message names the key that wrapped its DEK, so [cipher.Decrypt] never
-// reads the namespace its cipher was built with. A codec added to that side
-// which does care about the namespace would need its own resolver.
-func noNamespace(context.Context) (string, error) {
-	return "", nil
 }
 
 // Encrypt seals data under the namespace this cipher was built for.
@@ -193,13 +138,14 @@ func (c *cipher) Decrypt(m *crypto.Message) ([]byte, error) {
 
 // visitPayloads builds the visit options that run every codec opts enables over
 // a message's payloads, through fn: [codec.Chain.Encode] to seal, or
-// [codec.Chain.Decode] to open. ns supplies the namespace those codecs are
-// built for, and a namespace it cannot resolve fails the request.
+// [codec.Chain.Decode] to open.
 //
-// Empty opts returns nil, which is how a disabled [Encryptor] ends up with no
-// Inbound or Outbound options at all. That matters for more than tidiness: a
-// nil side is skipped outright, so a pass-through interceptor never walks a
-// message tree to do nothing to it.
+// The codecs are built for whatever namespace [StampNamespace] left on the
+// context, and for the empty string when it left none. Empty is a valid answer
+// rather than a failure: the vault falls back to its default key policy, which
+// is what that policy is for. Refusing to seal would take down traffic the
+// proxy is meant to carry, and the payload would be no safer for it. Opening
+// ignores the namespace entirely, since a sealed message names its own key.
 //
 // The chain is rebuilt on each visit because every [codecOpt] closes over that
 // visit's namespace and context. Visits run up to [runtime.NumCPU] at a time,
@@ -208,7 +154,6 @@ func (c *cipher) Decrypt(m *crypto.Message) ([]byte, error) {
 func visitPayloads(
 	opts []codecOpt,
 	fn func(codec.Chain, []*common.Payload) ([]*common.Payload, error),
-	ns namespaceResolver,
 ) *proxy.VisitPayloadsOptions {
 	if len(opts) == 0 {
 		return nil
@@ -218,11 +163,7 @@ func visitPayloads(
 		ConcurrencyLimit:     runtime.NumCPU(),
 		SkipSearchAttributes: true,
 		Visitor: func(ctx *proxy.VisitPayloadsContext, payloads []*common.Payload) ([]*common.Payload, error) {
-			namespace, err := ns(ctx)
-			if err != nil {
-				return nil, err
-			}
-
+			namespace, _ := ctx.Value(NamespaceKey).(string)
 			chain := make([]codec.Option, len(opts))
 			for i, opt := range opts {
 				chain[i] = opt(ctx, namespace)

@@ -19,10 +19,6 @@ import (
 const testNamespace = "some-namespace"
 
 type (
-	// nsKey stands in for whatever key the server side will eventually stamp the
-	// incoming namespace under. Its only requirement is that it be comparable.
-	nsKey struct{}
-
 	// fakeVault stands in for a key-management backend. scramble is its own
 	// inverse, so whatever it seals opens back to exactly what went in while never
 	// being equal to it, which is enough to tell a sealed payload from a plaintext
@@ -40,35 +36,16 @@ type (
 
 func TestNewEncryptor(t *testing.T) {
 	t.Run("encryption enabled without a vault is refused", func(t *testing.T) {
-		e, err := NewEncryptor(EncryptorConfig{Enabled: true, NamespaceKey: nsKey{}})
+		e, err := NewEncryptor(EncryptorConfig{Enabled: true})
 		require.Nil(t, e)
 		require.ErrorContains(t, err, "encryption requires a vault")
 	})
 
-	t.Run("encryption enabled without a namespace key is refused", func(t *testing.T) {
-		e, err := NewEncryptor(EncryptorConfig{Enabled: true, Vault: &fakeVault{}})
-		require.Nil(t, e)
-		require.ErrorContains(t, err, "encryption requires a namespace context key")
-	})
-
-	t.Run("an uncomparable namespace key is refused", func(t *testing.T) {
-		// Looking a value up under this key would panic inside a visitor
-		// goroutine, so it is refused at construction instead.
-		e, err := NewEncryptor(EncryptorConfig{
-			Enabled:      true,
-			Vault:        &fakeVault{},
-			NamespaceKey: []string{"namespace"},
-		})
-		require.Nil(t, e)
-		require.ErrorContains(t, err, "is not comparable")
-	})
-
-	t.Run("encryption disabled needs neither", func(t *testing.T) {
+	t.Run("encryption disabled needs no vault", func(t *testing.T) {
 		requireEncryptor(t, EncryptorConfig{})
 	})
 
-	t.Run("a vault without encryption needs no namespace key", func(t *testing.T) {
-		// Only sealing needs a namespace, and this shape never seals.
+	t.Run("a vault without encryption is allowed", func(t *testing.T) {
 		v := &fakeVault{}
 		requireEncryptor(t, EncryptorConfig{Vault: v})
 
@@ -123,7 +100,7 @@ func TestEncryptorNamespaceComesFromTheContext(t *testing.T) {
 	e := requireEncryptor(t, enabledConfig(v))
 
 	for _, ns := range []string{"tenant-a", "tenant-b"} {
-		ctx := context.WithValue(t.Context(), nsKey{}, ns)
+		ctx := context.WithValue(t.Context(), NamespaceKey, ns)
 		req := &workflowservice.StartWorkflowExecutionRequest{Input: payloads("secret")}
 
 		require.NoError(t, callWith(t, ctx, e, req, new(workflowservice.QueryWorkflowResponse), func() error {
@@ -134,28 +111,24 @@ func TestEncryptorNamespaceComesFromTheContext(t *testing.T) {
 	require.Equal(t, []string{"tenant-a", "tenant-b"}, v.namespaces())
 }
 
-func TestEncryptorMissingNamespace(t *testing.T) {
-	// Nothing stamps the namespace yet, so this is the state the proxy is in
-	// until that lands. Sealing under whatever the default policy names would be
-	// the quiet failure; failing the RPC is the loud one.
+func TestEncryptorUnnamedNamespace(t *testing.T) {
+	// A request that names no namespace still gets sealed, under whatever key
+	// the default policy picks. Encryption config requires a Default precisely
+	// so this case has an answer; refusing the request instead would take
+	// replication down over a namespace name we were never going to have, and
+	// the payload would be no safer for it.
 	v := &fakeVault{}
 	e := requireEncryptor(t, enabledConfig(v))
 
 	req := &workflowservice.StartWorkflowExecutionRequest{Input: payloads("secret")}
 
-	var invoked bool
-	err := callWith(t, t.Context(), e, req, new(workflowservice.QueryWorkflowResponse), func() error {
-		invoked = true
+	require.NoError(t, callWith(t, t.Context(), e, req, new(workflowservice.QueryWorkflowResponse), func() error {
+		require.Equal(t, 1, sealedCount(req.Input), "sealed, just not under a named key")
 
 		return nil
-	})
+	}))
 
-	require.ErrorContains(t, err, "no namespace on the request context")
-	require.False(t, invoked, "plaintext must not reach the upstream")
-	require.Equal(t, []string{"secret"}, data(req.Input), "the request is left as it was")
-
-	seals, _ := v.calls()
-	require.Zero(t, seals)
+	require.Equal(t, []string{""}, v.namespaces(), "the vault falls back to its default policy")
 }
 
 func TestEncryptorDisabled(t *testing.T) {
@@ -201,8 +174,8 @@ func TestEncryptorDisabled(t *testing.T) {
 
 	t.Run("a vault still opens sealed responses, with no namespace anywhere", func(t *testing.T) {
 		// Switching encryption off must not strand data that was sealed while it
-		// was on. Note the config has no NamespaceKey and the context carries no
-		// namespace: opening needs neither, because the message names its own key.
+		// was on. Note the context carries no namespace: opening needs none,
+		// because the message names its own key.
 		v := &fakeVault{}
 		e := requireEncryptor(t, EncryptorConfig{Vault: v})
 
@@ -292,47 +265,6 @@ func TestEncryptorVaultFailures(t *testing.T) {
 	})
 }
 
-func TestNamespaceFrom(t *testing.T) {
-	resolve := namespaceFrom(nsKey{})
-
-	t.Run("returns the namespace the context carries", func(t *testing.T) {
-		ns, err := resolve(context.WithValue(t.Context(), nsKey{}, testNamespace))
-		require.NoError(t, err)
-		require.Equal(t, testNamespace, ns)
-	})
-
-	for name, ctx := range map[string]func(*testing.T) context.Context{
-		"nothing under the key": func(t *testing.T) context.Context {
-			return t.Context()
-		},
-		"a value of the wrong type": func(t *testing.T) context.Context {
-			return context.WithValue(t.Context(), nsKey{}, 42)
-		},
-		"an empty namespace": func(t *testing.T) context.Context {
-			return context.WithValue(t.Context(), nsKey{}, "")
-		},
-		"a value under a different key": func(t *testing.T) context.Context {
-			type otherKey struct{}
-
-			return context.WithValue(t.Context(), otherKey{}, testNamespace)
-		},
-	} {
-		t.Run(name+" is an error, not a default", func(t *testing.T) {
-			ns, err := resolve(ctx(t))
-			require.Empty(t, ns)
-			require.ErrorContains(t, err, "no namespace on the request context")
-		})
-	}
-}
-
-func TestNoNamespace(t *testing.T) {
-	// The opening direction resolves to nothing and never fails, because a
-	// sealed message names the key that wrapped it.
-	ns, err := noNamespace(t.Context())
-	require.NoError(t, err)
-	require.Empty(t, ns)
-}
-
 func TestVisitPayloads(t *testing.T) {
 	nopOpt := func(ctx context.Context, ns string) codec.Option {
 		return codec.WithCipher(&cipher{ctx: ctx, ns: ns, v: &fakeVault{}})
@@ -341,12 +273,12 @@ func TestVisitPayloads(t *testing.T) {
 	t.Run("no codecs means no options at all", func(t *testing.T) {
 		// nil rather than empty options is what lets a disabled Encryptor skip
 		// the traversal instead of walking every message to do nothing to it.
-		require.Nil(t, visitPayloads(nil, codec.Chain.Encode, noNamespace))
-		require.Nil(t, visitPayloads([]codecOpt{}, codec.Chain.Decode, noNamespace))
+		require.Nil(t, visitPayloads(nil, codec.Chain.Encode))
+		require.Nil(t, visitPayloads([]codecOpt{}, codec.Chain.Decode))
 	})
 
 	t.Run("options are set for concurrent visits that skip search attributes", func(t *testing.T) {
-		opts := visitPayloads([]codecOpt{nopOpt}, codec.Chain.Encode, noNamespace)
+		opts := visitPayloads([]codecOpt{nopOpt}, codec.Chain.Encode)
 		require.NotNil(t, opts)
 		require.True(t, opts.SkipSearchAttributes)
 		require.Equal(t, runtime.NumCPU(), opts.ConcurrencyLimit)
@@ -376,11 +308,10 @@ func TestVisitPayloads(t *testing.T) {
 
 				return ps, nil
 			},
-			namespaceFrom(nsKey{}),
 		)
 
 		in := payloads("x").Payloads
-		ctx := context.WithValue(t.Context(), nsKey{}, testNamespace)
+		ctx := context.WithValue(t.Context(), NamespaceKey, testNamespace)
 
 		out, err := opts.Visitor(&proxy.VisitPayloadsContext{Context: ctx}, in)
 		require.NoError(t, err)
@@ -389,22 +320,25 @@ func TestVisitPayloads(t *testing.T) {
 		require.Equal(t, []string{"a:" + testNamespace, "b:" + testNamespace}, built)
 	})
 
-	t.Run("an unresolved namespace fails the visit before any codec is built", func(t *testing.T) {
-		var built bool
+	t.Run("an unnamed namespace builds the codecs anyway", func(t *testing.T) {
+		// The empty namespace reaches the codec rather than stopping the visit,
+		// which is what lets the vault answer with its default policy.
+		var got []string
 		opts := visitPayloads(
 			[]codecOpt{func(ctx context.Context, ns string) codec.Option {
-				built = true
+				got = append(got, ns)
 
 				return nopOpt(ctx, ns)
 			}},
-			codec.Chain.Encode,
-			namespaceFrom(nsKey{}),
+			func(_ codec.Chain, ps []*common.Payload) ([]*common.Payload, error) {
+				return ps, nil
+			},
 		)
 
 		out, err := opts.Visitor(&proxy.VisitPayloadsContext{Context: t.Context()}, payloads("x").Payloads)
-		require.ErrorContains(t, err, "no namespace on the request context")
-		require.Nil(t, out)
-		require.False(t, built)
+		require.NoError(t, err)
+		require.NotNil(t, out)
+		require.Equal(t, []string{""}, got)
 	})
 }
 
@@ -460,7 +394,7 @@ func scramble(b []byte) []byte {
 
 // enabledConfig is the shape a fully switched-on Encryptor needs.
 func enabledConfig(v Vault) EncryptorConfig {
-	return EncryptorConfig{Enabled: true, Vault: v, NamespaceKey: nsKey{}}
+	return EncryptorConfig{Enabled: true, Vault: v}
 }
 
 // payloads builds the Payloads a request carries, one plaintext payload per
@@ -523,7 +457,7 @@ func sealedCount(ps *common.Payloads) int {
 func call(t *testing.T, e *Encryptor, req, reply any, invoke func() error) error {
 	t.Helper()
 
-	return callWith(t, context.WithValue(t.Context(), nsKey{}, testNamespace), e, req, reply, invoke)
+	return callWith(t, context.WithValue(t.Context(), NamespaceKey, testNamespace), e, req, reply, invoke)
 }
 
 // callWith is call for the tests that need to say exactly what is on the
