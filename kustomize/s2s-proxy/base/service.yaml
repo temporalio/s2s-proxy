@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: s2s-proxy
+  labels:
+    app.kubernetes.io/name: s2s-proxy
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9233
+      targetPort: 9233
+      protocol: TCP
+      name: rpc-egress
+  selector:
+    app.kubernetes.io/name: s2s-proxy 

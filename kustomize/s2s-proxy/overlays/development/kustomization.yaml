@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Inherit from the base
+resources:
+  - ../../base
+
+# Example: Add a name prefix to all resources for this overlay
+namePrefix: dev-
+
+# Example: Change image tag
+images:
+  - name: temporalio/s2s-proxy
+    newTag: v0.2.0 # Example new tag
+
+patches:
+  # Patch for Deployment replicas
+  - target:
+      kind: Deployment
+      name: s2s-proxy
+    patch: |- # This is a JSON6902 patch
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  # Strategic merge patch for the ConfigMap
+  - path: configmap-patch.yaml # This is a strategic merge patch
+    target:
+      kind: ConfigMap
+      name: s2s-proxy-config # Ensures it applies to the correct ConfigMap from the base
+# We could also patch the ConfigMap here to override configuration values.
+# For example, to change the health check port:
+# configMapGenerator:
+# - name: s2s-proxy-config # This must match the name of the configmap in the base
+#   behavior: merge
+#   literals:
+#   - | 
+#     healthCheck.listenAddress="0.0.0.0:8888"
+# The above literal merge might not work directly for nested YAML, 
+# a JSON patch or strategic merge on the configmap might be better for complex changes. 
