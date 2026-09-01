@@ -22,7 +22,7 @@ jobs:
     name: lint - pull request
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
@@ -32,7 +32,7 @@ jobs:
       #
       # See https://github.com/actions/setup-go/issues/316 for more info.
       - name: Install go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: 'go.mod'
           cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
@@ -50,12 +50,12 @@ jobs:
     name: build and unittest - pull request
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
       - name: Install go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: 'go.mod'
           cache: ${{ github.ref == 'refs/heads/main' }} # only update the cache in main.
@@ -67,7 +67,7 @@ jobs:
         run: make test
 
       - name: Install helm
-        uses: azure/setup-helm@v4.3.0
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
         with:
           version: v3.19.4
 
