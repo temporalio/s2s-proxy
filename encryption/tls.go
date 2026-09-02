@@ -146,6 +146,12 @@ func GetClientTLSConfig(clientConfig TLSConfig) (tlsConfig *tls.Config, err erro
 	return
 }
 
+// LoadCACert reads a CA bundle from a file path or an https URL, for callers that build their own
+// tls.Config rather than using the helpers above.
+func LoadCACert(pathOrUrl string) (*x509.CertPool, error) {
+	return fetchCACert(pathOrUrl)
+}
+
 func fetchCACert(pathOrUrl string) (*x509.CertPool, error) {
 	var caBytes []byte
 	var err error
