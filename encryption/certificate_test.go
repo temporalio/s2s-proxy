@@ -113,7 +113,7 @@ func (s *tlsTestSuite) Test_isCACert() {
 	s.False(isCACert(parseFirst(unconstrainedPEM(t, "legacy"))))
 }
 
-func (s *tlsTestSuite) Test_fetchCACert() {
+func (s *tlsTestSuite) Test_FetchCACert() {
 	t := s.T()
 
 	caBytes := caPEM(t, "root")
@@ -147,7 +147,7 @@ func (s *tlsTestSuite) Test_fetchCACert() {
 			path := filepath.Join(t.TempDir(), "ca.pem")
 			s.Require().NoError(os.WriteFile(path, tc.bundle, 0600))
 
-			pool, err := fetchCACert(path)
+			pool, err := FetchCACert(path)
 			if tc.wantErrIs != nil {
 				s.Require().Error(err)
 				s.Require().ErrorIs(err, tc.wantErrIs)
@@ -162,8 +162,8 @@ func (s *tlsTestSuite) Test_fetchCACert() {
 	}
 }
 
-func (s *tlsTestSuite) Test_fetchCACert_MissingFile() {
-	_, err := fetchCACert(filepath.Join(s.T().TempDir(), "does-not-exist.pem"))
+func (s *tlsTestSuite) Test_FetchCACert_MissingFile() {
+	_, err := FetchCACert(filepath.Join(s.T().TempDir(), "does-not-exist.pem"))
 	s.Require().Error(err)
 	s.Require().True(errors.Is(err, os.ErrNotExist))
 }
