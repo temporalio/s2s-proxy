@@ -322,3 +322,190 @@ func TestExampleChart(t *testing.T) {
 	require.Equal(t, ConnectionType("mux-client"), cc.Remote.ConnectionType)
 	require.Equal(t, "s2s-proxy-sample.example.tmprl.cloud:8233", cc.Remote.MuxAddressInfo.ConnectionString)
 }
+
+func TestProxyAdminConfig(t *testing.T) {
+	load := func(t *testing.T, body string) S2SProxyConfig {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+		cfg, err := LoadConfig[S2SProxyConfig](path)
+		require.NoError(t, err)
+		return cfg
+	}
+	loadErr := func(t *testing.T, body string) error {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+		_, err := LoadConfig[S2SProxyConfig](path)
+		return err
+	}
+
+	const clusterConnections = `
+clusterConnections:
+  - name: only
+`
+
+	t.Run("absent means disabled", func(t *testing.T) {
+		cfg := load(t, clusterConnections)
+		assert.Empty(t, cfg.ProxyAdmin.ListenAddress)
+		assert.Nil(t, cfg.ProxyAdmin.Peer)
+		assert.NoError(t, cfg.Validate())
+	})
+
+	t.Run("listen address round-trips", func(t *testing.T) {
+		cfg := load(t, clusterConnections+"proxyAdmin:\n  listenAddress: \"localhost:6061\"\n")
+		assert.Equal(t, "localhost:6061", cfg.ProxyAdmin.ListenAddress)
+		assert.NoError(t, cfg.Validate())
+	})
+
+	// KnownFields(true) makes an unrecognized key fatal.
+	// The Go field has to exist before any YAML can set it.
+	t.Run("unknown key under proxyAdmin is rejected", func(t *testing.T) {
+		require.Error(t, loadErr(t, clusterConnections+"proxyAdmin:\n  nope: 1\n"))
+	})
+
+	t.Run("unknown key under discovery is rejected", func(t *testing.T) {
+		require.Error(t, loadErr(t, clusterConnections+`
+proxyAdmin:
+  peer:
+    listenAddress: "127.0.0.1:9234"
+    discovery:
+      provider: dns
+      nmae: typo
+`))
+	})
+
+	// Every layered configuration tool deep-merges and cannot delete keys.
+	// Switching provider leaves the previous provider's block behind.
+	// It has to be inert rather than fatal, or there is no way to change provider through a Helm override at all.
+	t.Run("an unselected provider's block is inert", func(t *testing.T) {
+		cfg := load(t, clusterConnections+`
+proxyAdmin:
+  peer:
+    listenAddress: "127.0.0.1:9234"
+    discovery:
+      provider: static
+      dns:
+        name: leftover.svc.cluster.local
+      static:
+        addresses: ["a:9234", "b:9234"]
+`)
+		require.NoError(t, cfg.Validate())
+		assert.Equal(t, DiscoveryStatic, cfg.ProxyAdmin.Peer.Discovery.Provider)
+		assert.Equal(t, "leftover.svc.cluster.local", cfg.ProxyAdmin.Peer.Discovery.DNS.Name)
+	})
+
+	t.Run("peer port defaults the dns port", func(t *testing.T) {
+		cfg := load(t, clusterConnections+`
+proxyAdmin:
+  peer:
+    listenAddress: "127.0.0.1:9234"
+    discovery:
+      provider: dns
+      dns:
+        name: peers.svc.cluster.local
+`)
+		require.NoError(t, cfg.Validate())
+		assert.Equal(t, 9234, cfg.ProxyAdmin.Peer.PeerPort())
+	})
+
+	t.Run("validation rejects unusable configurations", func(t *testing.T) {
+		for name, tc := range map[string]struct{ body, wants string }{
+			// The operator listener has no TLS and no authorization.
+			// Its View is a no-op.
+			// Off-host is never a shape it can safely take.
+			"operator listener off loopback": {
+				body:  "proxyAdmin:\n  listenAddress: \"0.0.0.0:6061\"\n",
+				wants: "proxyAdmin: listenAddress: is \"0.0.0.0:6061\", which is not loopback",
+			},
+			"operator listener without a port": {
+				body:  "proxyAdmin:\n  listenAddress: \"localhost\"\n",
+				wants: "proxyAdmin: listenAddress: is not a valid host:port",
+			},
+			"peer without a listen address": {
+				body:  "proxyAdmin:\n  peer: {}\n",
+				wants: "proxyAdmin.peer: listenAddress: is required",
+			},
+			"unknown provider": {
+				body:  "proxyAdmin:\n  peer:\n    listenAddress: \"127.0.0.1:9234\"\n    discovery:\n      provider: carrier-pigeon\n",
+				wants: "proxyAdmin.peer.discovery: provider: is \"carrier-pigeon\", want one of",
+			},
+			"dns without a name": {
+				body:  "proxyAdmin:\n  peer:\n    listenAddress: \"127.0.0.1:9234\"\n    discovery:\n      provider: dns\n",
+				wants: "proxyAdmin.peer.discovery: dns.name: is required",
+			},
+			// Siblings are dialed at the peer listen address port.
+			// An address that binds an arbitrary port leaves discovery with nothing to dial.
+			"dns without a port to dial": {
+				body:  "proxyAdmin:\n  peer:\n    listenAddress: \"127.0.0.1:0\"\n    allowInsecure: true\n    discovery:\n      provider: dns\n      dns:\n        name: peers.svc\n",
+				wants: "proxyAdmin.peer: discovery.dns.port: is required",
+			},
+			"static without addresses": {
+				body:  "proxyAdmin:\n  peer:\n    listenAddress: \"127.0.0.1:9234\"\n    discovery:\n      provider: static\n",
+				wants: "proxyAdmin.peer.discovery: static.addresses: is required",
+			},
+			// A plaintext listener on the pod network publishes the deployment's topology to anything that can reach it.
+			// It has to be stated rather than fallen into.
+			"non-loopback without tls": {
+				body:  "proxyAdmin:\n  peer:\n    listenAddress: \"0.0.0.0:9234\"\n",
+				wants: "set proxyAdmin.peer.allowInsecure to accept it",
+			},
+			// TLSConfig.IsEnabled is true with only caServerName set.
+			// That would hand the listener a TLS config with no certificate and fail every handshake at runtime.
+			"tls without a certificate": {
+				body:  "proxyAdmin:\n  peer:\n    listenAddress: \"0.0.0.0:9234\"\n    tls:\n      caServerName: peers\n",
+				wants: "proxyAdmin.peer: tls.certificatePath: is required",
+			},
+			// peerServerTLSConfig verifies its callers.
+			// It needs the CA to verify them against.
+			// Without this the listener fails to build and is skipped.
+			// The only symptom is one log line plus every sibling reporting this pod unreachable.
+			"tls without a CA to verify peers": {
+				body:  "proxyAdmin:\n  peer:\n    listenAddress: \"0.0.0.0:9234\"\n    tls:\n      certificatePath: /c\n      keyPath: /k\n      caServerName: peers\n",
+				wants: "proxyAdmin.peer: tls.remoteCAPath: is required",
+			},
+			// Siblings are dialed by IP.
+			// Without this the fan-out dial has no name to verify the sibling certificate against.
+			// It fails inside GetClientTLSConfig.
+			"tls without a caServerName": {
+				body:  "proxyAdmin:\n  peer:\n    listenAddress: \"0.0.0.0:9234\"\n    tls:\n      certificatePath: /c\n      keyPath: /k\n      remoteCAPath: /ca\n",
+				wants: "proxyAdmin.peer: tls.caServerName: is required",
+			},
+			// GetClientTLSConfig assigns this to InsecureSkipVerify.
+			// Every sibling this pod dials goes unverified while the config still reads as TLS-secured.
+			"tls with verification skipped": {
+				body:  "proxyAdmin:\n  peer:\n    listenAddress: \"0.0.0.0:9234\"\n    tls:\n      certificatePath: /c\n      keyPath: /k\n      remoteCAPath: /ca\n      caServerName: peers\n      skipCAVerification: true\n",
+				wants: "proxyAdmin.peer: tls.skipCAVerification: disables verification",
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				cfg := load(t, clusterConnections+tc.body)
+				err := cfg.Validate()
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wants)
+			})
+		}
+	})
+
+	t.Run("non-loopback with allowInsecure is accepted", func(t *testing.T) {
+		cfg := load(t, clusterConnections+"proxyAdmin:\n  peer:\n    listenAddress: \"0.0.0.0:9234\"\n    allowInsecure: true\n")
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("a fully specified peer is accepted", func(t *testing.T) {
+		cfg := load(t, clusterConnections+`
+proxyAdmin:
+  listenAddress: "127.0.0.1:6061"
+  peer:
+    listenAddress: "0.0.0.0:9234"
+    tls:
+      certificatePath: /c
+      keyPath: /k
+      remoteCAPath: /ca
+      caServerName: peers
+    discovery:
+      provider: dns
+      dns:
+        name: peers.svc.cluster.local
+`)
+		require.NoError(t, cfg.Validate())
+	})
+}
