@@ -72,6 +72,14 @@ Merge default config with overrides
 {{- end }}
 {{- $_ := set $merged "clusterConnections" $mergedClusterConnections -}}
 
+{{/*
+Merge every other top-level key. Without this, only clusterConnections is written back and
+everything else in configOverride is silently discarded.
+deepCopy the source: sprig mergeOverwrite mutates its first argument, and the loop above already
+writes defaults into .Values.configOverride.clusterConnections in place.
+*/}}
+{{- $merged = mergeOverwrite $merged (omit $overrides "clusterConnections" | deepCopy) -}}
+
 {{- $merged | toYaml }}
 {{- end }}
 

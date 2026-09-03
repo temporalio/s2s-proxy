@@ -36,3 +36,30 @@ tests:
           pattern: |-
             muxAddressInfo:
               \s*address: addr:3333
+
+  # Before this merge, only clusterConnections was written back.
+  # Every other top-level key in configOverride was silently discarded.
+  # The binary decodes with KnownFields(true).
+  # A key that now lands has to be one it knows.
+  - it: should apply top-level configOverride keys
+    set:
+      configOverride:
+        metrics:
+          prometheus:
+            listenAddress: "0.0.0.0:9999"
+        clusterConnections:
+          - local:
+              tcpClient:
+                address: "frontend-other:2222"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: |-
+            prometheus:
+              \s*listenAddress: 0.0.0.0:9999
+      # The clusterConnections merge is unaffected.
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: |-
+            tcpClient:
+              \s*address: frontend-other:2222
