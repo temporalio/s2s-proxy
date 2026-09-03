@@ -104,12 +104,20 @@ func GetGRPCClientMetrics(directionLabel string) *grpcprom.ClientMetrics {
 	panic("unknown direction label: " + directionLabel)
 }
 
+// ProxyBuildInfo carries the -X main.Version stamp the binary was built with.
+// collectors.NewBuildInfoCollector reports the Go module version.
+// That is a different thing.
+var ProxyBuildInfo = DefaultGaugeVec("build_info",
+	"Always 1, labelled with the build this process is running.", "version")
+
 func init() {
 	// Deregister the existing NewGoCollector https://pkg.go.dev/github.com/prometheus/client_golang@v1.22.0/prometheus/collectors#NewGoCollector
 	prometheus.Unregister(collectors.NewGoCollector())
 	// Re-register the go collector with all non-debug metrics. See: https://pkg.go.dev/runtime/metrics
 	prometheus.MustRegister(collectors.NewGoCollector(collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
 		collectors.WithoutGoCollectorRuntimeMetrics(collectors.MetricsDebug.Matcher)))
+	prometheus.MustRegister(ProxyBuildInfo)
+
 	prometheus.MustRegister(AdminServiceStreamsActive)
 	prometheus.MustRegister(AdminServiceStreamDuration)
 	prometheus.MustRegister(AdminServiceStreamsOpenedCount)
