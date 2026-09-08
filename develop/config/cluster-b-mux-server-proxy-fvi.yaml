@@ -1,0 +1,15 @@
+clusterConnections:
+  - name: "b-inbound-server/b-outbound-server"
+    local:
+      connectionType: "tcp"
+      tcpClient:
+        address: "localhost:8233"
+      tcpServer:
+        address: "0.0.0.0:6333"
+    remote:
+      connectionType: "mux-server"
+      muxAddressInfo:
+        address: "0.0.0.0:6334"
+    failoverVersionIncrementTranslation:
+      local: 1000005
+      remote: 1000000
