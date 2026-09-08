@@ -363,8 +363,12 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	if c.aclPolicy != nil {
 		accessControl = auth.NewAccesControl(c.aclPolicy.AllowedNamespaces)
 	}
-	workflowServiceImpl := NewWorkflowServiceProxyServer("inboundWorkflowService", workflowservice.NewWorkflowServiceClient(c.client),
-		accessControl, c.loggers)
+	workflowServiceImpl := NewWorkflowServiceProxyServer(
+		fmt.Sprintf("%sWorkflowService", c.directionLabel),
+		workflowservice.NewWorkflowServiceClient(c.client),
+		accessControl,
+		c.loggers,
+	)
 	operatorServiceImpl := NewOperatorServiceProxyServer(
 		fmt.Sprintf("%sOperatorService", c.directionLabel),
 		operatorservice.NewOperatorServiceClient(c.client),
