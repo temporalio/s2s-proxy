@@ -10,6 +10,7 @@ import (
 const (
 	AdminService       = "adminService"
 	WorkflowService    = "workflowService"
+	OperatorService    = "operatorService"
 	ReplicationStreams = "replicationStreams"
 	ShardManager       = "shardManager"
 	ShardRouting       = "shardRouting"
