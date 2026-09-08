@@ -32,15 +32,14 @@ func (s *spyTranslator) TranslateResponse(any) (bool, error) {
 
 func TestTranslationInterceptor(t *testing.T) {
 	logger := log.NewTestLogger()
-	info := &grpc.UnaryServerInfo{
-		FullMethod: api.WorkflowServicePrefix + "DescribeWorkflowExecution",
-	}
 	handler := func(_ context.Context, _ any) (any, error) {
 		return &workflowservice.DescribeWorkflowExecutionResponse{}, nil
 	}
 
 	cases := []struct {
 		name string
+		// fullMethod is the gRPC method the interceptor sees.
+		fullMethod string
 		// incomingHeaders is attached to the request context (nil for none).
 		incomingHeaders map[string]string
 		// MatchMethod is consulted once per phase (request + response) when translation runs.
@@ -50,17 +49,39 @@ func TestTranslationInterceptor(t *testing.T) {
 	}{
 		{
 			name:               "header_false_skips_translators",
+			fullMethod:         api.WorkflowServicePrefix + "DescribeWorkflowExecution",
 			incomingHeaders:    map[string]string{common.RequestTranslationHeaderName: "false"},
 			expectedMatchCalls: 0,
 			expectedReqCalls:   0,
 			expectedRespCalls:  0,
 		},
 		{
-			name:               "header_absent_invokes_translators",
-			incomingHeaders:    nil,
+			name:               "workflow_method_invokes_translators",
+			fullMethod:         api.WorkflowServicePrefix + "DescribeWorkflowExecution",
 			expectedMatchCalls: 2,
 			expectedReqCalls:   1,
 			expectedRespCalls:  1,
+		},
+		{
+			name:               "admin_method_invokes_translators",
+			fullMethod:         api.AdminServicePrefix + "DescribeMutableState",
+			expectedMatchCalls: 2,
+			expectedReqCalls:   1,
+			expectedRespCalls:  1,
+		},
+		{
+			name:               "operator_method_invokes_translators",
+			fullMethod:         api.OperatorServicePrefix + "DeleteNamespace",
+			expectedMatchCalls: 2,
+			expectedReqCalls:   1,
+			expectedRespCalls:  1,
+		},
+		{
+			name:               "other_service_skips_translators",
+			fullMethod:         "/grpc.health.v1.Health/Check",
+			expectedMatchCalls: 0,
+			expectedReqCalls:   0,
+			expectedRespCalls:  0,
 		},
 	}
 
@@ -68,6 +89,7 @@ func TestTranslationInterceptor(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			spy := &spyTranslator{}
 			ti := NewTranslationInterceptor(logger, []Translator{spy})
+			info := &grpc.UnaryServerInfo{FullMethod: tc.fullMethod}
 
 			ctx := context.Background()
 			if tc.incomingHeaders != nil {
