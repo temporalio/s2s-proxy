@@ -52,7 +52,7 @@ func TestMethodAccessControlInterceptor(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			i := NewAccessControlInterceptor(logger, c.adminServiceAllowedMethods, c.allowedNamespaces)
+			i := NewAccessControlInterceptor(logger, c.adminServiceAllowedMethods, nil, c.allowedNamespaces)
 			_, err := i.Intercept(context.Background(), nil, unaryInfo, unaryHandler)
 			if c.notAllowed {
 				require.ErrorContains(t, err, "PermissionDenied")
@@ -61,6 +61,51 @@ func TestMethodAccessControlInterceptor(t *testing.T) {
 			}
 
 			err = i.StreamIntercept(nil, nil, streamInfo, streamHandler)
+			if c.notAllowed {
+				require.ErrorContains(t, err, "PermissionDenied")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestOperatorServiceAccessControl(t *testing.T) {
+	cases := []struct {
+		name                          string
+		operatorServiceAllowedMethods []string
+		calledMethod                  string
+		notAllowed                    bool
+	}{
+		{
+			name:         "no AccessControl allows all",
+			calledMethod: "ListSearchAttributes",
+		},
+		{
+			name:                          "allowed method",
+			operatorServiceAllowedMethods: []string{"ListSearchAttributes"},
+			calledMethod:                  "ListSearchAttributes",
+		},
+		{
+			name:                          "method not in allowlist",
+			operatorServiceAllowedMethods: []string{"ListSearchAttributes"},
+			calledMethod:                  "AddSearchAttributes",
+			notAllowed:                    true,
+		},
+	}
+
+	logger := log.NewTestLogger()
+	unaryHandler := func(ctx context.Context, req any) (any, error) {
+		return nil, nil
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			i := NewAccessControlInterceptor(logger, nil, c.operatorServiceAllowedMethods, nil)
+			unaryInfo := &grpc.UnaryServerInfo{
+				FullMethod: api.OperatorServicePrefix + c.calledMethod,
+			}
+			_, err := i.Intercept(context.Background(), nil, unaryInfo, unaryHandler)
 			if c.notAllowed {
 				require.ErrorContains(t, err, "PermissionDenied")
 			} else {
@@ -90,7 +135,7 @@ func TestAllowedWorkflowMigrationAPIs(t *testing.T) {
 	}
 
 	logger := log.NewTestLogger()
-	i := NewAccessControlInterceptor(logger, nil, nil)
+	i := NewAccessControlInterceptor(logger, nil, nil, nil)
 
 	unaryHandler := func(ctx context.Context, req any) (any, error) {
 		return nil, nil

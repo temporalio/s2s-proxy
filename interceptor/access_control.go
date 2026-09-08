@@ -16,30 +16,24 @@ import (
 
 type (
 	AccessControlInterceptor struct {
-		logger             log.Logger
-		adminServiceAccess *auth.AccessControl
-		namespaceAccess    *auth.AccessControl
-	}
-	ACLConfig interface {
-		AllowedNamespaces() []string
-		AdminServiceAllowedMethods() []string
+		logger                log.Logger
+		adminServiceAccess    *auth.AccessControl
+		operatorServiceAccess *auth.AccessControl
+		namespaceAccess       *auth.AccessControl
 	}
 )
 
 func NewAccessControlInterceptor(
 	logger log.Logger,
 	adminServiceAllowedMethods []string,
+	operatorServiceAllowedMethods []string,
 	allowedNamespaces []string,
 ) *AccessControlInterceptor {
-	var adminServiceAccess *auth.AccessControl
-	var namespaceAccess *auth.AccessControl
-	adminServiceAccess = auth.NewAccesControl(adminServiceAllowedMethods)
-	namespaceAccess = auth.NewAccesControl(allowedNamespaces)
-
 	return &AccessControlInterceptor{
-		logger:             logger,
-		adminServiceAccess: adminServiceAccess,
-		namespaceAccess:    namespaceAccess,
+		logger:                logger,
+		adminServiceAccess:    auth.NewAccesControl(adminServiceAllowedMethods),
+		operatorServiceAccess: auth.NewAccesControl(operatorServiceAllowedMethods),
+		namespaceAccess:       auth.NewAccesControl(allowedNamespaces),
 	}
 }
 
@@ -79,6 +73,13 @@ func (i *AccessControlInterceptor) Intercept(
 	if i.adminServiceAccess != nil && strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) {
 		methodName := api.MethodName(info.FullMethod)
 		if !i.adminServiceAccess.IsAllowed(methodName) {
+			return nil, status.Errorf(codes.PermissionDenied, "Calling method %s is not allowed.", methodName)
+		}
+	}
+
+	if i.operatorServiceAccess != nil && strings.HasPrefix(info.FullMethod, api.OperatorServicePrefix) {
+		methodName := api.MethodName(info.FullMethod)
+		if !i.operatorServiceAccess.IsAllowed(methodName) {
 			return nil, status.Errorf(codes.PermissionDenied, "Calling method %s is not allowed.", methodName)
 		}
 	}

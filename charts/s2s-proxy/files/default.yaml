@@ -51,6 +51,9 @@ clusterConnections:
           - ReapplyEvents
           - GetNamespace
           - SyncWorkflowState
+        operatorService:
+        # Optional. If configured, only these OperatorService methods are allowed.
+          - ListSearchAttributes
       allowedNamespaces:
         # Optional. If configured, the temporal-system namespace must be included to allow migration workflows to run.
         - "temporal-system"
