@@ -322,3 +322,28 @@ func TestExampleChart(t *testing.T) {
 	require.Equal(t, ConnectionType("mux-client"), cc.Remote.ConnectionType)
 	require.Equal(t, "s2s-proxy-sample.example.tmprl.cloud:8233", cc.Remote.MuxAddressInfo.ConnectionString)
 }
+
+func TestProxyAdminConfig(t *testing.T) {
+	const clusterConnections = `
+clusterConnections:
+  - name: only
+`
+
+	t.Run("absent means no server runs", func(t *testing.T) {
+		cfg, err := LoadConfig[S2SProxyConfig](writeYAML(t, clusterConnections))
+		require.NoError(t, err)
+		require.Empty(t, cfg.ProxyAdmin.ListenAddress)
+	})
+
+	t.Run("listen address round-trips", func(t *testing.T) {
+		cfg, err := LoadConfig[S2SProxyConfig](writeYAML(t,
+			clusterConnections+"proxyAdmin:\n  listenAddress: \"localhost:6061\"\n"))
+		require.NoError(t, err)
+		require.Equal(t, "localhost:6061", cfg.ProxyAdmin.ListenAddress)
+	})
+
+	t.Run("an unknown key under proxyAdmin is rejected", func(t *testing.T) {
+		_, err := LoadConfig[S2SProxyConfig](writeYAML(t, clusterConnections+"proxyAdmin:\n  nope: 1\n"))
+		require.Error(t, err)
+	})
+}

@@ -47,9 +47,17 @@ type (
 	S2SProxyConfig struct {
 		Metrics            *MetricsConfig           `yaml:"metrics"`
 		ProfilingConfig    *ProfilingConfig         `yaml:"profiling"`
+		ProxyAdmin         ProxyAdminConfig         `yaml:"proxyAdmin"`
 		Logging            LoggingConfig            `yaml:"logging"`
 		LogConfigs         map[string]LoggingConfig `yaml:"logConfigs"`
 		ClusterConnections []ClusterConnConfig      `yaml:"clusterConnections"`
+	}
+
+	// ProxyAdminConfig configures ProxyAdminService.
+	ProxyAdminConfig struct {
+		// ListenAddress serves ProxyAdminService for local operator queries.
+		// Validate accepts only a loopback address.
+		ListenAddress string `yaml:"listenAddress"`
 	}
 
 	SATranslationConfig struct {
@@ -366,5 +374,6 @@ func (c *S2SProxyConfig) Validate() error {
 	return validation.Validate(
 		"",
 		validation.Children("clusterConnections", c.ClusterConnections, (*ClusterConnConfig).Validate),
+		validation.Nested("proxyAdmin", &c.ProxyAdmin),
 	)
 }
