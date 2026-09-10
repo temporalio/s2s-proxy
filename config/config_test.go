@@ -322,3 +322,230 @@ func TestExampleChart(t *testing.T) {
 	require.Equal(t, ConnectionType("mux-client"), cc.Remote.ConnectionType)
 	require.Equal(t, "s2s-proxy-sample.example.tmprl.cloud:8233", cc.Remote.MuxAddressInfo.ConnectionString)
 }
+
+func TestSATranslationConfigValidate(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  SATranslationConfig
+		// wantValidateErr lists substrings the Validate error must contain. Empty means the
+		// config is valid.
+		wantValidateErr []string
+		// wantValidateErrExcludes lists substrings the Validate error must not contain.
+		wantValidateErrExcludes []string
+		// wantTranslationErr lists substrings the AsLocalToRemoteSATranslation error must
+		// contain. Leave nil when the translation fails for the same reason as Validate.
+		wantTranslationErr []string
+		// verify runs against the built translation when it is expected to succeed.
+		verify func(t *testing.T, saTranslation SearchAttributeTranslation)
+	}{
+		{
+			name: "no namespace mappings",
+			cfg:  SATranslationConfig{},
+			verify: func(t *testing.T, saTranslation SearchAttributeTranslation) {
+				require.Equal(t, 0, saTranslation.LenNamespaces())
+			},
+		},
+		{
+			// Two namespaces sharing an id used to silently overwrite each other, leaving one
+			// namespace translated with the other namespace's mappings.
+			name: "duplicate namespaceId",
+			cfg: SATranslationConfig{
+				NamespaceMappings: []SANamespaceMapping{
+					{
+						Name:        "namespace1",
+						NamespaceId: "namespace-id-1",
+						Mappings:    []SAMapping{{LocalName: "localOne", RemoteName: "remoteOne"}},
+					},
+					{
+						Name:        "namespace2",
+						NamespaceId: "namespace-id-1",
+						Mappings:    []SAMapping{{LocalName: "localTwo", RemoteName: "remoteTwo"}},
+					},
+				},
+			},
+			wantValidateErr: []string{
+				`namespaceMappings[name="namespace1"]`,
+				`namespaceMappings[name="namespace2"]`,
+				`duplicate namespaceId "namespace-id-1"`,
+			},
+		},
+		{
+			name: "empty namespaceId alongside another namespace",
+			cfg: SATranslationConfig{
+				NamespaceMappings: []SANamespaceMapping{
+					{
+						Name:     "legacyNamespace",
+						Mappings: []SAMapping{{LocalName: "localOne", RemoteName: "remoteOne"}},
+					},
+					{
+						Name:        "namespace2",
+						NamespaceId: "namespace-id-2",
+						Mappings:    []SAMapping{{LocalName: "localTwo", RemoteName: "remoteTwo"}},
+					},
+				},
+			},
+			wantValidateErr: []string{
+				`namespaceMappings[name="legacyNamespace"]`,
+				"has no namespaceId",
+			},
+		},
+		{
+			// The missing id is the actionable problem, so it is reported ahead of the duplicate
+			// id the empty values also form.
+			name: "every mapping missing its namespaceId",
+			cfg: SATranslationConfig{
+				NamespaceMappings: []SANamespaceMapping{
+					{
+						Name:     "namespace1",
+						Mappings: []SAMapping{{LocalName: "localOne", RemoteName: "remoteOne"}},
+					},
+					{
+						Name:     "namespace2",
+						Mappings: []SAMapping{{LocalName: "localTwo", RemoteName: "remoteTwo"}},
+					},
+				},
+			},
+			wantValidateErr: []string{
+				`namespaceMappings[name="namespace1"]`,
+				"has no namespaceId",
+			},
+			wantValidateErrExcludes: []string{"duplicate namespaceId"},
+		},
+		{
+			// namespaceId is required even for one namespace: there is no mapping that applies
+			// to every namespace, so an omitted id has nothing to match against.
+			name: "single mapping with empty namespaceId",
+			cfg: SATranslationConfig{
+				NamespaceMappings: []SANamespaceMapping{
+					{
+						Mappings: []SAMapping{{LocalName: "localOne", RemoteName: "remoteOne"}},
+					},
+				},
+			},
+			wantValidateErr: []string{"has no namespaceId", "namespaceId is required"},
+		},
+		{
+			// The shape the migration tooling emits today: the namespace is named but the
+			// namespaceId is blank. It must fail at startup naming the entry, rather than
+			// translating some arbitrary namespace.
+			name: "named mapping with empty namespaceId",
+			cfg: SATranslationConfig{
+				NamespaceMappings: []SANamespaceMapping{
+					{
+						Name: "migration-namespace",
+						Mappings: []SAMapping{
+							{LocalName: "CustomKeywordField", RemoteName: "Keyword01"},
+							{LocalName: "CustomStringField", RemoteName: "Text01"},
+						},
+					},
+				},
+			},
+			wantValidateErr: []string{
+				`namespaceMappings[name="migration-namespace"]`,
+				"has no namespaceId",
+			},
+		},
+		{
+			// The namespace is well formed, the mappings inside it are not: the bimap rejects
+			// them and the error must say which namespace it came from.
+			name: "duplicate localFieldName within one namespace",
+			cfg: SATranslationConfig{
+				NamespaceMappings: []SANamespaceMapping{
+					{
+						Name:        "namespace1",
+						NamespaceId: "namespace-id-1",
+						Mappings: []SAMapping{
+							{LocalName: "localOne", RemoteName: "remoteOne"},
+							{LocalName: "localOne", RemoteName: "remoteTwo"},
+						},
+					},
+				},
+			},
+			wantTranslationErr: []string{
+				`namespaceMappings[name="namespace1" namespaceId="namespace-id-1"]`,
+			},
+		},
+		{
+			name: "duplicate name across namespaces",
+			cfg: SATranslationConfig{
+				NamespaceMappings: []SANamespaceMapping{
+					{
+						Name:        "namespace1",
+						NamespaceId: "namespace-id-1",
+						Mappings:    []SAMapping{{LocalName: "localOne", RemoteName: "remoteOne"}},
+					},
+					{
+						Name:        "namespace1",
+						NamespaceId: "namespace-id-2",
+						Mappings:    []SAMapping{{LocalName: "localTwo", RemoteName: "remoteTwo"}},
+					},
+				},
+			},
+			wantValidateErr: []string{`duplicate name "namespace1"`},
+		},
+		{
+			name: "distinct namespaceIds translate independently",
+			cfg: SATranslationConfig{
+				NamespaceMappings: []SANamespaceMapping{
+					{
+						Name:        "namespace1",
+						NamespaceId: "namespace-id-1",
+						Mappings:    []SAMapping{{LocalName: "localOne", RemoteName: "remoteOne"}},
+					},
+					{
+						Name:        "namespace2",
+						NamespaceId: "namespace-id-2",
+						Mappings:    []SAMapping{{LocalName: "localTwo", RemoteName: "remoteTwo"}},
+					},
+				},
+			},
+			verify: func(t *testing.T, saTranslation SearchAttributeTranslation) {
+				require.Equal(t, 2, saTranslation.LenNamespaces())
+				require.Equal(t, "remoteOne", saTranslation.Get("namespace-id-1", "localOne"))
+				require.Equal(t, "remoteTwo", saTranslation.Get("namespace-id-2", "localTwo"))
+				// Each namespace only knows its own attributes.
+				require.Equal(t, "", saTranslation.Get("namespace-id-1", "localTwo"))
+				require.Equal(t, "", saTranslation.Get("namespace-id-2", "localOne"))
+				require.Equal(t, NewTuple("", false), NewTuple(saTranslation.GetExists("", "localOne")))
+				require.Equal(t, "localOne", saTranslation.Inverse().Get("namespace-id-1", "remoteOne"))
+				require.Equal(t, "localTwo", saTranslation.Inverse().Get("namespace-id-2", "remoteTwo"))
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := c.cfg
+			err := cfg.Validate()
+			if len(c.wantValidateErr) == 0 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				for _, want := range c.wantValidateErr {
+					require.Contains(t, err.Error(), want)
+				}
+				for _, unwanted := range c.wantValidateErrExcludes {
+					require.NotContains(t, err.Error(), unwanted)
+				}
+			}
+
+			// Validate runs inside AsLocalToRemoteSATranslation, so an invalid config fails
+			// there for the same reason unless the case says otherwise.
+			wantTranslationErr := c.wantTranslationErr
+			if wantTranslationErr == nil {
+				wantTranslationErr = c.wantValidateErr
+			}
+			saTranslation, err := cfg.AsLocalToRemoteSATranslation()
+			if len(wantTranslationErr) == 0 {
+				require.NoError(t, err)
+				c.verify(t, saTranslation)
+				return
+			}
+			require.Error(t, err)
+			for _, want := range wantTranslationErr {
+				require.Contains(t, err.Error(), want)
+			}
+			require.Equal(t, 0, saTranslation.LenNamespaces())
+		})
+	}
+}

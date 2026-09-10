@@ -388,9 +388,6 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 
 	if c.saTranslations.LenNamespaces() > 0 {
 		c.loggers.Get(LogClusterConnection).Info("search attribute translation enabled", tag.NewAnyTag("mappings", c.saTranslations))
-		if c.saTranslations.LenNamespaces() > 1 {
-			panic("multiple namespace search attribute mappings are not supported")
-		}
 		translators = append(translators, interceptor.NewSearchAttributeTranslator(c.loggers.Get(LogInterceptor),
 			c.saTranslations.FlattenMaps(), c.saTranslations.Inverse().FlattenMaps()))
 	}
