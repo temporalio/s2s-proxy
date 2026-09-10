@@ -53,7 +53,7 @@ func GetServerTLSConfig(serverConfig TLSConfig, logger log.Logger) (tlsConfig *t
 	tlsConfig = auth.NewEmptyTLSConfig()
 	if !serverConfig.SkipCAVerification {
 		tlsConfig.ClientAuth = tls.RequireAnyClientCert
-		tlsConfig.ClientCAs, err = fetchCACert(serverConfig.RemoteCAPath)
+		tlsConfig.ClientCAs, err = FetchCACert(serverConfig.RemoteCAPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read CACert from %s: %w", serverConfig.RemoteCAPath, err)
 		}
@@ -126,7 +126,7 @@ func GetClientTLSConfig(clientConfig TLSConfig) (tlsConfig *tls.Config, err erro
 	}
 
 	if clientConfig.RemoteCAPath != "" {
-		caCertPool, err := fetchCACert(clientConfig.RemoteCAPath)
+		caCertPool, err := FetchCACert(clientConfig.RemoteCAPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load CA cert: %w", err)
 		}
@@ -146,7 +146,8 @@ func GetClientTLSConfig(clientConfig TLSConfig) (tlsConfig *tls.Config, err erro
 	return
 }
 
-func fetchCACert(pathOrUrl string) (*x509.CertPool, error) {
+// FetchCACert reads a CA bundle from a file path or an https URL.
+func FetchCACert(pathOrUrl string) (*x509.CertPool, error) {
 	var caBytes []byte
 	var err error
 
