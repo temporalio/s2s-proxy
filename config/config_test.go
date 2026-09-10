@@ -414,3 +414,38 @@ proxyAdmin:
 		require.Error(t, err)
 	})
 }
+
+func TestAllowedMethodsProxyAdmin(t *testing.T) {
+	load := func(t *testing.T, aclBody string) *ACLPolicy {
+		t.Helper()
+		cfg, err := LoadConfig[S2SProxyConfig](writeYAML(t, `
+clusterConnections:
+  - name: only
+    aclPolicy:
+      allowedMethods:
+`+aclBody))
+		require.NoError(t, err)
+		return cfg.ClusterConnections[0].ACLPolicy
+	}
+
+	t.Run("absent is nil", func(t *testing.T) {
+		acl := load(t, "        adminService: [\"DescribeCluster\"]\n")
+		require.Nil(t, acl.AllowedMethods.ProxyAdmin)
+	})
+
+	t.Run("an explicit null is nil", func(t *testing.T) {
+		acl := load(t, "        proxyAdmin:\n")
+		require.Nil(t, acl.AllowedMethods.ProxyAdmin)
+	})
+
+	t.Run("an empty list is present and empty", func(t *testing.T) {
+		acl := load(t, "        proxyAdmin: []\n")
+		require.NotNil(t, acl.AllowedMethods.ProxyAdmin)
+		require.Empty(t, acl.AllowedMethods.ProxyAdmin)
+	})
+
+	t.Run("names round-trip", func(t *testing.T) {
+		acl := load(t, "        proxyAdmin: [\"DescribeClusterConnections\"]\n")
+		require.Equal(t, []string{"DescribeClusterConnections"}, acl.AllowedMethods.ProxyAdmin)
+	})
+}
