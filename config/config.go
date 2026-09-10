@@ -147,6 +147,16 @@ type (
 
 	AllowedMethods struct {
 		AdminService []string `yaml:"adminService"`
+
+		// ProxyAdmin narrows what the remote cluster may call on this proxy's own admin API.
+		// Short method names, like AdminService above.
+		//
+		// Nil applies the built-in ceiling: DescribeClusterConnections and nothing else.
+		// An empty list serves nothing.
+		//
+		// "proxyAdmin:" with no value is nil.
+		// "proxyAdmin: []" is the empty list.
+		ProxyAdmin []string `yaml:"proxyAdmin"`
 	}
 
 	ACLPolicy struct {
