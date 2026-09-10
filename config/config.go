@@ -86,6 +86,17 @@ type (
 		// Provider names the mechanism.
 		// Empty means DiscoveryNone.
 		Provider string `yaml:"provider"`
+
+		DNS DNSDiscoveryConfig `yaml:"dns"`
+	}
+
+	DNSDiscoveryConfig struct {
+		// Name is one Service name, shared by every pod.
+		// It resolves to one address per ready pod.
+		Name string `yaml:"name"`
+
+		// Port defaults to the port the peer listener binds.
+		Port int `yaml:"port"`
 	}
 
 	SATranslationConfig struct {

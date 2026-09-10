@@ -313,8 +313,67 @@ func TestProxyAdminValidate(t *testing.T) {
 			want: validation.Errors{{
 				Subject: "proxyAdmin.peer",
 				Field:   "discovery.provider",
-				Message: `is "carrier-pigeon", want one of [none] or empty for "none"`,
+				Message: `is "carrier-pigeon", want one of [none dns] or empty for "none"`,
 			}},
+		},
+		{
+			name: "dns provider without a name",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "127.0.0.1:9234",
+				Discovery:     DiscoveryConfig{Provider: DiscoveryDNS},
+			}}),
+			want: validation.Errors{{
+				Subject: "proxyAdmin.peer",
+				Field:   "discovery.dns.name",
+				Message: "is required",
+			}},
+		},
+		{
+			name: "dns provider inherits the peer listener port",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "127.0.0.1:9234",
+				Discovery: DiscoveryConfig{
+					Provider: DiscoveryDNS,
+					DNS:      DNSDiscoveryConfig{Name: "peers.svc.cluster.local"},
+				},
+			}}),
+		},
+		{
+			name: "dns provider with no port to dial",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "127.0.0.1:0",
+				AllowInsecure: true,
+				Discovery: DiscoveryConfig{
+					Provider: DiscoveryDNS,
+					DNS:      DNSDiscoveryConfig{Name: "peers.svc.cluster.local"},
+				},
+			}}),
+			want: validation.Errors{{
+				Subject: "proxyAdmin.peer",
+				Field:   "discovery.dns.port",
+				Message: "is required",
+			}},
+		},
+		{
+			name: "dns provider with an explicit port",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "127.0.0.1:0",
+				AllowInsecure: true,
+				Discovery: DiscoveryConfig{
+					Provider: DiscoveryDNS,
+					DNS:      DNSDiscoveryConfig{Name: "peers.svc.cluster.local", Port: 9234},
+				},
+			}}),
+		},
+		{
+			name: "an incomplete dns block is inert while unselected",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "127.0.0.1:9234",
+				Discovery: DiscoveryConfig{
+					Provider: DiscoveryNone,
+					DNS:      DNSDiscoveryConfig{Port: 9999},
+				},
+			}}),
 		},
 	}
 
