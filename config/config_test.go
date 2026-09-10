@@ -346,4 +346,37 @@ clusterConnections:
 		_, err := LoadConfig[S2SProxyConfig](writeYAML(t, clusterConnections+"proxyAdmin:\n  nope: 1\n"))
 		require.Error(t, err)
 	})
+
+	t.Run("absent peer means this pod describes itself only", func(t *testing.T) {
+		cfg, err := LoadConfig[S2SProxyConfig](writeYAML(t, clusterConnections))
+		require.NoError(t, err)
+		require.Nil(t, cfg.ProxyAdmin.Peer)
+	})
+
+	t.Run("the peer block round-trips", func(t *testing.T) {
+		cfg, err := LoadConfig[S2SProxyConfig](writeYAML(t, clusterConnections+`
+proxyAdmin:
+  peer:
+    listenAddress: "0.0.0.0:9234"
+    allowInsecure: true
+    discovery:
+      provider: none
+`))
+		require.NoError(t, err)
+		require.Equal(t, "0.0.0.0:9234", cfg.ProxyAdmin.Peer.ListenAddress)
+		require.True(t, cfg.ProxyAdmin.Peer.AllowInsecure)
+		require.Equal(t, DiscoveryNone, cfg.ProxyAdmin.Peer.Discovery.Provider)
+	})
+
+	t.Run("an unknown key under discovery is rejected", func(t *testing.T) {
+		_, err := LoadConfig[S2SProxyConfig](writeYAML(t, clusterConnections+`
+proxyAdmin:
+  peer:
+    listenAddress: "127.0.0.1:9234"
+    discovery:
+      provider: none
+      nmae: typo
+`))
+		require.Error(t, err)
+	})
 }

@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/temporalio/temporal-proxy/pkg/validation"
+
+	"github.com/temporalio/s2s-proxy/encryption"
 )
 
 func TestS2SProxyConfigValidate(t *testing.T) {
@@ -149,9 +151,18 @@ clusterConnections:
 	})
 }
 
-func notLoopback(listenAddress string) string {
+func notLoopback(listenAddress, remedy string) string {
 	return fmt.Sprintf("is %q, not a loopback address: this publishes an unauthenticated view "+
-		"of the deployment topology to anything that can reach it", listenAddress)
+		"of the deployment topology to anything that can reach it. %s", listenAddress, remedy)
+}
+
+const (
+	operatorRemedy = "Bind it to loopback, or serve siblings through proxyAdmin.peer. The peer listener authenticates its callers."
+	peerRemedy     = "Configure proxyAdmin.peer.tls, or set proxyAdmin.peer.allowInsecure to accept it."
+)
+
+func peerAt(listenAddress string) *ProxyAdminPeerConfig {
+	return &ProxyAdminPeerConfig{ListenAddress: listenAddress}
 }
 
 func proxyAdmin(c ProxyAdminConfig) S2SProxyConfig {
@@ -181,7 +192,7 @@ func TestProxyAdminValidate(t *testing.T) {
 			want: validation.Errors{{
 				Subject: "proxyAdmin",
 				Field:   "listenAddress",
-				Message: notLoopback("0.0.0.0:6061"),
+				Message: notLoopback("0.0.0.0:6061", operatorRemedy),
 			}},
 		},
 		{
@@ -190,7 +201,7 @@ func TestProxyAdminValidate(t *testing.T) {
 			want: validation.Errors{{
 				Subject: "proxyAdmin",
 				Field:   "listenAddress",
-				Message: notLoopback("admin.svc.cluster.local:6061"),
+				Message: notLoopback("admin.svc.cluster.local:6061", operatorRemedy),
 			}},
 		},
 		{
@@ -200,6 +211,109 @@ func TestProxyAdminValidate(t *testing.T) {
 				Subject: "proxyAdmin",
 				Field:   "listenAddress",
 				Message: "is not a valid host:port",
+			}},
+		},
+		{
+			name: "peer without a listen address",
+			cfg:  proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{}}),
+			want: validation.Errors{{
+				Subject: "proxyAdmin.peer",
+				Field:   "listenAddress",
+				Message: "is required",
+			}},
+		},
+		{
+			name: "peer listen address is not host:port",
+			cfg:  proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{ListenAddress: "peers.svc", AllowInsecure: true}}),
+			want: validation.Errors{{
+				Subject: "proxyAdmin.peer",
+				Field:   "listenAddress",
+				Message: "is not a valid host:port",
+			}},
+		},
+		{
+			name: "peer off loopback with no tls",
+			cfg:  proxyAdmin(ProxyAdminConfig{Peer: peerAt("0.0.0.0:9234")}),
+			want: validation.Errors{{
+				Subject: "proxyAdmin.peer",
+				Field:   "listenAddress",
+				Message: notLoopback("0.0.0.0:9234", peerRemedy),
+			}},
+		},
+		{
+			name: "peer off loopback with allowInsecure",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "0.0.0.0:9234", AllowInsecure: true,
+			}}),
+		},
+		{
+			name: "peer off loopback with tls",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "0.0.0.0:9234",
+				TLS: &encryption.TLSConfig{
+					CertificatePath: "/c", KeyPath: "/k", RemoteCAPath: "/ca", CAServerName: "peers",
+				},
+			}}),
+		},
+		{
+			name: "tls with only a caServerName",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "0.0.0.0:9234",
+				TLS:           &encryption.TLSConfig{CAServerName: "peers"},
+			}}),
+			want: validation.Errors{
+				{Subject: "proxyAdmin.peer", Field: "tls.certificatePath", Message: "is required"},
+				{Subject: "proxyAdmin.peer", Field: "tls.keyPath", Message: "is required"},
+				{Subject: "proxyAdmin.peer", Field: "tls.remoteCAPath", Message: "is required"},
+			},
+		},
+		{
+			name: "tls without a CA or a server name",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "0.0.0.0:9234",
+				TLS:           &encryption.TLSConfig{CertificatePath: "/c", KeyPath: "/k"},
+			}}),
+			want: validation.Errors{
+				{Subject: "proxyAdmin.peer", Field: "tls.remoteCAPath", Message: "is required"},
+				{Subject: "proxyAdmin.peer", Field: "tls.caServerName", Message: "is required"},
+			},
+		},
+		{
+			name: "tls with verification skipped",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "0.0.0.0:9234",
+				TLS: &encryption.TLSConfig{
+					CertificatePath: "/c", KeyPath: "/k", RemoteCAPath: "/ca",
+					CAServerName: "peers", SkipCAVerification: true,
+				},
+			}}),
+			want: validation.Errors{{
+				Subject: "proxyAdmin.peer",
+				Field:   "tls.skipCAVerification",
+				Message: "disables verification of every sibling this pod dials. The peer TLS set alongside it then does nothing.",
+			}},
+		},
+		{
+			name: "discovery provider left empty",
+			cfg:  proxyAdmin(ProxyAdminConfig{Peer: peerAt("127.0.0.1:9234")}),
+		},
+		{
+			name: "discovery provider none",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "127.0.0.1:9234",
+				Discovery:     DiscoveryConfig{Provider: DiscoveryNone},
+			}}),
+		},
+		{
+			name: "unknown discovery provider",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "127.0.0.1:9234",
+				Discovery:     DiscoveryConfig{Provider: "carrier-pigeon"},
+			}}),
+			want: validation.Errors{{
+				Subject: "proxyAdmin.peer",
+				Field:   "discovery.provider",
+				Message: `is "carrier-pigeon", want one of [none] or empty for "none"`,
 			}},
 		},
 	}
@@ -229,6 +343,6 @@ proxyAdmin:
 	requireErrors(t, cfg.Validate(), validation.Errors{{
 		Subject: "proxyAdmin",
 		Field:   "listenAddress",
-		Message: notLoopback("0.0.0.0:6061"),
+		Message: notLoopback("0.0.0.0:6061", operatorRemedy),
 	}})
 }
