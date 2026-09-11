@@ -66,6 +66,25 @@ s2sB:L <--> R:s2sPortB
 s2sPortB:L <--> R:s2sPortA
 ```
 
+## Validate a customer-side proxy
+
+Run the self-check inside the proxy pod:
+
+```shell
+kubectl exec s2s-proxy-0 -- s2s-proxy validate --only proxy
+```
+
+The command reads the mounted config from `CONFIG_YML`. You can also pass `--config <path>`.
+It checks config structure, TLS files, ACLs, namespace mappings, callback syntax, effective defaults,
+config freshness, and local listeners. Use `--output json` for structured output.
+
+This check uses generic rules only. It does not contact the customer cluster, Temporal Cloud, or the
+Kubernetes API. A successful result means the values are internally consistent and possible to use.
+It does not prove that customer-specific values match a separate specification.
+
+Exit code `0` means no check failed or was unknown. Exit code `1` means a check failed. Exit code `2`
+means the command could not run. Exit code `3` means no check failed, but a runtime check was unknown.
+
 ## Features
 The S2S-Proxy attempts to make it much easier to connect Temporal Clusters that do not share a trusted network.
 Here's a short list of what it can do and how that helps you connect clusters.
@@ -91,4 +110,3 @@ recent incompatibility between servers is the switch from GoGo protobufs to Go-G
 GoGo protobuf allowed incomplete UTF-8 data inside of string objects, which is disallowed in Go-GRPC, which can
 break some connections between Temporal <1.22 and Temporal >1.22. The S2S-proxy will remove those UTF8 errors
 in-stream without the need to modify the data on the source Temporal deployment.
-
