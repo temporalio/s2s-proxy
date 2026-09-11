@@ -51,6 +51,7 @@ clusterConnections:
           - ReapplyEvents
           - GetNamespace
           - SyncWorkflowState
+          - AddTasks
         operatorService:
         # Optional. If configured, only these OperatorService methods are allowed.
           - ListSearchAttributes
