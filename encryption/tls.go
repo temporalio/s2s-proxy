@@ -171,11 +171,7 @@ func fetchCACert(pathOrUrl string) (*x509.CertPool, error) {
 		}
 	}
 
-	certs, err := certificatesFromPEM(caBytes)
-	if err != nil {
-		return nil, fmt.Errorf("cannot parse ca file %q: %w", pathOrUrl, err)
-	}
-	if err := validateHasCA(certs, pathOrUrl); err != nil {
+	if err := ValidateCABundle(caBytes, pathOrUrl); err != nil {
 		return nil, err
 	}
 
