@@ -87,7 +87,8 @@ type (
 		// Empty means DiscoveryNone.
 		Provider string `yaml:"provider"`
 
-		DNS DNSDiscoveryConfig `yaml:"dns"`
+		DNS    DNSDiscoveryConfig    `yaml:"dns"`
+		Static StaticDiscoveryConfig `yaml:"static"`
 	}
 
 	DNSDiscoveryConfig struct {
@@ -97,6 +98,12 @@ type (
 
 		// Port defaults to the port the peer listener binds.
 		Port int `yaml:"port"`
+	}
+
+	StaticDiscoveryConfig struct {
+		// Addresses is one host:port per sibling pod.
+		// This pod's own address is included.
+		Addresses []string `yaml:"addresses"`
 	}
 
 	SATranslationConfig struct {
