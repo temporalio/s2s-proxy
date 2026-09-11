@@ -419,7 +419,7 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 			tag.NewAnyTag("policy", c.aclPolicy),
 			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
 		aclInterceptor := interceptor.NewAccessControlInterceptor(c.loggers.Get(LogInterceptor),
-			c.aclPolicy.AllowedMethods.AdminService, c.aclPolicy.AllowedNamespaces)
+			c.aclPolicy.AllowedMethods.AdminService, c.aclPolicy.AllowedMethods.OperatorService, c.aclPolicy.AllowedNamespaces)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
 		streamInterceptors = append(streamInterceptors, aclInterceptor.StreamIntercept)
 	}

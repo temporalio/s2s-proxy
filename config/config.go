@@ -92,7 +92,8 @@ type (
 	}
 
 	AllowedMethods struct {
-		AdminService []string `yaml:"adminService"`
+		AdminService    []string `yaml:"adminService"`
+		OperatorService []string `yaml:"operatorService"`
 	}
 
 	ACLPolicy struct {

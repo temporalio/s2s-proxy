@@ -18,6 +18,8 @@ data:
           - ReapplyEvents
           - GetNamespace
           - SyncWorkflowState
+          operatorService:
+          - ListSearchAttributes
         allowedNamespaces:
         - temporal-system
         - myNamespace

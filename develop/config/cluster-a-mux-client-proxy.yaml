@@ -14,4 +14,7 @@ clusterConnections:
       mappings:
         - local: "myNamespace"
           remote: "myNamespace.accountid"
-
+    aclPolicy:
+      allowedMethods:
+        operatorService:
+          - ListSearchAttributes

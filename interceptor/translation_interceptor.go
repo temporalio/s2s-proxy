@@ -42,7 +42,8 @@ func (i *TranslationInterceptor) Intercept(
 ) (any, error) {
 	if common.IsRequestTranslationDisabled(ctx) || len(i.translators) == 0 ||
 		(!strings.HasPrefix(info.FullMethod, api.WorkflowServicePrefix) &&
-			!strings.HasPrefix(info.FullMethod, api.AdminServicePrefix)) {
+			!strings.HasPrefix(info.FullMethod, api.AdminServicePrefix) &&
+			!strings.HasPrefix(info.FullMethod, api.OperatorServicePrefix)) {
 		return handler(ctx, req)
 	}
 

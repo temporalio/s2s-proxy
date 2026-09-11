@@ -12,6 +12,7 @@ import (
 	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/replication/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
@@ -72,6 +73,13 @@ func generateNamespaceObjCases() []objCase {
 			containsObj: true,
 			makeType: func(ns string) any {
 				return &StructWithNamespaceField{Namespace: ns}
+			},
+		},
+		{
+			objName:     "operatorservice ListSearchAttributesRequest",
+			containsObj: true,
+			makeType: func(ns string) any {
+				return &operatorservice.ListSearchAttributesRequest{Namespace: ns}
 			},
 		},
 		{
