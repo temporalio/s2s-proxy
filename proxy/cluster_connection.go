@@ -11,6 +11,7 @@ import (
 
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
@@ -362,10 +363,21 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	if c.aclPolicy != nil {
 		accessControl = auth.NewAccesControl(c.aclPolicy.AllowedNamespaces)
 	}
-	workflowServiceImpl := NewWorkflowServiceProxyServer("inboundWorkflowService", workflowservice.NewWorkflowServiceClient(c.client),
-		accessControl, c.loggers)
+	workflowServiceImpl := NewWorkflowServiceProxyServer(
+		fmt.Sprintf("%sWorkflowService", c.directionLabel),
+		workflowservice.NewWorkflowServiceClient(c.client),
+		accessControl,
+		c.loggers,
+	)
+	operatorServiceImpl := NewOperatorServiceProxyServer(
+		fmt.Sprintf("%sOperatorService", c.directionLabel),
+		operatorservice.NewOperatorServiceClient(c.client),
+		[]string{c.directionLabel},
+		c.loggers,
+	)
 	adminservice.RegisterAdminServiceServer(server, adminServiceImpl)
 	workflowservice.RegisterWorkflowServiceServer(server, workflowServiceImpl)
+	operatorservice.RegisterOperatorServiceServer(server, operatorServiceImpl)
 	return server, nil
 }
 
