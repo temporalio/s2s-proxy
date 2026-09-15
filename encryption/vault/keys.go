@@ -1,4 +1,4 @@
-package encryption
+package vault
 
 import (
 	"context"
@@ -55,6 +55,11 @@ type (
 		// "unwrap", result is "success" or "error", and seconds is how long the call
 		// took.
 		Op(provider, operation, result string, seconds float64)
+
+		// Observe records a vault event, implementing [crypto.Observer]. An event of a
+		// type this meter has no metric for is dropped rather than being an error: the
+		// event set belongs to the crypto package and may grow.
+		Observe(e crypto.Event)
 	}
 )
 
