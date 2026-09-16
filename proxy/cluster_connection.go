@@ -100,6 +100,11 @@ type (
 		client closableClientConn
 		// managedClient is updated by the multi-mux-manager that also owns the server. Needs some more cleanup.
 		managedClient closableClientConn
+		// callerNamesLocalNamespaces says whether the caller on this side addresses
+		// namespaces by their local name. The outbound server is called by the local
+		// cluster, so it does; the inbound server is called by the peer, so it does
+		// not and needs nsTranslations applied first. See stampAndTranslate.
+		callerNamesLocalNamespaces bool
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
 		nsTranslations   collect.StaticBiMap[string, string]
 		saTranslations   config.SearchAttributeTranslation
@@ -187,8 +192,10 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		directionLabel:    "inbound",
 		client:            cc.inboundClient,
 		managedClient:     cc.outboundClient,
-		nsTranslations:    nsTranslations.Inverse(),
-		saTranslations:    saTranslations.Inverse(),
+		// The peer calls us, so it names namespaces the way the peer knows them.
+		callerNamesLocalNamespaces: false,
+		nsTranslations:             nsTranslations.Inverse(),
+		saTranslations:             saTranslations.Inverse(),
 		overrides: AdminServiceOverrides{
 			FVI:                          connConfig.FVITranslation.Local,
 			ReplicationEndpoint:          connConfig.ReplicationEndpoint,
@@ -213,14 +220,16 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		directionLabel:    "outbound",
 		client:            cc.outboundClient,
 		managedClient:     cc.inboundClient,
-		nsTranslations:    nsTranslations,
-		saTranslations:    saTranslations,
-		overrides:         AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote},
-		shardCountConfig:  connConfig.ShardCountConfig,
-		loggers:           cc.loggers,
-		shardManager:      cc.shardManager,
-		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, false),
-		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
+		// The local cluster calls us, so it already names local namespaces.
+		callerNamesLocalNamespaces: true,
+		nsTranslations:             nsTranslations,
+		saTranslations:             saTranslations,
+		overrides:                  AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote},
+		shardCountConfig:           connConfig.ShardCountConfig,
+		loggers:                    cc.loggers,
+		shardManager:               cc.shardManager,
+		lcmParameters:              getLCMParameters(connConfig.ShardCountConfig, false),
+		routingParameters:          getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
 	}
 	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, outboundCfg)
 	if err != nil {
@@ -407,12 +416,14 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 			c.saTranslations.FlattenMaps(), c.saTranslations.Inverse().FlattenMaps()))
 	}
 
+	var translate *interceptor.TranslationInterceptor
 	if len(translators) > 0 {
 		c.loggers.Get("init").Info("Translators enabled", tag.NewAnyTag("translators", translators))
-		tr := interceptor.NewTranslationInterceptor(c.loggers.Get(LogInterceptor), translators)
-		unaryInterceptors = append(unaryInterceptors, tr.Intercept)
-		streamInterceptors = append(streamInterceptors, tr.InterceptStream)
+		translate = interceptor.NewTranslationInterceptor(c.loggers.Get(LogInterceptor), translators)
+		streamInterceptors = append(streamInterceptors, translate.InterceptStream)
 	}
+
+	unaryInterceptors = append(unaryInterceptors, stampAndTranslate(c.callerNamesLocalNamespaces, translate)...)
 
 	if c.aclPolicy != nil {
 		c.loggers.Get("init").Info("ACL policy enabled",
@@ -446,6 +457,40 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	return opts, nil
 }
 
+// stampAndTranslate returns [interceptor.StampNamespace] and translate in the
+// order that leaves the local namespace name on the context. translate may be
+// nil, which means no translation is configured and the order is moot.
+//
+// The stamp records whatever namespace the request names at the moment it runs,
+// and the two directions do not name the same thing. Outbound, the caller is the
+// local cluster and already sends local names, so the stamp goes first and reads
+// them before the translator rewrites them to the peer's. Inbound, the caller is
+// the peer and sends the peer's names, so the stamp goes last and reads what the
+// translator rewrote them to.
+//
+// Local is the name worth having because that is what the encryption config is
+// keyed by. Stamping a peer name would miss the per-namespace overrides and fall
+// back to the default key policy, and it would do it silently, since an
+// unrecognized namespace is indistinguishable from one that has no override.
+//
+// NB: Unary only.
+//
+// A replication stream is scoped to a shard, and one shard carries tasks for
+// many namespaces, so there is no single namespace a stream could be stamped
+// with. Sealing those payloads needs the namespace resolved per task as the
+// message is walked, not once per stream.
+func stampAndTranslate(callerNamesLocalNamespaces bool, translate *interceptor.TranslationInterceptor) []grpc.UnaryServerInterceptor {
+	if translate == nil {
+		return []grpc.UnaryServerInterceptor{interceptor.StampNamespace}
+	}
+
+	if callerNamesLocalNamespaces {
+		return []grpc.UnaryServerInterceptor{interceptor.StampNamespace, translate.Intercept}
+	}
+
+	return []grpc.UnaryServerInterceptor{translate.Intercept, interceptor.StampNamespace}
+}
+
 func (s *simpleGRPCServer) Start() {
 	metrics.GRPCServerStarted.WithLabelValues(s.name).Inc()
 	go func() {
@@ -476,21 +521,27 @@ func (s *simpleGRPCServer) Start() {
 		_ = s.listener.Close()
 	})
 }
+
 func (s *simpleGRPCServer) CanAcceptConnections() bool {
 	return true
 }
+
 func (s *simpleGRPCServer) CanMakeCalls() bool {
 	return true
 }
+
 func (s *simpleGRPCServer) Describe() string {
 	return fmt.Sprintf("[simpleGRPCServer %s listening on %s. lifetime.Err: %v]", s.name, s.listener.Addr(), s.lifetime.Err())
 }
+
 func (s *simpleGRPCServer) Name() string {
 	return s.name
 }
+
 func (d describableClientConn) Describe() string {
 	return fmt.Sprintf("[grpc.ClientConn %s, state=%s]", d.Target(), d.GetState().String())
 }
+
 func (d describableClientConn) CanMakeCalls() bool {
 	return true
 }

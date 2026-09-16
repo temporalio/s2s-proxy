@@ -10,13 +10,16 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
+	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/endtoendtest/testservices"
+	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
@@ -100,7 +103,8 @@ func (plcc *pairedLocalClusterConnection) StartAll(t *testing.T) {
 }
 
 func makeTCPClusterConfig(name string, localFvi int64, remoteFvi int64, replicationEndpoint string,
-	localServer string, localToRemoteServer string, remoteToLocalServer string, remoteServer string) config.ClusterConnConfig {
+	localServer string, localToRemoteServer string, remoteToLocalServer string, remoteServer string,
+) config.ClusterConnConfig {
 	return config.ClusterConnConfig{
 		Name: name,
 		Local: config.ClusterDefinition{
@@ -131,7 +135,8 @@ func makeTCPClusterConfig(name string, localFvi int64, remoteFvi int64, replicat
 
 func makeMuxClusterConfig(name string, client config.ConnectionType,
 	localFVI int64, remoteFVI int64, replicationEndpoint string, localTemporal string, outboundServer string, muxAddr string,
-	edits ...func(connConfig *config.ClusterConnConfig)) config.ClusterConnConfig {
+	edits ...func(connConfig *config.ClusterConnConfig),
+) config.ClusterConnConfig {
 	cc := config.ClusterConnConfig{
 		Name:                name,
 		ReplicationEndpoint: replicationEndpoint,
@@ -219,6 +224,57 @@ func newPairedLocalClusterConnection(t *testing.T, isMux bool, loggers logging.L
 		clientFromRemote: clientFromRemote,
 		addresses:        a,
 	}
+}
+
+// runNamespaceChain sends req through the namespace interceptors a server in the
+// given direction installs, and reports what StampNamespace left on the context
+// along with the namespace the handler finally saw. The second value is what
+// tells the two orderings apart: both directions must stamp the local name, but
+// only one of them hands the handler a rewritten request.
+func runNamespaceChain(
+	t *testing.T,
+	callerNamesLocalNamespaces bool,
+	req *workflowservice.StartWorkflowExecutionRequest,
+) (stamped string, handlerSaw string) {
+	t.Helper()
+
+	// Mirrors NewClusterConnection: the outbound server is handed the
+	// local-to-remote map and the inbound server its inverse.
+	translation := config.StringTranslator{
+		Mappings: []config.StringMapping{{Local: "local-ns", Remote: "remote-ns"}},
+	}
+	nsTranslations, err := translation.AsLocalToRemoteBiMap()
+	require.NoError(t, err)
+	if !callerNamesLocalNamespaces {
+		nsTranslations = nsTranslations.Inverse()
+	}
+
+	logger := log.NewNoopLogger()
+	translate := interceptor.NewTranslationInterceptor(logger, []interceptor.Translator{
+		interceptor.NewNamespaceNameTranslator(logger,
+			nsTranslations.AsMap(), nsTranslations.Inverse().AsMap()),
+	})
+
+	info := &grpc.UnaryServerInfo{FullMethod: api.WorkflowServicePrefix + "StartWorkflowExecution"}
+	handler := grpc.UnaryHandler(func(ctx context.Context, r any) (any, error) {
+		stamped, _ = ctx.Value(interceptor.NamespaceKey).(string)
+		handlerSaw = r.(*workflowservice.StartWorkflowExecutionRequest).GetNamespace()
+
+		return &workflowservice.StartWorkflowExecutionResponse{}, nil
+	})
+
+	chain := stampAndTranslate(callerNamesLocalNamespaces, translate)
+	for i := len(chain) - 1; i >= 0; i-- {
+		next, intercept := handler, chain[i]
+		handler = func(ctx context.Context, r any) (any, error) {
+			return intercept(ctx, r, info, next)
+		}
+	}
+
+	_, err = handler(t.Context(), req)
+	require.NoError(t, err)
+
+	return stamped, handlerSaw
 }
 
 func TestTCPClusterConnection(t *testing.T) {
@@ -378,4 +434,30 @@ func TestTCPListenerIsReleasedWhenNeverStarted(t *testing.T) {
 		}, 5*time.Second, 50*time.Millisecond, "listener on %s was never released", address)
 	}
 	runtime.KeepAlive(cc)
+}
+
+func TestProxyStampAndTranslateNamespace(t *testing.T) {
+	t.Run("outbound stamps the name the local cluster sent, before translation", func(t *testing.T) {
+		stamped, handlerSaw := runNamespaceChain(t, true,
+			&workflowservice.StartWorkflowExecutionRequest{Namespace: "local-ns"})
+
+		require.Equal(t, "local-ns", stamped)
+		require.Equal(t, "remote-ns", handlerSaw,
+			"the translator still has to rewrite the request on its way to the peer")
+	})
+
+	t.Run("inbound stamps the local name, after translation", func(t *testing.T) {
+		stamped, handlerSaw := runNamespaceChain(t, false,
+			&workflowservice.StartWorkflowExecutionRequest{Namespace: "remote-ns"})
+
+		require.Equal(t, "local-ns", stamped,
+			"stamping the peer's name would miss the encryption config's per-namespace overrides")
+		require.Equal(t, "local-ns", handlerSaw)
+	})
+
+	t.Run("without translation configured the stamp is the whole chain", func(t *testing.T) {
+		for _, callerNamesLocalNamespaces := range []bool{true, false} {
+			require.Len(t, stampAndTranslate(callerNamesLocalNamespaces, nil), 1)
+		}
+	})
 }
