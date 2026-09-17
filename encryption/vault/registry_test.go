@@ -296,7 +296,7 @@ func newRegistryFixture(ec config.EncryptionConfig) *registryFixture {
 	logger, meter := &recordingLogger{}, &fakeOpMeter{}
 
 	return &registryFixture{
-		opts:   registryConfig{log: logger, ec: ec, kf: NewKeyFactory(meter)},
+		opts:   registryConfig{log: logger, ec: ec, kf: NewKeyFactory(meter, nil)},
 		logger: logger,
 		meter:  meter,
 	}

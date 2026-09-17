@@ -485,7 +485,7 @@ overrides:
 }
 
 func invalidURI(raw string) string {
-	return "invalid key URI: " + raw + ", valid schemes: [" + strings.Join(crypto.DefaultSchemes(), ",") + "]"
+	return "invalid key URI: " + raw + ", valid schemes: [" + strings.Join(validKeySchemes, ",") + "]"
 }
 
 func requireErrors(t *testing.T, err error, want validation.Errors) {
