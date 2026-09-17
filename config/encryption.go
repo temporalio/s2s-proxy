@@ -12,7 +12,17 @@ import (
 	"github.com/temporalio/temporal-proxy/pkg/validation"
 )
 
-var validKeySchemes = crypto.DefaultSchemes()
+// ExtensionKeyScheme addresses a key served by a configured extension server,
+// as "extension://<server>/<key>". The host names an entry in ExtensionServers;
+// the key is a proxy-side identifier distinguishing several keys hosted by one
+// server, and is never sent to the server, which selects keys by namespace when
+// wrapping and reads the key back out of its own ciphertext when unwrapping.
+const ExtensionKeyScheme = "extension"
+
+// validKeySchemes is every scheme crypto opens by default plus the extension
+// scheme this proxy resolves itself. DefaultSchemes returns a fresh slice per
+// call, so appending to it here is safe.
+var validKeySchemes = append(crypto.DefaultSchemes(), ExtensionKeyScheme)
 
 type (
 	// EncryptionConfig configures envelope encryption of replication payloads.
@@ -99,6 +109,14 @@ func validKeyURI() validation.Check[string] {
 			)
 		}
 
+		// An extension URI references a configured server by host, so a missing
+		// one is checked here rather than by the referential rules: those report a
+		// host matching no configured server, and an empty host gives them no name
+		// to report.
+		if strings.EqualFold(u.Scheme, ExtensionKeyScheme) && u.Host == "" {
+			return fmt.Errorf("extension key URI must name an extension server: %s", raw)
+		}
+
 		return nil
 	}
 }
@@ -107,5 +125,64 @@ func validKeyURIRef() validation.Check[*string] {
 	check := validKeyURI()
 	return func(raw *string) error {
 		return check(*raw)
+	}
+}
+
+// referentialRules checks that every "extension://" key URI names a configured
+// extension server, given the set of known names. Each failure is stamped with
+// the referring policy's YAML path, so prefix is the path of the encryption
+// block itself (e.g. "clusterConnections[0].encryption") and the rules extend it
+// to "...encryption.default"/"uri" or "...encryption.overrides[payments]".
+//
+// These rules live apart from Validate because they need the full set of
+// extension server names, which only the top-level config knows. Keeping them
+// out also keeps Validate structural, so vault.New can go on calling it without
+// a server set to hand over.
+//
+// Matching is case-sensitive, matching the lookup the key factory does when it
+// opens the key, so a name that validates is a name that resolves.
+func (e *EncryptionConfig) referentialRules(prefix string, known map[string]struct{}) []validation.Rule {
+	var rules []validation.Rule
+
+	policy := func(subject string, p *KeyPolicy) {
+		rules = append(rules, extensionRef(subject, "uri", p.URI, known))
+		for i, uri := range p.DecryptURIs {
+			rules = append(rules, extensionRef(subject, fmt.Sprintf("decryptURIs[%d]", i), uri, known))
+		}
+	}
+
+	if e.Default != nil {
+		policy(prefix+".default", e.Default)
+	}
+
+	// Sorted so error ordering is deterministic across runs, matching Validate.
+	for _, ns := range slices.Sorted(maps.Keys(e.Overrides)) {
+		p := e.Overrides[ns]
+		policy(fmt.Sprintf("%s.overrides[%s]", prefix, ns), &p)
+	}
+
+	return rules
+}
+
+// extensionRef builds a Rule reporting an extension key URI whose host names no
+// configured extension server. A URI with another scheme, an unparseable one, or
+// one with no host at all yields nothing: the first is not a reference, and the
+// other two are already reported by validKeyURI.
+func extensionRef(subject, field, raw string, known map[string]struct{}) validation.Rule {
+	return func() validation.Errors {
+		u, err := url.Parse(raw)
+		if err != nil || !strings.EqualFold(u.Scheme, ExtensionKeyScheme) || u.Host == "" {
+			return nil
+		}
+
+		if _, ok := known[u.Host]; ok {
+			return nil
+		}
+
+		return validation.Errors{{
+			Subject: subject,
+			Field:   field,
+			Message: fmt.Sprintf("unknown extension server: %s", u.Host),
+		}}
 	}
 }
