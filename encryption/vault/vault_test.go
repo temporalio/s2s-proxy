@@ -10,6 +10,7 @@ import (
 	"go.temporal.io/server/common/log"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption/extension"
 )
 
 // vaultFixture is a [New] call waiting to happen, holding onto the meter the
@@ -341,4 +342,37 @@ func countOps(m *fakeOpMeter, operation string) int {
 	}
 
 	return n
+}
+
+func TestNewVaultExtensionKeyRoundTrip(t *testing.T) {
+	ec := encryptionConfig()
+	ec.Default = &config.KeyPolicy{
+		URI:         "extension://hsm/replication",
+		Duration:    time.Hour,
+		RenewBefore: time.Minute,
+	}
+
+	f := newVaultFixture(ec)
+	f.cfg.Extensions = extension.Connections{"hsm": &stubConn{}}
+	v := requireVault(t, f)
+
+	msg, err := v.Seal(t.Context(), "some-namespace", []byte("payload"))
+	require.NoError(t, err)
+	require.Equal(t, "extension://hsm/replication", msg.KeyMaterial.KEKID)
+
+	plaintext, err := v.Open(t.Context(), msg)
+	require.NoError(t, err)
+	require.Equal(t, []byte("payload"), plaintext)
+}
+
+func TestNewVaultExtensionKeyWithoutConnections(t *testing.T) {
+	ec := encryptionConfig()
+	ec.Default = &config.KeyPolicy{
+		URI:         "extension://hsm/replication",
+		Duration:    time.Hour,
+		RenewBefore: time.Minute,
+	}
+
+	_, err := New(t.Context(), newVaultFixture(ec).cfg)
+	require.ErrorContains(t, err, `unknown extension server "hsm"`)
 }

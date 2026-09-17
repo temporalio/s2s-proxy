@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"maps"
 	"os"
 
@@ -50,6 +51,7 @@ type (
 		Logging            LoggingConfig            `yaml:"logging"`
 		LogConfigs         map[string]LoggingConfig `yaml:"logConfigs"`
 		ClusterConnections []ClusterConnConfig      `yaml:"clusterConnections"`
+		ExtensionServers   ExtensionServerList      `yaml:"extensionServers"`
 	}
 
 	SATranslationConfig struct {
@@ -364,8 +366,21 @@ func (l LoggingConfig) GetThrottleMaxRPS() float64 {
 }
 
 func (c *S2SProxyConfig) Validate() error {
-	return validation.Validate(
-		"",
+	rules := []validation.Rule{
+		validation.Nested("extensionServers", &c.ExtensionServers),
 		validation.Children("clusterConnections", c.ClusterConnections, (*ClusterConnConfig).Validate),
-	)
+	}
+
+	// Extension servers are declared once at the top level but referenced from
+	// each connection's encryption block, so this is the only place that knows
+	// both halves. The rules are appended here rather than composed into
+	// ClusterConnConfig.Validate so that method keeps working for callers with no
+	// extension servers to offer.
+	known := c.ExtensionServers.names()
+	for i := range c.ClusterConnections {
+		prefix := fmt.Sprintf("clusterConnections[%d].encryption", i)
+		rules = append(rules, c.ClusterConnections[i].EncryptionConfig.referentialRules(prefix, known)...)
+	}
+
+	return validation.Validate("", rules...)
 }
