@@ -40,6 +40,10 @@ var (
 	GRPCInboundClientMetrics    = GetStandardGRPCClientInterceptor("inbound")
 	GRPCIntraProxyClientMetrics = GetStandardGRPCClientInterceptor("intra_proxy")
 
+	// /encryption/extension
+
+	GRPCExtensionClientMetrics = GetStandardGRPCClientInterceptor("extension")
+
 	// /transport/mux
 
 	// Every yamux session has these available, so let's use them in the prometheus tags so we can clearly see each connection
@@ -100,6 +104,8 @@ func GetGRPCClientMetrics(directionLabel string) *grpcprom.ClientMetrics {
 		return GRPCInboundClientMetrics
 	case "intra_proxy":
 		return GRPCIntraProxyClientMetrics
+	case "extension":
+		return GRPCExtensionClientMetrics
 	}
 	panic("unknown direction label: " + directionLabel)
 }
@@ -129,6 +135,7 @@ func init() {
 	prometheus.MustRegister(GRPCOutboundClientMetrics)
 	prometheus.MustRegister(GRPCInboundClientMetrics)
 	prometheus.MustRegister(GRPCIntraProxyClientMetrics)
+	prometheus.MustRegister(GRPCExtensionClientMetrics)
 
 	// Mux Session
 	prometheus.MustRegister(MuxSessionOpen)
