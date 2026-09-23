@@ -52,7 +52,7 @@ func GetServerTLSConfig(serverConfig TLSConfig, logger log.Logger) (tlsConfig *t
 
 	tlsConfig = auth.NewEmptyTLSConfig()
 	if !serverConfig.SkipCAVerification {
-		tlsConfig.ClientAuth = tls.RequireAnyClientCert
+		tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 		tlsConfig.ClientCAs, err = fetchCACert(serverConfig.RemoteCAPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read CACert from %s: %w", serverConfig.RemoteCAPath, err)
