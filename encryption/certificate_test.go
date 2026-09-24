@@ -51,6 +51,29 @@ func (s *tlsTestSuite) Test_validateHasCA_WrapsSentinel() {
 	s.Require().ErrorIs(err, errNoCACertificates)
 }
 
+func (s *tlsTestSuite) TestValidateCABundle() {
+	tests := []struct {
+		name    string
+		pem     []byte
+		wantErr string
+	}{
+		{name: "CA bundle", pem: caPEM(s.T(), "root")},
+		{name: "leaf only", pem: leafPEM(s.T(), "server"), wantErr: "no usable CA certificates found"},
+		{name: "malformed certificate", pem: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("bad")}), wantErr: "cannot parse ca file"},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := ValidateCABundle(tt.pem, "ca.pem")
+			if tt.wantErr == "" {
+				s.NoError(err)
+				return
+			}
+			s.ErrorContains(err, tt.wantErr)
+		})
+	}
+}
+
 func (s *tlsTestSuite) Test_certificatesFromPEM() {
 	t := s.T()
 
