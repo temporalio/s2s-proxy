@@ -6,7 +6,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	kms "github.com/temporalio/temporal-proxy/pkg/api/kms/v1"
 	"github.com/temporalio/temporal-proxy/pkg/crypto"
+	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/encryption/extension"
 )
 
 type (
@@ -49,6 +53,7 @@ func TestProviderFor(t *testing.T) {
 		{"testing with material", "testing://c2Vjcg==", "testing"},
 		{"base64key shares the testing label", "base64key://c2Vjcg==", "testing"},
 		{"scheme match is case insensitive", "AWSKMS://alias/replication", "aws"},
+		{"extension is its own label", "extension://hsm/replication", "extension"},
 		{"unmapped scheme is its own label", "vault://secret/key", "vault"},
 		{"unmapped scheme is lowercased", "VAULT://secret/key", "vault"},
 		{"no scheme yields the whole string", "not-a-uri", "not-a-uri"},
@@ -65,7 +70,7 @@ func TestProviderFor(t *testing.T) {
 func TestKeyFactoryCreate(t *testing.T) {
 	t.Run("opens a key and measures it", func(t *testing.T) {
 		meter := &fakeOpMeter{}
-		k, err := NewKeyFactory(meter).Create(t.Context(), "testing://")
+		k, err := NewKeyFactory(meter, nil).Create(t.Context(), "testing://")
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, k.Close()) })
 
@@ -76,7 +81,7 @@ func TestKeyFactoryCreate(t *testing.T) {
 	})
 
 	t.Run("reports an unopenable key", func(t *testing.T) {
-		k, err := NewKeyFactory(&fakeOpMeter{}).Create(t.Context(), "vault://secret/key")
+		k, err := NewKeyFactory(&fakeOpMeter{}, nil).Create(t.Context(), "vault://secret/key")
 		require.Nil(t, k)
 		require.ErrorContains(t, err, "error creating KEK: key factory not found for scheme: vault")
 	})
@@ -132,7 +137,7 @@ func TestCryptoKeyMeasuresOperations(t *testing.T) {
 
 func TestCryptoKeyRoundTrip(t *testing.T) {
 	meter := &fakeOpMeter{}
-	k, err := NewKeyFactory(meter).Create(t.Context(), "TESTING://")
+	k, err := NewKeyFactory(meter, nil).Create(t.Context(), "TESTING://")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, k.Close()) })
 
@@ -205,4 +210,81 @@ func (k *stubKEK) Encrypt(_ context.Context, ns string, dek []byte) ([]byte, err
 func (k *stubKEK) Decrypt(_ context.Context, dek []byte) ([]byte, error) {
 	k.gotIn = dek
 	return k.out, k.err
+}
+
+func TestKeyFactoryCreateExtensionKey(t *testing.T) {
+	conns := extension.Connections{"hsm": &stubConn{ciphertext: []byte("wrapped")}}
+
+	t.Run("resolves a configured server", func(t *testing.T) {
+		meter := &fakeOpMeter{}
+
+		k, err := NewKeyFactory(meter, conns).Create(t.Context(), "extension://hsm/replication")
+		require.NoError(t, err)
+		require.Equal(t, "extension://hsm/replication", k.ID())
+
+		ct, err := k.Encrypt(t.Context(), "tenant-a", []byte("dek"))
+		require.NoError(t, err)
+		require.Equal(t, []byte("wrapped"), ct)
+
+		require.Len(t, meter.ops, 1)
+		require.Equal(t, "extension", meter.ops[0].provider)
+		require.Equal(t, "wrap", meter.ops[0].operation)
+		require.Equal(t, "success", meter.ops[0].result)
+	})
+
+	t.Run("an unknown server is an error, not an unknown scheme", func(t *testing.T) {
+		_, err := NewKeyFactory(&fakeOpMeter{}, conns).Create(t.Context(), "extension://vault/replication")
+		require.ErrorContains(t, err, `unknown extension server "vault"`)
+	})
+
+	t.Run("no extension servers configured", func(t *testing.T) {
+		_, err := NewKeyFactory(&fakeOpMeter{}, nil).Create(t.Context(), "extension://hsm/replication")
+		require.ErrorContains(t, err, `unknown extension server "hsm"`)
+	})
+}
+
+// stubConn answers an extension server's calls without a server, so these tests
+// exercise wiring rather than gRPC.
+//
+// A nil ciphertext makes it echo: wrapping returns the key material unchanged
+// and unwrapping returns it back. That is useless as encryption and exactly what
+// a round-trip test needs, since the DEK that comes back out must be the one
+// that went in.
+type stubConn struct {
+	ciphertext []byte
+}
+
+func (c *stubConn) Invoke(_ context.Context, _ string, args any, reply any, _ ...grpc.CallOption) error {
+	switch res := reply.(type) {
+	case *kms.EncryptResponse:
+		req, ok := args.(*kms.EncryptRequest)
+		if !ok {
+			return errors.New("unexpected request type")
+		}
+
+		res.Ciphertext = c.ciphertext
+		if res.Ciphertext == nil {
+			res.Ciphertext = req.Plaintext
+		}
+	case *kms.DecryptResponse:
+		req, ok := args.(*kms.DecryptRequest)
+		if !ok {
+			return errors.New("unexpected request type")
+		}
+
+		res.Plaintext = req.Ciphertext
+	default:
+		return errors.New("unexpected reply type")
+	}
+
+	return nil
+}
+
+func (*stubConn) NewStream(
+	context.Context,
+	*grpc.StreamDesc,
+	string,
+	...grpc.CallOption,
+) (grpc.ClientStream, error) {
+	return nil, nil
 }
