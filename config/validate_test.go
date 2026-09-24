@@ -313,7 +313,7 @@ func TestProxyAdminValidate(t *testing.T) {
 			want: validation.Errors{{
 				Subject: "proxyAdmin.peer",
 				Field:   "discovery.provider",
-				Message: `is "carrier-pigeon", want one of [none dns] or empty for "none"`,
+				Message: `is "carrier-pigeon", want one of [none dns static] or empty for "none"`,
 			}},
 		},
 		{
@@ -372,6 +372,39 @@ func TestProxyAdminValidate(t *testing.T) {
 				Discovery: DiscoveryConfig{
 					Provider: DiscoveryNone,
 					DNS:      DNSDiscoveryConfig{Port: 9999},
+				},
+			}}),
+		},
+		{
+			name: "static provider without addresses",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "127.0.0.1:9234",
+				Discovery:     DiscoveryConfig{Provider: DiscoveryStatic},
+			}}),
+			want: validation.Errors{{
+				Subject: "proxyAdmin.peer",
+				Field:   "discovery.static.addresses",
+				Message: "is required",
+			}},
+		},
+		{
+			name: "static provider with addresses",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "127.0.0.1:9234",
+				Discovery: DiscoveryConfig{
+					Provider: DiscoveryStatic,
+					Static:   StaticDiscoveryConfig{Addresses: []string{"a:9234", "b:9234"}},
+				},
+			}}),
+		},
+		{
+			name: "the previous provider's block survives the switch",
+			cfg: proxyAdmin(ProxyAdminConfig{Peer: &ProxyAdminPeerConfig{
+				ListenAddress: "127.0.0.1:9234",
+				Discovery: DiscoveryConfig{
+					Provider: DiscoveryStatic,
+					DNS:      DNSDiscoveryConfig{Name: "leftover.svc.cluster.local"},
+					Static:   StaticDiscoveryConfig{Addresses: []string{"a:9234", "b:9234"}},
 				},
 			}}),
 		},

@@ -11,11 +11,12 @@ import (
 )
 
 const (
-	DiscoveryNone = "none"
-	DiscoveryDNS  = "dns"
+	DiscoveryNone   = "none"
+	DiscoveryDNS    = "dns"
+	DiscoveryStatic = "static"
 )
 
-var DiscoveryProviders = []string{DiscoveryNone, DiscoveryDNS}
+var DiscoveryProviders = []string{DiscoveryNone, DiscoveryDNS, DiscoveryStatic}
 
 func (c *ProxyAdminConfig) Validate() error {
 	return validation.Validate(
@@ -60,6 +61,18 @@ func (p *ProxyAdminPeerConfig) discoveryRules() []validation.Rule {
 			validation.Field("discovery.dns.port", d.DNS.Port,
 				validation.WhenFn(func() bool { return p.PeerPort() == 0 }, validation.Required[int]())),
 		),
+		validation.WhenRules(func() bool { return d.Provider == DiscoveryStatic },
+			validation.Field("discovery.static.addresses", d.Static.Addresses, nonEmpty()),
+		),
+	}
+}
+
+func nonEmpty() validation.Check[[]string] {
+	return func(addresses []string) error {
+		if len(addresses) == 0 {
+			return errors.New("is required")
+		}
+		return nil
 	}
 }
 

@@ -384,6 +384,24 @@ proxyAdmin:
 		require.Equal(t, 9234, cfg.ProxyAdmin.Peer.PeerPort())
 	})
 
+	t.Run("an unselected provider's block still decodes", func(t *testing.T) {
+		cfg, err := LoadConfig[S2SProxyConfig](writeYAML(t, clusterConnections+`
+proxyAdmin:
+  peer:
+    listenAddress: "127.0.0.1:9234"
+    discovery:
+      provider: static
+      dns:
+        name: leftover.svc.cluster.local
+      static:
+        addresses: ["a:9234", "b:9234"]
+`))
+		require.NoError(t, err)
+		require.Equal(t, DiscoveryStatic, cfg.ProxyAdmin.Peer.Discovery.Provider)
+		require.Equal(t, "leftover.svc.cluster.local", cfg.ProxyAdmin.Peer.Discovery.DNS.Name)
+		require.Equal(t, []string{"a:9234", "b:9234"}, cfg.ProxyAdmin.Peer.Discovery.Static.Addresses)
+	})
+
 	t.Run("an unknown key under discovery is rejected", func(t *testing.T) {
 		_, err := LoadConfig[S2SProxyConfig](writeYAML(t, clusterConnections+`
 proxyAdmin:
