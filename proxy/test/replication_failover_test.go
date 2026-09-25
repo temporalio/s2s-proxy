@@ -19,7 +19,6 @@ import (
 	"go.temporal.io/server/common"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
-	"go.temporal.io/server/common/namespace"
 	"go.temporal.io/server/tests/testcore"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -403,18 +402,15 @@ func (s *ReplicationTestSuite) createGlobalNamespace() string {
 
 	s.Eventually(func() bool {
 		for _, c := range []*testcore.TestCluster{s.clusterA, s.clusterB} {
-			for _, r := range c.Host().NamespaceRegistries() {
-				resp, err := r.GetNamespace(namespace.Name(ns))
-				if err != nil || resp == nil {
-					return false
-				}
-				if !resp.IsGlobalNamespace() {
-					return false
-				}
+			resp, err := c.FrontendClient().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{Namespace: ns})
+			if err != nil || resp == nil || !resp.GetIsGlobalNamespace() {
+				return false
 			}
 		}
 		return true
 	}, 10*time.Second, 200*time.Millisecond, "Namespace failed to replicate")
+	// Wait for the namespace registry caches to pick up the change.
+	time.Sleep(2 * testcore.NamespaceCacheRefreshInterval) //nolint:forbidigo
 
 	descResp, err := s.clusterA.FrontendClient().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
 		Namespace: ns,
@@ -775,18 +771,15 @@ func (s *ReplicationTestSuite) failoverNamespace(
 
 	s.Eventually(func() bool {
 		for _, c := range []*testcore.TestCluster{s.clusterA, s.clusterB} {
-			for _, r := range c.Host().NamespaceRegistries() {
-				resp, err := r.GetNamespace(namespace.Name(namespaceName))
-				if err != nil || resp == nil {
-					return false
-				}
-				if resp.ActiveClusterName(namespace.EmptyBusinessID) != targetCluster {
-					return false
-				}
+			resp, err := c.FrontendClient().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{Namespace: namespaceName})
+			if err != nil || resp == nil || resp.GetReplicationConfig().GetActiveClusterName() != targetCluster {
+				return false
 			}
 		}
 		return true
 	}, 10*time.Second, 200*time.Millisecond, "Namespace failover not propagated")
+	// Wait for the namespace registry caches to pick up the change.
+	time.Sleep(2 * testcore.NamespaceCacheRefreshInterval) //nolint:forbidigo
 
 	s.waitForClusterSynced()
 
