@@ -269,6 +269,10 @@ func (s *adminServiceProxyServer) GetTaskQueueTasks(ctx context.Context, in0 *ad
 	return s.adminClient.GetTaskQueueTasks(ctx, in0)
 }
 
+func (s *adminServiceProxyServer) GetTaskQueueUserData(ctx context.Context, in0 *adminservice.GetTaskQueueUserDataRequest) (*adminservice.GetTaskQueueUserDataResponse, error) {
+	return s.adminClient.GetTaskQueueUserData(ctx, in0)
+}
+
 func (s *adminServiceProxyServer) GetWorkflowExecutionRawHistory(ctx context.Context, in0 *adminservice.GetWorkflowExecutionRawHistoryRequest) (*adminservice.GetWorkflowExecutionRawHistoryResponse, error) {
 	return s.adminClient.GetWorkflowExecutionRawHistory(ctx, in0)
 }
