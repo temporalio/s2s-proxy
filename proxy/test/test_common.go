@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,6 +25,17 @@ import (
 	"github.com/temporalio/s2s-proxy/logging"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
 )
+
+func init() {
+	// Starting with the final v1.32.0 release, the server's testcore creates
+	// <repo root>/.testoutput on every cluster start (earlier versions only recorded a
+	// fixed /tmp path and never created a directory). When the server is a module
+	// dependency, the repo root is the read-only module cache, so the mkdir fails with
+	// "permission denied". Point TEMPORAL_ROOT somewhere writable unless already set.
+	if os.Getenv("TEMPORAL_ROOT") == "" {
+		_ = os.Setenv("TEMPORAL_ROOT", filepath.Join(os.TempDir(), "s2s-proxy-temporal-root"))
+	}
+}
 
 type simpleConfigProvider struct {
 	cfg config.S2SProxyConfig
