@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s2s-proxy-config # This name must match the base ConfigMap's name
+data:
+  config.yaml: |
+    # Only include the fields you want to change/add.
+    # Kustomize will merge this with the base config.yaml data.
+    # Note: For list items like 'mux', strategic merge typically replaces the whole list
+    # or merges items by key if a merge key is defined (e.g., 'name').
+    # If Helm's merge logic for lists is more complex (e.g., merging by index),
+    # a JSON patch on the ConfigMap might be needed for precise replication.
+    # However, for named items in a list (like 'mux' items with 'name'), Kustomize should merge.
+
+    # Example: Override serverAddress for the 'muxed' mux item
+    mux:
+      - name: "muxed" # This identifies the item in the list to merge/patch
+        client:
+          serverAddress: "override.temporal.example.com:1234" # New value
+
+    # Example: If you wanted to change healthCheck listenAddress
+    # healthCheck:
+    #  listenAddress: "0.0.0.0:7777" 
