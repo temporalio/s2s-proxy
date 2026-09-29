@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -121,8 +122,6 @@ func TestS2SProxyConfigValidate(t *testing.T) {
 	}
 }
 
-// TestS2SProxyConfigValidateFromYAML runs the whole path an operator hits: a
-// config file with a typo in a key URI, loaded and then validated.
 func TestS2SProxyConfigValidateFromYAML(t *testing.T) {
 	path := writeYAML(t, `
 clusterConnections:
@@ -148,4 +147,88 @@ clusterConnections:
 			Message: invalidURI("vault://alias/typo"),
 		},
 	})
+}
+
+func notLoopback(listenAddress string) string {
+	return fmt.Sprintf("is %q, not a loopback address: this publishes an unauthenticated view "+
+		"of the deployment topology to anything that can reach it", listenAddress)
+}
+
+func proxyAdmin(c ProxyAdminConfig) S2SProxyConfig {
+	return S2SProxyConfig{ProxyAdmin: c}
+}
+
+func TestProxyAdminValidate(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  S2SProxyConfig
+		want validation.Errors
+	}{
+		{
+			name: "no proxyAdmin block",
+		},
+		{
+			name: "operator on loopback by name",
+			cfg:  proxyAdmin(ProxyAdminConfig{ListenAddress: "localhost:6061"}),
+		},
+		{
+			name: "operator on loopback by address",
+			cfg:  proxyAdmin(ProxyAdminConfig{ListenAddress: "127.0.0.1:6061"}),
+		},
+		{
+			name: "operator off loopback",
+			cfg:  proxyAdmin(ProxyAdminConfig{ListenAddress: "0.0.0.0:6061"}),
+			want: validation.Errors{{
+				Subject: "proxyAdmin",
+				Field:   "listenAddress",
+				Message: notLoopback("0.0.0.0:6061"),
+			}},
+		},
+		{
+			name: "operator on a hostname that is not localhost",
+			cfg:  proxyAdmin(ProxyAdminConfig{ListenAddress: "admin.svc.cluster.local:6061"}),
+			want: validation.Errors{{
+				Subject: "proxyAdmin",
+				Field:   "listenAddress",
+				Message: notLoopback("admin.svc.cluster.local:6061"),
+			}},
+		},
+		{
+			name: "operator on loopback with no port",
+			cfg:  proxyAdmin(ProxyAdminConfig{ListenAddress: "localhost"}),
+			want: validation.Errors{{
+				Subject: "proxyAdmin",
+				Field:   "listenAddress",
+				Message: "is not a valid host:port",
+			}},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := c.cfg.Validate()
+			if c.want == nil {
+				require.NoError(t, err)
+				return
+			}
+
+			requireErrors(t, err, c.want)
+		})
+	}
+}
+
+func TestProxyAdminValidateFromYAML(t *testing.T) {
+	cfg, err := LoadConfig[S2SProxyConfig](writeYAML(t, `
+clusterConnections:
+  - name: cluster-a
+proxyAdmin:
+  listenAddress: "0.0.0.0:6061"
+`))
+	require.NoError(t, err)
+
+	requireErrors(t, cfg.Validate(), validation.Errors{{
+		Subject: "proxyAdmin",
+		Field:   "listenAddress",
+		Message: notLoopback("0.0.0.0:6061"),
+	}})
 }
