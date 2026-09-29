@@ -137,6 +137,11 @@ type stringMatcher func(name string) (string, bool)
 // It returns whether anything was matched and any error it encountered.
 type visitor func(logger log.Logger, obj any, match stringMatcher) (bool, error)
 
+// blobVisitor visits the history events deserialized from a data blob. Callers close over
+// whatever matching state they need, since a data blob starts a fresh traversal that cannot
+// see the enclosing message.
+type blobVisitor func(events []*history.HistoryEvent) (bool, error)
+
 // visitNamespace uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
 // the provided match function.
@@ -180,7 +185,9 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 			}
 			return visit.Skip, nil
 		} else if dataBlobFieldNames[fieldType.Name] {
-			changed, err := visitDataBlobs(logger, vwp, match, visitNamespace)
+			changed, err := visitDataBlobs(logger, vwp, func(events []*history.HistoryEvent) (bool, error) {
+				return visitNamespace(logger, events, match)
+			})
 			matched = matched || changed
 			if err != nil {
 				return visit.Stop, err
@@ -225,7 +232,9 @@ func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (boo
 			return action, nil
 		}
 		if dataBlobFieldNames[fieldType.Name] {
-			changed, err := visitDataBlobs(logger, vwp, match, visitSearchAttributes)
+			changed, err := visitDataBlobs(logger, vwp, func(events []*history.HistoryEvent) (bool, error) {
+				return visitSearchAttributes(logger, events, match)
+			})
 			matched = matched || changed
 			if err != nil {
 				return visit.Stop, err
@@ -287,10 +296,10 @@ func getParentFieldType(vwp visit.ValueWithParent) (result reflect.StructField, 
 	return fieldType, action
 }
 
-func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMatcher, visitor visitor) (bool, error) {
+func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, visitEvents blobVisitor) (bool, error) {
 	switch evt := vwp.Interface().(type) {
 	case []*common.DataBlob:
-		newEvts, matched, changed, err := translateDataBlobs(logger, match, visitor, evt...)
+		newEvts, matched, changed, err := translateDataBlobs(logger, visitEvents, evt...)
 		if err != nil {
 			return matched, err
 		}
@@ -301,7 +310,7 @@ func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMa
 		}
 		return matched, nil
 	case *common.DataBlob:
-		newEvt, matched, changed, err := translateOneDataBlob(logger, match, visitor, evt)
+		newEvt, matched, changed, err := translateOneDataBlob(logger, visitEvents, evt)
 		if err != nil {
 			return matched, err
 		}
@@ -316,9 +325,9 @@ func visitDataBlobs(logger log.Logger, vwp visit.ValueWithParent, match stringMa
 	}
 }
 
-func translateDataBlobs(logger log.Logger, match stringMatcher, visitor visitor, blobs ...*common.DataBlob) (result []*common.DataBlob, anyMatched, anyChanged bool, retErr error) {
+func translateDataBlobs(logger log.Logger, visitEvents blobVisitor, blobs ...*common.DataBlob) (result []*common.DataBlob, anyMatched, anyChanged bool, retErr error) {
 	for i, blob := range blobs {
-		newBlob, matched, changed, err := translateOneDataBlob(logger, match, visitor, blob)
+		newBlob, matched, changed, err := translateOneDataBlob(logger, visitEvents, blob)
 		anyChanged = anyChanged || changed
 		anyMatched = anyMatched || matched
 		if err != nil {
@@ -329,7 +338,7 @@ func translateDataBlobs(logger log.Logger, match stringMatcher, visitor visitor,
 	return blobs, anyMatched, anyChanged, nil
 }
 
-func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visitor, blob *common.DataBlob) (result *common.DataBlob, matched, changed bool, retErr error) {
+func translateOneDataBlob(logger log.Logger, visitEvents blobVisitor, blob *common.DataBlob) (result *common.DataBlob, matched, changed bool, retErr error) {
 	if blob == nil || len(blob.Data) == 0 {
 		return blob, matched, changed, nil
 	}
@@ -356,7 +365,7 @@ func translateOneDataBlob(logger log.Logger, match stringMatcher, visitor visito
 		}
 	}
 
-	m, err := visitor(logger, events, match)
+	m, err := visitEvents(events)
 	matched = matched || m
 	if err != nil {
 		return blob, matched, changed, err
