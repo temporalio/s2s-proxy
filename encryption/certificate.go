@@ -41,3 +41,12 @@ func validateHasCA(certs []*x509.Certificate, source string) error {
 	}
 	return nil
 }
+
+// ValidateCABundle verifies that PEM data contains at least one usable CA certificate.
+func ValidateCABundle(pemBytes []byte, source string) error {
+	certs, err := certificatesFromPEM(pemBytes)
+	if err != nil {
+		return fmt.Errorf("cannot parse ca file %q: %w", source, err)
+	}
+	return validateHasCA(certs, source)
+}
