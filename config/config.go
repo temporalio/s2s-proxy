@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/temporalio/s2s-proxy/collect"
+	"github.com/temporalio/s2s-proxy/encryption"
 )
 
 const (
@@ -58,6 +59,33 @@ type (
 		// ListenAddress serves ProxyAdminService for local operator queries.
 		// Validate accepts only a loopback address.
 		ListenAddress string `yaml:"listenAddress"`
+
+		// Peer serves ProxyAdminService to the other pods of this proxy deployment.
+		// Absent means this pod only ever describes itself.
+		Peer *ProxyAdminPeerConfig `yaml:"peer"`
+	}
+
+	ProxyAdminPeerConfig struct {
+		// ListenAddress must be reachable from sibling pods.
+		ListenAddress string `yaml:"listenAddress"`
+
+		// AllowInsecure permits a non-loopback ListenAddress with no TLS.
+		AllowInsecure bool `yaml:"allowInsecure"`
+
+		// TLS secures peer traffic and verifies the client chain.
+		// CAServerName must name a SAN that every pod's certificate carries.
+		TLS *encryption.TLSConfig `yaml:"tls"`
+
+		// Discovery selects how this pod finds its siblings.
+		Discovery DiscoveryConfig `yaml:"discovery"`
+	}
+
+	// DiscoveryConfig selects one provider by name.
+	// Each provider reads only its own block.
+	DiscoveryConfig struct {
+		// Provider names the mechanism.
+		// Empty means DiscoveryNone.
+		Provider string `yaml:"provider"`
 	}
 
 	SATranslationConfig struct {
