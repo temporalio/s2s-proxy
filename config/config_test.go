@@ -368,6 +368,22 @@ proxyAdmin:
 		require.Equal(t, DiscoveryNone, cfg.ProxyAdmin.Peer.Discovery.Provider)
 	})
 
+	t.Run("the dns block round-trips and the port defaults from the listener", func(t *testing.T) {
+		cfg, err := LoadConfig[S2SProxyConfig](writeYAML(t, clusterConnections+`
+proxyAdmin:
+  peer:
+    listenAddress: "127.0.0.1:9234"
+    discovery:
+      provider: dns
+      dns:
+        name: peers.svc.cluster.local
+`))
+		require.NoError(t, err)
+		require.Equal(t, "peers.svc.cluster.local", cfg.ProxyAdmin.Peer.Discovery.DNS.Name)
+		require.Zero(t, cfg.ProxyAdmin.Peer.Discovery.DNS.Port)
+		require.Equal(t, 9234, cfg.ProxyAdmin.Peer.PeerPort())
+	})
+
 	t.Run("an unknown key under discovery is rejected", func(t *testing.T) {
 		_, err := LoadConfig[S2SProxyConfig](writeYAML(t, clusterConnections+`
 proxyAdmin:

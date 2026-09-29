@@ -5,15 +5,17 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"strconv"
 
 	"github.com/temporalio/temporal-proxy/pkg/validation"
 )
 
 const (
 	DiscoveryNone = "none"
+	DiscoveryDNS  = "dns"
 )
 
-var DiscoveryProviders = []string{DiscoveryNone}
+var DiscoveryProviders = []string{DiscoveryNone, DiscoveryDNS}
 
 func (c *ProxyAdminConfig) Validate() error {
 	return validation.Validate(
@@ -42,11 +44,23 @@ func (p *ProxyAdminPeerConfig) Validate() error {
 			)),
 		validation.Field("discovery.provider", p.Discovery.Provider, knownDiscoveryProvider()),
 	}
+	rules = append(rules, p.discoveryRules()...)
 	if tlsEnabled {
 		rules = append(rules, p.tlsRules()...)
 	}
 
 	return validation.Validate("", rules...)
+}
+
+func (p *ProxyAdminPeerConfig) discoveryRules() []validation.Rule {
+	d := p.Discovery
+	return []validation.Rule{
+		validation.WhenRules(func() bool { return d.Provider == DiscoveryDNS },
+			validation.Field("discovery.dns.name", d.DNS.Name, validation.Required[string]()),
+			validation.Field("discovery.dns.port", d.DNS.Port,
+				validation.WhenFn(func() bool { return p.PeerPort() == 0 }, validation.Required[int]())),
+		),
+	}
 }
 
 func (p *ProxyAdminPeerConfig) tlsRules() []validation.Rule {
@@ -106,4 +120,16 @@ func loopbackListenAddress(listenAddress string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func (p *ProxyAdminPeerConfig) PeerPort() int {
+	_, portStr, err := net.SplitHostPort(p.ListenAddress)
+	if err != nil {
+		return 0
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0
+	}
+	return port
 }
