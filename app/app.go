@@ -9,6 +9,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/logging"
+	"github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/proto/compat"
 	"github.com/temporalio/s2s-proxy/proxy"
 )
@@ -79,6 +80,8 @@ func (a *App) startProxy(runCtx context.Context, cliCtx *urcli.Context) error {
 	if logLevel := cliCtx.String(config.LogLevelFlag); len(logLevel) != 0 {
 		logCfg.Level = logLevel
 	}
+
+	metrics.ProxyBuildInfo.WithLabelValues(a.version).Set(1)
 
 	fxApp := fx.New(
 		fx.Provide(func() *urcli.Context { return cliCtx }),
