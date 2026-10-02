@@ -27,6 +27,7 @@ import (
 	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
+	"github.com/temporalio/s2s-proxy/outboundauth"
 	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"github.com/temporalio/s2s-proxy/transport/mux"
 )
@@ -126,6 +127,26 @@ func sanitizeConnectionName(name string) string {
 
 // NewClusterConnection unpacks the connConfig and creates the inbound and outbound clients and servers.
 func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logProvider logging.LoggerProvider) (*ClusterConnection, error) {
+	registry, err := outboundauth.NewRegistry()
+	if err != nil {
+		return nil, err
+	}
+	return newClusterConnection(lifetime, connConfig, logProvider, registry)
+}
+
+func newClusterConnection(
+	lifetime context.Context,
+	connConfig config.ClusterConnConfig,
+	logProvider logging.LoggerProvider,
+	credentialRegistry *outboundauth.Registry,
+) (*ClusterConnection, error) {
+	if err := connConfig.Local.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid local destination: %w", err)
+	}
+	if err := connConfig.Remote.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid remote destination: %w", err)
+	}
+
 	// The name is used in metrics and in the protocol for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
 	sanitizedConnectionName := sanitizeConnectionName(connConfig.Name)
 	cc := &ClusterConnection{
@@ -133,11 +154,29 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
-	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound")
+	cc.inboundClient, err = createClient(
+		lifetime,
+		connConfig.Name,
+		sanitizedConnectionName,
+		connConfig.Local,
+		"inbound",
+		outboundauth.DestinationLocal,
+		credentialRegistry,
+		cc.loggers.Get(LogClusterConnection),
+	)
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound")
+	cc.outboundClient, err = createClient(
+		lifetime,
+		connConfig.Name,
+		sanitizedConnectionName,
+		connConfig.Remote,
+		"outbound",
+		outboundauth.DestinationRemote,
+		credentialRegistry,
+		cc.loggers.Get(LogClusterConnection),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +250,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	}
 	cc.inboundServer, cc.inboundObserver, err = createServer(lifetime, inboundCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create inbound server: %w\nConfig:%+v", err, inboundCfg)
+		return nil, fmt.Errorf("failed to create inbound server: %w", err)
 	}
 
 	outboundCfg := serverConfiguration{
@@ -233,16 +272,50 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	}
 	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, outboundCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create outbound server: %w\nConfig:%v", err, outboundCfg)
+		return nil, fmt.Errorf("failed to create outbound server: %w", err)
 	}
 
 	return cc, nil
 }
 
-func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string) (closableClientConn, error) {
+func createClient(
+	lifetime context.Context,
+	configuredConnectionName string,
+	connectionName string,
+	transportCfg config.ClusterDefinition,
+	directionLabel string,
+	destination outboundauth.Destination,
+	credentialRegistry *outboundauth.Registry,
+	logger log.Logger,
+) (closableClientConn, error) {
+	var clientOptions grpcutil.ClientOptions
+	if callCredentials := transportCfg.CallCredentials; callCredentials != nil {
+		built, err := credentialRegistry.Build(callCredentials.Provider, outboundauth.BuildRequest{
+			Target: outboundauth.Target{
+				ClusterConnection: configuredConnectionName,
+				Destination:       destination,
+				Address:           transportCfg.TcpClient.ConnectionString,
+				Transport:         string(transportCfg.ConnectionType),
+			},
+			Properties: callCredentials.Properties,
+		}, logger)
+		if err != nil {
+			return nil, err
+		}
+		clientOptions.PerRPCCredentials = built.PerRPC
+		clientOptions.StripOutgoingMetadataKeys = built.OwnedMetadataKeys
+		logger.Info("outbound call credentials enabled",
+			tag.NewStringTag("provider", callCredentials.Provider),
+			tag.NewStringTag("destination", string(destination)),
+			tag.Address(transportCfg.TcpClient.ConnectionString),
+			tag.NewStringTag("transport", string(transportCfg.ConnectionType)),
+			tag.NewAnyTag("ownedMetadataKeys", built.OwnedMetadataKeys),
+			tag.NewStringTag("mode", "required"))
+	}
+
 	switch transportCfg.ConnectionType {
 	case config.ConnTypeTCP:
-		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel)
+		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel, clientOptions)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		return grpcutil.NewMultiClientConn(lifetime, fmt.Sprintf("client-conn-%s", connectionName),
 			// TLS is handled by the mux connection, so tlsConfig will always be nil
@@ -299,7 +372,13 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 
 // buildTLSTCPClient creates a grpc.ClientConn using the provided configuration. It schedules a goroutine that closes
 // the grpc.ClientConn when the provided lifetime ends.
-func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg encryption.TLSConfig, metricLabel string) (closableClientConn, error) {
+func buildTLSTCPClient(
+	lifetime context.Context,
+	serverAddress string,
+	tlsCfg encryption.TLSConfig,
+	metricLabel string,
+	clientOptions ...grpcutil.ClientOptions,
+) (closableClientConn, error) {
 	var parsedTLSCfg *tls.Config
 	if tlsCfg.IsEnabled() {
 		var err error
@@ -308,7 +387,7 @@ func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg en
 			return nil, fmt.Errorf("config error when creating tls config: %w", err)
 		}
 	}
-	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics(metricLabel))...)
+	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics(metricLabel), clientOptions...)...)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inbound client: %w", err)
 	}
@@ -427,8 +506,7 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 
 	if c.aclPolicy != nil {
 		c.loggers.Get("init").Info("ACL policy enabled",
-			tag.NewAnyTag("policy", c.aclPolicy),
-			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
+			tag.NewAnyTag("policy", c.aclPolicy))
 		aclInterceptor := interceptor.NewAccessControlInterceptor(c.loggers.Get(LogInterceptor),
 			c.aclPolicy.AllowedMethods.AdminService, c.aclPolicy.AllowedMethods.OperatorService, c.aclPolicy.AllowedNamespaces)
 		unaryInterceptors = append(unaryInterceptors, aclInterceptor.Intercept)
@@ -441,8 +519,7 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	}
 
 	if tlsConfig.IsEnabled() {
-		c.loggers.Get(LogTLSHandshake).Info("TLS is enabled", tag.NewStringTag("direction", c.directionLabel),
-			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
+		c.loggers.Get(LogTLSHandshake).Info("TLS is enabled", tag.NewStringTag("direction", c.directionLabel))
 		tlsConfig, err := encryption.GetServerTLSConfig(tlsConfig, log.With(c.loggers.Get(LogTLSHandshake),
 			tag.NewStringTag("name", fmt.Sprintf("Server %s-%s", c.name, c.directionLabel))))
 		if err != nil {
@@ -450,8 +527,7 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 		}
 		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
 	} else {
-		c.loggers.Get(LogTLSHandshake).Warn("TLS is disabled", tag.NewStringTag("direction", c.directionLabel),
-			tag.NewStringTag("serverConfig", fmt.Sprintf("%+v", c)))
+		c.loggers.Get(LogTLSHandshake).Warn("TLS is disabled", tag.NewStringTag("direction", c.directionLabel))
 	}
 
 	return opts, nil

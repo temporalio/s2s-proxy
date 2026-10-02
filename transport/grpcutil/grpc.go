@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding"
 
+	"github.com/temporalio/s2s-proxy/outboundauth"
 	"github.com/temporalio/s2s-proxy/proto/compat"
 )
 
@@ -30,7 +31,12 @@ const (
 	maxInternodeRecvPayloadSize = 128 * 1024 * 1024 // 128 Mb
 )
 
-func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics) []grpc.DialOption {
+type ClientOptions struct {
+	PerRPCCredentials         credentials.PerRPCCredentials
+	StripOutgoingMetadataKeys []string
+}
+
+func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics, clientOptions ...ClientOptions) []grpc.DialOption {
 	var grpcSecureOpt grpc.DialOption
 	if tlsConfig == nil {
 		grpcSecureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
@@ -49,6 +55,20 @@ func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetric
 	}
 	cp.Backoff.MaxDelay = MaxBackoffDelay
 
+	var options ClientOptions
+	if len(clientOptions) > 0 {
+		options = clientOptions[0]
+	}
+
+	unaryInterceptors := make([]grpc.UnaryClientInterceptor, 0, 2)
+	streamInterceptors := make([]grpc.StreamClientInterceptor, 0, 2)
+	if len(options.StripOutgoingMetadataKeys) > 0 {
+		unaryInterceptors = append(unaryInterceptors, outboundauth.UnaryClientInterceptor(options.StripOutgoingMetadataKeys))
+		streamInterceptors = append(streamInterceptors, outboundauth.StreamClientInterceptor(options.StripOutgoingMetadataKeys))
+	}
+	unaryInterceptors = append(unaryInterceptors, clientMetrics.UnaryClientInterceptor())
+	streamInterceptors = append(streamInterceptors, clientMetrics.StreamClientInterceptor())
+
 	dialOptions := []grpc.DialOption{
 		grpcSecureOpt,
 		grpc.WithDefaultCallOptions(
@@ -58,8 +78,11 @@ func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetric
 		grpc.WithDefaultServiceConfig(DefaultServiceConfig),
 		grpc.WithDisableServiceConfig(),
 		grpc.WithConnectParams(cp),
-		grpc.WithUnaryInterceptor(clientMetrics.UnaryClientInterceptor()),
-		grpc.WithStreamInterceptor(clientMetrics.StreamClientInterceptor()),
+		grpc.WithChainUnaryInterceptor(unaryInterceptors...),
+		grpc.WithChainStreamInterceptor(streamInterceptors...),
+	}
+	if options.PerRPCCredentials != nil {
+		dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(options.PerRPCCredentials))
 	}
 	return dialOptions
 }
