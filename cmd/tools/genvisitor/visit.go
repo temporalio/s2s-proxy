@@ -9,9 +9,23 @@ import (
 )
 
 type (
-	visitor func(VisitType, VisitPath) bool
+	// Action tells Visit what to do once a node has been offered to the visitor.
+	Action int
+
+	visitor func(VisitType, VisitPath) Action
 
 	VisitPath []VisitType
+)
+
+const (
+	// Descend carries on into the node's children.
+	Descend Action = iota
+	// Prune skips the node's children and carries on with its siblings.
+	Prune
+	// Abort skips the node's children and, when the node is a field, every field
+	// after it in the same message. It is what returning false used to mean, and
+	// the UTF-8 target still depends on it.
+	Abort
 )
 
 func Visit(obj protoreflect.MessageDescriptor, fn visitor) {
@@ -30,6 +44,10 @@ func visit(
 	// Mark seen only for this sub-tree so that we visit each field once on a given sub-path.
 	seenKey := fmt.Sprintf("%s.%s", obj.Parent().Name(), obj.GoName())
 	if _, ok := seen[seenKey]; ok {
+		// A message already on this path. Static code cannot unroll it, so tell
+		// the visitor and stop; whatever it returns is ignored.
+		cycle := VisitType{Descriptor: obj, Cycle: true}
+		fn(cycle, append(path, cycle))
 		return
 	}
 	seen[seenKey] = struct{}{}
@@ -37,7 +55,7 @@ func visit(
 
 	visitVal := VisitType{Descriptor: obj}
 	path = append(path, visitVal)
-	if !fn(visitVal, path) {
+	if fn(visitVal, path) != Descend {
 		return
 	}
 
@@ -63,8 +81,11 @@ func visit(
 				FieldName:  camelToPascalCase(field.JSONName()),
 			}
 			path = append(path, visitVal)
-			if !fn(visitVal, path) {
+			switch fn(visitVal, path) {
+			case Abort:
 				return
+			case Prune:
+				continue
 			}
 
 			if field.IsMap() {
