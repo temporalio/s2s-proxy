@@ -11,6 +11,7 @@ import (
 	"go.temporal.io/server/common/log/tag"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption/extension"
 	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
 )
@@ -59,6 +60,14 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 	}
 	proxy.profilingConfig = s2sConfig.ProfilingConfig
 
+	// Extension servers are shared by every connection whose key policy names
+	// them, so they are dialed once here and closed when the proxy's lifetime ends.
+	extensions, err := extension.Dial(ctx, s2sConfig.ExtensionServers)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("cannot create proxy: %w", err)
+	}
+
 	for _, clusterCfg := range s2sConfig.ClusterConnections {
 		id := migrationId{clusterCfg.Name}
 		// Error on duplicate cluster connection names
@@ -66,7 +75,7 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 			cancel()
 			return nil, fmt.Errorf("cannot create proxy: duplicate cluster connection name %q", clusterCfg.Name)
 		}
-		cc, err := NewClusterConnection(ctx, clusterCfg, logProvider)
+		cc, err := NewClusterConnection(ctx, clusterCfg, extensions, logProvider)
 		if err != nil {
 			cancel()
 			return nil, fmt.Errorf("cannot create cluster connection %q: %w", clusterCfg.Name, err)
