@@ -24,6 +24,8 @@ import (
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
+	"github.com/temporalio/s2s-proxy/encryption/extension"
+	"github.com/temporalio/s2s-proxy/encryption/vault"
 	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
@@ -106,9 +108,12 @@ type (
 		// not and needs nsTranslations applied first. See stampAndTranslate.
 		callerNamesLocalNamespaces bool
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
-		nsTranslations   collect.StaticBiMap[string, string]
-		saTranslations   config.SearchAttributeTranslation
-		overrides        AdminServiceOverrides
+		nsTranslations collect.StaticBiMap[string, string]
+		saTranslations config.SearchAttributeTranslation
+		overrides      AdminServiceOverrides
+		// encryptor seals and opens the payloads of workflow and operator calls made
+		// through client. Admin calls bypass it. Nil means no encryption at all.
+		encryptor        *interceptor.Encryptor
 		aclPolicy        *config.ACLPolicy
 		shardCountConfig config.ShardCountConfig
 		loggers          logging.LoggerProvider
@@ -125,8 +130,15 @@ func sanitizeConnectionName(name string) string {
 }
 
 // NewClusterConnection unpacks the connConfig and creates the inbound and outbound clients and servers.
-func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logProvider logging.LoggerProvider) (*ClusterConnection, error) {
-	return newClusterConnection(lifetime, connConfig, logProvider, auth.EmptyCredentialProvider{})
+// extensions are the dialed extension servers that connConfig's encryption key URIs may name; nil is fine
+// when they name none.
+func NewClusterConnection(
+	lifetime context.Context,
+	connConfig config.ClusterConnConfig,
+	extensions extension.Connections,
+	logProvider logging.LoggerProvider,
+) (*ClusterConnection, error) {
+	return newClusterConnection(lifetime, connConfig, extensions, logProvider, auth.EmptyCredentialProvider{})
 }
 
 // newClusterConnection is NewClusterConnection with a CredentialProvider. Its credentials are attached to calls made to
@@ -134,6 +146,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 func newClusterConnection(
 	lifetime context.Context,
 	connConfig config.ClusterConnConfig,
+	extensions extension.Connections,
 	logProvider logging.LoggerProvider,
 	credentialProvider auth.CredentialProvider,
 ) (*ClusterConnection, error) {
@@ -157,6 +170,12 @@ func newClusterConnection(
 		return nil, err
 	}
 	saTranslations, err := connConfig.SearchAttributeTranslation.AsLocalToRemoteSATranslation()
+	if err != nil {
+		return nil, err
+	}
+
+	outboundEncryptor, inboundEncryptor, err := newEncryptors(lifetime, connConfig.EncryptionConfig, extensions,
+		cc.loggers.Get(LogClusterConnection))
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +233,7 @@ func newClusterConnection(
 		},
 		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
 		aclPolicy:         connConfig.ACLPolicy,
+		encryptor:         inboundEncryptor,
 		shardCountConfig:  connConfig.ShardCountConfig,
 		loggers:           cc.loggers,
 		shardManager:      cc.shardManager,
@@ -236,6 +256,7 @@ func newClusterConnection(
 		nsTranslations:             nsTranslations,
 		saTranslations:             saTranslations,
 		overrides:                  AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote},
+		encryptor:                  outboundEncryptor,
 		shardCountConfig:           connConfig.ShardCountConfig,
 		loggers:                    cc.loggers,
 		shardManager:               cc.shardManager,
@@ -248,6 +269,54 @@ func newClusterConnection(
 	}
 
 	return cc, nil
+}
+
+// newEncryptors builds the [interceptor.Encryptor] pair for a connection, or
+// returns two nils when cfg names no keys. Both share one vault, which holds
+// KEKs until lifetime ends.
+//
+// The pair are mirror images, so the peer only ever sees sealed payloads and the
+// local cluster only ever sees opened ones. Outbound seals what the local
+// cluster sends and opens what the peer returns; inbound opens what the peer
+// sends and seals what the local cluster returns.
+//
+// cfg.Enabled only decides whether either side seals. As long as cfg names keys
+// both sides open, so switching encryption off does not strand what was sealed
+// while it was on.
+func newEncryptors(
+	lifetime context.Context,
+	cfg config.EncryptionConfig,
+	extensions extension.Connections,
+	logger log.Logger,
+) (outbound, inbound *interceptor.Encryptor, err error) {
+	if cfg.Default == nil {
+		return nil, nil, nil
+	}
+
+	v, err := vault.New(lifetime, vault.Config{Logger: logger, Encryption: cfg, Extensions: extensions})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create vault: %w", err)
+	}
+
+	ec := interceptor.EncryptorConfig{
+		Enabled:                cfg.Enabled,
+		Vault:                  v,
+		AlreadySealedEncodings: cfg.AlreadySealedEncodings,
+	}
+
+	outbound, err = interceptor.NewEncryptor(ec)
+	if err != nil {
+		return nil, nil, errors.Join(err, v.Close())
+	}
+
+	ec.Reverse = true
+	inbound, err = interceptor.NewEncryptor(ec)
+	if err != nil {
+		return nil, nil, errors.Join(err, v.Close())
+	}
+
+	context.AfterFunc(lifetime, func() { _ = v.Close() })
+	return outbound, inbound, nil
 }
 
 func createClient(
@@ -402,6 +471,13 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	}
 	server := grpc.NewServer(serverOpts...)
 
+	// Admin calls carry replication and go out on the bare client. Only workflow
+	// and operator calls have their payloads sealed and opened.
+	var payloadClient grpc.ClientConnInterface = c.client
+	if c.encryptor != nil {
+		payloadClient = interceptedConn{ClientConnInterface: c.client, intercept: c.encryptor.UnaryClientInterceptor}
+	}
+
 	adminServiceImpl := NewAdminServiceProxyServer(
 		fmt.Sprintf("%sAdminService", c.directionLabel),
 		adminservice.NewAdminServiceClient(c.client),
@@ -422,13 +498,13 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	}
 	workflowServiceImpl := NewWorkflowServiceProxyServer(
 		fmt.Sprintf("%sWorkflowService", c.directionLabel),
-		workflowservice.NewWorkflowServiceClient(c.client),
+		workflowservice.NewWorkflowServiceClient(payloadClient),
 		accessControl,
 		c.loggers,
 	)
 	operatorServiceImpl := NewOperatorServiceProxyServer(
 		fmt.Sprintf("%sOperatorService", c.directionLabel),
-		operatorservice.NewOperatorServiceClient(c.client),
+		operatorservice.NewOperatorServiceClient(payloadClient),
 		[]string{c.directionLabel},
 		c.loggers,
 	)

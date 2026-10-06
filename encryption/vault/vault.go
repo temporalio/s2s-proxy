@@ -54,23 +54,24 @@ type (
 // Opening a KEK goes through the KMS driver its scheme names, which is what ctx
 // bounds.
 //
-// cfg.Encryption must have encryption enabled; a config that turned it off gets
-// an error rather than a vault it never asked for. The config is validated
-// after that, so a bad key URI or an impossible rotation window is reported
-// before a single key is opened, and a failure part way through releases
-// whatever did open. An error therefore never leaves a key behind.
+// cfg.Encryption must name a default key policy, but need not have encryption
+// enabled. Enabled decides whether the caller seals, not whether there is a
+// vault: a config that switched encryption off still needs its keys to open
+// what was sealed while it was on. The config is validated first, so a bad key
+// URI or an impossible rotation window is reported before a single key is
+// opened, and a failure part way through releases whatever did open. An error
+// therefore never leaves a key behind.
 //
 // Close the vault when it is done with.
 func New(ctx context.Context, cfg Config) (*Vault, error) {
-	// A vault is only meaningful for a config that asked for one. This is also
-	// what makes Default safe to read below: validation requires a default policy
-	// only when encryption is enabled.
-	if !cfg.Encryption.Enabled {
-		return nil, errors.New("encryption is disabled: check Enabled before building a vault")
-	}
-
 	if err := cfg.Encryption.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid encryption config: %w", err)
+	}
+
+	// Validation only requires a default policy when encryption is enabled, so
+	// this is what makes Default safe to read below.
+	if cfg.Encryption.Default == nil {
+		return nil, errors.New("no default key policy: a vault needs keys to seal or open with")
 	}
 
 	if cfg.Logger == nil {

@@ -260,6 +260,17 @@ func TestEncryptionConfigValidate(t *testing.T) {
 			},
 		},
 		{
+			name: "already-sealed encodings may include our own marker",
+			cfg:  EncryptionConfig{AlreadySealedEncodings: []string{"binary/encrypted"}},
+		},
+		{
+			name: "empty already-sealed encoding is rejected by index",
+			cfg:  EncryptionConfig{AlreadySealedEncodings: []string{"binary/encrypted", ""}},
+			want: validation.Errors{
+				{Field: "alreadySealedEncodings[1]", Message: "is required"},
+			},
+		},
+		{
 			name: "failures across every rule are reported",
 			cfg: EncryptionConfig{
 				Enabled:   true,
@@ -313,6 +324,9 @@ overrides:
     uri: gcpkms://projects/p/locations/l/keyRings/r/cryptoKeys/a
     duration: 24h
     renewBefore: 1h
+alreadySealedEncodings:
+  - binary/encrypted
+  - binary/customer-encrypted
 `,
 			want: EncryptionConfig{
 				Enabled:   true,
@@ -333,6 +347,7 @@ overrides:
 						RenewBefore: time.Hour,
 					},
 				},
+				AlreadySealedEncodings: []string{"binary/encrypted", "binary/customer-encrypted"},
 			},
 		},
 		{

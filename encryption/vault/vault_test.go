@@ -182,6 +182,25 @@ func TestVaultIsACloser(t *testing.T) {
 	var _ io.Closer = (*Vault)(nil)
 }
 
+func TestNewVaultDisabled(t *testing.T) {
+	// Switching encryption off must not strand what was sealed while it was
+	// on, so the keys are still opened. Enabled decides whether the caller
+	// seals, not whether a vault exists to open with.
+	ec := encryptionConfig()
+	ec.Enabled = false
+
+	v, err := New(t.Context(), newVaultFixture(ec).cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = v.Close() })
+
+	msg, err := v.Seal(t.Context(), "", []byte("sealed while enabled"))
+	require.NoError(t, err)
+
+	pt, err := v.Open(t.Context(), msg)
+	require.NoError(t, err)
+	require.Equal(t, []byte("sealed while enabled"), pt)
+}
+
 func TestNewVaultErrors(t *testing.T) {
 	t.Run("an invalid config is reported before any key is opened", func(t *testing.T) {
 		ec := encryptionConfig()
@@ -193,27 +212,15 @@ func TestNewVaultErrors(t *testing.T) {
 		require.ErrorContains(t, err, "invalid encryption config")
 	})
 
-	t.Run("a disabled config gets no vault", func(t *testing.T) {
-		// The zero config: encryption off and no keys named. Reading a key policy
-		// out of it would be a nil dereference, which is the other reason this is
-		// the first thing checked.
+	t.Run("a config with no default policy gets no vault", func(t *testing.T) {
+		// The zero config: encryption off and no keys named, so there is nothing to
+		// seal or open with. Reading a key policy out of it would be a nil
+		// dereference.
 		f := newVaultFixture(config.EncryptionConfig{})
 
 		v, err := New(t.Context(), f.cfg)
 		require.Nil(t, v)
-		require.ErrorContains(t, err, "encryption is disabled")
-	})
-
-	t.Run("a disabled config gets no vault even when it names keys", func(t *testing.T) {
-		// Enabled is the question being asked, not whether a usable key happens to
-		// be lying around: a config that turned encryption off does not get a
-		// working encrypting vault back.
-		ec := encryptionConfig()
-		ec.Enabled = false
-
-		v, err := New(t.Context(), newVaultFixture(ec).cfg)
-		require.Nil(t, v)
-		require.ErrorContains(t, err, "encryption is disabled")
+		require.ErrorContains(t, err, "no default key policy")
 	})
 
 	t.Run("enabling encryption without a default policy is reported", func(t *testing.T) {
