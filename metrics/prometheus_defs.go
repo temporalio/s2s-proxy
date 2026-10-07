@@ -39,6 +39,8 @@ var (
 	GRPCOutboundClientMetrics   = GetStandardGRPCClientInterceptor("outbound")
 	GRPCInboundClientMetrics    = GetStandardGRPCClientInterceptor("inbound")
 	GRPCIntraProxyClientMetrics = GetStandardGRPCClientInterceptor("intra_proxy")
+	CallCredentialsRequests     = DefaultCounterVec("s2s_proxy_call_credentials_requests", "Outbound call credential metadata resolutions", "provider", "destination", "outcome")
+	CallCredentialsLatency      = DefaultHistogramVec("s2s_proxy_call_credentials_latency_seconds", "Outbound call credential metadata resolution latency", "provider", "destination")
 
 	// /transport/mux
 
@@ -129,6 +131,8 @@ func init() {
 	prometheus.MustRegister(GRPCOutboundClientMetrics)
 	prometheus.MustRegister(GRPCInboundClientMetrics)
 	prometheus.MustRegister(GRPCIntraProxyClientMetrics)
+	prometheus.MustRegister(CallCredentialsRequests)
+	prometheus.MustRegister(CallCredentialsLatency)
 
 	// Mux Session
 	prometheus.MustRegister(MuxSessionOpen)

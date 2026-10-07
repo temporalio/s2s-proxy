@@ -13,6 +13,7 @@ import (
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
+	"github.com/temporalio/s2s-proxy/outboundauth"
 )
 
 type (
@@ -37,10 +38,30 @@ type (
 	}
 )
 
-func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider) (*Proxy, error) {
+type Option func(*proxyOptions)
+
+type proxyOptions struct {
+	credentialProviders []outboundauth.Registration
+}
+
+func WithCredentialProviders(registrations ...outboundauth.Registration) Option {
+	return func(options *proxyOptions) {
+		options.credentialProviders = append(options.credentialProviders, registrations...)
+	}
+}
+
+func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider, opts ...Option) (*Proxy, error) {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	if err := s2sConfig.Validate(); err != nil {
 		return nil, fmt.Errorf("cannot create proxy: invalid config: %w", err)
+	}
+	var options proxyOptions
+	for _, option := range opts {
+		option(&options)
+	}
+	credentialRegistry, err := outboundauth.NewRegistry(options.credentialProviders...)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create proxy: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -66,7 +87,7 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 			cancel()
 			return nil, fmt.Errorf("cannot create proxy: duplicate cluster connection name %q", clusterCfg.Name)
 		}
-		cc, err := NewClusterConnection(ctx, clusterCfg, logProvider)
+		cc, err := newClusterConnection(ctx, clusterCfg, logProvider, credentialRegistry)
 		if err != nil {
 			cancel()
 			return nil, fmt.Errorf("cannot create cluster connection %q: %w", clusterCfg.Name, err)
