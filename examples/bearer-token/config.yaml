@@ -1,0 +1,38 @@
+clusterConnections:
+  - name: example-migration
+    local:
+      connectionType: tcp
+      tcpClient:
+        address: temporal-frontend.example.invalid:7233
+        tls:
+          remoteCAPath: /etc/s2s-proxy/tls/frontend-ca.pem
+          caServerName: temporal-frontend.example.invalid
+          skipCAVerification: false
+      tcpServer:
+        address: 0.0.0.0:9002
+        tls:
+          certificatePath: /etc/s2s-proxy/tls/proxy.pem
+          keyPath: /etc/s2s-proxy/tls/proxy.key
+          remoteCAPath: /etc/s2s-proxy/tls/proxy-peer-ca.pem
+          skipCAVerification: false
+      callCredentials:
+        provider: example-bearer
+        mode: required
+    remote:
+      connectionType: mux-server
+      muxCount: 1
+      muxAddressInfo:
+        address: 0.0.0.0:9004
+        tls:
+          certificatePath: /etc/s2s-proxy/tls/proxy.pem
+          keyPath: /etc/s2s-proxy/tls/proxy.key
+          remoteCAPath: /etc/s2s-proxy/tls/proxy-peer-ca.pem
+          skipCAVerification: false
+    replicationEndpoint: proxy.example.invalid:9002
+    aclPolicy:
+      allowedMethods:
+        adminService:
+          - DescribeCluster
+          - StreamWorkflowReplicationMessages
+      allowedNamespaces:
+        - example-namespace
