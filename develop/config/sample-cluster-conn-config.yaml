@@ -113,6 +113,17 @@ profiling:
 #         uri: "extension://hsm/payloads"
 #         duration: 1h
 #         renewBefore: 15m
+#       # Key for admin traffic, which carries replication. Admin messages do not
+#       # name their namespace, so they are sealed under this one key rather than
+#       # per namespace. Omit it to seal admin traffic under default.
+#       replication:
+#         uri: "extension://hsm/replication"
+#         duration: 1h
+#         renewBefore: 15m
+#       # HSM and CHASM state cannot be sealed, because the receiving server
+#       # decodes it. By default an admin call or replication stream carrying
+#       # it fails. Set this to send it to the peer unsealed instead.
+#       allowOpaquePlaintext: false
 #       # Encodings your own codec has already encrypted, passed through rather
 #       # than sealed again. List only encodings that encrypt; a compression
 #       # codec's would reach the peer readable.
