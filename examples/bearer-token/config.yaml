@@ -1,7 +1,8 @@
 # s2s-proxy configuration for the bearer-token example.
 #
-# The bearer token is attached to every call the proxy makes to the local Temporal frontend (local.tcpClient), and
-# never to the remote side. The token is read from S2S_PROXY_EXAMPLE_BEARER_TOKEN, not from this file.
+# local.credentials.enabled attaches the bearer token to every call the proxy makes to the local Temporal frontend
+# (local.tcpClient). It is never sent to the remote side. The token is read from S2S_PROXY_EXAMPLE_BEARER_TOKEN, not
+# from this file.
 #
 # Hostnames use the reserved .invalid TLD and certificate paths are placeholders; replace both for a real deployment.
 clusterConnections:
@@ -15,6 +16,9 @@ clusterConnections:
           remoteCAPath: /etc/s2s-proxy/tls/frontend-ca.pem
           caServerName: temporal-frontend.example.invalid
           skipCAVerification: false
+      # Send the CredentialProvider's credentials on calls to the local Temporal server.
+      credentials:
+        enabled: true
       tcpServer:
         address: 0.0.0.0:9002
         tls:

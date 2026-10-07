@@ -21,12 +21,29 @@ app.New("s2s-proxy-bearer-example", "dev",
 )
 ```
 
+The provider is used only where the config turns it on, with `local.credentials.enabled`:
+
+```yaml
+local:
+  connectionType: tcp
+  tcpClient:
+    address: temporal-frontend.example.invalid:7233
+    tls: { ... }
+  credentials:
+    enabled: true
+```
+
+The program supplies how to get a token, and the config decides whether to send it. If the config enables
+credentials but the binary has no provider, for example the stock `s2s-proxy`, the proxy refuses to start rather than
+call the server without a token. A provider in the binary does nothing for a connection that does not enable it.
+`credentials` is only accepted on the local cluster definition.
+
 `Get` returns a gRPC `credentials.PerRPCCredentials`. gRPC calls its `GetRequestMetadata` for every unary call and every
 new stream, so a rotated token takes effect on the next call without restarting the proxy or recreating connections.
 
 ## Configuration requirements
 
-The local connection (`local.tcpClient`) must be `tcp` with TLS configured. `RequireTransportSecurity` returns true, and
+The local connection must be `tcp` with `local.tcpClient.tls` configured. `RequireTransportSecurity` returns true, and
 the proxy refuses to start rather than send the token in plaintext. The sample `config.yaml` uses reserved `.invalid`
 hostnames and placeholder certificate paths.
 

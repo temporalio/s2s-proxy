@@ -72,16 +72,26 @@ func (s *authRecordingServer) authorization(method string) ([]string, bool) {
 	return values, ok
 }
 
+func newCredentialTestConnection(
+	t *testing.T,
+	a plccAddresses,
+	credentialsEnabled bool,
+	provider auth.CredentialProvider,
+) *ClusterConnection {
+	connConfig := makeTCPClusterConfig("creds", localFVI, remoteFVI, "",
+		a.localTemporalAddr, a.localProxyOutbound, a.localProxyInbound, a.remoteTemporalAddr)
+	connConfig.Local.Credentials = &config.CredentialsConfig{Enabled: credentialsEnabled}
+	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	cc, err := newClusterConnection(t.Context(), connConfig, loggers, provider)
+	require.NoError(t, err)
+	return cc
+}
+
 func TestCredentialsAreAttachedToLocalCallsOnly(t *testing.T) {
 	a := getDynamicPlccAddresses(t)
 	localTemporal := startAuthRecordingServer(t, a.localTemporalAddr)
 	remoteTemporal := startAuthRecordingServer(t, a.remoteTemporalAddr)
-
-	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
-	cc, err := newClusterConnection(t.Context(), makeTCPClusterConfig("creds", localFVI, remoteFVI, "",
-		a.localTemporalAddr, a.localProxyOutbound, a.localProxyInbound, a.remoteTemporalAddr),
-		loggers, staticCredentialProvider{creds: staticCredentials{}})
-	require.NoError(t, err)
+	cc := newCredentialTestConnection(t, a, true, staticCredentialProvider{creds: staticCredentials{}})
 
 	// Every service, unary and streaming, made on the local client carries the token.
 	ctx := t.Context()
@@ -110,11 +120,25 @@ func TestCredentialsAreAttachedToLocalCallsOnly(t *testing.T) {
 	require.Empty(t, values)
 }
 
+func TestCredentialsAreNotAttachedUnlessEnabled(t *testing.T) {
+	a := getDynamicPlccAddresses(t)
+	localTemporal := startAuthRecordingServer(t, a.localTemporalAddr)
+	startAuthRecordingServer(t, a.remoteTemporalAddr)
+	cc := newCredentialTestConnection(t, a, false, staticCredentialProvider{creds: staticCredentials{}})
+
+	_, _ = adminservice.NewAdminServiceClient(cc.inboundClient).DescribeCluster(t.Context(), &adminservice.DescribeClusterRequest{})
+	values, ok := localTemporal.authorization("/temporal.server.api.adminservice.v1.AdminService/DescribeCluster")
+	require.True(t, ok)
+	require.Empty(t, values)
+}
+
 func TestCreateClientRejectsUnusableCredentials(t *testing.T) {
+	enabled := &config.CredentialsConfig{Enabled: true}
 	tcp := func(tls encryption.TLSConfig) config.ClusterDefinition {
 		return config.ClusterDefinition{
 			ConnectionType: config.ConnTypeTCP,
 			TcpClient:      config.TCPTLSInfo{ConnectionString: "localhost:7233", TLSConfig: tls},
+			Credentials:    enabled,
 		}
 	}
 	tests := []struct {
@@ -124,6 +148,12 @@ func TestCreateClientRejectsUnusableCredentials(t *testing.T) {
 		wantError string
 	}{
 		{
+			name:      "credentials enabled without a provider",
+			cluster:   tcp(encryption.TLSConfig{}),
+			provider:  auth.EmptyCredentialProvider{},
+			wantError: "credentials are enabled but no CredentialProvider is configured",
+		},
+		{
 			name:      "provider returns no credentials",
 			cluster:   tcp(encryption.TLSConfig{}),
 			provider:  staticCredentialProvider{},
@@ -131,7 +161,7 @@ func TestCreateClientRejectsUnusableCredentials(t *testing.T) {
 		},
 		{
 			name:      "mux connection",
-			cluster:   config.ClusterDefinition{ConnectionType: config.ConnTypeMuxClient},
+			cluster:   config.ClusterDefinition{ConnectionType: config.ConnTypeMuxClient, Credentials: enabled},
 			provider:  staticCredentialProvider{creds: staticCredentials{}},
 			wantError: "credentials require a tcp connection",
 		},

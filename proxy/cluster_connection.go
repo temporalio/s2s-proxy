@@ -129,8 +129,8 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	return newClusterConnection(lifetime, connConfig, logProvider, auth.EmptyCredentialProvider{})
 }
 
-// newClusterConnection is NewClusterConnection with a CredentialProvider. Its credentials are attached only to calls
-// made to the local Temporal server, never to the remote side.
+// newClusterConnection is NewClusterConnection with a CredentialProvider. Its credentials are attached to calls made to
+// the local Temporal server when local.credentials.enabled is set, and never to the remote side.
 func newClusterConnection(
 	lifetime context.Context,
 	connConfig config.ClusterConnConfig,
@@ -258,7 +258,10 @@ func createClient(
 	credentialProvider auth.CredentialProvider,
 ) (closableClientConn, error) {
 	var clientOptions grpcutil.ClientOptions
-	if !auth.IsEmptyCredentialProvider(credentialProvider) {
+	if transportCfg.CredentialsEnabled() {
+		if auth.IsEmptyCredentialProvider(credentialProvider) {
+			return nil, fmt.Errorf("%s client: credentials are enabled but no CredentialProvider is configured", directionLabel)
+		}
 		clientOptions.PerRPCCredentials = credentialProvider.Get()
 		if clientOptions.PerRPCCredentials == nil {
 			return nil, fmt.Errorf("%s client: credential provider returned no credentials", directionLabel)

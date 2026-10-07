@@ -1,6 +1,9 @@
 package config
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/temporalio/temporal-proxy/pkg/validation"
 
 	"github.com/temporalio/s2s-proxy/collect"
@@ -49,6 +52,14 @@ type (
 		TcpServer      TCPTLSInfo     `yaml:"tcpServer"`
 		MuxCount       int            `yaml:"muxCount"`
 		MuxAddressInfo TCPTLSInfo     `yaml:"muxAddressInfo"`
+		// Credentials controls whether calls on this connection carry the auth.CredentialProvider's credentials.
+		// Only the local cluster definition supports it.
+		Credentials *CredentialsConfig `yaml:"credentials"`
+	}
+
+	CredentialsConfig struct {
+		// Enabled attaches the CredentialProvider's credentials to every call made to this cluster.
+		Enabled bool `yaml:"enabled"`
 	}
 
 	TCPTLSInfo struct {
@@ -87,11 +98,28 @@ func (config *StringTranslator) AsLocalToRemoteBiMap() (collect.StaticBiMap[stri
 	return config.cachedBiMap, nil
 }
 
+// CredentialsEnabled reports whether calls on this connection carry the CredentialProvider's credentials.
+func (c ClusterDefinition) CredentialsEnabled() bool {
+	return c.Credentials != nil && c.Credentials.Enabled
+}
+
 // Validate reports problems in this connection's config. Only the encryption
-// block is covered so far; the checks NewProxy makes inline could move here.
+// and credentials blocks are covered so far; the checks NewProxy makes inline could move here.
 func (c *ClusterConnConfig) Validate() error {
 	return validation.Validate(
 		"",
 		validation.Nested("encryption", &c.EncryptionConfig),
+		validation.Field("local.credentials", c.Local, func(local ClusterDefinition) error {
+			if local.CredentialsEnabled() && local.ConnectionType != ConnTypeTCP {
+				return fmt.Errorf("credentials require connectionType %q, got %q", ConnTypeTCP, local.ConnectionType)
+			}
+			return nil
+		}),
+		validation.Field("remote.credentials", c.Remote.Credentials, func(credentials *CredentialsConfig) error {
+			if credentials != nil {
+				return errors.New("credentials are only supported on the local cluster definition")
+			}
+			return nil
+		}),
 	)
 }
