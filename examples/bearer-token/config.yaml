@@ -1,0 +1,35 @@
+# s2s-proxy configuration for the bearer-token example.
+#
+# The bearer token is attached to every call the proxy makes to the local Temporal frontend (local.tcpClient), and
+# never to the remote side. The token is read from S2S_PROXY_EXAMPLE_BEARER_TOKEN, not from this file.
+#
+# Hostnames use the reserved .invalid TLD and certificate paths are placeholders; replace both for a real deployment.
+clusterConnections:
+  - name: example-migration
+    local:
+      connectionType: tcp
+      tcpClient:
+        address: temporal-frontend.example.invalid:7233
+        # Required: the token is only ever sent over TLS.
+        tls:
+          remoteCAPath: /etc/s2s-proxy/tls/frontend-ca.pem
+          caServerName: temporal-frontend.example.invalid
+          skipCAVerification: false
+      tcpServer:
+        address: 0.0.0.0:9002
+        tls:
+          certificatePath: /etc/s2s-proxy/tls/proxy.pem
+          keyPath: /etc/s2s-proxy/tls/proxy.key
+          remoteCAPath: /etc/s2s-proxy/tls/proxy-peer-ca.pem
+          skipCAVerification: false
+    remote:
+      connectionType: mux-server
+      muxCount: 1
+      muxAddressInfo:
+        address: 0.0.0.0:9004
+        tls:
+          certificatePath: /etc/s2s-proxy/tls/proxy.pem
+          keyPath: /etc/s2s-proxy/tls/proxy.key
+          remoteCAPath: /etc/s2s-proxy/tls/proxy-peer-ca.pem
+          skipCAVerification: false
+    replicationEndpoint: proxy.example.invalid:9002
