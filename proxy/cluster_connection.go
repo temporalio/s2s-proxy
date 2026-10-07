@@ -126,6 +126,17 @@ func sanitizeConnectionName(name string) string {
 
 // NewClusterConnection unpacks the connConfig and creates the inbound and outbound clients and servers.
 func NewClusterConnection(lifetime context.Context, connConfig config.ClusterConnConfig, logProvider logging.LoggerProvider) (*ClusterConnection, error) {
+	return newClusterConnection(lifetime, connConfig, logProvider, auth.EmptyCredentialProvider{})
+}
+
+// newClusterConnection is NewClusterConnection with a CredentialProvider. Its credentials are attached only to calls
+// made to the local Temporal server, never to the remote side.
+func newClusterConnection(
+	lifetime context.Context,
+	connConfig config.ClusterConnConfig,
+	logProvider logging.LoggerProvider,
+	credentialProvider auth.CredentialProvider,
+) (*ClusterConnection, error) {
 	// The name is used in metrics and in the protocol for identifying the multi-client-conn. Sanitize it or else grpc.Dial will be very unhappy.
 	sanitizedConnectionName := sanitizeConnectionName(connConfig.Name)
 	cc := &ClusterConnection{
@@ -133,11 +144,11 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
-	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound")
+	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound", credentialProvider)
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound")
+	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound", auth.EmptyCredentialProvider{})
 	if err != nil {
 		return nil, err
 	}
@@ -239,10 +250,30 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	return cc, nil
 }
 
-func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string) (closableClientConn, error) {
+func createClient(
+	lifetime context.Context,
+	connectionName string,
+	transportCfg config.ClusterDefinition,
+	directionLabel string,
+	credentialProvider auth.CredentialProvider,
+) (closableClientConn, error) {
+	var clientOptions grpcutil.ClientOptions
+	if !auth.IsEmptyCredentialProvider(credentialProvider) {
+		clientOptions.PerRPCCredentials = credentialProvider.Get()
+		if clientOptions.PerRPCCredentials == nil {
+			return nil, fmt.Errorf("%s client: credential provider returned no credentials", directionLabel)
+		}
+		if transportCfg.ConnectionType != config.ConnTypeTCP {
+			return nil, fmt.Errorf("%s client: credentials require a tcp connection, got %q", directionLabel, transportCfg.ConnectionType)
+		}
+		if clientOptions.PerRPCCredentials.RequireTransportSecurity() && !transportCfg.TcpClient.TLSConfig.IsEnabled() {
+			return nil, fmt.Errorf("%s client: credentials require TLS, but tcpClient.tls is not configured", directionLabel)
+		}
+	}
+
 	switch transportCfg.ConnectionType {
 	case config.ConnTypeTCP:
-		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel)
+		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel, clientOptions)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		return grpcutil.NewMultiClientConn(lifetime, fmt.Sprintf("client-conn-%s", connectionName),
 			// TLS is handled by the mux connection, so tlsConfig will always be nil
@@ -299,7 +330,13 @@ func createTCPServer(lifetime context.Context, c serverConfiguration) (contextAw
 
 // buildTLSTCPClient creates a grpc.ClientConn using the provided configuration. It schedules a goroutine that closes
 // the grpc.ClientConn when the provided lifetime ends.
-func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg encryption.TLSConfig, metricLabel string) (closableClientConn, error) {
+func buildTLSTCPClient(
+	lifetime context.Context,
+	serverAddress string,
+	tlsCfg encryption.TLSConfig,
+	metricLabel string,
+	clientOptions grpcutil.ClientOptions,
+) (closableClientConn, error) {
 	var parsedTLSCfg *tls.Config
 	if tlsCfg.IsEnabled() {
 		var err error
@@ -308,7 +345,7 @@ func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg en
 			return nil, fmt.Errorf("config error when creating tls config: %w", err)
 		}
 	}
-	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics(metricLabel))...)
+	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics(metricLabel), clientOptions)...)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inbound client: %w", err)
 	}

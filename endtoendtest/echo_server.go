@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
@@ -123,6 +124,7 @@ func NewEchoServer(
 		proxy, err = s2sproxy.NewProxy(
 			configProvider,
 			logging.NewLoggerProvider(logger, configProvider),
+			auth.EmptyCredentialProvider{},
 		)
 		if err != nil {
 			panic(err)

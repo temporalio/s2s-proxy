@@ -7,6 +7,7 @@ import (
 	"go.temporal.io/server/common/log"
 	"go.uber.org/fx"
 
+	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/proto/compat"
@@ -87,6 +88,7 @@ func (a *App) startProxy(runCtx context.Context, cliCtx *urcli.Context) error {
 		}),
 		logging.Module,
 		config.Module,
+		auth.Module,
 		proxy.Module,
 		fx.Provide(func(p *proxy.Proxy) proxyRunner { return p }),
 		fx.Options(a.extraOpts...),
