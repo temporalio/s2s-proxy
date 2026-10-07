@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"net/url"
@@ -24,17 +25,25 @@ const ExtensionKeyScheme = "extension"
 // call, so appending to it here is safe.
 var validKeySchemes = append(crypto.DefaultSchemes(), ExtensionKeyScheme)
 
+// ReplicationKeyNamespace is the vault namespace the replication key policy is
+// registered under, and the one admin traffic is sealed for. Admin messages do
+// not name their namespace, so they cannot be sealed per namespace. When no
+// replication policy is configured nothing is registered under this name and
+// the vault seals with the default key instead. No override may use it.
+const ReplicationKeyNamespace = "$replication"
+
 type (
-	// EncryptionConfig configures envelope encryption of the payloads in
-	// workflow and operator service calls crossing the connection. Payloads
-	// leaving for the peer are sealed and payloads arriving from it are opened,
-	// so the peer only ever holds sealed data. Admin service traffic, which
-	// carries replication, is not covered.
+	// EncryptionConfig configures envelope encryption of the payloads crossing
+	// the connection: workflow and operator calls, sealed per namespace, and
+	// admin calls including replication streams, sealed under Replication.
+	// Payloads leaving for the peer are sealed and payloads arriving from it are
+	// opened, so the peer only ever holds sealed data.
 	//
 	// Payloads are sealed with a data encryption key (DEK), which is itself
 	// wrapped by a key encryption key (KEK) held in a cloud KMS or an extension
-	// server. Default and Overrides are validated whether or not Enabled is set,
-	// so a broken policy gets reported before someone switches it on.
+	// server. Default, Replication, and Overrides are validated whether or not
+	// Enabled is set, so a broken policy gets reported before someone switches
+	// it on.
 	EncryptionConfig struct {
 		// Seal payloads leaving for the peer, which requires Default to be set.
 		// Opening does not depend on it: with Enabled off but Default still set,
@@ -48,6 +57,16 @@ type (
 		Default *KeyPolicy `yaml:"default"`
 		// Per-namespace key policies, keyed by namespace name, replacing Default
 		Overrides map[string]KeyPolicy `yaml:"overrides,omitempty"`
+		// Key policy for admin service traffic, which carries replication. Admin
+		// messages do not name their namespace, so they are sealed under this one
+		// policy rather than per namespace. Unset, admin traffic is sealed under
+		// Default
+		Replication *KeyPolicy `yaml:"replication,omitempty"`
+		// Let data the proxy cannot seal cross to the peer unsealed: HSM and CHASM
+		// state, serialized tasks and the like, which the receiving server decodes
+		// itself. Off, an admin call or replication stream carrying such data fails
+		// rather than leaking it
+		AllowOpaquePlaintext bool `yaml:"allowOpaquePlaintext,omitempty"`
 		// Payload encodings the customer's own codec has already encrypted, which
 		// are passed through rather than sealed again. Our own sealed payloads are
 		// always passed through and need not be listed. List only encodings that
@@ -79,6 +98,7 @@ func (e *EncryptionConfig) Validate() error {
 			validation.Field("default", e.Default, validation.Required[*KeyPolicy]()),
 		),
 		validation.WhenNested(func() bool { return e.Default != nil }, "default", e.Default),
+		validation.WhenNested(func() bool { return e.Replication != nil }, "replication", e.Replication),
 	}
 
 	// Sort the namespace keys so error ordering is deterministic across runs.
@@ -87,6 +107,7 @@ func (e *EncryptionConfig) Validate() error {
 		subject := fmt.Sprintf("overrides[%s]", ns)
 		rules = append(rules,
 			validation.Field(subject, ns, validation.Required[string]()),
+			validation.Field(subject, ns, notReservedNamespace()),
 			validation.Nested(subject, &policy),
 		)
 	}
@@ -151,7 +172,8 @@ func validKeyURIRef() validation.Check[*string] {
 // extension server, given the set of known names. Each failure is stamped with
 // the referring policy's YAML path, so prefix is the path of the encryption
 // block itself (e.g. "clusterConnections[0].encryption") and the rules extend it
-// to "...encryption.default"/"uri" or "...encryption.overrides[payments]".
+// to "...encryption.default"/"uri", "...encryption.replication", or
+// "...encryption.overrides[payments]".
 //
 // These rules live apart from Validate because they need the full set of
 // extension server names, which only the top-level config knows. Keeping them
@@ -172,6 +194,10 @@ func (e *EncryptionConfig) referentialRules(prefix string, known map[string]stru
 
 	if e.Default != nil {
 		policy(prefix+".default", e.Default)
+	}
+
+	if e.Replication != nil {
+		policy(prefix+".replication", e.Replication)
 	}
 
 	// Sorted so error ordering is deterministic across runs, matching Validate.
@@ -203,5 +229,18 @@ func extensionRef(subject, field, raw string, known map[string]struct{}) validat
 			Field:   field,
 			Message: fmt.Sprintf("unknown extension server: %s", u.Host),
 		}}
+	}
+}
+
+// notReservedNamespace rejects [ReplicationKeyNamespace] as an override name.
+// The vault keys the replication policy by that name, so an override of it
+// would collide with, or silently replace, the replication key.
+func notReservedNamespace() validation.Check[string] {
+	return func(ns string) error {
+		if ns == ReplicationKeyNamespace {
+			return errors.New("is reserved for the replication key policy; set encryption.replication instead")
+		}
+
+		return nil
 	}
 }

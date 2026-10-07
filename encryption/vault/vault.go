@@ -49,8 +49,9 @@ type (
 )
 
 // New builds a [Vault] from cfg. It opens every KEK the config names, registers
-// each against the namespace it serves, and applies that namespace's DEK
-// rotation schedule; namespaces with no override get the default policy.
+// each against the namespace it serves (the replication key under
+// [config.ReplicationKeyNamespace]), and applies that namespace's DEK rotation
+// schedule; namespaces with no key of their own get the default policy.
 // Opening a KEK goes through the KMS driver its scheme names, which is what ctx
 // bounds.
 //
@@ -82,7 +83,7 @@ func New(ctx context.Context, cfg Config) (*Vault, error) {
 		cfg.Meter = NewCryptoMeter()
 	}
 
-	opts := make([]crypto.VaultOption, 0, 3+len(cfg.Encryption.Overrides))
+	opts := make([]crypto.VaultOption, 0, 4+len(cfg.Encryption.Overrides))
 	opts = append(opts,
 		crypto.WithDefaultKeyConfig(crypto.KeyConfig{
 			Duration:    cfg.Encryption.Default.Duration,
@@ -91,6 +92,13 @@ func New(ctx context.Context, cfg Config) (*Vault, error) {
 		crypto.WithCacheSize(cfg.Encryption.CacheSize),
 		crypto.WithObserver(cfg.Meter),
 	)
+
+	if p := cfg.Encryption.Replication; p != nil {
+		opts = append(opts, crypto.WithKeyConfig(config.ReplicationKeyNamespace, crypto.KeyConfig{
+			Duration:    p.Duration,
+			RenewBefore: p.RenewBefore,
+		}))
+	}
 
 	// Each override carries its own DEK lifetime; register it so the override
 	// namespace rotates on its own schedule rather than inheriting the default.

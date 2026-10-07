@@ -74,6 +74,17 @@ type (
 		outboundObserver *ReplicationStreamObserver
 		shardManager     ShardManager
 		loggers          logging.LoggerProvider
+		// outboundEncryptors and inboundEncryptors are the encryptors for
+		// outboundClient and inboundClient respectively; see encryptorsFor.
+		outboundEncryptors connEncryptors
+		inboundEncryptors  connEncryptors
+	}
+	// connEncryptors are the encryptors for one client conn, built for the side
+	// the conn faces: peer-facing seals requests and opens responses,
+	// local-facing does the reverse. The zero value encrypts nothing.
+	connEncryptors struct {
+		payload *interceptor.Encryptor
+		admin   *interceptor.AdminEncryptor
 	}
 	// contextAwareServer represents a startable gRPC server used to provide the Temporal interface on some connection.
 	// IsUsable and Describe allow the caller to know and log the current state of the server.
@@ -111,12 +122,14 @@ type (
 		nsTranslations collect.StaticBiMap[string, string]
 		saTranslations config.SearchAttributeTranslation
 		overrides      AdminServiceOverrides
-		// encryptor seals and opens the payloads of workflow and operator calls made
-		// through client. Admin calls bypass it. Nil means no encryption at all.
-		encryptor        *interceptor.Encryptor
-		aclPolicy        *config.ACLPolicy
-		shardCountConfig config.ShardCountConfig
-		loggers          logging.LoggerProvider
+		// clientEncryptors and managedEncryptors seal and open what goes through
+		// client and managedClient, chosen by the side each conn faces (see
+		// ClusterConnection.encryptorsFor). The zero value means no encryption.
+		clientEncryptors  connEncryptors
+		managedEncryptors connEncryptors
+		aclPolicy         *config.ACLPolicy
+		shardCountConfig  config.ShardCountConfig
+		loggers           logging.LoggerProvider
 
 		shardManager      ShardManager
 		lcmParameters     LCMParameters
@@ -162,7 +175,7 @@ func NewClusterConnection(
 		return nil, err
 	}
 
-	outboundEncryptor, inboundEncryptor, err := newEncryptors(lifetime, connConfig.EncryptionConfig, extensions,
+	cc.outboundEncryptors, cc.inboundEncryptors, err = newEncryptors(lifetime, connConfig.EncryptionConfig, extensions,
 		cc.loggers.Get(LogClusterConnection))
 	if err != nil {
 		return nil, err
@@ -209,7 +222,9 @@ func NewClusterConnection(
 		clusterDefinition: connConfig.Remote,
 		directionLabel:    "inbound",
 		client:            cc.inboundClient,
+		clientEncryptors:  cc.encryptorsFor(cc.inboundClient),
 		managedClient:     cc.outboundClient,
+		managedEncryptors: cc.encryptorsFor(cc.outboundClient),
 		// The peer calls us, so it names namespaces the way the peer knows them.
 		callerNamesLocalNamespaces: false,
 		nsTranslations:             nsTranslations.Inverse(),
@@ -221,7 +236,6 @@ func NewClusterConnection(
 		},
 		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
 		aclPolicy:         connConfig.ACLPolicy,
-		encryptor:         inboundEncryptor,
 		shardCountConfig:  connConfig.ShardCountConfig,
 		loggers:           cc.loggers,
 		shardManager:      cc.shardManager,
@@ -238,13 +252,14 @@ func NewClusterConnection(
 		clusterDefinition: connConfig.Local,
 		directionLabel:    "outbound",
 		client:            cc.outboundClient,
+		clientEncryptors:  cc.encryptorsFor(cc.outboundClient),
 		managedClient:     cc.inboundClient,
+		managedEncryptors: cc.encryptorsFor(cc.inboundClient),
 		// The local cluster calls us, so it already names local namespaces.
 		callerNamesLocalNamespaces: true,
 		nsTranslations:             nsTranslations,
 		saTranslations:             saTranslations,
 		overrides:                  AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote},
-		encryptor:                  outboundEncryptor,
 		shardCountConfig:           connConfig.ShardCountConfig,
 		loggers:                    cc.loggers,
 		shardManager:               cc.shardManager,
@@ -259,14 +274,14 @@ func NewClusterConnection(
 	return cc, nil
 }
 
-// newEncryptors builds the [interceptor.Encryptor] pair for a connection, or
-// returns two nils when cfg names no keys. Both share one vault, which holds
-// KEKs until lifetime ends.
+// newEncryptors builds the encryptors for each side of a connection, a payload
+// and an admin encryptor apiece, or zero values when cfg names no keys. All of
+// them share one vault, which holds KEKs until lifetime ends.
 //
-// The pair are mirror images, so the peer only ever sees sealed payloads and the
-// local cluster only ever sees opened ones. Outbound seals what the local
-// cluster sends and opens what the peer returns; inbound opens what the peer
-// sends and seals what the local cluster returns.
+// The two sides are mirror images, so the peer only ever sees sealed payloads
+// and the local cluster only ever sees opened ones. Outbound seals what the
+// local cluster sends and opens what the peer returns; inbound opens what the
+// peer sends and seals what the local cluster returns.
 //
 // cfg.Enabled only decides whether either side seals. As long as cfg names keys
 // both sides open, so switching encryption off does not strand what was sealed
@@ -276,35 +291,91 @@ func newEncryptors(
 	cfg config.EncryptionConfig,
 	extensions extension.Connections,
 	logger log.Logger,
-) (outbound, inbound *interceptor.Encryptor, err error) {
+) (outbound, inbound connEncryptors, err error) {
 	if cfg.Default == nil {
-		return nil, nil, nil
+		return connEncryptors{}, connEncryptors{}, nil
 	}
 
 	v, err := vault.New(lifetime, vault.Config{Logger: logger, Encryption: cfg, Extensions: extensions})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create vault: %w", err)
+		return connEncryptors{}, connEncryptors{}, fmt.Errorf("failed to create vault: %w", err)
 	}
 
-	ec := interceptor.EncryptorConfig{
-		Enabled:                cfg.Enabled,
-		Vault:                  v,
-		AlreadySealedEncodings: cfg.AlreadySealedEncodings,
+	if cfg.Enabled && cfg.AllowOpaquePlaintext {
+		logger.Warn("encryption.allowOpaquePlaintext is set: HSM and CHASM state cross to the peer unsealed")
 	}
 
-	outbound, err = interceptor.NewEncryptor(ec)
-	if err != nil {
-		return nil, nil, errors.Join(err, v.Close())
+	observer := newOpaqueObserver(logger)
+	side := func(reverse bool) (connEncryptors, error) {
+		ec := interceptor.EncryptorConfig{
+			Enabled:                cfg.Enabled,
+			Vault:                  v,
+			Reverse:                reverse,
+			AlreadySealedEncodings: cfg.AlreadySealedEncodings,
+		}
+
+		payload, err := interceptor.NewEncryptor(ec)
+		if err != nil {
+			return connEncryptors{}, err
+		}
+
+		admin, err := interceptor.NewAdminEncryptor(interceptor.AdminEncryptorConfig{
+			EncryptorConfig:      ec,
+			AllowOpaquePlaintext: cfg.AllowOpaquePlaintext,
+			Observer:             observer,
+		})
+		if err != nil {
+			return connEncryptors{}, err
+		}
+
+		return connEncryptors{payload: payload, admin: admin}, nil
 	}
 
-	ec.Reverse = true
-	inbound, err = interceptor.NewEncryptor(ec)
-	if err != nil {
-		return nil, nil, errors.Join(err, v.Close())
+	if outbound, err = side(false); err != nil {
+		return connEncryptors{}, connEncryptors{}, errors.Join(err, v.Close())
+	}
+
+	if inbound, err = side(true); err != nil {
+		return connEncryptors{}, connEncryptors{}, errors.Join(err, v.Close())
 	}
 
 	context.AfterFunc(lifetime, func() { _ = v.Close() })
 	return outbound, inbound, nil
+}
+
+// encryptorsFor returns the encryptors for conn, which must be one of cc's two
+// clients. Encryptors belong to the conn, by the side it faces, not to the
+// server using it: in routing mode a server opens replication streams on its
+// managedClient, which faces the other way.
+func (cc *ClusterConnection) encryptorsFor(conn closableClientConn) connEncryptors {
+	switch conn {
+	case cc.outboundClient:
+		return cc.outboundEncryptors
+	case cc.inboundClient:
+		return cc.inboundEncryptors
+	}
+
+	panic(fmt.Sprintf("encryptorsFor called with a conn the cluster connection does not own: %T", conn))
+}
+
+// payloadConn returns conn with e's payload encryptor in front of it, for the
+// workflow and operator clients.
+func (e connEncryptors) payloadConn(conn grpc.ClientConnInterface) grpc.ClientConnInterface {
+	if e.payload == nil {
+		return conn
+	}
+
+	return interceptedConn{ClientConnInterface: conn, intercept: e.payload.UnaryClientInterceptor}
+}
+
+// adminConn returns conn with e's admin encryptor in front of its unary calls
+// and its streams, for the admin clients.
+func (e connEncryptors) adminConn(conn grpc.ClientConnInterface) grpc.ClientConnInterface {
+	if e.admin == nil {
+		return conn
+	}
+
+	return interceptedConn{ClientConnInterface: conn, intercept: e.admin.Unary, interceptStream: e.admin.Stream}
 }
 
 func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string) (closableClientConn, error) {
@@ -422,17 +493,10 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	}
 	server := grpc.NewServer(serverOpts...)
 
-	// Admin calls carry replication and go out on the bare client. Only workflow
-	// and operator calls have their payloads sealed and opened.
-	var payloadClient grpc.ClientConnInterface = c.client
-	if c.encryptor != nil {
-		payloadClient = interceptedConn{ClientConnInterface: c.client, intercept: c.encryptor.UnaryClientInterceptor}
-	}
-
 	adminServiceImpl := NewAdminServiceProxyServer(
 		fmt.Sprintf("%sAdminService", c.directionLabel),
-		adminservice.NewAdminServiceClient(c.client),
-		adminservice.NewAdminServiceClient(c.managedClient),
+		adminservice.NewAdminServiceClient(c.clientEncryptors.adminConn(c.client)),
+		adminservice.NewAdminServiceClient(c.managedEncryptors.adminConn(c.managedClient)),
 		c.overrides,
 		[]string{c.directionLabel},
 		observeFn,
@@ -449,13 +513,13 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	}
 	workflowServiceImpl := NewWorkflowServiceProxyServer(
 		fmt.Sprintf("%sWorkflowService", c.directionLabel),
-		workflowservice.NewWorkflowServiceClient(payloadClient),
+		workflowservice.NewWorkflowServiceClient(c.clientEncryptors.payloadConn(c.client)),
 		accessControl,
 		c.loggers,
 	)
 	operatorServiceImpl := NewOperatorServiceProxyServer(
 		fmt.Sprintf("%sOperatorService", c.directionLabel),
-		operatorservice.NewOperatorServiceClient(payloadClient),
+		operatorservice.NewOperatorServiceClient(c.clientEncryptors.payloadConn(c.client)),
 		[]string{c.directionLabel},
 		c.loggers,
 	)

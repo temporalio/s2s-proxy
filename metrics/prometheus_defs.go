@@ -81,6 +81,8 @@ var (
 	EncryptionDEKOps         = DefaultCounterVec("enc_dek_ops_total", "Total DEK operations (payload encrypt/decrypt), labeled by operation and result", "operation", "result")
 	EncryptionDEKOpDur       = BucketedHistogramVec("enc_dek_op_duration_secs", "Duration of the AES-256-GCM step alone in seconds, excluding any KEK wrap or unwrap, labeled by operation", prometheus.ExponentialBuckets(0.00001, 4, 7), "operation")
 	EncryptionDEKRotations   = DefaultCounterVec("enc_dek_rotations_total", "Total DEK rotations, labeled by reason", "reason")
+	EncryptionOpaquePassed   = DefaultCounterVec("enc_opaque_passthrough_total", "Total opaque fields sent to the peer unsealed because allowOpaquePlaintext is set, labeled by kind", "kind")
+	EncryptionOpaqueRejected = DefaultCounterVec("enc_opaque_rejected_total", "Total admin messages refused because they carried opaque data that cannot be sealed, labeled by kind", "kind")
 
 	// Translation interceptor
 
@@ -164,6 +166,8 @@ func init() {
 		EncryptionDEKOps,
 		EncryptionDEKOpDur,
 		EncryptionDEKRotations,
+		EncryptionOpaquePassed,
+		EncryptionOpaqueRejected,
 	)
 
 	prometheus.MustRegister(TranslationCount)

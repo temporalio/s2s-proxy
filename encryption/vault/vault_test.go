@@ -383,3 +383,59 @@ func TestNewVaultExtensionKeyWithoutConnections(t *testing.T) {
 	_, err := New(t.Context(), newVaultFixture(ec).cfg)
 	require.ErrorContains(t, err, `unknown extension server "hsm"`)
 }
+
+func TestNewVaultReplicationKey(t *testing.T) {
+	t.Run("admin traffic seals under the replication policy", func(t *testing.T) {
+		ec := encryptionConfig()
+		ec.Replication = keyPolicy(3)
+		v := requireVault(t, newVaultFixture(ec))
+
+		msg, err := v.Seal(t.Context(), config.ReplicationKeyNamespace, []byte("payload"))
+		require.NoError(t, err)
+		require.Equal(t, testingKeyID(3), msg.KeyMaterial.KEKID)
+
+		plaintext, err := v.Open(t.Context(), msg)
+		require.NoError(t, err)
+		require.Equal(t, []byte("payload"), plaintext)
+	})
+
+	t.Run("without one admin traffic seals under the default policy", func(t *testing.T) {
+		v := requireVault(t, newVaultFixture(encryptionConfig()))
+
+		msg, err := v.Seal(t.Context(), config.ReplicationKeyNamespace, []byte("payload"))
+		require.NoError(t, err)
+		require.Equal(t, testingKeyID(1), msg.KeyMaterial.KEKID)
+	})
+
+	t.Run("namespaces are unaffected by the replication policy", func(t *testing.T) {
+		ec := encryptionConfig()
+		ec.Replication = keyPolicy(3)
+		v := requireVault(t, newVaultFixture(ec))
+
+		msg, err := v.Seal(t.Context(), "some-namespace", []byte("payload"))
+		require.NoError(t, err)
+		require.Equal(t, testingKeyID(1), msg.KeyMaterial.KEKID)
+	})
+
+	t.Run("the replication key rotates on its own schedule", func(t *testing.T) {
+		ec := encryptionConfig()
+		ec.Replication = &config.KeyPolicy{URI: testingKeyURI(3), Duration: time.Nanosecond}
+
+		f := newVaultFixture(ec)
+		sealTwice(t, requireVault(t, f), config.ReplicationKeyNamespace)
+
+		require.Equal(t, []crypto.RotationEvent{
+			{Namespace: config.ReplicationKeyNamespace, Reason: crypto.RotationOnDemand},
+			{Namespace: config.ReplicationKeyNamespace, Reason: crypto.RotationOnDemand},
+		}, rotations(f.meter))
+	})
+
+	t.Run("the same key as the default is refused", func(t *testing.T) {
+		ec := encryptionConfig()
+		ec.Replication = keyPolicy(1)
+
+		v, err := New(t.Context(), newVaultFixture(ec).cfg)
+		require.Nil(t, v)
+		require.ErrorContains(t, err, "duplicate key id")
+	})
+}

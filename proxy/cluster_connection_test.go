@@ -18,11 +18,15 @@ import (
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/api/adminservice/v1"
+	persistencespb "go.temporal.io/server/api/persistence/v1"
+	replicationspb "go.temporal.io/server/api/replication/v1"
+	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/temporalio/s2s-proxy/config"
@@ -471,12 +475,20 @@ func TestProxyStampAndTranslateNamespace(t *testing.T) {
 	})
 }
 
-func TestBuildProxyServerEncryptsOnlyNonAdminTraffic(t *testing.T) {
-	var intercepted []string
-	encryptor := &interceptor.Encryptor{
-		UnaryClientInterceptor: func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-			intercepted = append(intercepted, method)
-			return invoker(ctx, method, req, reply, cc, opts...)
+func TestBuildProxyServerEncryptsEachServiceWithItsEncryptor(t *testing.T) {
+	var payload, admin []string
+	encryptors := connEncryptors{
+		payload: &interceptor.Encryptor{
+			UnaryClientInterceptor: func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+				payload = append(payload, method)
+				return invoker(ctx, method, req, reply, cc, opts...)
+			},
+		},
+		admin: &interceptor.AdminEncryptor{
+			Unary: func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+				admin = append(admin, method)
+				return invoker(ctx, method, req, reply, cc, opts...)
+			},
 		},
 	}
 
@@ -485,13 +497,13 @@ func TestBuildProxyServerEncryptsOnlyNonAdminTraffic(t *testing.T) {
 
 	upstream := &recordingConn{}
 	server, err := buildProxyServer(serverConfiguration{
-		name:           "test",
-		directionLabel: "outbound",
-		client:         upstream,
-		managedClient:  &recordingConn{},
-		encryptor:      encryptor,
-		nsTranslations: nsTranslations,
-		loggers:        logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{})),
+		name:             "test",
+		directionLabel:   "outbound",
+		client:           upstream,
+		managedClient:    &recordingConn{},
+		clientEncryptors: encryptors,
+		nsTranslations:   nsTranslations,
+		loggers:          logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{})),
 	}, encryption.TLSConfig{}, func(int32, int32) {}, t.Context())
 	require.NoError(t, err)
 
@@ -517,12 +529,55 @@ func TestBuildProxyServerEncryptsOnlyNonAdminTraffic(t *testing.T) {
 	require.Equal(t, []string{
 		workflowservice.WorkflowService_StartWorkflowExecution_FullMethodName,
 		operatorservice.OperatorService_ListNexusEndpoints_FullMethodName,
-	}, intercepted, "admin traffic carries replication, which is not sealed here")
-	require.Equal(t, []string{
-		workflowservice.WorkflowService_StartWorkflowExecution_FullMethodName,
-		operatorservice.OperatorService_ListNexusEndpoints_FullMethodName,
-		adminservice.AdminService_DeleteWorkflowExecution_FullMethodName,
-	}, upstream.invoked, "every call still has to reach the upstream")
+	}, payload)
+	require.Equal(t, []string{adminservice.AdminService_DeleteWorkflowExecution_FullMethodName}, admin)
+	require.Len(t, upstream.invoked, 3, "every call still has to reach the upstream")
+}
+
+func TestConnEncryptorsWrapConns(t *testing.T) {
+	cc := &recordingConn{}
+
+	t.Run("the zero value leaves conns alone", func(t *testing.T) {
+		require.Same(t, cc, connEncryptors{}.payloadConn(cc))
+		require.Same(t, cc, connEncryptors{}.adminConn(cc))
+	})
+
+	t.Run("admin streams go through the admin encryptor", func(t *testing.T) {
+		var streamed []string
+		e := connEncryptors{admin: &interceptor.AdminEncryptor{
+			Unary: func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+				return invoker(ctx, method, req, reply, cc, opts...)
+			},
+			Stream: func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+				streamed = append(streamed, method)
+				return streamer(ctx, desc, cc, method, opts...)
+			},
+		}}
+
+		_, err := e.adminConn(cc).NewStream(t.Context(), &grpc.StreamDesc{}, "/admin/Stream")
+		require.NoError(t, err)
+		require.Equal(t, []string{"/admin/Stream"}, streamed)
+	})
+}
+
+func TestEncryptorsBelongToTheConnNotTheServer(t *testing.T) {
+	// In routing mode a server opens replication streams on its managedClient,
+	// which faces the other side. Pairing by conn keeps those streams sealing in
+	// the right direction whichever server opened them.
+	outboundConn, inboundConn := &recordingConn{}, &recordingConn{}
+	outbound := connEncryptors{admin: &interceptor.AdminEncryptor{}}
+	inbound := connEncryptors{payload: &interceptor.Encryptor{}}
+
+	cc := &ClusterConnection{
+		outboundClient:     outboundConn,
+		inboundClient:      inboundConn,
+		outboundEncryptors: outbound,
+		inboundEncryptors:  inbound,
+	}
+
+	require.Equal(t, outbound, cc.encryptorsFor(outboundConn))
+	require.Equal(t, inbound, cc.encryptorsFor(inboundConn))
+	require.Panics(t, func() { cc.encryptorsFor(&recordingConn{}) }, "a conn the connection does not own is a bug")
 }
 
 // recordingWorkflowService remembers the last StartWorkflowExecution request it
@@ -570,16 +625,57 @@ func (s *recordingWorkflowService) lastInput(t *testing.T) *commonpb.Payload {
 	return s.last.GetInput().GetPayloads()[0]
 }
 
-func startRecordingWorkflowService(t *testing.T, address string) *recordingWorkflowService {
+// startRecordingCluster serves a recording workflow service and a recording
+// admin service at address, standing in for one cluster's frontend.
+func startRecordingCluster(t *testing.T, address string) (*recordingWorkflowService, *recordingAdminService) {
 	listener, err := net.Listen("tcp", address)
 	require.NoError(t, err)
 
 	svc := &recordingWorkflowService{}
+	admin := &recordingAdminService{}
 	server := grpc.NewServer()
 	workflowservice.RegisterWorkflowServiceServer(server, svc)
+	adminservice.RegisterAdminServiceServer(server, admin)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	return svc
+	return svc, admin
+}
+
+// recordingAdminService answers every replication stream, and every
+// GetDLQReplicationMessages call, with the response setNext left. Streams are
+// then held open until the caller goes away.
+type recordingAdminService struct {
+	adminservice.UnimplementedAdminServiceServer
+
+	mu   sync.Mutex
+	next *adminservice.StreamWorkflowReplicationMessagesResponse
+}
+
+func (s *recordingAdminService) setNext(r *adminservice.StreamWorkflowReplicationMessagesResponse) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.next = r
+}
+
+func (s *recordingAdminService) getNext() *adminservice.StreamWorkflowReplicationMessagesResponse {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.next
+}
+
+func (s *recordingAdminService) StreamWorkflowReplicationMessages(stream adminservice.AdminService_StreamWorkflowReplicationMessagesServer) error {
+	if err := stream.Send(s.getNext()); err != nil {
+		return err
+	}
+
+	<-stream.Context().Done()
+	return nil
+}
+
+func (s *recordingAdminService) GetDLQReplicationMessages(context.Context, *adminservice.GetDLQReplicationMessagesRequest) (*adminservice.GetDLQReplicationMessagesResponse, error) {
+	return &adminservice.GetDLQReplicationMessagesResponse{
+		ReplicationTasks: s.getNext().GetMessages().GetReplicationTasks(),
+	}, nil
 }
 
 func plainPayload(data string) *commonpb.Payload {
@@ -609,8 +705,9 @@ func startWorkflowWithInput(t *testing.T, address string, input *commonpb.Payloa
 // encryptingConnection is a cluster connection between two recording workflow
 // services, with encryption configured under testEncryptionKeyURI.
 type encryptingConnection struct {
-	local, remote     *recordingWorkflowService
-	outbound, inbound string
+	local, remote           *recordingWorkflowService
+	localAdmin, remoteAdmin *recordingAdminService
+	outbound, inbound       string
 }
 
 var testEncryptionKeyURI = "testing://" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
@@ -619,12 +716,9 @@ func startEncryptingConnection(t *testing.T, enabled bool, edits ...func(*config
 	ports := getDynamicPorts(t, 4)
 	localTemporalAddr, remoteTemporalAddr, proxyOutbound, proxyInbound := ports[0], ports[1], ports[2], ports[3]
 
-	c := encryptingConnection{
-		remote:   startRecordingWorkflowService(t, remoteTemporalAddr),
-		local:    startRecordingWorkflowService(t, localTemporalAddr),
-		outbound: proxyOutbound,
-		inbound:  proxyInbound,
-	}
+	c := encryptingConnection{outbound: proxyOutbound, inbound: proxyInbound}
+	c.remote, c.remoteAdmin = startRecordingCluster(t, remoteTemporalAddr)
+	c.local, c.localAdmin = startRecordingCluster(t, localTemporalAddr)
 
 	cfg := makeTCPClusterConfig("encrypting", localFVI, remoteFVI, proxyOutbound,
 		localTemporalAddr, proxyInbound, proxyOutbound, remoteTemporalAddr)
@@ -758,6 +852,132 @@ func TestNewEncryptorsAreNilWithoutKeys(t *testing.T) {
 	// visit a single payload.
 	outbound, inbound, err := newEncryptors(t.Context(), config.EncryptionConfig{}, nil, log.NewTestLogger())
 	require.NoError(t, err)
-	require.Nil(t, outbound)
-	require.Nil(t, inbound)
+	require.Equal(t, connEncryptors{}, outbound)
+	require.Equal(t, connEncryptors{}, inbound)
+}
+
+// recvReplication opens a replication stream through address, as a history
+// service would, and returns the first response or error.
+func recvReplication(t *testing.T, address string) (*adminservice.StreamWorkflowReplicationMessagesResponse, error) {
+	t.Helper()
+
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	t.Cleanup(cancel)
+	ctx = metadata.NewOutgoingContext(ctx, history.EncodeClusterShardMD(
+		history.ClusterShardID{ClusterID: 1, ShardID: 1},
+		history.ClusterShardID{ClusterID: 2, ShardID: 1},
+	))
+
+	stream, err := adminservice.NewAdminServiceClient(conn).StreamWorkflowReplicationMessages(ctx)
+	require.NoError(t, err)
+
+	return stream.Recv()
+}
+
+func replicationOf(tasks ...*replicationspb.ReplicationTask) *adminservice.StreamWorkflowReplicationMessagesResponse {
+	return &adminservice.StreamWorkflowReplicationMessagesResponse{
+		Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
+			Messages: &replicationspb.WorkflowReplicationMessages{ReplicationTasks: tasks},
+		},
+	}
+}
+
+func activityReplicationTask(details ...*commonpb.Payload) *replicationspb.ReplicationTask {
+	return &replicationspb.ReplicationTask{
+		Attributes: &replicationspb.ReplicationTask_SyncActivityTaskAttributes{
+			SyncActivityTaskAttributes: &replicationspb.SyncActivityTaskAttributes{
+				Details: &commonpb.Payloads{Payloads: details},
+			},
+		},
+	}
+}
+
+func hsmReplicationTask(state string) *replicationspb.ReplicationTask {
+	return &replicationspb.ReplicationTask{
+		Attributes: &replicationspb.ReplicationTask_SyncHsmAttributes{
+			SyncHsmAttributes: &replicationspb.SyncHSMAttributes{
+				StateMachineNode: &persistencespb.StateMachineNode{Data: []byte(state)},
+			},
+		},
+	}
+}
+
+func activityDetail(t *testing.T, r *adminservice.StreamWorkflowReplicationMessagesResponse) *commonpb.Payload {
+	t.Helper()
+
+	tasks := r.GetMessages().GetReplicationTasks()
+	require.Len(t, tasks, 1)
+	details := tasks[0].GetSyncActivityTaskAttributes().GetDetails().GetPayloads()
+	require.Len(t, details, 1)
+
+	return details[0]
+}
+
+func TestClusterConnectionEncryptsReplicationStreams(t *testing.T) {
+	c := startEncryptingConnection(t, true)
+
+	t.Run("local replication reaches the peer sealed", func(t *testing.T) {
+		// The peer pulls from the local cluster through the inbound port.
+		c.localAdmin.setNext(replicationOf(activityReplicationTask(plainPayload(`"heartbeat"`))))
+
+		resp, err := recvReplication(t, c.inbound)
+		require.NoError(t, err)
+
+		got := activityDetail(t, resp)
+		require.Equal(t, codec.EncryptionEncoding, encodingOf(got))
+		require.NotContains(t, string(got.GetData()), "heartbeat")
+	})
+
+	t.Run("sealed replication from the peer reaches the local cluster opened", func(t *testing.T) {
+		c.localAdmin.setNext(replicationOf(activityReplicationTask(plainPayload(`"round-trip"`))))
+		sealedResp, err := recvReplication(t, c.inbound)
+		require.NoError(t, err)
+		require.Equal(t, codec.EncryptionEncoding, encodingOf(activityDetail(t, sealedResp)), "the peer holds it sealed")
+
+		// The local cluster pulls from the peer through the outbound port.
+		c.remoteAdmin.setNext(sealedResp)
+		resp, err := recvReplication(t, c.outbound)
+		require.NoError(t, err)
+
+		got := activityDetail(t, resp)
+		require.Equal(t, "json/plain", encodingOf(got))
+		require.Equal(t, `"round-trip"`, string(got.GetData()))
+	})
+
+	t.Run("opaque state fails the stream rather than leaking", func(t *testing.T) {
+		c.localAdmin.setNext(replicationOf(hsmReplicationTask("hsm-state")))
+
+		resp, err := recvReplication(t, c.inbound)
+		require.Error(t, err)
+		require.Nil(t, resp)
+	})
+
+	t.Run("unary admin responses reach the peer sealed", func(t *testing.T) {
+		c.localAdmin.setNext(replicationOf(activityReplicationTask(plainPayload(`"dlq"`))))
+
+		conn, err := grpc.NewClient(c.inbound, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = conn.Close() })
+
+		resp, err := adminservice.NewAdminServiceClient(conn).
+			GetDLQReplicationMessages(t.Context(), &adminservice.GetDLQReplicationMessagesRequest{})
+		require.NoError(t, err)
+
+		got := resp.GetReplicationTasks()[0].GetSyncActivityTaskAttributes().GetDetails().GetPayloads()[0]
+		require.Equal(t, codec.EncryptionEncoding, encodingOf(got))
+		require.NotContains(t, string(got.GetData()), "dlq")
+	})
+}
+
+func TestClusterConnectionAllowsOpaquePlaintextWhenAsked(t *testing.T) {
+	c := startEncryptingConnection(t, true, func(ec *config.EncryptionConfig) { ec.AllowOpaquePlaintext = true })
+	c.localAdmin.setNext(replicationOf(hsmReplicationTask("hsm-state")))
+
+	resp, err := recvReplication(t, c.inbound)
+	require.NoError(t, err)
+	require.Equal(t, "hsm-state", string(resp.GetMessages().GetReplicationTasks()[0].GetSyncHsmAttributes().GetStateMachineNode().GetData()))
 }

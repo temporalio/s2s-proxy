@@ -46,3 +46,31 @@ func TestInterceptedConnRunsInterceptorAroundInvoke(t *testing.T) {
 	require.Equal(t, []string{"before /svc/Call", "after /svc/Call"}, events)
 	require.Equal(t, []string{"/svc/Call"}, cc.invoked)
 }
+
+func TestInterceptedConnRunsStreamInterceptorAroundNewStream(t *testing.T) {
+	var events []string
+	cc := &recordingConn{}
+	conn := interceptedConn{
+		ClientConnInterface: cc,
+		interceptStream: func(ctx context.Context, desc *grpc.StreamDesc, _ *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+			events = append(events, "before "+method)
+			cs, err := streamer(ctx, desc, nil, method, opts...)
+			events = append(events, "after "+method)
+			return cs, err
+		},
+	}
+
+	_, err := conn.NewStream(t.Context(), &grpc.StreamDesc{}, "/svc/Stream")
+	require.NoError(t, err)
+	require.Equal(t, []string{"before /svc/Stream", "after /svc/Stream"}, events)
+	require.Equal(t, []string{"/svc/Stream"}, cc.streamed)
+}
+
+func TestInterceptedConnWithoutStreamInterceptorPassesStreamsThrough(t *testing.T) {
+	cc := &recordingConn{}
+	conn := interceptedConn{ClientConnInterface: cc}
+
+	_, err := conn.NewStream(t.Context(), &grpc.StreamDesc{}, "/svc/Stream")
+	require.NoError(t, err)
+	require.Equal(t, []string{"/svc/Stream"}, cc.streamed)
+}

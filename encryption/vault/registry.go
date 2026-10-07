@@ -81,6 +81,18 @@ func (b *registryBuilder) toOptions(ctx context.Context) ([]crypto.KEKRegistryOp
 		return nil, err
 	}
 
+	// Admin traffic is sealed under a namespace of its own, so the replication
+	// key is registered like an override of that name. Without one, the vault
+	// falls back to the default key for it like any other namespace.
+	if b.ec.Replication != nil {
+		res, err := b.nsOptions(ctx, config.ReplicationKeyNamespace, b.ec.Replication)
+		if err != nil {
+			return nil, err
+		}
+
+		kopts = append(kopts, res...)
+	}
+
 	for _, ns := range slices.Sorted(maps.Keys(b.ec.Overrides)) {
 		pol := b.ec.Overrides[ns]
 		res, err := b.nsOptions(ctx, ns, &pol)
