@@ -17,6 +17,10 @@ type (
 	EmptyCredentialProvider struct{}
 )
 
+// CredentialHeaders are the headers that carry a caller's credentials. With credential identity "proxy" or
+// "strip", they are removed from every call the proxy forwards to the cluster.
+var CredentialHeaders = []string{"authorization", "authorization-extras"}
+
 // Module provides the CredentialProvider. It defaults to EmptyCredentialProvider; override it with
 // WithCredentialProvider.
 var Module = fx.Options(

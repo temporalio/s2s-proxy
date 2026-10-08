@@ -23,7 +23,12 @@ import (
 	"github.com/temporalio/s2s-proxy/logging"
 )
 
-const testBearerToken = "Bearer local-token"
+const (
+	testBearerToken = "Bearer local-token"
+	peerBearerToken = "Bearer peer-token"
+
+	describeClusterMethod = "/temporal.server.api.adminservice.v1.AdminService/DescribeCluster"
+)
 
 type staticCredentials struct {
 	requireTLS bool
@@ -41,22 +46,31 @@ type staticCredentialProvider struct {
 
 func (p staticCredentialProvider) Get() credentials.PerRPCCredentials { return p.creds }
 
-// authRecordingServer is a fake Temporal server that records the authorization header of every call it receives,
-// for any service, and answers Unimplemented.
+// recordedCredentials are the credential headers one call arrived with.
+type recordedCredentials struct {
+	authorization       []string
+	authorizationExtras []string
+}
+
+// authRecordingServer is a fake Temporal server that records the credential headers of every call it receives, for
+// any service, and answers Unimplemented.
 type authRecordingServer struct {
 	mu      sync.Mutex
-	headers map[string][]string // method -> authorization values
+	headers map[string]recordedCredentials // method -> credential headers
 }
 
 func startAuthRecordingServer(t *testing.T, address string) *authRecordingServer {
-	s := &authRecordingServer{headers: make(map[string][]string)}
+	s := &authRecordingServer{headers: make(map[string]recordedCredentials)}
 	listener, err := net.Listen("tcp", address)
 	require.NoError(t, err)
 	server := grpc.NewServer(grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
 		method, _ := grpc.MethodFromServerStream(stream)
 		md, _ := metadata.FromIncomingContext(stream.Context())
 		s.mu.Lock()
-		s.headers[method] = md.Get("authorization")
+		s.headers[method] = recordedCredentials{
+			authorization:       md.Get("authorization"),
+			authorizationExtras: md.Get("authorization-extras"),
+		}
 		s.mu.Unlock()
 		return status.Error(codes.Unimplemented, "recorded")
 	}))
@@ -65,36 +79,45 @@ func startAuthRecordingServer(t *testing.T, address string) *authRecordingServer
 	return s
 }
 
-func (s *authRecordingServer) authorization(method string) ([]string, bool) {
+func (s *authRecordingServer) credentials(t *testing.T, method string) recordedCredentials {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	values, ok := s.headers[method]
-	return values, ok
+	recorded, ok := s.headers[method]
+	require.True(t, ok, "server never saw %s", method)
+	return recorded
 }
 
 func newCredentialTestConnection(
 	t *testing.T,
 	a plccAddresses,
-	credentialsEnabled bool,
+	identity config.CredentialIdentity,
 	provider auth.CredentialProvider,
 ) *ClusterConnection {
 	connConfig := makeTCPClusterConfig("creds", localFVI, remoteFVI, "",
 		a.localTemporalAddr, a.localProxyOutbound, a.localProxyInbound, a.remoteTemporalAddr)
-	connConfig.Local.Credentials = &config.CredentialsConfig{Enabled: credentialsEnabled}
+	connConfig.Local.Credentials = &config.CredentialsConfig{Identity: identity}
 	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
 	cc, err := newClusterConnection(t.Context(), connConfig, loggers, provider)
 	require.NoError(t, err)
 	return cc
 }
 
-func TestCredentialsAreAttachedToLocalCallsOnly(t *testing.T) {
+// forwardedContext carries the credential headers a peer sent, the way the replication stream forwarder passes them on.
+func forwardedContext(t *testing.T) context.Context {
+	return metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
+		"authorization", peerBearerToken,
+		"authorization-extras", "peer-extras",
+	))
+}
+
+func TestProxyIdentityReplacesForwardedCredentials(t *testing.T) {
 	a := getDynamicPlccAddresses(t)
 	localTemporal := startAuthRecordingServer(t, a.localTemporalAddr)
 	remoteTemporal := startAuthRecordingServer(t, a.remoteTemporalAddr)
-	cc := newCredentialTestConnection(t, a, true, staticCredentialProvider{creds: staticCredentials{}})
+	cc := newCredentialTestConnection(t, a, config.CredentialIdentityProxy, staticCredentialProvider{creds: staticCredentials{}})
 
-	// Every service, unary and streaming, made on the local client carries the token.
-	ctx := t.Context()
+	// Every service, unary and streaming, carries only the proxy's token, whatever the peer sent.
+	ctx := forwardedContext(t)
 	_, _ = adminservice.NewAdminServiceClient(cc.inboundClient).DescribeCluster(ctx, &adminservice.DescribeClusterRequest{})
 	_, _ = workflowservice.NewWorkflowServiceClient(cc.inboundClient).GetSystemInfo(ctx, &workflowservice.GetSystemInfoRequest{})
 	_, _ = operatorservice.NewOperatorServiceClient(cc.inboundClient).ListClusters(ctx, &operatorservice.ListClustersRequest{})
@@ -103,42 +126,57 @@ func TestCredentialsAreAttachedToLocalCallsOnly(t *testing.T) {
 	_, _ = stream.Recv()
 
 	for _, method := range []string{
-		"/temporal.server.api.adminservice.v1.AdminService/DescribeCluster",
+		describeClusterMethod,
 		"/temporal.api.workflowservice.v1.WorkflowService/GetSystemInfo",
 		"/temporal.api.operatorservice.v1.OperatorService/ListClusters",
 		"/temporal.server.api.adminservice.v1.AdminService/StreamWorkflowReplicationMessages",
 	} {
-		values, ok := localTemporal.authorization(method)
-		require.True(t, ok, "local server never saw %s", method)
-		require.Equal(t, []string{testBearerToken}, values, method)
+		recorded := localTemporal.credentials(t, method)
+		require.Equal(t, []string{testBearerToken}, recorded.authorization, method)
+		require.Empty(t, recorded.authorizationExtras, method)
 	}
 
-	// The remote side never sees the local token.
-	_, _ = adminservice.NewAdminServiceClient(cc.outboundClient).DescribeCluster(ctx, &adminservice.DescribeClusterRequest{})
-	values, ok := remoteTemporal.authorization("/temporal.server.api.adminservice.v1.AdminService/DescribeCluster")
-	require.True(t, ok)
-	require.Empty(t, values)
+	// The remote side never sees the proxy's token.
+	_, _ = adminservice.NewAdminServiceClient(cc.outboundClient).DescribeCluster(t.Context(), &adminservice.DescribeClusterRequest{})
+	require.Empty(t, remoteTemporal.credentials(t, describeClusterMethod).authorization)
 }
 
-func TestCredentialsAreNotAttachedUnlessEnabled(t *testing.T) {
+func TestStripIdentityStripsForwardedCredentials(t *testing.T) {
 	a := getDynamicPlccAddresses(t)
 	localTemporal := startAuthRecordingServer(t, a.localTemporalAddr)
 	startAuthRecordingServer(t, a.remoteTemporalAddr)
-	cc := newCredentialTestConnection(t, a, false, staticCredentialProvider{creds: staticCredentials{}})
+	// A provider is configured but unused: identity "strip" never sends credentials.
+	cc := newCredentialTestConnection(t, a, config.CredentialIdentityStrip, staticCredentialProvider{creds: staticCredentials{}})
 
-	_, _ = adminservice.NewAdminServiceClient(cc.inboundClient).DescribeCluster(t.Context(), &adminservice.DescribeClusterRequest{})
-	values, ok := localTemporal.authorization("/temporal.server.api.adminservice.v1.AdminService/DescribeCluster")
-	require.True(t, ok)
-	require.Empty(t, values)
+	_, _ = adminservice.NewAdminServiceClient(cc.inboundClient).DescribeCluster(forwardedContext(t), &adminservice.DescribeClusterRequest{})
+	recorded := localTemporal.credentials(t, describeClusterMethod)
+	require.Empty(t, recorded.authorization)
+	require.Empty(t, recorded.authorizationExtras)
+}
+
+func TestDefaultIdentityForwardsCredentials(t *testing.T) {
+	for _, identity := range []config.CredentialIdentity{"", config.CredentialIdentityDefault} {
+		t.Run("identity="+string(identity), func(t *testing.T) {
+			a := getDynamicPlccAddresses(t)
+			localTemporal := startAuthRecordingServer(t, a.localTemporalAddr)
+			startAuthRecordingServer(t, a.remoteTemporalAddr)
+			cc := newCredentialTestConnection(t, a, identity, staticCredentialProvider{creds: staticCredentials{}})
+
+			_, _ = adminservice.NewAdminServiceClient(cc.inboundClient).DescribeCluster(forwardedContext(t), &adminservice.DescribeClusterRequest{})
+			recorded := localTemporal.credentials(t, describeClusterMethod)
+			require.Equal(t, []string{peerBearerToken}, recorded.authorization)
+			require.Equal(t, []string{"peer-extras"}, recorded.authorizationExtras)
+		})
+	}
 }
 
 func TestCreateClientRejectsUnusableCredentials(t *testing.T) {
-	enabled := &config.CredentialsConfig{Enabled: true}
+	proxyIdentity := &config.CredentialsConfig{Identity: config.CredentialIdentityProxy}
 	tcp := func(tls encryption.TLSConfig) config.ClusterDefinition {
 		return config.ClusterDefinition{
 			ConnectionType: config.ConnTypeTCP,
 			TcpClient:      config.TCPTLSInfo{ConnectionString: "localhost:7233", TLSConfig: tls},
-			Credentials:    enabled,
+			Credentials:    proxyIdentity,
 		}
 	}
 	tests := []struct {
@@ -148,10 +186,10 @@ func TestCreateClientRejectsUnusableCredentials(t *testing.T) {
 		wantError string
 	}{
 		{
-			name:      "credentials enabled without a provider",
+			name:      "proxy identity without a provider",
 			cluster:   tcp(encryption.TLSConfig{}),
 			provider:  auth.EmptyCredentialProvider{},
-			wantError: "credentials are enabled but no CredentialProvider is configured",
+			wantError: `credentials identity "proxy" but no CredentialProvider is configured`,
 		},
 		{
 			name:      "provider returns no credentials",
@@ -161,7 +199,7 @@ func TestCreateClientRejectsUnusableCredentials(t *testing.T) {
 		},
 		{
 			name:      "mux connection",
-			cluster:   config.ClusterDefinition{ConnectionType: config.ConnTypeMuxClient, Credentials: enabled},
+			cluster:   config.ClusterDefinition{ConnectionType: config.ConnTypeMuxClient, Credentials: proxyIdentity},
 			provider:  staticCredentialProvider{creds: staticCredentials{}},
 			wantError: "credentials require a tcp connection",
 		},
@@ -171,6 +209,15 @@ func TestCreateClientRejectsUnusableCredentials(t *testing.T) {
 			provider:  staticCredentialProvider{creds: staticCredentials{requireTLS: true}},
 			wantError: "credentials require TLS",
 		},
+		{
+			name: "unsupported identity",
+			cluster: config.ClusterDefinition{
+				ConnectionType: config.ConnTypeTCP,
+				Credentials:    &config.CredentialsConfig{Identity: "everyone"},
+			},
+			provider:  auth.EmptyCredentialProvider{},
+			wantError: `unsupported credentials identity "everyone"`,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -179,9 +226,17 @@ func TestCreateClientRejectsUnusableCredentials(t *testing.T) {
 		})
 	}
 
-	t.Run("empty provider leaves a mux connection alone", func(t *testing.T) {
+	t.Run("default identity leaves a mux connection alone", func(t *testing.T) {
 		_, err := createClient(t.Context(), "test", config.ClusterDefinition{ConnectionType: config.ConnTypeMuxClient},
 			"inbound", auth.EmptyCredentialProvider{})
+		require.NoError(t, err)
+	})
+
+	t.Run("strip identity works on a mux connection", func(t *testing.T) {
+		_, err := createClient(t.Context(), "test", config.ClusterDefinition{
+			ConnectionType: config.ConnTypeMuxClient,
+			Credentials:    &config.CredentialsConfig{Identity: config.CredentialIdentityStrip},
+		}, "inbound", auth.EmptyCredentialProvider{})
 		require.NoError(t, err)
 	})
 }
