@@ -18,10 +18,10 @@ clusterConnections:
           skipCAVerification: false
       # Whose credentials the local Temporal server sees on calls from the proxy, carried in the "authorization" and
       # "authorization-extras" headers:
-      #   caller - (default) forward whatever the caller sent; the proxy adds nothing.
-      #   proxy  - drop any credentials the caller sent and send the proxy's own, from its CredentialProvider. The
-      #            proxy refuses to start if the binary has no CredentialProvider.
-      #   none   - drop any credentials the caller sent and send none.
+      #   default - (when identity is not set) forward the caller's credentials unchanged; the proxy adds nothing.
+      #   proxy   - drop any credentials the caller sent and send the proxy's own, from its CredentialProvider. The
+      #             proxy refuses to start if the binary has no CredentialProvider.
+      #   strip   - drop any credentials the caller sent and send none.
       # Only the local cluster definition accepts credentials.
       credentials:
         identity: proxy

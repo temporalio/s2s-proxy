@@ -24,12 +24,12 @@ func TestCredentialsConfigValidate(t *testing.T) {
 			conn: ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeTCP, Credentials: identity(CredentialIdentityProxy)}},
 		},
 		{
-			name: "local mux with caller identity",
-			conn: ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeMuxClient, Credentials: identity(CredentialIdentityCaller)}},
+			name: "local mux with default identity",
+			conn: ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeMuxClient, Credentials: identity(CredentialIdentityDefault)}},
 		},
 		{
-			name: "local mux with none identity",
-			conn: ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeMuxClient, Credentials: identity(CredentialIdentityNone)}},
+			name: "local mux with strip identity",
+			conn: ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeMuxClient, Credentials: identity(CredentialIdentityStrip)}},
 		},
 		{
 			name:      "local mux with proxy identity",
@@ -59,9 +59,9 @@ func TestCredentialsConfigValidate(t *testing.T) {
 	}
 }
 
-func TestCredentialIdentityDefaultsToCaller(t *testing.T) {
-	require.Equal(t, CredentialIdentityCaller, ClusterDefinition{}.CredentialIdentity())
-	require.Equal(t, CredentialIdentityCaller, ClusterDefinition{Credentials: &CredentialsConfig{}}.CredentialIdentity())
+func TestCredentialIdentityDefault(t *testing.T) {
+	require.Equal(t, CredentialIdentityDefault, ClusterDefinition{}.CredentialIdentity())
+	require.Equal(t, CredentialIdentityDefault, ClusterDefinition{Credentials: &CredentialsConfig{}}.CredentialIdentity())
 	require.Equal(t, CredentialIdentityProxy,
 		ClusterDefinition{Credentials: &CredentialsConfig{Identity: CredentialIdentityProxy}}.CredentialIdentity())
 }

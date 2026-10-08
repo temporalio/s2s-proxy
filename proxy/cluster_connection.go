@@ -259,15 +259,15 @@ func createClient(
 ) (closableClientConn, error) {
 	var clientOptions grpcutil.ClientOptions
 	switch identity := transportCfg.CredentialIdentity(); identity {
-	case config.CredentialIdentityCaller:
-		// Forward whatever the caller sent.
-	case config.CredentialIdentityNone:
-		clientOptions.StripOutgoingMetadataKeys = auth.ForwardedCredentialHeaders
+	case config.CredentialIdentityDefault:
+		// Forward the caller's credentials.
+	case config.CredentialIdentityStrip:
+		clientOptions.StripOutgoingMetadataKeys = auth.CredentialHeaders
 	case config.CredentialIdentityProxy:
 		if auth.IsEmptyCredentialProvider(credentialProvider) {
 			return nil, fmt.Errorf("%s client: credentials identity %q but no CredentialProvider is configured", directionLabel, identity)
 		}
-		clientOptions.StripOutgoingMetadataKeys = auth.ForwardedCredentialHeaders
+		clientOptions.StripOutgoingMetadataKeys = auth.CredentialHeaders
 		clientOptions.PerRPCCredentials = credentialProvider.Get()
 		if clientOptions.PerRPCCredentials == nil {
 			return nil, fmt.Errorf("%s client: credential provider returned no credentials", directionLabel)

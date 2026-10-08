@@ -141,12 +141,12 @@ func TestProxyIdentityReplacesForwardedCredentials(t *testing.T) {
 	require.Empty(t, remoteTemporal.credentials(t, describeClusterMethod).authorization)
 }
 
-func TestNoneIdentityStripsForwardedCredentials(t *testing.T) {
+func TestStripIdentityStripsForwardedCredentials(t *testing.T) {
 	a := getDynamicPlccAddresses(t)
 	localTemporal := startAuthRecordingServer(t, a.localTemporalAddr)
 	startAuthRecordingServer(t, a.remoteTemporalAddr)
-	// A provider is configured but unused: identity "none" never sends credentials.
-	cc := newCredentialTestConnection(t, a, config.CredentialIdentityNone, staticCredentialProvider{creds: staticCredentials{}})
+	// A provider is configured but unused: identity "strip" never sends credentials.
+	cc := newCredentialTestConnection(t, a, config.CredentialIdentityStrip, staticCredentialProvider{creds: staticCredentials{}})
 
 	_, _ = adminservice.NewAdminServiceClient(cc.inboundClient).DescribeCluster(forwardedContext(t), &adminservice.DescribeClusterRequest{})
 	recorded := localTemporal.credentials(t, describeClusterMethod)
@@ -154,8 +154,8 @@ func TestNoneIdentityStripsForwardedCredentials(t *testing.T) {
 	require.Empty(t, recorded.authorizationExtras)
 }
 
-func TestCallerIdentityForwardsCredentials(t *testing.T) {
-	for _, identity := range []config.CredentialIdentity{"", config.CredentialIdentityCaller} {
+func TestDefaultIdentityForwardsCredentials(t *testing.T) {
+	for _, identity := range []config.CredentialIdentity{"", config.CredentialIdentityDefault} {
 		t.Run("identity="+string(identity), func(t *testing.T) {
 			a := getDynamicPlccAddresses(t)
 			localTemporal := startAuthRecordingServer(t, a.localTemporalAddr)
@@ -226,16 +226,16 @@ func TestCreateClientRejectsUnusableCredentials(t *testing.T) {
 		})
 	}
 
-	t.Run("caller identity leaves a mux connection alone", func(t *testing.T) {
+	t.Run("default identity leaves a mux connection alone", func(t *testing.T) {
 		_, err := createClient(t.Context(), "test", config.ClusterDefinition{ConnectionType: config.ConnTypeMuxClient},
 			"inbound", auth.EmptyCredentialProvider{})
 		require.NoError(t, err)
 	})
 
-	t.Run("none identity works on a mux connection", func(t *testing.T) {
+	t.Run("strip identity works on a mux connection", func(t *testing.T) {
 		_, err := createClient(t.Context(), "test", config.ClusterDefinition{
 			ConnectionType: config.ConnTypeMuxClient,
-			Credentials:    &config.CredentialsConfig{Identity: config.CredentialIdentityNone},
+			Credentials:    &config.CredentialsConfig{Identity: config.CredentialIdentityStrip},
 		}, "inbound", auth.EmptyCredentialProvider{})
 		require.NoError(t, err)
 	})

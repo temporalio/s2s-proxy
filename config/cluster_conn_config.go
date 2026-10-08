@@ -58,7 +58,7 @@ type (
 	}
 
 	CredentialsConfig struct {
-		// Identity is whose credentials the cluster sees. Empty means CredentialIdentityCaller.
+		// Identity is whose credentials the cluster sees. Empty means CredentialIdentityDefault.
 		Identity CredentialIdentity `yaml:"identity"`
 	}
 
@@ -79,12 +79,13 @@ type (
 )
 
 const (
-	// CredentialIdentityCaller forwards whatever credentials the caller sent, and adds none. This is the default.
-	CredentialIdentityCaller CredentialIdentity = "caller"
+	// CredentialIdentityDefault forwards the caller's credentials: whatever the caller sent is passed through
+	// unchanged, and the proxy adds none. It applies when identity is not set.
+	CredentialIdentityDefault CredentialIdentity = "default"
 	// CredentialIdentityProxy drops forwarded credentials and sends the auth.CredentialProvider's instead.
 	CredentialIdentityProxy CredentialIdentity = "proxy"
-	// CredentialIdentityNone drops forwarded credentials and sends none.
-	CredentialIdentityNone CredentialIdentity = "none"
+	// CredentialIdentityStrip drops forwarded credentials and sends none.
+	CredentialIdentityStrip CredentialIdentity = "strip"
 )
 
 const (
@@ -111,10 +112,10 @@ func (config *StringTranslator) AsLocalToRemoteBiMap() (collect.StaticBiMap[stri
 	return config.cachedBiMap, nil
 }
 
-// CredentialIdentity returns whose credentials this cluster sees, defaulting to CredentialIdentityCaller.
+// CredentialIdentity returns whose credentials this cluster sees, defaulting to CredentialIdentityDefault.
 func (c ClusterDefinition) CredentialIdentity() CredentialIdentity {
 	if c.Credentials == nil || c.Credentials.Identity == "" {
-		return CredentialIdentityCaller
+		return CredentialIdentityDefault
 	}
 	return c.Credentials.Identity
 }
@@ -127,7 +128,7 @@ func (c *ClusterConnConfig) Validate() error {
 		validation.Nested("encryption", &c.EncryptionConfig),
 		validation.Field("local.credentials.identity", c.Local, func(local ClusterDefinition) error {
 			switch identity := local.CredentialIdentity(); identity {
-			case CredentialIdentityCaller, CredentialIdentityNone:
+			case CredentialIdentityDefault, CredentialIdentityStrip:
 				return nil
 			case CredentialIdentityProxy:
 				if local.ConnectionType != ConnTypeTCP {
@@ -137,7 +138,7 @@ func (c *ClusterConnConfig) Validate() error {
 				return nil
 			default:
 				return fmt.Errorf("unsupported identity %q: must be %q, %q or %q",
-					identity, CredentialIdentityCaller, CredentialIdentityProxy, CredentialIdentityNone)
+					identity, CredentialIdentityDefault, CredentialIdentityProxy, CredentialIdentityStrip)
 			}
 		}),
 		validation.Field("remote.credentials", c.Remote.Credentials, func(credentials *CredentialsConfig) error {

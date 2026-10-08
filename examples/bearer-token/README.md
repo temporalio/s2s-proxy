@@ -37,9 +37,9 @@ local:
 
 | `identity` | Credentials the caller sent | Proxy's credentials |
 | --- | --- | --- |
-| `caller` (default) | forwarded | not sent |
+| `default` (when not set) | forwarded | not sent |
 | `proxy` | dropped | sent |
-| `none` | dropped | not sent |
+| `strip` | dropped | not sent |
 
 With `proxy`, a request forwarded from the remote side, such as a replication stream, reaches the local server with
 the proxy's token and never with a token the remote side sent.
