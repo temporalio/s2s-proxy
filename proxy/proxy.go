@@ -10,6 +10,7 @@ import (
 
 	"go.temporal.io/server/common/log/tag"
 
+	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
@@ -37,7 +38,11 @@ type (
 	}
 )
 
-func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerProvider) (*Proxy, error) {
+func NewProxy(
+	configProvider config.ConfigProvider,
+	logProvider logging.LoggerProvider,
+	credentialProvider auth.CredentialProvider,
+) (*Proxy, error) {
 	s2sConfig := configProvider.GetS2SProxyConfig()
 	if err := s2sConfig.Validate(); err != nil {
 		return nil, fmt.Errorf("cannot create proxy: invalid config: %w", err)
@@ -66,7 +71,7 @@ func NewProxy(configProvider config.ConfigProvider, logProvider logging.LoggerPr
 			cancel()
 			return nil, fmt.Errorf("cannot create proxy: duplicate cluster connection name %q", clusterCfg.Name)
 		}
-		cc, err := NewClusterConnection(ctx, clusterCfg, logProvider)
+		cc, err := newClusterConnection(ctx, clusterCfg, logProvider, credentialProvider)
 		if err != nil {
 			cancel()
 			return nil, fmt.Errorf("cannot create cluster connection %q: %w", clusterCfg.Name, err)

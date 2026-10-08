@@ -21,6 +21,7 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"go.temporal.io/server/tests/testcore"
 
+	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/logging"
 	s2sproxy "github.com/temporalio/s2s-proxy/proxy"
@@ -366,7 +367,7 @@ func createProxy(
 	}
 
 	configProvider := &simpleConfigProvider{cfg: *cfg}
-	proxy, err := s2sproxy.NewProxy(configProvider, logging.NewLoggerProvider(logger, configProvider))
+	proxy, err := s2sproxy.NewProxy(configProvider, logging.NewLoggerProvider(logger, configProvider), auth.EmptyCredentialProvider{})
 	if err != nil {
 		t.Fatalf("Failed to create proxy %s: %v", name, err)
 	}

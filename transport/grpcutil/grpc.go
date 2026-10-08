@@ -30,7 +30,13 @@ const (
 	maxInternodeRecvPayloadSize = 128 * 1024 * 1024 // 128 Mb
 )
 
-func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics) []grpc.DialOption {
+// ClientOptions are optional settings for MakeDialOptions.
+type ClientOptions struct {
+	// PerRPCCredentials, when set, are attached to every call made on the connection.
+	PerRPCCredentials credentials.PerRPCCredentials
+}
+
+func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics, clientOptions ...ClientOptions) []grpc.DialOption {
 	var grpcSecureOpt grpc.DialOption
 	if tlsConfig == nil {
 		grpcSecureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
@@ -60,6 +66,11 @@ func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetric
 		grpc.WithConnectParams(cp),
 		grpc.WithUnaryInterceptor(clientMetrics.UnaryClientInterceptor()),
 		grpc.WithStreamInterceptor(clientMetrics.StreamClientInterceptor()),
+	}
+	for _, options := range clientOptions {
+		if options.PerRPCCredentials != nil {
+			dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(options.PerRPCCredentials))
+		}
 	}
 	return dialOptions
 }
