@@ -52,15 +52,19 @@ type (
 		TcpServer      TCPTLSInfo     `yaml:"tcpServer"`
 		MuxCount       int            `yaml:"muxCount"`
 		MuxAddressInfo TCPTLSInfo     `yaml:"muxAddressInfo"`
-		// Credentials controls whether calls on this connection carry the auth.CredentialProvider's credentials.
+		// Credentials controls which identity calls on this connection present to the cluster.
 		// Only the local cluster definition supports it.
 		Credentials *CredentialsConfig `yaml:"credentials"`
 	}
 
 	CredentialsConfig struct {
-		// Enabled attaches the CredentialProvider's credentials to every call made to this cluster.
-		Enabled bool `yaml:"enabled"`
+		// Identity is whose credentials the cluster sees. Empty means CredentialIdentityCaller.
+		Identity CredentialIdentity `yaml:"identity"`
 	}
+
+	// CredentialIdentity is whose credentials a cluster sees on calls from the proxy. The credential headers are
+	// "authorization" and "authorization-extras".
+	CredentialIdentity string
 
 	TCPTLSInfo struct {
 		ConnectionString string               `yaml:"address"`
@@ -72,6 +76,15 @@ type (
 		LocalShardCount  int32          `yaml:"localShardCount"`
 		RemoteShardCount int32          `yaml:"remoteShardCount"`
 	}
+)
+
+const (
+	// CredentialIdentityCaller forwards whatever credentials the caller sent, and adds none. This is the default.
+	CredentialIdentityCaller CredentialIdentity = "caller"
+	// CredentialIdentityProxy drops forwarded credentials and sends the auth.CredentialProvider's instead.
+	CredentialIdentityProxy CredentialIdentity = "proxy"
+	// CredentialIdentityNone drops forwarded credentials and sends none.
+	CredentialIdentityNone CredentialIdentity = "none"
 )
 
 const (
@@ -98,9 +111,12 @@ func (config *StringTranslator) AsLocalToRemoteBiMap() (collect.StaticBiMap[stri
 	return config.cachedBiMap, nil
 }
 
-// CredentialsEnabled reports whether calls on this connection carry the CredentialProvider's credentials.
-func (c ClusterDefinition) CredentialsEnabled() bool {
-	return c.Credentials != nil && c.Credentials.Enabled
+// CredentialIdentity returns whose credentials this cluster sees, defaulting to CredentialIdentityCaller.
+func (c ClusterDefinition) CredentialIdentity() CredentialIdentity {
+	if c.Credentials == nil || c.Credentials.Identity == "" {
+		return CredentialIdentityCaller
+	}
+	return c.Credentials.Identity
 }
 
 // Validate reports problems in this connection's config. Only the encryption
@@ -109,11 +125,20 @@ func (c *ClusterConnConfig) Validate() error {
 	return validation.Validate(
 		"",
 		validation.Nested("encryption", &c.EncryptionConfig),
-		validation.Field("local.credentials", c.Local, func(local ClusterDefinition) error {
-			if local.CredentialsEnabled() && local.ConnectionType != ConnTypeTCP {
-				return fmt.Errorf("credentials require connectionType %q, got %q", ConnTypeTCP, local.ConnectionType)
+		validation.Field("local.credentials.identity", c.Local, func(local ClusterDefinition) error {
+			switch identity := local.CredentialIdentity(); identity {
+			case CredentialIdentityCaller, CredentialIdentityNone:
+				return nil
+			case CredentialIdentityProxy:
+				if local.ConnectionType != ConnTypeTCP {
+					return fmt.Errorf("identity %q requires connectionType %q, got %q",
+						identity, ConnTypeTCP, local.ConnectionType)
+				}
+				return nil
+			default:
+				return fmt.Errorf("unsupported identity %q: must be %q, %q or %q",
+					identity, CredentialIdentityCaller, CredentialIdentityProxy, CredentialIdentityNone)
 			}
-			return nil
 		}),
 		validation.Field("remote.credentials", c.Remote.Credentials, func(credentials *CredentialsConfig) error {
 			if credentials != nil {

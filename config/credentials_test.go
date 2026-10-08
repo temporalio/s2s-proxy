@@ -7,28 +7,43 @@ import (
 )
 
 func TestCredentialsConfigValidate(t *testing.T) {
-	enabled := &CredentialsConfig{Enabled: true}
+	identity := func(identity CredentialIdentity) *CredentialsConfig {
+		return &CredentialsConfig{Identity: identity}
+	}
 	tests := []struct {
 		name      string
 		conn      ClusterConnConfig
 		wantError string
 	}{
 		{
-			name: "local tcp with credentials",
-			conn: ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeTCP, Credentials: enabled}},
+			name: "no credentials block",
+			conn: ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeMuxClient}},
 		},
 		{
-			name: "local mux with credentials disabled",
-			conn: ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeMuxClient, Credentials: &CredentialsConfig{}}},
+			name: "local tcp with proxy identity",
+			conn: ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeTCP, Credentials: identity(CredentialIdentityProxy)}},
 		},
 		{
-			name:      "local mux with credentials enabled",
-			conn:      ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeMuxClient, Credentials: enabled}},
-			wantError: `credentials require connectionType "tcp", got "mux-client"`,
+			name: "local mux with caller identity",
+			conn: ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeMuxClient, Credentials: identity(CredentialIdentityCaller)}},
+		},
+		{
+			name: "local mux with none identity",
+			conn: ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeMuxClient, Credentials: identity(CredentialIdentityNone)}},
+		},
+		{
+			name:      "local mux with proxy identity",
+			conn:      ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeMuxClient, Credentials: identity(CredentialIdentityProxy)}},
+			wantError: `identity "proxy" requires connectionType "tcp", got "mux-client"`,
+		},
+		{
+			name:      "unsupported identity",
+			conn:      ClusterConnConfig{Local: ClusterDefinition{ConnectionType: ConnTypeTCP, Credentials: identity("everyone")}},
+			wantError: `unsupported identity "everyone"`,
 		},
 		{
 			name:      "remote with credentials",
-			conn:      ClusterConnConfig{Remote: ClusterDefinition{ConnectionType: ConnTypeTCP, Credentials: enabled}},
+			conn:      ClusterConnConfig{Remote: ClusterDefinition{ConnectionType: ConnTypeTCP, Credentials: identity(CredentialIdentityProxy)}},
 			wantError: "credentials are only supported on the local cluster definition",
 		},
 	}
@@ -44,8 +59,9 @@ func TestCredentialsConfigValidate(t *testing.T) {
 	}
 }
 
-func TestCredentialsEnabled(t *testing.T) {
-	require.False(t, ClusterDefinition{}.CredentialsEnabled())
-	require.False(t, ClusterDefinition{Credentials: &CredentialsConfig{}}.CredentialsEnabled())
-	require.True(t, ClusterDefinition{Credentials: &CredentialsConfig{Enabled: true}}.CredentialsEnabled())
+func TestCredentialIdentityDefaultsToCaller(t *testing.T) {
+	require.Equal(t, CredentialIdentityCaller, ClusterDefinition{}.CredentialIdentity())
+	require.Equal(t, CredentialIdentityCaller, ClusterDefinition{Credentials: &CredentialsConfig{}}.CredentialIdentity())
+	require.Equal(t, CredentialIdentityProxy,
+		ClusterDefinition{Credentials: &CredentialsConfig{Identity: CredentialIdentityProxy}}.CredentialIdentity())
 }

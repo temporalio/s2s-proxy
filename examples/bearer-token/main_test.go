@@ -49,9 +49,9 @@ func TestExampleConfiguration(t *testing.T) {
 	require.NoError(t, proxyConfig.Validate())
 	require.Len(t, proxyConfig.ClusterConnections, 1)
 
-	// Credentials are enabled on the local client, which must be TCP with TLS because the token requires it.
+	// The local client presents the proxy's identity, so it must be TCP with TLS because the token requires it.
 	local := proxyConfig.ClusterConnections[0].Local
-	require.True(t, local.CredentialsEnabled())
+	require.Equal(t, config.CredentialIdentityProxy, local.CredentialIdentity())
 	require.Equal(t, config.ConnTypeTCP, local.ConnectionType)
 	require.True(t, local.TcpClient.TLSConfig.IsEnabled())
 }

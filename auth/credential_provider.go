@@ -17,6 +17,10 @@ type (
 	EmptyCredentialProvider struct{}
 )
 
+// ForwardedCredentialHeaders are the headers that carry a caller's credentials. With credential identity "proxy" or
+// "none", they are removed from every call the proxy forwards to the cluster.
+var ForwardedCredentialHeaders = []string{"authorization", "authorization-extras"}
+
 // Module provides the CredentialProvider. It defaults to EmptyCredentialProvider; override it with
 // WithCredentialProvider.
 var Module = fx.Options(

@@ -21,7 +21,7 @@ app.New("s2s-proxy-bearer-example", "dev",
 )
 ```
 
-The provider is used only where the config turns it on, with `local.credentials.enabled`:
+The provider is used only where the config turns it on, with `local.credentials.identity: proxy`:
 
 ```yaml
 local:
@@ -30,13 +30,24 @@ local:
     address: temporal-frontend.example.invalid:7233
     tls: { ... }
   credentials:
-    enabled: true
+    identity: proxy
 ```
 
-The program supplies how to get a token, and the config decides whether to send it. If the config enables
-credentials but the binary has no provider, for example the stock `s2s-proxy`, the proxy refuses to start rather than
-call the server without a token. A provider in the binary does nothing for a connection that does not enable it.
-`credentials` is only accepted on the local cluster definition.
+`identity` is whose credentials the local server sees, in the `authorization` and `authorization-extras` headers:
+
+| `identity` | Credentials the caller sent | Proxy's credentials |
+| --- | --- | --- |
+| `caller` (default) | forwarded | not sent |
+| `proxy` | dropped | sent |
+| `none` | dropped | not sent |
+
+With `proxy`, a request forwarded from the remote side, such as a replication stream, reaches the local server with
+the proxy's token and never with a token the remote side sent.
+
+The program supplies how to get a token, and the config decides whether to send it. If the config sets
+`identity: proxy` but the binary has no provider, for example the stock `s2s-proxy`, the proxy refuses to start rather
+than call the server without a token. A provider in the binary does nothing for a connection that does not set
+`identity: proxy`. `credentials` is only accepted on the local cluster definition.
 
 `Get` returns a gRPC `credentials.PerRPCCredentials`. gRPC calls its `GetRequestMetadata` for every unary call and every
 new stream, so a rotated token takes effect on the next call without restarting the proxy or recreating connections.

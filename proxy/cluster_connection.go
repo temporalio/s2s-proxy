@@ -130,7 +130,7 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 }
 
 // newClusterConnection is NewClusterConnection with a CredentialProvider. Its credentials are attached to calls made to
-// the local Temporal server when local.credentials.enabled is set, and never to the remote side.
+// the local Temporal server when local.credentials.identity is "proxy", and never to the remote side.
 func newClusterConnection(
 	lifetime context.Context,
 	connConfig config.ClusterConnConfig,
@@ -258,10 +258,16 @@ func createClient(
 	credentialProvider auth.CredentialProvider,
 ) (closableClientConn, error) {
 	var clientOptions grpcutil.ClientOptions
-	if transportCfg.CredentialsEnabled() {
+	switch identity := transportCfg.CredentialIdentity(); identity {
+	case config.CredentialIdentityCaller:
+		// Forward whatever the caller sent.
+	case config.CredentialIdentityNone:
+		clientOptions.StripOutgoingMetadataKeys = auth.ForwardedCredentialHeaders
+	case config.CredentialIdentityProxy:
 		if auth.IsEmptyCredentialProvider(credentialProvider) {
-			return nil, fmt.Errorf("%s client: credentials are enabled but no CredentialProvider is configured", directionLabel)
+			return nil, fmt.Errorf("%s client: credentials identity %q but no CredentialProvider is configured", directionLabel, identity)
 		}
+		clientOptions.StripOutgoingMetadataKeys = auth.ForwardedCredentialHeaders
 		clientOptions.PerRPCCredentials = credentialProvider.Get()
 		if clientOptions.PerRPCCredentials == nil {
 			return nil, fmt.Errorf("%s client: credential provider returned no credentials", directionLabel)
@@ -272,6 +278,8 @@ func createClient(
 		if clientOptions.PerRPCCredentials.RequireTransportSecurity() && !transportCfg.TcpClient.TLSConfig.IsEnabled() {
 			return nil, fmt.Errorf("%s client: credentials require TLS, but tcpClient.tls is not configured", directionLabel)
 		}
+	default:
+		return nil, fmt.Errorf("%s client: unsupported credentials identity %q", directionLabel, identity)
 	}
 
 	switch transportCfg.ConnectionType {
@@ -280,7 +288,7 @@ func createClient(
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
 		return grpcutil.NewMultiClientConn(lifetime, fmt.Sprintf("client-conn-%s", connectionName),
 			// TLS is handled by the mux connection, so tlsConfig will always be nil
-			grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics(directionLabel))...)
+			grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics(directionLabel), clientOptions)...)
 	default:
 		return nil, errors.New("invalid connection type")
 	}
