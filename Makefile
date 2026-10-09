@@ -58,6 +58,10 @@ genvisitor:
 	go fmt proto/compat/repair_utf8_gen.go
 	make fmt
 
+.PHONY: genvisitor-payloads
+genvisitor-payloads:
+	go run ./cmd/tools/genvisitor/ -target payloads -out interceptor/payload_visitor_gen.go
+
 # Mocks
 clean-mocks:
 	@find . -name '*_mock.go' -delete

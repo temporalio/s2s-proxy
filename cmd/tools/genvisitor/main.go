@@ -3,21 +3,20 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
-	"strings"
 
 	// Import to populate the protoregistry
 	_ "go.temporal.io/api/workflowservice/v1"
 	_ "go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/log/tag"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/reflect/protoregistry"
 )
 
 func main() {
 	debugFlag := flag.Bool("debug", false, "enable debug logs to stderr")
 	dumpTree := flag.Bool("dump-tree", false, "print the tree of matched paths in the type hierarchy to stderr")
+	target := flag.String("target", "utf8", "what to generate: utf8 or payloads")
+	out := flag.String("out", "", "write to this file instead of stdout; nothing is written if generation fails")
 	flag.Parse()
 
 	var logger log.Logger
@@ -27,57 +26,24 @@ func main() {
 		logger = log.NewNoopLogger()
 	}
 
-	emitter := NewEmitter(logger, Gogo122Version)
-	emitter.SetPackageName("compat")
-	emitter.SetFunctionSignature(
-		`func RepairInvalidUTF8(vAny any) (ret bool, retErr error)`,
-	)
-	emitter.SetFunctionTrailer("return")
-	emitter.AddHandler(
-		// Match any type called "Failure"
-		func(vt VisitType, path VisitPath) bool {
-			// Match Failure types
-			if vt.GoTypeName() != "Failure" {
-				logger.Debug("ignore non Failure field", tag.NewAnyTag("path", path.String()))
-				return false
-			}
-			// Skip nested "Cause" field in Failure types. The repairInvalidUTF8InFailure handler function
-			// will descend into these.
-			ps := path.String()
-			if strings.Contains(ps, "/Cause") {
-				logger.Debug("ignore failure Cause", tag.NewAnyTag("path", path.String()))
-				return false
-			}
-
-			// These do not have a failure field in Temporal v1.22 (they do in later versions)
-			if strings.Contains(ps, "WorkflowQueryResult") ||
-				strings.Contains(ps, "RespondQueryTaskCompletedRequest") ||
-				strings.Contains(ps, "QueryFailedFailure") {
-				return false
-			}
-			return true
-		},
-		// Generate code to handle the Failure field
-		func(varName string) string {
-			return fmt.Sprintf(`if changed, err := repairInvalidUTF8InFailure(%s); err != nil || changed {
-				ret = ret || changed
-				if err != nil {
-					retErr = err
-				}
-			}`, varName)
-		},
-	)
-
-	// We traverse the current version of protobuf types (not the gogo-based protos)
-	// because protoreflect only works with the current version of protobuf types.
-	// The emitter can translate back to gogo-based types, if it is configured with
-	// Mode=Gogo122Version.
-	protoregistry.GlobalTypes.RangeMessages(func(mt protoreflect.MessageType) bool {
-		emitter.Visit(mt)
-		return true
-	})
+	var dump io.Writer
 	if *dumpTree {
-		emitter.root.Dump(os.Stderr)
+		dump = os.Stderr
 	}
-	emitter.Generate(os.Stdout)
+
+	src, err := generate(logger, *target, dump)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	if *out == "" {
+		_, err = os.Stdout.Write(src)
+	} else {
+		err = os.WriteFile(*out, src, 0o644)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
