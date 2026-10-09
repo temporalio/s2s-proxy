@@ -57,7 +57,7 @@ func (c bearerCredentials) GetRequestMetadata(ctx context.Context, _ ...string) 
 
 // RequireTransportSecurity keeps the token off plaintext connections.
 func (bearerCredentials) RequireTransportSecurity() bool {
-	return true
+	return os.Getenv("S2S_PROXY_EXAMPLE_ALLOW_INSECURE") != "true"
 }
 
 func tokenFromEnvironment(context.Context) (string, error) {
