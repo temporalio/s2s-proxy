@@ -28,6 +28,11 @@ const (
 
 	// maxInternodeRecvPayloadSize indicates the internode max receive payload size.
 	maxInternodeRecvPayloadSize = 128 * 1024 * 1024 // 128 Mb
+
+	// maxExtensionRecvPayloadSize bounds what an extension server may return. It
+	// is sized for key material rather than replication payloads, and matches the
+	// limit temporal-proxy's pkg/ext applies on the serving side.
+	maxExtensionRecvPayloadSize = 1024 * 1024 // 1 Mb
 )
 
 func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics) []grpc.DialOption {
@@ -62,4 +67,46 @@ func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetric
 		grpc.WithStreamInterceptor(clientMetrics.StreamClientInterceptor()),
 	}
 	return dialOptions
+}
+
+// MakeExtensionDialOptions builds the dial options for an extension server: an
+// operator-run gRPC service the proxy calls to wrap and unwrap DEKs.
+//
+// It exists rather than reusing [MakeDialOptions] because that one forces this
+// proxy's own codec via grpc.ForceCodecV2, setting a content-subtype an
+// extension server has never heard of. grpc-go currently tolerates the mismatch
+// by falling back to the proto codec, but warns while doing it:
+//
+//	Unsupported codec %q. Defaulting to %q for now. This will start to fail in
+//	future releases.
+//
+// So reusing it would log on every call an operator's server serves, and break
+// outright on a future grpc-go bump. The other differences follow from the same
+// point: an extension server is not a Temporal node, so the 128 MiB receive
+// limit and the round-robin service config do not apply to it. The connection
+// backoff is shared, because wanting a reconnect sooner than two minutes is not
+// specific to Temporal.
+func MakeExtensionDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics) []grpc.DialOption {
+	var grpcSecureOpt grpc.DialOption
+	if tlsConfig == nil {
+		grpcSecureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
+	} else {
+		grpcSecureOpt = grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))
+	}
+
+	var cp = grpc.ConnectParams{
+		Backoff:           backoff.DefaultConfig,
+		MinConnectTimeout: minConnectTimeout,
+	}
+	cp.Backoff.MaxDelay = MaxBackoffDelay
+
+	return []grpc.DialOption{
+		grpcSecureOpt,
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(maxExtensionRecvPayloadSize),
+		),
+		grpc.WithConnectParams(cp),
+		grpc.WithUnaryInterceptor(clientMetrics.UnaryClientInterceptor()),
+		grpc.WithStreamInterceptor(clientMetrics.StreamClientInterceptor()),
+	}
 }

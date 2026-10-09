@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 
 	"github.com/temporalio/temporal-proxy/pkg/codec"
 	"github.com/temporalio/temporal-proxy/pkg/crypto"
@@ -46,6 +47,17 @@ type (
 		// Vault seals and opens payload data. Required when Enabled, and not
 		// pointless without it: a vault on its own still opens sealed responses.
 		Vault Vault
+		// Reverse swaps the directions: requests are opened and responses are
+		// sealed. It is for the client that carries a peer's calls in to the local
+		// cluster, where what arrives was sealed and what leaves has to be.
+		Reverse bool
+		// AlreadySealedEncodings are payload encodings another codec, typically
+		// the customer's own, has already encrypted. Payloads in one are never
+		// sealed again; they are not opened either, since they are not ours. Our
+		// own sealed payloads are always skipped and need not be listed. Only list
+		// encodings that encrypt: a compression codec's would reach the peer
+		// readable.
+		AlreadySealedEncodings []string
 	}
 
 	// Vault is the subset of a key-management backend this interceptor depends
@@ -87,6 +99,10 @@ type (
 //   - No vault and not enabled does nothing, and costs nothing: neither
 //     direction is visited at all.
 //
+// Reverse swaps which direction is which without changing any of the above:
+// requests are opened whenever there is a vault, and responses are sealed only
+// when Enabled.
+//
 // Inbound covers the payloads carried in the details of a gRPC error as well as
 // the ones in the response body. Search attributes are deliberately skipped in
 // both directions: the server indexes and queries them, so a sealed one would
@@ -100,22 +116,31 @@ func NewEncryptor(cfg EncryptorConfig) (*Encryptor, error) {
 		return nil, errors.New("proxy: encryption requires a vault")
 	}
 
-	var out, in []codecOpt
+	var seal, open []codecOpt
 	if cfg.Vault != nil {
 		enc := func(ctx context.Context, ns string) codec.Option {
 			return codec.WithCipher(&cipher{ctx: ctx, ns: ns, v: cfg.Vault})
 		}
 
-		in = append(in, enc)
+		open = append(open, enc)
 		if cfg.Enabled {
-			out = append(out, enc)
+			seal = append(seal, enc)
 		}
 	}
 
-	unary, err := proxy.NewPayloadVisitorInterceptor(proxy.PayloadVisitorInterceptorOptions{
-		Inbound:  visitPayloads(in, codec.Chain.Decode),
-		Outbound: visitPayloads(out, codec.Chain.Encode),
-	})
+	sealFn := sealUnlessSealed(alreadySealed(cfg.AlreadySealedEncodings))
+	opts := proxy.PayloadVisitorInterceptorOptions{
+		Inbound:  visitPayloads(open, codec.Chain.Decode),
+		Outbound: visitPayloads(seal, sealFn),
+	}
+	if cfg.Reverse {
+		opts = proxy.PayloadVisitorInterceptorOptions{
+			Inbound:  visitPayloads(seal, sealFn),
+			Outbound: visitPayloads(open, codec.Chain.Decode),
+		}
+	}
+
+	unary, err := proxy.NewPayloadVisitorInterceptor(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create encryption interceptor: %w", err)
 	}
@@ -134,6 +159,58 @@ func (c *cipher) Encrypt(data []byte) (*crypto.Message, error) {
 // its policy changed, still open.
 func (c *cipher) Decrypt(m *crypto.Message) ([]byte, error) {
 	return c.v.Open(c.ctx, m)
+}
+
+// sealUnlessSealed returns a [codec.Chain.Encode] that leaves alone every
+// payload [sealed] reports as already sealed, and seals the rest in place.
+// Sealing one again would round-trip through this proxy, but anything opening it
+// outside the proxy would peel one layer and find another underneath.
+func sealUnlessSealed(sealed func(*common.Payload) bool) func(codec.Chain, []*common.Payload) ([]*common.Payload, error) {
+	return func(c codec.Chain, payloads []*common.Payload) ([]*common.Payload, error) {
+		var at []int
+		var todo []*common.Payload
+		for i, p := range payloads {
+			if !sealed(p) {
+				at = append(at, i)
+				todo = append(todo, p)
+			}
+		}
+
+		if len(todo) == 0 {
+			return payloads, nil
+		}
+
+		done, err := c.Encode(todo)
+		if err != nil {
+			return nil, err
+		}
+
+		out := slices.Clone(payloads)
+		for j, i := range at {
+			out[i] = done[j]
+		}
+
+		return out, nil
+	}
+}
+
+// alreadySealed reports a payload as already sealed when it is one of ours or
+// its encoding is one of encodings.
+func alreadySealed(encodings []string) func(*common.Payload) bool {
+	return func(p *common.Payload) bool {
+		return isSealed(p) || slices.Contains(encodings, string(p.GetMetadata()[codec.MetadataEncoding]))
+	}
+}
+
+// isSealed reports whether p is one of our sealed payloads. The encoding marker
+// alone is not enough, since another codec may use the same name; it takes the
+// key material too, the same claim of ownership [codec.Encryptor.Decode] checks
+// before it will open one.
+func isSealed(p *common.Payload) bool {
+	md := p.GetMetadata()
+	return string(md[codec.MetadataEncoding]) == codec.EncryptionEncoding &&
+		len(md[codec.MetadataEncryptionKeyID]) > 0 &&
+		len(md[codec.MetadataEncryptionDEK]) > 0
 }
 
 // visitPayloads builds the visit options that run every codec opts enables over

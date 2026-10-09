@@ -14,6 +14,7 @@ import (
 	"go.temporal.io/api/proxy"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 )
 
 const testNamespace = "some-namespace"
@@ -90,6 +91,114 @@ func TestEncryptorRoundTrip(t *testing.T) {
 
 	_, opens := v.calls()
 	require.Equal(t, 2, opens)
+}
+
+func TestEncryptorReverse(t *testing.T) {
+	// Reversed is the view from the inbound side: the request comes from a peer
+	// that only ever saw sealed payloads, and the response goes back to it.
+	v := &fakeVault{}
+	e := requireEncryptor(t, EncryptorConfig{Enabled: true, Vault: v, Reverse: true})
+
+	req := &workflowservice.StartWorkflowExecutionRequest{Input: sealed(t, "one", "two")}
+	reply := new(workflowservice.QueryWorkflowResponse)
+
+	err := call(t, e, req, reply, func() error {
+		// The local cluster's view of the request: opened, metadata and all.
+		require.Equal(t, []string{"one", "two"}, data(req.Input))
+		require.Zero(t, sealedCount(req.Input))
+
+		reply.QueryResult = payloads("three")
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	// The peer's view of the response: sealed, under the stamped namespace.
+	require.Equal(t, 1, sealedCount(reply.QueryResult))
+	require.NotContains(t, data(reply.QueryResult), "three")
+	require.Equal(t, []string{testNamespace}, v.namespaces())
+
+	_, opens := v.calls()
+	require.Equal(t, 2, opens)
+}
+
+func TestEncryptorDoesNotSealTwice(t *testing.T) {
+	t.Run("payloads it sealed itself", func(t *testing.T) {
+		// Another layer would round-trip through this proxy, but anything opening
+		// the payload outside it would peel one layer and find another.
+		v := &fakeVault{}
+		e := requireEncryptor(t, enabledConfig(v))
+
+		already := sealed(t, "already")
+		mixed := &common.Payloads{Payloads: []*common.Payload{
+			already.Payloads[0],
+			payloads("plain").Payloads[0],
+		}}
+		want := proto.Clone(already.Payloads[0])
+
+		req := &workflowservice.StartWorkflowExecutionRequest{Input: mixed}
+		require.NoError(t, call(t, e, req, new(workflowservice.QueryWorkflowResponse), func() error {
+			require.Equal(t, 2, sealedCount(req.Input))
+			require.True(t, proto.Equal(want, req.Input.Payloads[0]), "the sealed payload is left exactly as it was")
+			require.NotContains(t, data(req.Input), "plain")
+
+			return nil
+		}))
+
+		seals, _ := v.calls()
+		require.Equal(t, 1, seals, "only the plaintext payload is sealed")
+	})
+
+	t.Run("not payloads that only share its encoding name", func(t *testing.T) {
+		// Another codec marking its output binary/encrypted, without the key
+		// material ours carries, is not ours to vouch for. Sealing it costs an
+		// extra layer; trusting the name could put plaintext on the wire.
+		v := &fakeVault{}
+		e := requireEncryptor(t, enabledConfig(v))
+
+		foreign := &common.Payload{
+			Metadata: map[string][]byte{
+				codec.MetadataEncoding:        []byte(codec.EncryptionEncoding),
+				codec.MetadataEncryptionKeyID: []byte("their-key"),
+			},
+			Data: []byte("maybe-plaintext"),
+		}
+
+		req := &workflowservice.StartWorkflowExecutionRequest{Input: &common.Payloads{Payloads: []*common.Payload{foreign}}}
+		require.NoError(t, call(t, e, req, new(workflowservice.QueryWorkflowResponse), func() error {
+			require.NotContains(t, data(req.Input), "maybe-plaintext")
+
+			return nil
+		}))
+
+		seals, _ := v.calls()
+		require.Equal(t, 1, seals)
+	})
+
+	t.Run("payloads in an encoding the config names as already sealed", func(t *testing.T) {
+		v := &fakeVault{}
+		e := requireEncryptor(t, EncryptorConfig{
+			Enabled:                true,
+			Vault:                  v,
+			AlreadySealedEncodings: []string{"binary/customer-encrypted"},
+		})
+
+		theirs := &common.Payload{
+			Metadata: map[string][]byte{codec.MetadataEncoding: []byte("binary/customer-encrypted")},
+			Data:     []byte("their-ciphertext"),
+		}
+		want := proto.Clone(theirs)
+
+		req := &workflowservice.StartWorkflowExecutionRequest{Input: &common.Payloads{Payloads: []*common.Payload{theirs}}}
+		require.NoError(t, call(t, e, req, new(workflowservice.QueryWorkflowResponse), func() error {
+			require.True(t, proto.Equal(want, req.Input.Payloads[0]))
+
+			return nil
+		}))
+
+		seals, _ := v.calls()
+		require.Zero(t, seals)
+	})
 }
 
 func TestEncryptorNamespaceComesFromTheContext(t *testing.T) {
