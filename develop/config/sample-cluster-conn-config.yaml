@@ -80,3 +80,36 @@ metrics:
     listenAddress: "0.0.0.0:9090"
 profiling:
   pprofAddress: "localhost:6060"
+# Extension servers are operator-run gRPC servers implementing
+# api.kms.v1.EncryptionService. They wrap and unwrap the data encryption keys
+# the proxy seals payloads with, and are how you plug in a key backend the proxy
+# has no built-in driver for, such as an on-prem HSM. Build one with
+# temporal-proxy's pkg/ext; see its examples/kms.
+#
+# They are declared here, at the top level, rather than per cluster connection,
+# so one server backing several connections is named and dialed once. A key
+# policy reaches one through an "extension://<name>/<key>" URI; the key segment
+# distinguishes several keys on one server and is never sent to it.
+#
+# Commented out because the addresses below point nowhere.
+#
+# extensionServers:
+#   - name: "hsm"
+#     address: "127.0.0.1:9443"
+#     tls:
+#       certificatePath: ""
+#       keyPath: ""
+#       remoteCAPath: ""
+#       caServerName: "hsm.internal"
+#
+# A cluster connection then references it from its encryption block:
+#
+# clusterConnections:
+#   - name: "myCoolCluster"
+#     encryption:
+#       enabled: true
+#       cacheSize: 1000
+#       default:
+#         uri: "extension://hsm/replication"
+#         duration: 1h
+#         renewBefore: 15m

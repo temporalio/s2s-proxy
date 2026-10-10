@@ -25,8 +25,8 @@ const (
 	// MaxBackoffDelay is a maximum interval between reconnect attempts.
 	MaxBackoffDelay = 10 * time.Second
 
-	// minConnectTimeout is the minimum amount of time we are willing to give a connection to complete.
-	minConnectTimeout = 20 * time.Second
+	// MinConnectTimeout is the minimum amount of time we are willing to give a connection to complete.
+	MinConnectTimeout = 20 * time.Second
 
 	// maxInternodeRecvPayloadSize indicates the internode max receive payload size.
 	maxInternodeRecvPayloadSize = 128 * 1024 * 1024 // 128 Mb
@@ -56,7 +56,7 @@ func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetric
 	// Default MaxDelay is 120 seconds which is too high.
 	var cp = grpc.ConnectParams{
 		Backoff:           backoff.DefaultConfig,
-		MinConnectTimeout: minConnectTimeout,
+		MinConnectTimeout: MinConnectTimeout,
 	}
 	cp.Backoff.MaxDelay = MaxBackoffDelay
 
