@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/temporalio/temporal-proxy/pkg/crypto"
+
+	"github.com/temporalio/s2s-proxy/encryption/extension"
 )
 
 // testingKeyScheme addresses a local in-process key. Unlike the cloud KMS
@@ -20,6 +22,9 @@ const testingKeyScheme = "testing://"
 // dashboard rather than two. A scheme that is absent here is its own label, so
 // a scheme registered on the underlying factory still produces usable metrics
 // without being listed.
+//
+// The extension scheme is deliberately absent for that reason: it wants the
+// label "extension", which is what the fallback already gives it.
 var cryptoProviders = map[string]string{
 	"awskms":        "aws",
 	"gcpkms":        "gcp",
@@ -64,10 +69,17 @@ type (
 )
 
 // NewKeyFactory returns a KeyFactory reporting to m the operations of every key
-// it opens.
-func NewKeyFactory(m CryptoMeter) *KeyFactory {
+// it opens, serving the schemes crypto handles by default plus
+// [extension.Scheme], which resolves against conns.
+//
+// conns may be nil, and the extension scheme is registered either way: a URI
+// naming a server that is not there then fails with the server's name, rather
+// than with crypto reporting the whole scheme as unknown.
+func NewKeyFactory(m CryptoMeter, conns extension.Connections) *KeyFactory {
 	return &KeyFactory{
-		kf:    crypto.NewKeyFactory(),
+		kf: crypto.NewKeyFactory(
+			crypto.WithKeyFactoryFuncForScheme(extension.Scheme, extension.NewKeyFunc(conns)),
+		),
 		meter: m,
 	}
 }

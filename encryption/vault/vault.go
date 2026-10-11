@@ -11,6 +11,7 @@ import (
 	"go.temporal.io/server/common/log"
 
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/encryption/extension"
 )
 
 type (
@@ -39,6 +40,11 @@ type (
 		// [NewCryptoMeter], which reports to the process-wide collectors, so pass
 		// one only to report somewhere else.
 		Meter CryptoMeter
+		// Extensions are the dialed extension servers an "extension://" key URI
+		// resolves against, keyed by the name the config gave them. Optional: a
+		// nil map is fine for a config naming no extension keys, and makes one
+		// that does fail when the key is opened.
+		Extensions extension.Connections
 	}
 )
 
@@ -97,7 +103,7 @@ func New(ctx context.Context, cfg Config) (*Vault, error) {
 
 	r, err := createRegistry(ctx, registryConfig{
 		ec:  cfg.Encryption,
-		kf:  NewKeyFactory(cfg.Meter),
+		kf:  NewKeyFactory(cfg.Meter, cfg.Extensions),
 		log: cfg.Logger,
 	})
 	if err != nil {
