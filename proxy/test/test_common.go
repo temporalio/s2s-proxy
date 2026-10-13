@@ -269,6 +269,7 @@ func createCluster(
 	numShards int,
 	initialFailoverVersion int64,
 	numHistoryHosts int,
+	transitionHistoryEnabled ...bool,
 ) *testcore.TestCluster {
 	clusterCreationMu.Lock()
 	defer clusterCreationMu.Unlock()
@@ -298,6 +299,12 @@ func createCluster(
 			dynamicconfig.EnableReplicationTaskBatching.Key(): true,
 		},
 	}
+	if len(transitionHistoryEnabled) > 1 {
+		t.Fatalf("createCluster accepts at most one transition-history override")
+	}
+	if len(transitionHistoryEnabled) == 1 {
+		clusterConfig.DynamicConfigOverrides[dynamicconfig.EnableTransitionHistory.Key()] = transitionHistoryEnabled[0]
+	}
 
 	testClusterFactory := testcore.NewTestClusterFactory()
 	logger = log.With(logger, tag.NewStringTag("clusterName", clusterName))
@@ -326,7 +333,11 @@ func createProxy(
 	memberlistBindPort int,
 	memberlistJoinAddrs []string,
 	proxyAddresses map[string]string,
+	encryptionConfig ...config.EncryptionConfig,
 ) *s2sproxy.Proxy {
+	if len(encryptionConfig) > 1 {
+		t.Fatalf("createProxy accepts at most one encryption config")
+	}
 	muxAddressInfo := config.TCPTLSInfo{
 		ConnectionString: muxAddress,
 	}
@@ -352,6 +363,9 @@ func createProxy(
 				ShardCountConfig: shardCountConfig,
 			},
 		},
+	}
+	if len(encryptionConfig) == 1 {
+		cfg.ClusterConnections[0].EncryptionConfig = encryptionConfig[0]
 	}
 
 	if nodeName != "" && memberlistBindAddr != "" {
