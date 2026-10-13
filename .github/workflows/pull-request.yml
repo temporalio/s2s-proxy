@@ -69,10 +69,10 @@ jobs:
       - name: Install helm
         uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
         with:
-          version: v3.19.4
+          version: v4.3.0
 
       - name: Install helm-unittest
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --verify=false
 
       - name: Run helm-unittest
         working-directory: charts/s2s-proxy
