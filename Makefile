@@ -154,7 +154,7 @@ docker-local-build:
 .PHONY: helm-install
 helm-install:
 	brew install helm
-	helm plugin install https://github.com/helm-unittest/helm-unittest.git
+	helm plugin install https://github.com/helm-unittest/helm-unittest.git --verify=false
 
 .PHONY: helm-test
 helm-test:
