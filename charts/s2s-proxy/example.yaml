@@ -12,6 +12,7 @@ data:
           - DescribeCluster
           - DescribeMutableState
           - GetNamespaceReplicationMessages
+          - GetWorkflowExecutionRawHistory
           - GetWorkflowExecutionRawHistoryV2
           - ListClusters
           - StreamWorkflowReplicationMessages
