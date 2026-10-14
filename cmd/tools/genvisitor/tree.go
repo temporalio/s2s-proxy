@@ -14,7 +14,14 @@ type Tree struct {
 	// Children contains children of any of the Types (keyed by same key as Types)
 	Children map[string]*Tree
 	// Handlers are used by the Emitter for code generation.
-	Handlers []*Handler
+	Handlers []boundHandler
+}
+
+// boundHandler is a handler together with the path it matched, which the
+// handler's invocation may use when generating code.
+type boundHandler struct {
+	handler *Handler
+	path    VisitPath
 }
 
 func NewTree() *Tree {
@@ -34,7 +41,7 @@ func (t *Tree) Insert(path VisitPath, handler *Handler) {
 		}
 		current = current.Children[p.GoName()]
 	}
-	current.Handlers = append(current.Handlers, handler)
+	current.Handlers = append(current.Handlers, boundHandler{handler: handler, path: path})
 }
 
 func (t *Tree) SortedTypes() []VisitType {
@@ -61,7 +68,7 @@ func (t *Tree) dump(out io.Writer, depth int) {
 	indent := string(spaces)
 
 	for _, h := range t.Handlers {
-		writef(out, "%s%s\n", indent, h.Invocation("v"))
+		writef(out, "%s%s\n", indent, h.handler.Invocation("v", h.path))
 	}
 
 	for f, ch := range t.Children {
