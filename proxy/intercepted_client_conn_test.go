@@ -29,10 +29,10 @@ func (c *recordingConn) Close() error       { return nil }
 func (c *recordingConn) Describe() string   { return "recordingConn" }
 func (c *recordingConn) CanMakeCalls() bool { return true }
 
-func TestInterceptedConnRunsInterceptorAroundInvoke(t *testing.T) {
+func TestInterceptedClientConnRunsInterceptorAroundInvoke(t *testing.T) {
 	var events []string
 	cc := &recordingConn{}
-	conn := interceptedConn{
+	conn := interceptedClientConn{
 		ClientConnInterface: cc,
 		intercept: func(ctx context.Context, method string, req, reply any, _ *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 			events = append(events, "before "+method)

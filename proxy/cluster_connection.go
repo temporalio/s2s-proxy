@@ -475,7 +475,7 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	// and operator calls have their payloads sealed and opened.
 	var payloadClient grpc.ClientConnInterface = c.client
 	if c.encryptor != nil {
-		payloadClient = interceptedConn{ClientConnInterface: c.client, intercept: c.encryptor.UnaryClientInterceptor}
+		payloadClient = interceptedClientConn{ClientConnInterface: c.client, intercept: c.encryptor.UnaryClientInterceptor}
 	}
 
 	adminServiceImpl := NewAdminServiceProxyServer(
