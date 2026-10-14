@@ -97,7 +97,7 @@ func newCredentialTestConnection(
 		a.localTemporalAddr, a.localProxyOutbound, a.localProxyInbound, a.remoteTemporalAddr)
 	connConfig.Local.Credentials = &config.CredentialsConfig{Identity: identity}
 	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
-	cc, err := newClusterConnection(t.Context(), connConfig, loggers, provider)
+	cc, err := newClusterConnection(t.Context(), connConfig, nil, loggers, provider)
 	require.NoError(t, err)
 	return cc
 }

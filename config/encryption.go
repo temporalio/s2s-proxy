@@ -25,20 +25,34 @@ const ExtensionKeyScheme = "extension"
 var validKeySchemes = append(crypto.DefaultSchemes(), ExtensionKeyScheme)
 
 type (
-	// EncryptionConfig configures envelope encryption of replication payloads.
+	// EncryptionConfig configures envelope encryption of the payloads in
+	// workflow and operator service calls crossing the connection. Payloads
+	// leaving for the peer are sealed and payloads arriving from it are opened,
+	// so the peer only ever holds sealed data. Admin service traffic, which
+	// carries replication, is not covered.
+	//
 	// Payloads are sealed with a data encryption key (DEK), which is itself
-	// wrapped by a key encryption key (KEK) held in a cloud KMS. Default and
-	// Overrides are validated whether or not Enabled is set, so a broken policy
-	// gets reported before someone switches it on.
+	// wrapped by a key encryption key (KEK) held in a cloud KMS or an extension
+	// server. Default and Overrides are validated whether or not Enabled is set,
+	// so a broken policy gets reported before someone switches it on.
 	EncryptionConfig struct {
-		// Turn on envelope encryption, which requires Default to be set
+		// Seal payloads leaving for the peer, which requires Default to be set.
+		// Opening does not depend on it: with Enabled off but Default still set,
+		// nothing new is sealed while payloads sealed earlier still open
 		Enabled bool `yaml:"enabled"`
 		// Maximum number of unwrapped DEKs to hold in memory, or 0 to disable caching
 		CacheSize int `yaml:"cacheSize"`
-		// Key policy for namespaces with no entry in Overrides
+		// Key policy for namespaces with no entry in Overrides. Setting it is what
+		// gives the proxy keys to open with, so its KEKs are opened at startup
+		// whether or not Enabled is set; remove it to stop touching the KMS
 		Default *KeyPolicy `yaml:"default"`
 		// Per-namespace key policies, keyed by namespace name, replacing Default
 		Overrides map[string]KeyPolicy `yaml:"overrides,omitempty"`
+		// Payload encodings the customer's own codec has already encrypted, which
+		// are passed through rather than sealed again. Our own sealed payloads are
+		// always passed through and need not be listed. List only encodings that
+		// encrypt: a compression codec's would reach the peer readable
+		AlreadySealedEncodings []string `yaml:"alreadySealedEncodings,omitempty"`
 	}
 
 	// KeyPolicy names the KEK that wraps a namespace's DEKs and sets how often
@@ -75,6 +89,11 @@ func (e *EncryptionConfig) Validate() error {
 			validation.Field(subject, ns, validation.Required[string]()),
 			validation.Nested(subject, &policy),
 		)
+	}
+
+	for i, enc := range e.AlreadySealedEncodings {
+		rules = append(rules,
+			validation.Field(fmt.Sprintf("alreadySealedEncodings[%d]", i), enc, validation.Required[string]()))
 	}
 
 	return validation.Validate("", rules...)

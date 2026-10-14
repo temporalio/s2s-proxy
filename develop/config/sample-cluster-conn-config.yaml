@@ -110,6 +110,11 @@ profiling:
 #       enabled: true
 #       cacheSize: 1000
 #       default:
-#         uri: "extension://hsm/replication"
+#         uri: "extension://hsm/payloads"
 #         duration: 1h
 #         renewBefore: 15m
+#       # Encodings your own codec has already encrypted, passed through rather
+#       # than sealed again. List only encodings that encrypt; a compression
+#       # codec's would reach the peer readable.
+#       alreadySealedEncodings:
+#         - "binary/encrypted"
