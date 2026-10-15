@@ -153,12 +153,12 @@ func getWorkflowPayloadHistory(
 	}
 }
 
-func assertWorkflowPayloadsSealed(t *testing.T, message proto.Message) {
+func assertWorkflowPayloadsSealed(t *testing.T, message proto.Message, canaries []string) {
 	t.Helper()
 
 	wire, err := proto.Marshal(message)
 	require.NoError(t, err)
-	for _, canary := range workflowPayloadCanaries {
+	for _, canary := range canaries {
 		require.NotContains(t, string(wire), canary)
 	}
 
@@ -179,12 +179,12 @@ func assertWorkflowPayloadsSealed(t *testing.T, message proto.Message) {
 	require.Positive(t, visited, "message contained no inspectable payloads")
 }
 
-func assertWorkflowPayloadsPlaintext(t *testing.T, history *historypb.History) {
+func assertWorkflowPayloadsPlaintext(t *testing.T, history *historypb.History, canaries []string) {
 	t.Helper()
 
 	wire, err := proto.Marshal(history)
 	require.NoError(t, err)
-	for _, canary := range workflowPayloadCanaries {
+	for _, canary := range canaries {
 		require.Contains(t, string(wire), canary)
 	}
 
@@ -205,12 +205,12 @@ func assertWorkflowPayloadsPlaintext(t *testing.T, history *historypb.History) {
 	require.Positive(t, visited, "history contained no inspectable payloads")
 }
 
-func assertAdminPayloadsSealed(t *testing.T, message proto.Message) {
+func assertAdminPayloadsSealed(t *testing.T, message proto.Message, canaries []string) {
 	t.Helper()
 
 	wire, err := proto.Marshal(message)
 	require.NoError(t, err)
-	for _, canary := range workflowPayloadCanaries {
+	for _, canary := range canaries {
 		require.NotContains(t, string(wire), canary)
 	}
 
@@ -269,18 +269,18 @@ func TestWorkerUsesPlaintextWhileClusterStoresSealedPayloads(t *testing.T) {
 
 	execution := &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: run.GetRunID()}
 	directHistory := getWorkflowPayloadHistory(t, cluster.FrontendClient(), namespace, execution)
-	assertWorkflowPayloadsSealed(t, directHistory)
+	assertWorkflowPayloadsSealed(t, directHistory, workflowPayloadCanaries)
 
 	mutableState, err := cluster.AdminClient().DescribeMutableState(t.Context(), &adminservice.DescribeMutableStateRequest{
 		Namespace: namespace,
 		Execution: execution,
 	})
 	require.NoError(t, err)
-	assertAdminPayloadsSealed(t, mutableState)
+	assertAdminPayloadsSealed(t, mutableState, workflowPayloadCanaries)
 
 	conn, err := grpc.NewClient(proxyAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	proxyHistory := getWorkflowPayloadHistory(t, workflowservice.NewWorkflowServiceClient(conn), namespace, execution)
-	assertWorkflowPayloadsPlaintext(t, proxyHistory)
+	assertWorkflowPayloadsPlaintext(t, proxyHistory, workflowPayloadCanaries)
 }
