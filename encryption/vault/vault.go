@@ -83,7 +83,7 @@ func New(ctx context.Context, cfg Config) (*Vault, error) {
 		cfg.Meter = NewCryptoMeter()
 	}
 
-	opts := make([]crypto.VaultOption, 0, 4+len(cfg.Encryption.Overrides))
+	opts := make([]crypto.VaultOption, 0, len(cfg.Encryption.Overrides))
 	opts = append(opts,
 		crypto.WithDefaultKeyConfig(crypto.KeyConfig{
 			Duration:    cfg.Encryption.Default.Duration,

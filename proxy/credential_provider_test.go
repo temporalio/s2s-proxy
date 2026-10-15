@@ -118,10 +118,10 @@ func TestProxyIdentityReplacesForwardedCredentials(t *testing.T) {
 
 	// Every service, unary and streaming, carries only the proxy's token, whatever the peer sent.
 	ctx := forwardedContext(t)
-	_, _ = adminservice.NewAdminServiceClient(cc.inboundClient).DescribeCluster(ctx, &adminservice.DescribeClusterRequest{})
-	_, _ = workflowservice.NewWorkflowServiceClient(cc.inboundClient).GetSystemInfo(ctx, &workflowservice.GetSystemInfoRequest{})
-	_, _ = operatorservice.NewOperatorServiceClient(cc.inboundClient).ListClusters(ctx, &operatorservice.ListClustersRequest{})
-	stream, err := adminservice.NewAdminServiceClient(cc.inboundClient).StreamWorkflowReplicationMessages(ctx)
+	_, _ = adminservice.NewAdminServiceClient(cc.inboundClient.conn).DescribeCluster(ctx, &adminservice.DescribeClusterRequest{})
+	_, _ = workflowservice.NewWorkflowServiceClient(cc.inboundClient.conn).GetSystemInfo(ctx, &workflowservice.GetSystemInfoRequest{})
+	_, _ = operatorservice.NewOperatorServiceClient(cc.inboundClient.conn).ListClusters(ctx, &operatorservice.ListClustersRequest{})
+	stream, err := adminservice.NewAdminServiceClient(cc.inboundClient.conn).StreamWorkflowReplicationMessages(ctx)
 	require.NoError(t, err)
 	_, _ = stream.Recv()
 
@@ -137,7 +137,7 @@ func TestProxyIdentityReplacesForwardedCredentials(t *testing.T) {
 	}
 
 	// The remote side never sees the proxy's token.
-	_, _ = adminservice.NewAdminServiceClient(cc.outboundClient).DescribeCluster(t.Context(), &adminservice.DescribeClusterRequest{})
+	_, _ = adminservice.NewAdminServiceClient(cc.outboundClient.conn).DescribeCluster(t.Context(), &adminservice.DescribeClusterRequest{})
 	require.Empty(t, remoteTemporal.credentials(t, describeClusterMethod).authorization)
 }
 
@@ -148,7 +148,7 @@ func TestStripIdentityStripsForwardedCredentials(t *testing.T) {
 	// A provider is configured but unused: identity "strip" never sends credentials.
 	cc := newCredentialTestConnection(t, a, config.CredentialIdentityStrip, staticCredentialProvider{creds: staticCredentials{}})
 
-	_, _ = adminservice.NewAdminServiceClient(cc.inboundClient).DescribeCluster(forwardedContext(t), &adminservice.DescribeClusterRequest{})
+	_, _ = adminservice.NewAdminServiceClient(cc.inboundClient.conn).DescribeCluster(forwardedContext(t), &adminservice.DescribeClusterRequest{})
 	recorded := localTemporal.credentials(t, describeClusterMethod)
 	require.Empty(t, recorded.authorization)
 	require.Empty(t, recorded.authorizationExtras)
@@ -162,7 +162,7 @@ func TestDefaultIdentityForwardsCredentials(t *testing.T) {
 			startAuthRecordingServer(t, a.remoteTemporalAddr)
 			cc := newCredentialTestConnection(t, a, identity, staticCredentialProvider{creds: staticCredentials{}})
 
-			_, _ = adminservice.NewAdminServiceClient(cc.inboundClient).DescribeCluster(forwardedContext(t), &adminservice.DescribeClusterRequest{})
+			_, _ = adminservice.NewAdminServiceClient(cc.inboundClient.conn).DescribeCluster(forwardedContext(t), &adminservice.DescribeClusterRequest{})
 			recorded := localTemporal.credentials(t, describeClusterMethod)
 			require.Equal(t, []string{peerBearerToken}, recorded.authorization)
 			require.Equal(t, []string{"peer-extras"}, recorded.authorizationExtras)

@@ -496,15 +496,14 @@ func TestBuildProxyServerEncryptsEachServiceWithItsEncryptor(t *testing.T) {
 	nsTranslations, err := (&config.StringTranslator{}).AsLocalToRemoteBiMap()
 	require.NoError(t, err)
 
-	upstream := &recordingConn{}
+	upstreamConn := &recordingConn{}
 	server, err := buildProxyServer(serverConfiguration{
-		name:             "test",
-		directionLabel:   "outbound",
-		client:           upstream,
-		managedClient:    &recordingConn{},
-		clientEncryptors: encryptors,
-		nsTranslations:   nsTranslations,
-		loggers:          logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{})),
+		name:           "test",
+		directionLabel: "outbound",
+		client:         upstream{conn: upstreamConn, encryptors: encryptors},
+		managedClient:  upstream{conn: &recordingConn{}},
+		nsTranslations: nsTranslations,
+		loggers:        logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{})),
 	}, encryption.TLSConfig{}, func(int32, int32) {}, t.Context())
 	require.NoError(t, err)
 
@@ -532,7 +531,7 @@ func TestBuildProxyServerEncryptsEachServiceWithItsEncryptor(t *testing.T) {
 		operatorservice.OperatorService_ListNexusEndpoints_FullMethodName,
 	}, payload)
 	require.Equal(t, []string{adminservice.AdminService_DeleteWorkflowExecution_FullMethodName}, admin)
-	require.Len(t, upstream.invoked, 3, "every call still has to reach the upstream")
+	require.Len(t, upstreamConn.invoked, 3, "every call still has to reach the upstream")
 }
 
 func TestConnEncryptorsWrapConns(t *testing.T) {
@@ -559,26 +558,6 @@ func TestConnEncryptorsWrapConns(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{"/admin/Stream"}, streamed)
 	})
-}
-
-func TestEncryptorsBelongToTheConnNotTheServer(t *testing.T) {
-	// In routing mode a server opens replication streams on its managedClient,
-	// which faces the other side. Pairing by conn keeps those streams sealing in
-	// the right direction whichever server opened them.
-	outboundConn, inboundConn := &recordingConn{}, &recordingConn{}
-	outbound := connEncryptors{admin: &interceptor.AdminEncryptor{}}
-	inbound := connEncryptors{payload: &interceptor.Encryptor{}}
-
-	cc := &ClusterConnection{
-		outboundClient:     outboundConn,
-		inboundClient:      inboundConn,
-		outboundEncryptors: outbound,
-		inboundEncryptors:  inbound,
-	}
-
-	require.Equal(t, outbound, cc.encryptorsFor(outboundConn))
-	require.Equal(t, inbound, cc.encryptorsFor(inboundConn))
-	require.Panics(t, func() { cc.encryptorsFor(&recordingConn{}) }, "a conn the connection does not own is a bug")
 }
 
 // recordingWorkflowService remembers the last StartWorkflowExecution request it

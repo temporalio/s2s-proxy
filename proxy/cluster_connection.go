@@ -65,19 +65,24 @@ type (
 		// outboundServer receives connections from the local Temporal and makes calls using outboundClient.
 		outboundServer contextAwareServer
 		// outboundClient is connected to a remote Temporal server somewhere.
-		outboundClient closableClientConn
+		outboundClient upstream
 		// inboundServer receives connections from a remote Temporal server and calls using the inboundClient.
 		inboundServer contextAwareServer
 		// inboundClient talks to the local Temporal frontend.
-		inboundClient    closableClientConn
+		inboundClient    upstream
 		inboundObserver  *ReplicationStreamObserver
 		outboundObserver *ReplicationStreamObserver
 		shardManager     ShardManager
 		loggers          logging.LoggerProvider
-		// outboundEncryptors and inboundEncryptors are the encryptors for
-		// outboundClient and inboundClient respectively; see encryptorsFor.
-		outboundEncryptors connEncryptors
-		inboundEncryptors  connEncryptors
+	}
+	// upstream is a conn the proxy forwards calls on, together with the
+	// encryptors for the side it faces. Encryptors belong to the conn, not to the
+	// server using it: in routing mode a server opens replication streams on its
+	// managedClient, which faces the other way. conn is deliberately not embedded,
+	// so calls can't reach it without going through adminConn or payloadConn.
+	upstream struct {
+		conn       closableClientConn
+		encryptors connEncryptors
 	}
 	// connEncryptors are the encryptors for one client conn, built for the side
 	// the conn faces: peer-facing seals requests and opens responses,
@@ -109,27 +114,22 @@ type (
 		clusterDefinition config.ClusterDefinition
 		// directionLabel is used in metrics. DO NOT hang application logic off of this! Pass the appropriate arguments instead.
 		directionLabel string
-		// client is the ClientConnInterface that the server will use to make calls.
-		client closableClientConn
+		// client is the upstream that the server will use to make calls.
+		client upstream
 		// managedClient is updated by the multi-mux-manager that also owns the server. Needs some more cleanup.
-		managedClient closableClientConn
+		managedClient upstream
 		// callerNamesLocalNamespaces says whether the caller on this side addresses
 		// namespaces by their local name. The outbound server is called by the local
 		// cluster, so it does; the inbound server is called by the peer, so it does
 		// not and needs nsTranslations applied first. See stampAndTranslate.
 		callerNamesLocalNamespaces bool
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
-		nsTranslations collect.StaticBiMap[string, string]
-		saTranslations config.SearchAttributeTranslation
-		overrides      AdminServiceOverrides
-		// clientEncryptors and managedEncryptors seal and open what goes through
-		// client and managedClient, chosen by the side each conn faces (see
-		// ClusterConnection.encryptorsFor). The zero value means no encryption.
-		clientEncryptors  connEncryptors
-		managedEncryptors connEncryptors
-		aclPolicy         *config.ACLPolicy
-		shardCountConfig  config.ShardCountConfig
-		loggers           logging.LoggerProvider
+		nsTranslations   collect.StaticBiMap[string, string]
+		saTranslations   config.SearchAttributeTranslation
+		overrides        AdminServiceOverrides
+		aclPolicy        *config.ACLPolicy
+		shardCountConfig config.ShardCountConfig
+		loggers          logging.LoggerProvider
 
 		shardManager      ShardManager
 		lcmParameters     LCMParameters
@@ -170,11 +170,11 @@ func newClusterConnection(
 		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
-	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound", credentialProvider)
+	cc.inboundClient.conn, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound", credentialProvider)
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound", auth.EmptyCredentialProvider{})
+	cc.outboundClient.conn, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound", auth.EmptyCredentialProvider{})
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func newClusterConnection(
 		return nil, err
 	}
 
-	cc.outboundEncryptors, cc.inboundEncryptors, err = newEncryptors(lifetime, connConfig.EncryptionConfig, extensions,
+	cc.outboundClient.encryptors, cc.inboundClient.encryptors, err = newEncryptors(lifetime, connConfig.EncryptionConfig, extensions,
 		cc.loggers.Get(LogClusterConnection))
 	if err != nil {
 		return nil, err
@@ -234,9 +234,7 @@ func newClusterConnection(
 		clusterDefinition: connConfig.Remote,
 		directionLabel:    "inbound",
 		client:            cc.inboundClient,
-		clientEncryptors:  cc.encryptorsFor(cc.inboundClient),
 		managedClient:     cc.outboundClient,
-		managedEncryptors: cc.encryptorsFor(cc.outboundClient),
 		// The peer calls us, so it names namespaces the way the peer knows them.
 		callerNamesLocalNamespaces: false,
 		nsTranslations:             nsTranslations.Inverse(),
@@ -264,9 +262,7 @@ func newClusterConnection(
 		clusterDefinition: connConfig.Local,
 		directionLabel:    "outbound",
 		client:            cc.outboundClient,
-		clientEncryptors:  cc.encryptorsFor(cc.outboundClient),
 		managedClient:     cc.inboundClient,
-		managedEncryptors: cc.encryptorsFor(cc.inboundClient),
 		// The local cluster calls us, so it already names local namespaces.
 		callerNamesLocalNamespaces: true,
 		nsTranslations:             nsTranslations,
@@ -355,20 +351,12 @@ func newEncryptors(
 	return outbound, inbound, nil
 }
 
-// encryptorsFor returns the encryptors for conn, which must be one of cc's two
-// clients. Encryptors belong to the conn, by the side it faces, not to the
-// server using it: in routing mode a server opens replication streams on its
-// managedClient, which faces the other way.
-func (cc *ClusterConnection) encryptorsFor(conn closableClientConn) connEncryptors {
-	switch conn {
-	case cc.outboundClient:
-		return cc.outboundEncryptors
-	case cc.inboundClient:
-		return cc.inboundEncryptors
-	}
+// adminConn returns u's conn behind its admin encryptor, for the admin clients.
+func (u upstream) adminConn() grpc.ClientConnInterface { return u.encryptors.adminConn(u.conn) }
 
-	panic(fmt.Sprintf("encryptorsFor called with a conn the cluster connection does not own: %T", conn))
-}
+// payloadConn returns u's conn behind its payload encryptor, for the workflow
+// and operator clients.
+func (u upstream) payloadConn() grpc.ClientConnInterface { return u.encryptors.payloadConn(u.conn) }
 
 // payloadConn returns conn with e's payload encryptor in front of it, for the
 // workflow and operator clients.
@@ -447,7 +435,7 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 		}
 		// The Mux manager needs to update its associated client
 		muxMgr, err := mux.NewGRPCMuxManager(lifetime, c.name, c.clusterDefinition,
-			c.managedClient.(*grpcutil.MultiClientConn), grpcServer, c.loggers.Get(LogMuxManager))
+			c.managedClient.conn.(*grpcutil.MultiClientConn), grpcServer, c.loggers.Get(LogMuxManager))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -522,15 +510,15 @@ func (c *ClusterConnection) Start() {
 
 func (c *ClusterConnection) Describe() string {
 	return fmt.Sprintf("[ClusterConnection connects outbound server %s to outbound client %s, inbound server %s to inbound client %s]",
-		c.outboundServer.Describe(), c.outboundClient.Describe(), c.inboundServer.Describe(), c.inboundClient.Describe())
+		c.outboundServer.Describe(), c.outboundClient.conn.Describe(), c.inboundServer.Describe(), c.inboundClient.conn.Describe())
 }
 
 func (c *ClusterConnection) AcceptingInboundTraffic() bool {
-	return c.inboundClient.CanMakeCalls() && c.inboundServer.CanAcceptConnections()
+	return c.inboundClient.conn.CanMakeCalls() && c.inboundServer.CanAcceptConnections()
 }
 
 func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
-	return c.outboundClient.CanMakeCalls() && c.outboundServer.CanAcceptConnections()
+	return c.outboundClient.conn.CanMakeCalls() && c.outboundServer.CanAcceptConnections()
 }
 
 // buildProxyServer uses the provided serverConfiguration and TLSConfig to create a grpc.Server that proxies
@@ -544,8 +532,8 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 
 	adminServiceImpl := NewAdminServiceProxyServer(
 		fmt.Sprintf("%sAdminService", c.directionLabel),
-		adminservice.NewAdminServiceClient(c.clientEncryptors.adminConn(c.client)),
-		adminservice.NewAdminServiceClient(c.managedEncryptors.adminConn(c.managedClient)),
+		adminservice.NewAdminServiceClient(c.client.adminConn()),
+		adminservice.NewAdminServiceClient(c.managedClient.adminConn()),
 		c.overrides,
 		[]string{c.directionLabel},
 		observeFn,
@@ -562,13 +550,13 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	}
 	workflowServiceImpl := NewWorkflowServiceProxyServer(
 		fmt.Sprintf("%sWorkflowService", c.directionLabel),
-		workflowservice.NewWorkflowServiceClient(c.clientEncryptors.payloadConn(c.client)),
+		workflowservice.NewWorkflowServiceClient(c.client.payloadConn()),
 		accessControl,
 		c.loggers,
 	)
 	operatorServiceImpl := NewOperatorServiceProxyServer(
 		fmt.Sprintf("%sOperatorService", c.directionLabel),
-		operatorservice.NewOperatorServiceClient(c.clientEncryptors.payloadConn(c.client)),
+		operatorservice.NewOperatorServiceClient(c.client.payloadConn()),
 		[]string{c.directionLabel},
 		c.loggers,
 	)

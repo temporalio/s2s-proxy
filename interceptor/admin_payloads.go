@@ -19,10 +19,10 @@ import (
 
 // AdminVisitOptions configures a visit over an admin service message.
 type AdminVisitOptions struct {
-	// Payloads is passed to proxy.VisitPayloads for every public API message
+	// PayloadOptions is passed to proxy.VisitPayloads for every public API message
 	// reached, and its Visitor is called directly for payloads held by
 	// server-internal messages. SkipSearchAttributes applies to both.
-	Payloads *proxy.VisitPayloadsOptions
+	PayloadOptions *proxy.VisitPayloadsOptions
 	// Opaque is called with the path and contents of every non-empty field whose
 	// payloads cannot be reached, such as HSM and CHASM state. The visitor does
 	// not know which direction it runs in, so the caller decides: an error stops
@@ -37,7 +37,7 @@ type AdminVisitOptions struct {
 //
 // Search attributes are skipped when opts.Payloads.SkipSearchAttributes is set.
 func VisitAdminPayloads(ctx context.Context, msg proto.Message, opts AdminVisitOptions) error {
-	if opts.Payloads == nil || opts.Payloads.Visitor == nil {
+	if opts.PayloadOptions == nil || opts.PayloadOptions.Visitor == nil {
 		return errors.New("visiting admin payloads requires a payload visitor")
 	}
 	if opts.Opaque == nil {
@@ -58,7 +58,7 @@ func visitPayloadInPlace(ctx context.Context, opts AdminVisitOptions, p *common.
 	}
 
 	vctx := &proxy.VisitPayloadsContext{Context: ctx, SinglePayloadRequired: true}
-	out, err := opts.Payloads.Visitor(vctx, []*common.Payload{p})
+	out, err := opts.PayloadOptions.Visitor(vctx, []*common.Payload{p})
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func visitMessage(ctx context.Context, opts AdminVisitOptions, m proto.Message) 
 		return nil
 	}
 
-	return proxy.VisitPayloads(ctx, m, *opts.Payloads)
+	return proxy.VisitPayloads(ctx, m, *opts.PayloadOptions)
 }
 
 // visitEventBlob visits the payloads in a blob of serialized history events and
@@ -115,7 +115,7 @@ func visitEventBlob(ctx context.Context, opts AdminVisitOptions, blob *common.Da
 		events = repaired
 	}
 
-	if err := proxy.VisitPayloads(ctx, &history.History{Events: events}, *opts.Payloads); err != nil {
+	if err := proxy.VisitPayloads(ctx, &history.History{Events: events}, *opts.PayloadOptions); err != nil {
 		return err
 	}
 

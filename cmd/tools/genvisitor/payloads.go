@@ -177,7 +177,7 @@ func buildPayloads(logger log.Logger, tables payloadTables) (*Emitter, error) {
 	e.AddHandler(c.isServerPayload, true, func(v string, path VisitPath) string {
 		call := returnOnErr(fmt.Sprintf("visitPayloadInPlace(ctx, opts, %s)", v))
 		if isSearchAttributes(path) {
-			return fmt.Sprintf("if !opts.Payloads.SkipSearchAttributes {\n%s\n}", call)
+			return fmt.Sprintf("if !opts.PayloadOptions.SkipSearchAttributes {\n%s\n}", call)
 		}
 		return call
 	})

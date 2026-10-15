@@ -165,7 +165,7 @@ func (v *adminVisit) visit(ctx context.Context, m any) error {
 	}
 
 	ctx = context.WithValue(ctx, NamespaceKey, config.ReplicationKeyNamespace)
-	return VisitAdminPayloads(ctx, msg, AdminVisitOptions{Payloads: v.payloads, Opaque: v.opaque})
+	return VisitAdminPayloads(ctx, msg, AdminVisitOptions{PayloadOptions: v.payloads, Opaque: v.opaque})
 }
 
 // visitError runs v over the payloads in err's gRPC status details. An error
