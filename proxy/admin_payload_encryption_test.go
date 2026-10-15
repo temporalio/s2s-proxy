@@ -11,7 +11,10 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	nexuspb "go.temporal.io/api/nexus/v1"
+	operatorservice "go.temporal.io/api/operatorservice/v1"
 	apiproxy "go.temporal.io/api/proxy"
+	workflowservice "go.temporal.io/api/workflowservice/v1"
 	adminservice "go.temporal.io/server/api/adminservice/v1"
 	persistencespb "go.temporal.io/server/api/persistence/v1"
 	replicationspb "go.temporal.io/server/api/replication/v1"
@@ -36,6 +39,41 @@ type fixedAdminPayloadService struct {
 
 	payload     string
 	historyBlob *commonpb.DataBlob
+}
+
+type fixedWorkflowPayloadService struct {
+	workflowservice.UnimplementedWorkflowServiceServer
+
+	payload string
+}
+
+func (s *fixedWorkflowPayloadService) QueryWorkflow(
+	context.Context,
+	*workflowservice.QueryWorkflowRequest,
+) (*workflowservice.QueryWorkflowResponse, error) {
+	return &workflowservice.QueryWorkflowResponse{
+		QueryResult: &commonpb.Payloads{Payloads: []*commonpb.Payload{plainPayload(s.payload)}},
+	}, nil
+}
+
+type fixedOperatorPayloadService struct {
+	operatorservice.UnimplementedOperatorServiceServer
+
+	payload string
+}
+
+func (s *fixedOperatorPayloadService) ListNexusEndpoints(
+	context.Context,
+	*operatorservice.ListNexusEndpointsRequest,
+) (*operatorservice.ListNexusEndpointsResponse, error) {
+	return &operatorservice.ListNexusEndpointsResponse{
+		Endpoints: []*nexuspb.Endpoint{{
+			Spec: &nexuspb.EndpointSpec{
+				Name:        "payload-test",
+				Description: plainPayload(s.payload),
+			},
+		}},
+	}, nil
 }
 
 func (s *fixedAdminPayloadService) DescribeMutableState(
@@ -97,7 +135,7 @@ func mutableStateWithPayload(payload string) *persistencespb.WorkflowMutableStat
 	}
 }
 
-func startAdminPayloadService(t *testing.T, address, payload string) {
+func startPayloadServices(t *testing.T, address, payload string) {
 	t.Helper()
 
 	listener, err := net.Listen("tcp", address)
@@ -119,8 +157,51 @@ func startAdminPayloadService(t *testing.T, address, payload string) {
 		payload:     payload,
 		historyBlob: historyBlob,
 	})
+	workflowservice.RegisterWorkflowServiceServer(server, &fixedWorkflowPayloadService{payload: payload})
+	operatorservice.RegisterOperatorServiceServer(server, &fixedOperatorPayloadService{payload: payload})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
+}
+
+func startPayloadEncryptionProxy(t *testing.T) string {
+	t.Helper()
+
+	ports := getDynamicPorts(t, 4)
+	localTemporal, remoteTemporal, proxyOutbound, proxyInbound := ports[0], ports[1], ports[2], ports[3]
+
+	startPayloadServices(t, localTemporal, adminPayloadCanary)
+	startPayloadServices(t, remoteTemporal, `"unused"`)
+
+	cfg := makeTCPClusterConfig(
+		"payload-encryption",
+		localFVI,
+		remoteFVI,
+		proxyOutbound,
+		localTemporal,
+		proxyInbound,
+		proxyOutbound,
+		remoteTemporal,
+	)
+	cfg.EncryptionConfig = config.EncryptionConfig{
+		Enabled: true,
+		Default: &config.KeyPolicy{URI: testEncryptionKeyURI, Duration: time.Hour},
+	}
+
+	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
+	connection, err := NewClusterConnection(t.Context(), cfg, nil, loggers)
+	require.NoError(t, err)
+	connection.Start()
+
+	return proxyInbound
+}
+
+func payloadClientConnection(t *testing.T, address string) *grpc.ClientConn {
+	t.Helper()
+
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
 }
 
 func assertAdminResponseSealed(t *testing.T, response proto.Message) {
@@ -153,36 +234,7 @@ func assertAdminResponseSealed(t *testing.T, response proto.Message) {
 }
 
 func TestAdminClientsReceiveSealedPayloadsFromProxy(t *testing.T) {
-	ports := getDynamicPorts(t, 4)
-	localTemporal, remoteTemporal, proxyOutbound, proxyInbound := ports[0], ports[1], ports[2], ports[3]
-
-	startAdminPayloadService(t, localTemporal, adminPayloadCanary)
-	startAdminPayloadService(t, remoteTemporal, `"unused"`)
-
-	cfg := makeTCPClusterConfig(
-		"admin-payload-encryption",
-		localFVI,
-		remoteFVI,
-		proxyOutbound,
-		localTemporal,
-		proxyInbound,
-		proxyOutbound,
-		remoteTemporal,
-	)
-	cfg.EncryptionConfig = config.EncryptionConfig{
-		Enabled: true,
-		Default: &config.KeyPolicy{URI: testEncryptionKeyURI, Duration: time.Hour},
-	}
-
-	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
-	connection, err := NewClusterConnection(t.Context(), cfg, nil, loggers)
-	require.NoError(t, err)
-	connection.Start()
-
-	conn, err := grpc.NewClient(proxyInbound, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = conn.Close() })
-
+	conn := payloadClientConnection(t, startPayloadEncryptionProxy(t))
 	client := adminservice.NewAdminServiceClient(conn)
 	tests := map[string]func() (proto.Message, error){
 		"DescribeMutableState": func() (proto.Message, error) {
@@ -209,4 +261,35 @@ func TestAdminClientsReceiveSealedPayloadsFromProxy(t *testing.T) {
 			assertAdminResponseSealed(t, response)
 		})
 	}
+}
+
+func TestWorkflowAndOperatorClientsReceiveSealedPayloadsFromProxy(t *testing.T) {
+	conn := payloadClientConnection(t, startPayloadEncryptionProxy(t))
+
+	t.Run("WorkflowService.QueryWorkflow", func(t *testing.T) {
+		response, err := workflowservice.NewWorkflowServiceClient(conn).QueryWorkflow(
+			t.Context(),
+			&workflowservice.QueryWorkflowRequest{},
+		)
+		require.NoError(t, err)
+
+		payloads := response.GetQueryResult().GetPayloads()
+		require.Len(t, payloads, 1)
+		require.Equal(t, codec.EncryptionEncoding, encodingOf(payloads[0]))
+		require.NotContains(t, string(payloads[0].GetData()), adminPayloadCanary)
+	})
+
+	t.Run("OperatorService.ListNexusEndpoints", func(t *testing.T) {
+		response, err := operatorservice.NewOperatorServiceClient(conn).ListNexusEndpoints(
+			t.Context(),
+			&operatorservice.ListNexusEndpointsRequest{},
+		)
+		require.NoError(t, err)
+
+		endpoints := response.GetEndpoints()
+		require.Len(t, endpoints, 1)
+		payload := endpoints[0].GetSpec().GetDescription()
+		require.Equal(t, codec.EncryptionEncoding, encodingOf(payload))
+		require.NotContains(t, string(payload.GetData()), adminPayloadCanary)
+	})
 }
