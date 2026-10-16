@@ -5,7 +5,7 @@ import (
 	"maps"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/temporalio/temporal-proxy/pkg/crypto"
+	"go.temporal.io/proxy/pkg/crypto"
 
 	"github.com/temporalio/s2s-proxy/metrics"
 )

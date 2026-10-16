@@ -6,8 +6,8 @@ import (
 	"maps"
 	"os"
 
-	"github.com/temporalio/temporal-proxy/pkg/validation"
 	"github.com/urfave/cli/v2"
+	"go.temporal.io/proxy/pkg/validation"
 	"gopkg.in/yaml.v3"
 
 	"github.com/temporalio/s2s-proxy/collect"

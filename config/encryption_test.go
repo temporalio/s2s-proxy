@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/temporalio/temporal-proxy/pkg/crypto"
-	"github.com/temporalio/temporal-proxy/pkg/validation"
+	"go.temporal.io/proxy/pkg/crypto"
+	"go.temporal.io/proxy/pkg/validation"
 )
 
 func TestKeyPolicyValidate(t *testing.T) {

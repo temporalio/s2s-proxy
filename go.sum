@@ -458,8 +458,6 @@ github.com/temporalio/sqlparser v0.1.0/go.mod h1:143qKdh3G45IgV9p+gbAwp3ikRDI8mx
 github.com/temporalio/tchannel-go v1.22.1-0.20220818200552-1be8d8cffa5b/go.mod h1:c+V9Z/ZgkzAdyGvHrvC5AsXgN+M9Qwey04cBdKYzV7U=
 github.com/temporalio/tchannel-go v1.22.1 h1:H1hsQvAk0ExXgzGI3Qll6M0WjAlu2ysL2FtvZ/jdkU4=
 github.com/temporalio/tchannel-go v1.22.1/go.mod h1:ezRQRwu9KQXy8Wuuv1aaFFxoCNz5CeNbVOOkh3xctbY=
-github.com/temporalio/temporal-proxy v0.9.0 h1:u/cfqFrig25x2+Aq4xL9Gxt3zm/O7v4Sa9vGXKUXlZs=
-github.com/temporalio/temporal-proxy v0.9.0/go.mod h1:oNhA8z2AmlwSsrFRbAWzBRwrnrhHlZKTBC8+zhPXJOI=
 github.com/tidwall/btree v1.8.1 h1:27ehoXvm5AG/g+1VxLS1SD3vRhp/H7LuEfwNvddEdmA=
 github.com/tidwall/btree v1.8.1/go.mod h1:jBbTdUWhSZClZWoDg54VnvV7/54modSOzDN7VXftj1A=
 github.com/twmb/murmur3 v1.1.8 h1:8Yt9taO/WN3l08xErzjeschgZU2QSrwm1kclYq+0aRg=
@@ -534,6 +532,8 @@ go.temporal.io/api v1.63.5 h1:c11+kPYHkXXL3UiShPdbMD+xtvqGsbTibUA9ypmiCa4=
 go.temporal.io/api v1.63.5/go.mod h1:SrlW2JMwVlDP4nRWSNznUFqnSHd+YeMDS1BkYo63HCQ=
 go.temporal.io/auto-scaled-workers v0.2.0-1.32.0.158.0 h1:l+Rj0cIHMC2VB/DC+axrLLnZ2ISTgUpUw8TMiP4B9F8=
 go.temporal.io/auto-scaled-workers v0.2.0-1.32.0.158.0/go.mod h1:ZGNY7kCU0EZpXx02D81/jGXHbUcFcVIzzguJ/f8pvUQ=
+go.temporal.io/proxy v0.10.0 h1:KBgDHBNNU69YB/dmrfd/x73WZW3QWA7lXW+HrDddJbM=
+go.temporal.io/proxy v0.10.0/go.mod h1:G6xGlQo4y5Vqj2eI51NhKI2rmSIXLYw4v2Q81Uqh+/c=
 go.temporal.io/sdk v1.44.0 h1:suitPDukX74rW3/N1FqvEbZTZVJJsxMKhv0KMa/j7pU=
 go.temporal.io/sdk v1.44.0/go.mod h1:vkApR12F9/Y8OR+hkxe7WyXQFuCX6clhzqnAk6rzDAM=
 go.temporal.io/server v1.32.0 h1:JQoqsVREaGc8vcuDNfuRlySiV3tVi81XUOVC9LeL/1Y=

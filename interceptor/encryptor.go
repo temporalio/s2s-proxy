@@ -7,10 +7,10 @@ import (
 	"runtime"
 	"slices"
 
-	"github.com/temporalio/temporal-proxy/pkg/codec"
-	"github.com/temporalio/temporal-proxy/pkg/crypto"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
+	"go.temporal.io/proxy/pkg/codec"
+	"go.temporal.io/proxy/pkg/crypto"
 	"google.golang.org/grpc"
 )
 
