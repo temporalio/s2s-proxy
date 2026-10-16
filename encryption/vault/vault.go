@@ -7,7 +7,7 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/temporalio/temporal-proxy/pkg/crypto"
+	"go.temporal.io/proxy/pkg/crypto"
 	"go.temporal.io/server/common/log"
 
 	"github.com/temporalio/s2s-proxy/config"

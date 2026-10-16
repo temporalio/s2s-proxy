@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	kms "github.com/temporalio/temporal-proxy/pkg/api/kms/v1"
+	kms "go.temporal.io/proxy/pkg/api/kms/v1"
 	"google.golang.org/grpc"
 )
 

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/temporalio/temporal-proxy/pkg/validation"
+	"go.temporal.io/proxy/pkg/validation"
 
 	"github.com/temporalio/s2s-proxy/collect"
 	"github.com/temporalio/s2s-proxy/encryption"

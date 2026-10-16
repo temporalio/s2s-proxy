@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	kms "github.com/temporalio/temporal-proxy/pkg/api/kms/v1"
-	"github.com/temporalio/temporal-proxy/pkg/crypto"
+	kms "go.temporal.io/proxy/pkg/api/kms/v1"
+	"go.temporal.io/proxy/pkg/crypto"
 	"google.golang.org/grpc"
 
 	"github.com/temporalio/s2s-proxy/encryption/extension"
