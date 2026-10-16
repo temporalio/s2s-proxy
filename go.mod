@@ -10,6 +10,7 @@ require (
 	github.com/hashicorp/memberlist v0.5.1
 	github.com/hashicorp/yamux v0.1.2
 	github.com/keilerkonzept/visit v1.1.1
+	github.com/nexus-rpc/sdk-go v0.6.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.2
@@ -17,6 +18,7 @@ require (
 	github.com/temporalio/temporal-proxy v0.5.2
 	github.com/urfave/cli/v2 v2.27.7
 	go.temporal.io/api v1.63.5
+	go.temporal.io/sdk v1.44.0
 	go.temporal.io/server v1.32.0
 	go.uber.org/fx v1.24.0
 	go.uber.org/mock v0.6.0
@@ -167,7 +169,6 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/nexus-rpc/nexus-proto-annotations v0.1.0 // indirect
-	github.com/nexus-rpc/sdk-go v0.6.0 // indirect
 	github.com/olivere/elastic/v7 v7.0.32 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
@@ -214,7 +215,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.temporal.io/auto-scaled-workers v0.2.0-1.32.0.158.0 // indirect
-	go.temporal.io/sdk v1.44.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/dig v1.19.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
