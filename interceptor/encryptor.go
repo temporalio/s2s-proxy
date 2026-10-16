@@ -67,8 +67,8 @@ type (
 	// namespace because a sealed [crypto.Message] carries the ID of the key that
 	// wrapped its DEK, which is all the vault needs to find it again.
 	Vault interface {
-		Seal(context.Context, string, []byte) (*crypto.Message, error)
-		Open(context.Context, *crypto.Message) ([]byte, error)
+		Seal(context.Context, string, []byte, ...crypto.SealOption) (*crypto.Message, error)
+		Open(context.Context, *crypto.Message, ...crypto.OpenOption) ([]byte, error)
 	}
 
 	// cipher pins a [Vault] to one namespace and one request's context so it can
