@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/proxy/pkg/codec"
@@ -951,6 +952,40 @@ func TestClusterConnectionEncryptsReplicationStreams(t *testing.T) {
 		require.Equal(t, codec.EncryptionEncoding, encodingOf(got))
 		require.NotContains(t, string(got.GetData()), "dlq")
 	})
+}
+
+func TestClusterConnectionEncryptsFailures(t *testing.T) {
+	c := startEncryptingConnection(t, true, func(ec *config.EncryptionConfig) { ec.Failures = true })
+
+	want := &failurepb.Failure{Message: "secret message", StackTrace: "secret stack"}
+	failedTask := func(f *failurepb.Failure) *replicationspb.ReplicationTask {
+		return &replicationspb.ReplicationTask{
+			Attributes: &replicationspb.ReplicationTask_SyncActivityTaskAttributes{
+				SyncActivityTaskAttributes: &replicationspb.SyncActivityTaskAttributes{LastFailure: f},
+			},
+		}
+	}
+	lastFailure := func(r *adminservice.StreamWorkflowReplicationMessagesResponse) *failurepb.Failure {
+		return r.GetMessages().GetReplicationTasks()[0].GetSyncActivityTaskAttributes().GetLastFailure()
+	}
+
+	// The peer pulls from the local cluster through the inbound port.
+	c.localAdmin.setNext(replicationOf(failedTask(proto.Clone(want).(*failurepb.Failure))))
+	sealedResp, err := recvReplication(t, c.inbound)
+	require.NoError(t, err)
+
+	onWire := lastFailure(sealedResp)
+	require.Equal(t, "Encoded failure", onWire.GetMessage())
+	require.Empty(t, onWire.GetStackTrace())
+	require.Equal(t, codec.EncryptionEncoding, encodingOf(onWire.GetEncodedAttributes()))
+	require.NotContains(t, string(onWire.GetEncodedAttributes().GetData()), "secret")
+
+	// The local cluster pulls the same task back from the peer through the
+	// outbound port.
+	c.remoteAdmin.setNext(sealedResp)
+	resp, err := recvReplication(t, c.outbound)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(want, lastFailure(resp)), "got %v", lastFailure(resp))
 }
 
 func TestClusterConnectionAllowsOpaquePlaintextWhenAsked(t *testing.T) {

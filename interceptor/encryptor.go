@@ -58,6 +58,12 @@ type (
 		// encodings that encrypt: a compression codec's would reach the peer
 		// readable.
 		AlreadySealedEncodings []string
+		// EncodeFailures moves the message and stack trace of failures being
+		// sealed into their encoded attributes, so they are sealed with every
+		// other payload. Requires Enabled. Failures encoded this way are restored
+		// on the opening side whenever there is a Vault, whatever this says, so
+		// turning it off does not leave the placeholder behind.
+		EncodeFailures bool
 	}
 
 	// Vault is the subset of a key-management backend this interceptor depends
@@ -103,6 +109,10 @@ type (
 // requests are opened whenever there is a vault, and responses are sealed only
 // when Enabled.
 //
+// With EncodeFailures, the message and stack trace of every failure being sealed
+// move into its encoded attributes first, so they are sealed too. Failures
+// encoded that way are put back exactly whenever there is a vault.
+//
 // Inbound covers the payloads carried in the details of a gRPC error as well as
 // the ones in the response body. Search attributes are deliberately skipped in
 // both directions: the server indexes and queries them, so a sealed one would
@@ -114,6 +124,12 @@ type (
 func NewEncryptor(cfg EncryptorConfig) (*Encryptor, error) {
 	if cfg.Enabled && cfg.Vault == nil {
 		return nil, errors.New("proxy: encryption requires a vault")
+	}
+
+	// Without sealing, moving the text into a payload hides nothing; it would only
+	// cost anyone reading the failure without an SDK its message.
+	if cfg.EncodeFailures && !cfg.Enabled {
+		return nil, errors.New("proxy: failure encoding requires encryption")
 	}
 
 	var seal, open []codecOpt
@@ -145,7 +161,37 @@ func NewEncryptor(cfg EncryptorConfig) (*Encryptor, error) {
 		return nil, fmt.Errorf("failed to create encryption interceptor: %w", err)
 	}
 
-	return &Encryptor{UnaryClientInterceptor: unary}, nil
+	// Restoring needs only a vault, like opening. With no vault there is no
+	// failure work in either direction, since encoding requires Enabled.
+	if cfg.Vault == nil {
+		return &Encryptor{UnaryClientInterceptor: unary}, nil
+	}
+
+	var encode *proxy.VisitFailuresOptions
+	if cfg.EncodeFailures {
+		encode = visitFailureOpts(encodeFailure)
+	}
+	restore := visitFailureOpts(restoreFailure)
+
+	fopts := proxy.FailureVisitorInterceptorOptions{Inbound: restore, Outbound: encode}
+	if cfg.Reverse {
+		fopts = proxy.FailureVisitorInterceptorOptions{Inbound: encode, Outbound: restore}
+	}
+
+	failures, err := proxy.NewFailureVisitorInterceptor(fopts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create failure encryption interceptor: %w", err)
+	}
+
+	// Failures are encoded before their attributes are sealed, and restored after
+	// they are opened. Whichever interceptor is outer sees the request first and
+	// the response last, so the failure one goes outside when requests are sealed
+	// and inside when they are opened.
+	if cfg.Reverse {
+		return &Encryptor{UnaryClientInterceptor: chainUnary(unary, failures)}, nil
+	}
+
+	return &Encryptor{UnaryClientInterceptor: chainUnary(failures, unary)}, nil
 }
 
 // Encrypt seals data under the namespace this cipher was built for.

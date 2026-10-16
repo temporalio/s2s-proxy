@@ -108,6 +108,10 @@ profiling:
 #   - name: "myCoolCluster"
 #     encryption:
 #       enabled: true
+#       # Seal the message and stack trace of failures too, by moving them into
+#       # the failure's encoded attributes as the Temporal SDK does. Upgrade the
+#       # peer's proxy before turning this on, or it shows a placeholder message.
+#       failures: false
 #       cacheSize: 1000
 #       default:
 #         uri: "extension://hsm/payloads"

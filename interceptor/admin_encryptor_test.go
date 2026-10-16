@@ -216,6 +216,167 @@ func TestAdminEncryptorErrorDetails(t *testing.T) {
 	require.Equal(t, []string{"detail"}, data(qf.GetFailure().GetApplicationFailureInfo().GetDetails()))
 }
 
+func TestAdminEncryptorFailures(t *testing.T) {
+	want := appFailure("secret message", "secret stack")
+	want.Cause = appFailure("secret cause", "secret cause stack")
+	clone := func() *failure.Failure { return proto.Clone(want).(*failure.Failure) }
+	withFailures := func(cfg AdminEncryptorConfig) AdminEncryptorConfig {
+		cfg.EncodeFailures = true
+		return cfg
+	}
+
+	t.Run("failures in event blobs are sealed on the way out", func(t *testing.T) {
+		e := requireAdminEncryptor(t, withFailures(adminConfig(&fakeVault{})))
+		req := &adminservice.ImportWorkflowExecutionRequest{
+			HistoryBatches: []*common.DataBlob{failedEventBlob(t, clone())},
+		}
+
+		require.NoError(t, adminCall(t, e.Unary, req, new(adminservice.ImportWorkflowExecutionResponse), func() error {
+			f := failureInBlob(t, req.GetHistoryBatches()[0])
+			requireFailureSealed(t, f)
+			requireFailureSealed(t, f.GetCause())
+			return nil
+		}))
+	})
+
+	t.Run("failures in event blobs from the peer are restored", func(t *testing.T) {
+		// Reverse opens requests: the peer's history arriving for the local cluster.
+		e := requireAdminEncryptor(t, reverseConfig(&fakeVault{}))
+		req := &adminservice.ImportWorkflowExecutionRequest{
+			HistoryBatches: []*common.DataBlob{failedEventBlob(t, sealedFailure(t, want))},
+		}
+
+		require.NoError(t, adminCall(t, e.Unary, req, new(adminservice.ImportWorkflowExecutionResponse), func() error {
+			got := failureInBlob(t, req.GetHistoryBatches()[0])
+			require.True(t, proto.Equal(want, got), "local cluster got %v", got)
+			return nil
+		}))
+	})
+
+	t.Run("failures in replication tasks round trip", func(t *testing.T) {
+		sealer := requireAdminEncryptor(t, withFailures(reverseConfig(&fakeVault{})))
+		reply := dlqReply(failedActivityTask(clone()))
+		require.NoError(t, adminCall(t, sealer.Unary, &adminservice.ReapplyEventsRequest{}, reply, func() error { return nil }))
+
+		onWire := reply.GetReplicationTasks()[0].GetSyncActivityTaskAttributes().GetLastFailure()
+		requireFailureSealed(t, onWire)
+		requireFailureSealed(t, onWire.GetCause())
+
+		opener := requireAdminEncryptor(t, adminConfig(&fakeVault{}))
+		back := dlqReply(failedActivityTask(onWire))
+		require.NoError(t, adminCall(t, opener.Unary, &adminservice.ReapplyEventsRequest{}, back, func() error { return nil }))
+
+		got := back.GetReplicationTasks()[0].GetSyncActivityTaskAttributes().GetLastFailure()
+		require.True(t, proto.Equal(want, got), "got %v", got)
+	})
+
+	t.Run("flag off leaves failures in plaintext", func(t *testing.T) {
+		e := requireAdminEncryptor(t, reverseConfig(&fakeVault{}))
+		reply := dlqReply(failedActivityTask(clone()))
+		require.NoError(t, adminCall(t, e.Unary, &adminservice.ReapplyEventsRequest{}, reply, func() error { return nil }))
+
+		got := reply.GetReplicationTasks()[0].GetSyncActivityTaskAttributes().GetLastFailure()
+		require.True(t, proto.Equal(want, got), "got %v", got)
+	})
+
+	t.Run("streams seal and restore", func(t *testing.T) {
+		sealer := requireAdminEncryptor(t, withFailures(reverseConfig(&fakeVault{})))
+		cs := openStream(t, sealer, &fakeClientStream{ctx: t.Context(), err: io.EOF,
+			recv: []*adminservice.StreamWorkflowReplicationMessagesResponse{streamMessages(failedActivityTask(clone()))}})
+
+		sealedMsg := new(adminservice.StreamWorkflowReplicationMessagesResponse)
+		require.NoError(t, cs.RecvMsg(sealedMsg))
+		requireFailureSealed(t, sealedMsg.GetMessages().GetReplicationTasks()[0].GetSyncActivityTaskAttributes().GetLastFailure())
+
+		opener := requireAdminEncryptor(t, adminConfig(&fakeVault{}))
+		cs = openStream(t, opener, &fakeClientStream{ctx: t.Context(), err: io.EOF,
+			recv: []*adminservice.StreamWorkflowReplicationMessagesResponse{sealedMsg}})
+
+		got := new(adminservice.StreamWorkflowReplicationMessagesResponse)
+		require.NoError(t, cs.RecvMsg(got))
+		lf := got.GetMessages().GetReplicationTasks()[0].GetSyncActivityTaskAttributes().GetLastFailure()
+		require.True(t, proto.Equal(want, lf), "got %v", lf)
+	})
+
+	t.Run("failures in error details are restored", func(t *testing.T) {
+		e := requireAdminEncryptor(t, adminConfig(&fakeVault{}))
+
+		st, err := status.New(codes.FailedPrecondition, "nope").
+			WithDetails(&errordetails.QueryFailedFailure{Failure: sealedFailure(t, want)})
+		require.NoError(t, err)
+
+		got := adminCall(t, e.Unary, &adminservice.ReapplyEventsRequest{}, new(adminservice.ReapplyEventsResponse), st.Err)
+		require.Equal(t, codes.FailedPrecondition, status.Code(got))
+
+		details := status.Convert(got).Details()
+		require.Len(t, details, 1)
+		qf, ok := details[0].(*errordetails.QueryFailedFailure)
+		require.True(t, ok)
+		require.True(t, proto.Equal(want, qf.GetFailure()), "got %v", qf.GetFailure())
+	})
+
+	t.Run("reverse seals failures in error details", func(t *testing.T) {
+		e := requireAdminEncryptor(t, withFailures(reverseConfig(&fakeVault{})))
+
+		st, err := status.New(codes.FailedPrecondition, "nope").
+			WithDetails(&errordetails.QueryFailedFailure{Failure: clone()})
+		require.NoError(t, err)
+
+		got := adminCall(t, e.Unary, &adminservice.ReapplyEventsRequest{}, new(adminservice.ReapplyEventsResponse), st.Err)
+		require.Equal(t, codes.FailedPrecondition, status.Code(got))
+
+		details := status.Convert(got).Details()
+		require.Len(t, details, 1)
+		qf, ok := details[0].(*errordetails.QueryFailedFailure)
+		require.True(t, ok)
+		requireFailureSealed(t, qf.GetFailure())
+		requireFailureSealed(t, qf.GetFailure().GetCause())
+	})
+
+	t.Run("failure encoding without encryption is refused", func(t *testing.T) {
+		e, err := NewAdminEncryptor(AdminEncryptorConfig{EncryptorConfig: EncryptorConfig{Vault: &fakeVault{}, EncodeFailures: true}})
+		require.Nil(t, e)
+		require.ErrorContains(t, err, "failure encoding requires encryption")
+	})
+}
+
+// failedActivityTask is a replication task carrying f as the activity's last
+// failure.
+func failedActivityTask(f *failure.Failure) *replication.ReplicationTask {
+	return &replication.ReplicationTask{
+		Attributes: &replication.ReplicationTask_SyncActivityTaskAttributes{
+			SyncActivityTaskAttributes: &replication.SyncActivityTaskAttributes{LastFailure: f},
+		},
+	}
+}
+
+// failedEventBlob serializes one activity task failed event carrying f.
+func failedEventBlob(t *testing.T, f *failure.Failure) *common.DataBlob {
+	t.Helper()
+
+	blob, err := serializer.SerializeEvents([]*history.HistoryEvent{{
+		EventId:   1,
+		EventType: enums.EVENT_TYPE_ACTIVITY_TASK_FAILED,
+		Attributes: &history.HistoryEvent_ActivityTaskFailedEventAttributes{
+			ActivityTaskFailedEventAttributes: &history.ActivityTaskFailedEventAttributes{Failure: f},
+		},
+	}})
+	require.NoError(t, err)
+
+	return blob
+}
+
+// failureInBlob returns the failure of the single event failedEventBlob wrote.
+func failureInBlob(t *testing.T, blob *common.DataBlob) *failure.Failure {
+	t.Helper()
+
+	events, err := serializer.DeserializeEvents(blob)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+
+	return events[0].GetActivityTaskFailedEventAttributes().GetFailure()
+}
+
 // activityTask is a replication task carrying details as activity heartbeat
 // details, the simplest server-internal home for a Payloads.
 func activityTask(details *common.Payloads) *replication.ReplicationTask {
