@@ -28,6 +28,14 @@ type AdminVisitOptions struct {
 	// not know which direction it runs in, so the caller decides: an error stops
 	// the visit, nil lets the data through as it is.
 	Opaque func(path string, data []byte) error
+	// FailureOptions, when set, is passed to proxy.VisitFailures for every public
+	// API message reached and for the history events in every event blob, so
+	// failures get the same coverage as payloads. Optional.
+	FailureOptions *proxy.VisitFailuresOptions
+	// FailuresAfter visits failures after payloads rather than before. Opening
+	// has to open the encoded attributes before restoring them, while sealing has
+	// to encode them before they are sealed.
+	FailuresAfter bool
 }
 
 // VisitAdminPayloads calls opts.Payloads.Visitor for every payload in msg, an
@@ -75,15 +83,37 @@ func visitPayloadInPlace(ctx context.Context, opts AdminVisitOptions, p *common.
 	return nil
 }
 
-// visitMessage hands a public API message to proxy.VisitPayloads, which already
-// knows every payload such a message can hold. An unset field arrives as a typed
+// visitMessage hands a public API message to proxy.VisitPayloads, and to
+// proxy.VisitFailures when there is failure work, which already know every
+// payload and failure such a message can hold. An unset field arrives as a typed
 // nil, which is skipped.
 func visitMessage(ctx context.Context, opts AdminVisitOptions, m proto.Message) error {
 	if m == nil || !m.ProtoReflect().IsValid() {
 		return nil
 	}
 
-	return proxy.VisitPayloads(ctx, m, *opts.PayloadOptions)
+	return visitPublic(ctx, opts, m)
+}
+
+// visitPublic visits m's payloads, and its failures when opts has failure work,
+// in the order opts asks for.
+func visitPublic(ctx context.Context, opts AdminVisitOptions, m proto.Message) error {
+	payloads := func() error { return proxy.VisitPayloads(ctx, m, *opts.PayloadOptions) }
+	if opts.FailureOptions == nil {
+		return payloads()
+	}
+
+	failures := func() error { return proxy.VisitFailures(ctx, m, *opts.FailureOptions) }
+	first, second := failures, payloads
+	if opts.FailuresAfter {
+		first, second = payloads, failures
+	}
+
+	if err := first(); err != nil {
+		return err
+	}
+
+	return second()
 }
 
 // visitEventBlob visits the payloads in a blob of serialized history events and
@@ -115,7 +145,7 @@ func visitEventBlob(ctx context.Context, opts AdminVisitOptions, blob *common.Da
 		events = repaired
 	}
 
-	if err := proxy.VisitPayloads(ctx, &history.History{Events: events}, *opts.PayloadOptions); err != nil {
+	if err := visitPublic(ctx, opts, &history.History{Events: events}); err != nil {
 		return err
 	}
 

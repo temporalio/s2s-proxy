@@ -47,16 +47,28 @@ type (
 		// details visits the payloads in a gRPC error's details, through the
 		// upstream interceptor that already knows which detail types hold them.
 		details grpc.UnaryClientInterceptor
+		// failures visits failures alongside payloads, before them when sealing
+		// and after when opening. Nil means no failure work in this direction.
+		failures      *proxy.VisitFailuresOptions
+		failuresAfter bool
+		// failureDetails visits the failures in a gRPC error's details. Nil when
+		// failures is.
+		failureDetails grpc.UnaryClientInterceptor
 	}
 )
 
 // NewAdminEncryptor returns the [AdminEncryptor] cfg describes. It takes the
 // same three shapes as [NewEncryptor]: a vault with Enabled seals and opens, a
 // vault alone only opens, and no vault does nothing. Enabled with no vault is
-// refused.
+// refused. EncodeFailures means what it means for [NewEncryptor], and is
+// refused without Enabled.
 func NewAdminEncryptor(cfg AdminEncryptorConfig) (*AdminEncryptor, error) {
 	if cfg.Enabled && cfg.Vault == nil {
 		return nil, errors.New("proxy: encryption requires a vault")
+	}
+
+	if cfg.EncodeFailures && !cfg.Enabled {
+		return nil, errors.New("proxy: failure encoding requires encryption")
 	}
 
 	var seal, open *adminVisit
@@ -66,13 +78,18 @@ func NewAdminEncryptor(cfg AdminEncryptorConfig) (*AdminEncryptor, error) {
 		}}
 
 		var err error
-		if open, err = newAdminVisit(visitPayloads(enc, codec.Chain.Decode), openOpaque); err != nil {
+		if open, err = newAdminVisit(visitPayloads(enc, codec.Chain.Decode), visitFailureOpts(restoreFailure), true, openOpaque); err != nil {
 			return nil, err
 		}
 
 		if cfg.Enabled {
+			var encode *proxy.VisitFailuresOptions
+			if cfg.EncodeFailures {
+				encode = visitFailureOpts(encodeFailure)
+			}
+
 			sealFn := sealUnlessSealed(alreadySealed(cfg.AlreadySealedEncodings))
-			if seal, err = newAdminVisit(visitPayloads(enc, sealFn), sealOpaque(cfg.AllowOpaquePlaintext, cfg.Observer)); err != nil {
+			if seal, err = newAdminVisit(visitPayloads(enc, sealFn), encode, false, sealOpaque(cfg.AllowOpaquePlaintext, cfg.Observer)); err != nil {
 				return nil, err
 			}
 		}
@@ -86,13 +103,25 @@ func NewAdminEncryptor(cfg AdminEncryptorConfig) (*AdminEncryptor, error) {
 	return &AdminEncryptor{Unary: adminUnary(req, resp), Stream: adminStream(req, resp)}, nil
 }
 
-func newAdminVisit(payloads *proxy.VisitPayloadsOptions, opaque func(string, []byte) error) (*adminVisit, error) {
+func newAdminVisit(
+	payloads *proxy.VisitPayloadsOptions,
+	failures *proxy.VisitFailuresOptions,
+	failuresAfter bool,
+	opaque func(string, []byte) error,
+) (*adminVisit, error) {
 	details, err := proxy.NewPayloadVisitorInterceptor(proxy.PayloadVisitorInterceptorOptions{Inbound: payloads})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create admin encryption interceptor: %w", err)
 	}
 
-	return &adminVisit{payloads: payloads, opaque: opaque, details: details}, nil
+	v := &adminVisit{payloads: payloads, opaque: opaque, details: details, failures: failures, failuresAfter: failuresAfter}
+	if failures != nil {
+		if v.failureDetails, err = proxy.NewFailureVisitorInterceptor(proxy.FailureVisitorInterceptorOptions{Inbound: failures}); err != nil {
+			return nil, fmt.Errorf("failed to create admin failure encryption interceptor: %w", err)
+		}
+	}
+
+	return v, nil
 }
 
 // adminUnary seals or opens the request on its way out and the reply, or the
@@ -165,17 +194,35 @@ func (v *adminVisit) visit(ctx context.Context, m any) error {
 	}
 
 	ctx = context.WithValue(ctx, NamespaceKey, config.ReplicationKeyNamespace)
-	return VisitAdminPayloads(ctx, msg, AdminVisitOptions{PayloadOptions: v.payloads, Opaque: v.opaque})
+	return VisitAdminPayloads(ctx, msg, AdminVisitOptions{
+		PayloadOptions: v.payloads,
+		FailureOptions: v.failures,
+		FailuresAfter:  v.failuresAfter,
+		Opaque:         v.opaque,
+	})
 }
 
-// visitError runs v over the payloads in err's gRPC status details. An error
-// that is not a status, io.EOF above all, comes back as it is.
+// visitError runs v over the payloads and failures in err's gRPC status
+// details, in the same order as visit. An error that is not a status, io.EOF
+// above all, comes back as it is.
 func (v *adminVisit) visitError(ctx context.Context, err error) error {
 	if v == nil {
 		return err
 	}
 
 	ctx = context.WithValue(ctx, NamespaceKey, config.ReplicationKeyNamespace)
-	return v.details(ctx, "", nil, nil, nil,
-		func(context.Context, string, any, any, *grpc.ClientConn, ...grpc.CallOption) error { return err })
+	run := func(i grpc.UnaryClientInterceptor, err error) error {
+		if i == nil {
+			return err
+		}
+
+		return i(ctx, "", nil, nil, nil,
+			func(context.Context, string, any, any, *grpc.ClientConn, ...grpc.CallOption) error { return err })
+	}
+
+	if v.failuresAfter {
+		return run(v.failureDetails, run(v.details, err))
+	}
+
+	return run(v.details, run(v.failureDetails, err))
 }
