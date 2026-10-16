@@ -9,11 +9,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/errordetails/v1"
+	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/proxy"
+	"go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/proxy/pkg/codec"
 	"go.temporal.io/proxy/pkg/crypto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -53,6 +58,12 @@ func TestNewEncryptor(t *testing.T) {
 		seals, opens := v.calls()
 		require.Zero(t, seals)
 		require.Zero(t, opens)
+	})
+
+	t.Run("failure encoding without encryption is refused", func(t *testing.T) {
+		e, err := NewEncryptor(EncryptorConfig{Vault: &fakeVault{}, EncodeFailures: true})
+		require.Nil(t, e)
+		require.ErrorContains(t, err, "failure encoding requires encryption")
 	})
 }
 
@@ -120,6 +131,113 @@ func TestEncryptorReverse(t *testing.T) {
 
 	_, opens := v.calls()
 	require.Equal(t, 2, opens)
+}
+
+func TestEncryptorFailures(t *testing.T) {
+	want := appFailure("secret message", "secret stack")
+
+	t.Run("sealed on the way out and restored on the way back", func(t *testing.T) {
+		e := requireEncryptor(t, EncryptorConfig{Enabled: true, Vault: &fakeVault{}, EncodeFailures: true})
+
+		req := &workflowservice.RespondActivityTaskFailedRequest{Failure: proto.Clone(want).(*failure.Failure)}
+		reply := new(workflowservice.DescribeWorkflowExecutionResponse)
+
+		err := call(t, e, req, reply, func() error {
+			requireFailureSealed(t, req.GetFailure())
+			reply.PendingActivities = []*workflow.PendingActivityInfo{{LastFailure: req.GetFailure()}}
+			return nil
+		})
+		require.NoError(t, err)
+
+		got := reply.GetPendingActivities()[0].GetLastFailure()
+		require.True(t, proto.Equal(want, got), "got %v", got)
+	})
+
+	t.Run("reverse restores requests and seals responses", func(t *testing.T) {
+		e := requireEncryptor(t, EncryptorConfig{Enabled: true, Vault: &fakeVault{}, EncodeFailures: true, Reverse: true})
+
+		req := &workflowservice.RespondActivityTaskFailedRequest{Failure: sealedFailure(t, want)}
+		reply := new(workflowservice.DescribeWorkflowExecutionResponse)
+
+		err := call(t, e, req, reply, func() error {
+			require.True(t, proto.Equal(want, req.GetFailure()), "local cluster got %v", req.GetFailure())
+			reply.PendingActivities = []*workflow.PendingActivityInfo{{LastFailure: proto.Clone(want).(*failure.Failure)}}
+			return nil
+		})
+		require.NoError(t, err)
+
+		requireFailureSealed(t, reply.GetPendingActivities()[0].GetLastFailure())
+	})
+
+	t.Run("flag off sends plaintext but still restores", func(t *testing.T) {
+		e := requireEncryptor(t, enabledConfig(&fakeVault{}))
+
+		req := &workflowservice.RespondActivityTaskFailedRequest{Failure: proto.Clone(want).(*failure.Failure)}
+		reply := new(workflowservice.DescribeWorkflowExecutionResponse)
+
+		err := call(t, e, req, reply, func() error {
+			require.True(t, proto.Equal(want, req.GetFailure()), "sent %v", req.GetFailure())
+			reply.PendingActivities = []*workflow.PendingActivityInfo{{LastFailure: sealedFailure(t, want)}}
+			return nil
+		})
+		require.NoError(t, err)
+
+		got := reply.GetPendingActivities()[0].GetLastFailure()
+		require.True(t, proto.Equal(want, got), "got %v", got)
+	})
+
+	t.Run("SDK-encoded failures round trip unchanged", func(t *testing.T) {
+		e := requireEncryptor(t, EncryptorConfig{Enabled: true, Vault: &fakeVault{}, EncodeFailures: true})
+		sdk := sdkEncodedFailure()
+
+		req := &workflowservice.RespondActivityTaskFailedRequest{Failure: proto.Clone(sdk).(*failure.Failure)}
+		reply := new(workflowservice.DescribeWorkflowExecutionResponse)
+
+		err := call(t, e, req, reply, func() error {
+			attrs := req.GetFailure().GetEncodedAttributes()
+			require.Equal(t, codec.EncryptionEncoding, string(attrs.GetMetadata()[codec.MetadataEncoding]))
+			reply.PendingActivities = []*workflow.PendingActivityInfo{{LastFailure: req.GetFailure()}}
+			return nil
+		})
+		require.NoError(t, err)
+
+		got := reply.GetPendingActivities()[0].GetLastFailure()
+		require.True(t, proto.Equal(sdk, got), "got %v", got)
+	})
+
+	t.Run("failures in error details are restored", func(t *testing.T) {
+		e := requireEncryptor(t, enabledConfig(&fakeVault{}))
+
+		st, err := status.New(codes.FailedPrecondition, "nope").
+			WithDetails(&errordetails.QueryFailedFailure{Failure: sealedFailure(t, want)})
+		require.NoError(t, err)
+
+		got := call(t, e, &workflowservice.QueryWorkflowRequest{}, new(workflowservice.QueryWorkflowResponse), st.Err)
+		require.Equal(t, codes.FailedPrecondition, status.Code(got))
+
+		details := status.Convert(got).Details()
+		require.Len(t, details, 1)
+		qf, ok := details[0].(*errordetails.QueryFailedFailure)
+		require.True(t, ok)
+		require.True(t, proto.Equal(want, qf.GetFailure()), "got %v", qf.GetFailure())
+	})
+
+	t.Run("reverse seals failures in error details", func(t *testing.T) {
+		e := requireEncryptor(t, EncryptorConfig{Enabled: true, Vault: &fakeVault{}, EncodeFailures: true, Reverse: true})
+
+		st, err := status.New(codes.FailedPrecondition, "nope").
+			WithDetails(&errordetails.QueryFailedFailure{Failure: proto.Clone(want).(*failure.Failure)})
+		require.NoError(t, err)
+
+		got := call(t, e, &workflowservice.QueryWorkflowRequest{}, new(workflowservice.QueryWorkflowResponse), st.Err)
+		require.Equal(t, codes.FailedPrecondition, status.Code(got))
+
+		details := status.Convert(got).Details()
+		require.Len(t, details, 1)
+		qf, ok := details[0].(*errordetails.QueryFailedFailure)
+		require.True(t, ok)
+		requireFailureSealed(t, qf.GetFailure())
+	})
 }
 
 func TestEncryptorDoesNotSealTwice(t *testing.T) {

@@ -320,6 +320,7 @@ func newEncryptors(
 			Vault:                  v,
 			Reverse:                reverse,
 			AlreadySealedEncodings: cfg.AlreadySealedEncodings,
+			EncodeFailures:         cfg.Failures,
 		}
 
 		payload, err := interceptor.NewEncryptor(ec)

@@ -37,7 +37,8 @@ type (
 	// the connection: workflow and operator calls, sealed per namespace, and
 	// admin calls including replication streams, sealed under Replication.
 	// Payloads leaving for the peer are sealed and payloads arriving from it are
-	// opened, so the peer only ever holds sealed data.
+	// opened, so the peer only ever holds sealed data. With Failures, that
+	// includes the message and stack trace of failures.
 	//
 	// Payloads are sealed with a data encryption key (DEK), which is itself
 	// wrapped by a key encryption key (KEK) held in a cloud KMS or an extension
@@ -49,6 +50,12 @@ type (
 		// Opening does not depend on it: with Enabled off but Default still set,
 		// nothing new is sealed while payloads sealed earlier still open
 		Enabled bool `yaml:"enabled"`
+		// Seal the message and stack trace of failures crossing to the peer too,
+		// by moving them into the failure's encoded attributes the way the Temporal
+		// SDK's EncodeCommonAttributes does. Requires Enabled. The peer's proxy
+		// must restore them, so upgrade it first: one that does not leaves the
+		// "Encoded failure" placeholder in place of the message
+		Failures bool `yaml:"failures,omitempty"`
 		// Maximum number of unwrapped DEKs to hold in memory, or 0 to disable caching
 		CacheSize int `yaml:"cacheSize"`
 		// Key policy for namespaces with no entry in Overrides. Setting it is what
@@ -93,6 +100,16 @@ type (
 func (e *EncryptionConfig) Validate() error {
 	rules := []validation.Rule{
 		validation.Field("cacheSize", e.CacheSize, validation.GTE(0)),
+		validation.Field("failures", e.Failures, func(on bool) error {
+			switch {
+			case on && !e.Enabled:
+				return errors.New("requires encryption to be enabled")
+			case on && slices.Contains(e.AlreadySealedEncodings, "json/plain"):
+				return errors.New(`cannot be used with "json/plain" in alreadySealedEncodings, which would send encoded failures unsealed`)
+			}
+
+			return nil
+		}),
 		validation.WhenRules(
 			func() bool { return e.Enabled },
 			validation.Field("default", e.Default, validation.Required[*KeyPolicy]()),

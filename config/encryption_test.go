@@ -219,6 +219,30 @@ func TestEncryptionConfigValidate(t *testing.T) {
 			},
 		},
 		{
+			name: "failures requires encryption",
+			cfg:  EncryptionConfig{Failures: true},
+			want: validation.Errors{
+				{Field: "failures", Message: "requires encryption to be enabled"},
+			},
+		},
+		{
+			name: "failures with encryption enabled",
+			cfg: func() EncryptionConfig {
+				p := validPolicy()
+				return EncryptionConfig{Enabled: true, Failures: true, Default: &p}
+			}(),
+		},
+		{
+			name: "failures cannot pass json/plain through unsealed",
+			cfg: func() EncryptionConfig {
+				p := validPolicy()
+				return EncryptionConfig{Enabled: true, Failures: true, Default: &p, AlreadySealedEncodings: []string{"json/plain"}}
+			}(),
+			want: validation.Errors{
+				{Field: "failures", Message: `cannot be used with "json/plain" in alreadySealedEncodings, which would send encoded failures unsealed`},
+			},
+		},
+		{
 			name: "negative cache size",
 			cfg:  EncryptionConfig{CacheSize: -1},
 			want: validation.Errors{
@@ -329,6 +353,21 @@ func TestEncryptionConfigFromYAML(t *testing.T) {
 		want    EncryptionConfig
 		wantErr string
 	}{
+		{
+			name: "failures",
+			body: `
+enabled: true
+failures: true
+default:
+  uri: "awskms://key"
+  duration: 24h
+`,
+			want: EncryptionConfig{
+				Enabled:  true,
+				Failures: true,
+				Default:  &KeyPolicy{URI: "awskms://key", Duration: 24 * time.Hour},
+			},
+		},
 		{
 			name: "replication key and opaque plaintext",
 			body: `
