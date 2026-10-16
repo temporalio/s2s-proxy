@@ -18,6 +18,7 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 
 	"github.com/temporalio/s2s-proxy/auth"
 	"github.com/temporalio/s2s-proxy/collect"
@@ -566,6 +567,17 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	return server, nil
 }
 
+// serverKeepaliveEnforcementPolicy accepts client keepalive pings as often as every 10s,
+// including on connections with no active streams. It matches the enforcement Temporal Cloud
+// configures for history and matching (minTime 10s, permitWithoutStream), so a Temporal server
+// with client keepalive enabled for remote clusters isn't sent GOAWAY too_many_pings by
+// grpc-go's default policy (5m minimum, no pings without streams). Temporal's own default
+// enforcement is the same as grpc-go's.
+var serverKeepaliveEnforcementPolicy = keepalive.EnforcementPolicy{
+	MinTime:             10 * time.Second,
+	PermitWithoutStream: true,
+}
+
 func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([]grpc.ServerOption, error) {
 	var unaryInterceptors []grpc.UnaryServerInterceptor
 	var streamInterceptors []grpc.StreamServerInterceptor
@@ -614,6 +626,7 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	opts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(unaryInterceptors...),
 		grpc.ChainStreamInterceptor(streamInterceptors...),
+		grpc.KeepaliveEnforcementPolicy(serverKeepaliveEnforcementPolicy),
 	}
 
 	if tlsConfig.IsEnabled() {
