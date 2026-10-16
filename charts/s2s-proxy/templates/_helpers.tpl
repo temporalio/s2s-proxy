@@ -72,6 +72,15 @@ Merge default config with overrides
 {{- end }}
 {{- $_ := set $merged "clusterConnections" $mergedClusterConnections -}}
 
+{{/*
+Merge every other top-level key of configOverride.
+deepCopy the source: sprig mergeOverwrite mutates its first argument.
+The loop above writes defaults into .Values.configOverride.clusterConnections in place.
+The binary decodes config with KnownFields(true).
+An unrecognised top-level key crashes the proxy on startup.
+*/}}
+{{- $merged = mergeOverwrite $merged (omit $overrides "clusterConnections" | deepCopy) -}}
+
 {{- $merged | toYaml }}
 {{- end }}
 
