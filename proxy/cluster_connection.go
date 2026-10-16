@@ -65,15 +65,31 @@ type (
 		// outboundServer receives connections from the local Temporal and makes calls using outboundClient.
 		outboundServer contextAwareServer
 		// outboundClient is connected to a remote Temporal server somewhere.
-		outboundClient closableClientConn
+		outboundClient upstream
 		// inboundServer receives connections from a remote Temporal server and calls using the inboundClient.
 		inboundServer contextAwareServer
 		// inboundClient talks to the local Temporal frontend.
-		inboundClient    closableClientConn
+		inboundClient    upstream
 		inboundObserver  *ReplicationStreamObserver
 		outboundObserver *ReplicationStreamObserver
 		shardManager     ShardManager
 		loggers          logging.LoggerProvider
+	}
+	// upstream is a conn the proxy forwards calls on, together with the
+	// encryptors for the side it faces. Encryptors belong to the conn, not to the
+	// server using it: in routing mode a server opens replication streams on its
+	// managedClient, which faces the other way. conn is deliberately not embedded,
+	// so calls can't reach it without going through adminConn or payloadConn.
+	upstream struct {
+		conn       closableClientConn
+		encryptors connEncryptors
+	}
+	// connEncryptors are the encryptors for one client conn, built for the side
+	// the conn faces: peer-facing seals requests and opens responses,
+	// local-facing does the reverse. The zero value encrypts nothing.
+	connEncryptors struct {
+		payload *interceptor.Encryptor
+		admin   *interceptor.AdminEncryptor
 	}
 	// contextAwareServer represents a startable gRPC server used to provide the Temporal interface on some connection.
 	// IsUsable and Describe allow the caller to know and log the current state of the server.
@@ -98,22 +114,19 @@ type (
 		clusterDefinition config.ClusterDefinition
 		// directionLabel is used in metrics. DO NOT hang application logic off of this! Pass the appropriate arguments instead.
 		directionLabel string
-		// client is the ClientConnInterface that the server will use to make calls.
-		client closableClientConn
+		// client is the upstream that the server will use to make calls.
+		client upstream
 		// managedClient is updated by the multi-mux-manager that also owns the server. Needs some more cleanup.
-		managedClient closableClientConn
+		managedClient upstream
 		// callerNamesLocalNamespaces says whether the caller on this side addresses
 		// namespaces by their local name. The outbound server is called by the local
 		// cluster, so it does; the inbound server is called by the peer, so it does
 		// not and needs nsTranslations applied first. See stampAndTranslate.
 		callerNamesLocalNamespaces bool
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
-		nsTranslations collect.StaticBiMap[string, string]
-		saTranslations config.SearchAttributeTranslation
-		overrides      AdminServiceOverrides
-		// encryptor seals and opens the payloads of workflow and operator calls made
-		// through client. Admin calls bypass it. Nil means no encryption at all.
-		encryptor        *interceptor.Encryptor
+		nsTranslations   collect.StaticBiMap[string, string]
+		saTranslations   config.SearchAttributeTranslation
+		overrides        AdminServiceOverrides
 		aclPolicy        *config.ACLPolicy
 		shardCountConfig config.ShardCountConfig
 		loggers          logging.LoggerProvider
@@ -157,11 +170,11 @@ func newClusterConnection(
 		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
-	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound", credentialProvider)
+	cc.inboundClient.conn, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound", credentialProvider)
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound", auth.EmptyCredentialProvider{})
+	cc.outboundClient.conn, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound", auth.EmptyCredentialProvider{})
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +187,7 @@ func newClusterConnection(
 		return nil, err
 	}
 
-	outboundEncryptor, inboundEncryptor, err := newEncryptors(lifetime, connConfig.EncryptionConfig, extensions,
+	cc.outboundClient.encryptors, cc.inboundClient.encryptors, err = newEncryptors(lifetime, connConfig.EncryptionConfig, extensions,
 		cc.loggers.Get(LogClusterConnection))
 	if err != nil {
 		return nil, err
@@ -233,7 +246,6 @@ func newClusterConnection(
 		},
 		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
 		aclPolicy:         connConfig.ACLPolicy,
-		encryptor:         inboundEncryptor,
 		shardCountConfig:  connConfig.ShardCountConfig,
 		loggers:           cc.loggers,
 		shardManager:      cc.shardManager,
@@ -256,7 +268,6 @@ func newClusterConnection(
 		nsTranslations:             nsTranslations,
 		saTranslations:             saTranslations,
 		overrides:                  AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote},
-		encryptor:                  outboundEncryptor,
 		shardCountConfig:           connConfig.ShardCountConfig,
 		loggers:                    cc.loggers,
 		shardManager:               cc.shardManager,
@@ -271,14 +282,14 @@ func newClusterConnection(
 	return cc, nil
 }
 
-// newEncryptors builds the [interceptor.Encryptor] pair for a connection, or
-// returns two nils when cfg names no keys. Both share one vault, which holds
-// KEKs until lifetime ends.
+// newEncryptors builds the encryptors for each side of a connection, a payload
+// and an admin encryptor apiece, or zero values when cfg names no keys. All of
+// them share one vault, which holds KEKs until lifetime ends.
 //
-// The pair are mirror images, so the peer only ever sees sealed payloads and the
-// local cluster only ever sees opened ones. Outbound seals what the local
-// cluster sends and opens what the peer returns; inbound opens what the peer
-// sends and seals what the local cluster returns.
+// The two sides are mirror images, so the peer only ever sees sealed payloads
+// and the local cluster only ever sees opened ones. Outbound seals what the
+// local cluster sends and opens what the peer returns; inbound opens what the
+// peer sends and seals what the local cluster returns.
 //
 // cfg.Enabled only decides whether either side seals. As long as cfg names keys
 // both sides open, so switching encryption off does not strand what was sealed
@@ -288,35 +299,83 @@ func newEncryptors(
 	cfg config.EncryptionConfig,
 	extensions extension.Connections,
 	logger log.Logger,
-) (outbound, inbound *interceptor.Encryptor, err error) {
+) (outbound, inbound connEncryptors, err error) {
 	if cfg.Default == nil {
-		return nil, nil, nil
+		return connEncryptors{}, connEncryptors{}, nil
 	}
 
 	v, err := vault.New(lifetime, vault.Config{Logger: logger, Encryption: cfg, Extensions: extensions})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create vault: %w", err)
+		return connEncryptors{}, connEncryptors{}, fmt.Errorf("failed to create vault: %w", err)
 	}
 
-	ec := interceptor.EncryptorConfig{
-		Enabled:                cfg.Enabled,
-		Vault:                  v,
-		AlreadySealedEncodings: cfg.AlreadySealedEncodings,
+	if cfg.Enabled && cfg.AllowOpaquePlaintext {
+		logger.Warn("encryption.allowOpaquePlaintext is set: HSM and CHASM state cross to the peer unsealed")
 	}
 
-	outbound, err = interceptor.NewEncryptor(ec)
-	if err != nil {
-		return nil, nil, errors.Join(err, v.Close())
+	observer := newOpaqueObserver(logger)
+	side := func(reverse bool) (connEncryptors, error) {
+		ec := interceptor.EncryptorConfig{
+			Enabled:                cfg.Enabled,
+			Vault:                  v,
+			Reverse:                reverse,
+			AlreadySealedEncodings: cfg.AlreadySealedEncodings,
+		}
+
+		payload, err := interceptor.NewEncryptor(ec)
+		if err != nil {
+			return connEncryptors{}, err
+		}
+
+		admin, err := interceptor.NewAdminEncryptor(interceptor.AdminEncryptorConfig{
+			EncryptorConfig:      ec,
+			AllowOpaquePlaintext: cfg.AllowOpaquePlaintext,
+			Observer:             observer,
+		})
+		if err != nil {
+			return connEncryptors{}, err
+		}
+
+		return connEncryptors{payload: payload, admin: admin}, nil
 	}
 
-	ec.Reverse = true
-	inbound, err = interceptor.NewEncryptor(ec)
-	if err != nil {
-		return nil, nil, errors.Join(err, v.Close())
+	if outbound, err = side(false); err != nil {
+		return connEncryptors{}, connEncryptors{}, errors.Join(err, v.Close())
+	}
+
+	if inbound, err = side(true); err != nil {
+		return connEncryptors{}, connEncryptors{}, errors.Join(err, v.Close())
 	}
 
 	context.AfterFunc(lifetime, func() { _ = v.Close() })
 	return outbound, inbound, nil
+}
+
+// adminConn returns u's conn behind its admin encryptor, for the admin clients.
+func (u upstream) adminConn() grpc.ClientConnInterface { return u.encryptors.adminConn(u.conn) }
+
+// payloadConn returns u's conn behind its payload encryptor, for the workflow
+// and operator clients.
+func (u upstream) payloadConn() grpc.ClientConnInterface { return u.encryptors.payloadConn(u.conn) }
+
+// payloadConn returns conn with e's payload encryptor in front of it, for the
+// workflow and operator clients.
+func (e connEncryptors) payloadConn(conn grpc.ClientConnInterface) grpc.ClientConnInterface {
+	if e.payload == nil {
+		return conn
+	}
+
+	return interceptedClientConn{ClientConnInterface: conn, intercept: e.payload.UnaryClientInterceptor}
+}
+
+// adminConn returns conn with e's admin encryptor in front of its unary calls
+// and its streams, for the admin clients.
+func (e connEncryptors) adminConn(conn grpc.ClientConnInterface) grpc.ClientConnInterface {
+	if e.admin == nil {
+		return conn
+	}
+
+	return interceptedClientConn{ClientConnInterface: conn, intercept: e.admin.Unary, interceptStream: e.admin.Stream}
 }
 
 func createClient(
@@ -376,7 +435,7 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 		}
 		// The Mux manager needs to update its associated client
 		muxMgr, err := mux.NewGRPCMuxManager(lifetime, c.name, c.clusterDefinition,
-			c.managedClient.(*grpcutil.MultiClientConn), grpcServer, c.loggers.Get(LogMuxManager))
+			c.managedClient.conn.(*grpcutil.MultiClientConn), grpcServer, c.loggers.Get(LogMuxManager))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -451,15 +510,15 @@ func (c *ClusterConnection) Start() {
 
 func (c *ClusterConnection) Describe() string {
 	return fmt.Sprintf("[ClusterConnection connects outbound server %s to outbound client %s, inbound server %s to inbound client %s]",
-		c.outboundServer.Describe(), c.outboundClient.Describe(), c.inboundServer.Describe(), c.inboundClient.Describe())
+		c.outboundServer.Describe(), c.outboundClient.conn.Describe(), c.inboundServer.Describe(), c.inboundClient.conn.Describe())
 }
 
 func (c *ClusterConnection) AcceptingInboundTraffic() bool {
-	return c.inboundClient.CanMakeCalls() && c.inboundServer.CanAcceptConnections()
+	return c.inboundClient.conn.CanMakeCalls() && c.inboundServer.CanAcceptConnections()
 }
 
 func (c *ClusterConnection) AcceptingOutboundTraffic() bool {
-	return c.outboundClient.CanMakeCalls() && c.outboundServer.CanAcceptConnections()
+	return c.outboundClient.conn.CanMakeCalls() && c.outboundServer.CanAcceptConnections()
 }
 
 // buildProxyServer uses the provided serverConfiguration and TLSConfig to create a grpc.Server that proxies
@@ -471,17 +530,10 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	}
 	server := grpc.NewServer(serverOpts...)
 
-	// Admin calls carry replication and go out on the bare client. Only workflow
-	// and operator calls have their payloads sealed and opened.
-	var payloadClient grpc.ClientConnInterface = c.client
-	if c.encryptor != nil {
-		payloadClient = interceptedClientConn{ClientConnInterface: c.client, intercept: c.encryptor.UnaryClientInterceptor}
-	}
-
 	adminServiceImpl := NewAdminServiceProxyServer(
 		fmt.Sprintf("%sAdminService", c.directionLabel),
-		adminservice.NewAdminServiceClient(c.client),
-		adminservice.NewAdminServiceClient(c.managedClient),
+		adminservice.NewAdminServiceClient(c.client.adminConn()),
+		adminservice.NewAdminServiceClient(c.managedClient.adminConn()),
 		c.overrides,
 		[]string{c.directionLabel},
 		observeFn,
@@ -498,13 +550,13 @@ func buildProxyServer(c serverConfiguration, tlsConfig encryption.TLSConfig, obs
 	}
 	workflowServiceImpl := NewWorkflowServiceProxyServer(
 		fmt.Sprintf("%sWorkflowService", c.directionLabel),
-		workflowservice.NewWorkflowServiceClient(payloadClient),
+		workflowservice.NewWorkflowServiceClient(c.client.payloadConn()),
 		accessControl,
 		c.loggers,
 	)
 	operatorServiceImpl := NewOperatorServiceProxyServer(
 		fmt.Sprintf("%sOperatorService", c.directionLabel),
-		operatorservice.NewOperatorServiceClient(payloadClient),
+		operatorservice.NewOperatorServiceClient(c.client.payloadConn()),
 		[]string{c.directionLabel},
 		c.loggers,
 	)

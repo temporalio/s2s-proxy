@@ -285,6 +285,28 @@ func TestEncryptionConfigValidate(t *testing.T) {
 				badPolicyErrs("overrides[ns1]")...,
 			),
 		},
+		{
+			name: "a valid replication policy",
+			cfg: func() EncryptionConfig {
+				d, r := validPolicy(), validPolicy()
+				r.URI = "gcpkms://replication"
+				return EncryptionConfig{Enabled: true, Default: &d, Replication: &r}
+			}(),
+		},
+		{
+			name: "replication is validated even while disabled",
+			cfg:  EncryptionConfig{Replication: &badPolicy},
+			want: badPolicyErrs("replication"),
+		},
+		{
+			name: "the replication namespace is not an override",
+			cfg: EncryptionConfig{
+				Overrides: map[string]KeyPolicy{ReplicationKeyNamespace: validPolicy()},
+			},
+			want: validation.Errors{
+				{Field: "overrides[$replication]", Message: "is reserved for the replication key policy; set encryption.replication instead"},
+			},
+		},
 	}
 
 	for _, c := range cases {
@@ -307,6 +329,26 @@ func TestEncryptionConfigFromYAML(t *testing.T) {
 		want    EncryptionConfig
 		wantErr string
 	}{
+		{
+			name: "replication key and opaque plaintext",
+			body: `
+enabled: true
+default:
+  uri: "awskms://key"
+  duration: 24h
+  renewBefore: 1h
+replication:
+  uri: "gcpkms://replication"
+  duration: 1h
+allowOpaquePlaintext: true
+`,
+			want: EncryptionConfig{
+				Enabled:              true,
+				Default:              &KeyPolicy{URI: "awskms://key", Duration: 24 * time.Hour, RenewBefore: time.Hour},
+				Replication:          &KeyPolicy{URI: "gcpkms://replication", Duration: time.Hour},
+				AllowOpaquePlaintext: true,
+			},
+		},
 		{
 			name: "every field set",
 			body: `

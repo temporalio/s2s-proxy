@@ -324,6 +324,17 @@ func TestEncryptionConfigReferentialRules(t *testing.T) {
 			},
 		},
 		{
+			name: "the replication policy names an unknown server",
+			cfg: EncryptionConfig{
+				Default:     &KeyPolicy{URI: "extension://hsm/replication"},
+				Replication: &KeyPolicy{URI: "extension://vault/replication", DecryptURIs: []string{"extension://nope/old"}},
+			},
+			want: validation.Errors{
+				{Subject: "encryption.replication", Field: "uri", Message: "unknown extension server: vault"},
+				{Subject: "encryption.replication", Field: "decryptURIs[0]", Message: "unknown extension server: nope"},
+			},
+		},
+		{
 			name: "overrides are reported in sorted order",
 			cfg: EncryptionConfig{
 				Overrides: map[string]KeyPolicy{

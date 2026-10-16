@@ -72,7 +72,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 			}
 		}
 		for _, val4 := range y2.GetSearchAttributes() {
-			if !opts.Payloads.SkipSearchAttributes {
+			if !opts.PayloadOptions.SkipSearchAttributes {
 				if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 					return err
 				}
@@ -143,7 +143,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 			}
 		}
 		for _, val4 := range y4.GetSearchAttributes() {
-			if !opts.Payloads.SkipSearchAttributes {
+			if !opts.PayloadOptions.SkipSearchAttributes {
 				if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 					return err
 				}
@@ -234,7 +234,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						}
 					}
 					for _, val2 := range y5.GetSearchAttributes() {
-						if !opts.Payloads.SkipSearchAttributes {
+						if !opts.PayloadOptions.SkipSearchAttributes {
 							if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 								return err
 							}
@@ -350,7 +350,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						}
 					}
 					for _, val4 := range y5.GetSearchAttributes() {
-						if !opts.Payloads.SkipSearchAttributes {
+						if !opts.PayloadOptions.SkipSearchAttributes {
 							if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 								return err
 							}
@@ -424,7 +424,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 					}
 				}
 				for _, val4 := range y2.GetSearchAttributes() {
-					if !opts.Payloads.SkipSearchAttributes {
+					if !opts.PayloadOptions.SkipSearchAttributes {
 						if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 							return err
 						}
@@ -521,7 +521,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						}
 					}
 					for _, val2 := range y5.GetSearchAttributes() {
-						if !opts.Payloads.SkipSearchAttributes {
+						if !opts.PayloadOptions.SkipSearchAttributes {
 							if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 								return err
 							}
@@ -637,7 +637,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						}
 					}
 					for _, val4 := range y5.GetSearchAttributes() {
-						if !opts.Payloads.SkipSearchAttributes {
+						if !opts.PayloadOptions.SkipSearchAttributes {
 							if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 								return err
 							}
@@ -711,7 +711,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 					}
 				}
 				for _, val4 := range y2.GetSearchAttributes() {
-					if !opts.Payloads.SkipSearchAttributes {
+					if !opts.PayloadOptions.SkipSearchAttributes {
 						if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 							return err
 						}
@@ -817,7 +817,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						}
 					}
 					for _, val2 := range y6.GetSearchAttributes() {
-						if !opts.Payloads.SkipSearchAttributes {
+						if !opts.PayloadOptions.SkipSearchAttributes {
 							if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 								return err
 							}
@@ -933,7 +933,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						}
 					}
 					for _, val4 := range y6.GetSearchAttributes() {
-						if !opts.Payloads.SkipSearchAttributes {
+						if !opts.PayloadOptions.SkipSearchAttributes {
 							if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 								return err
 							}
@@ -1007,7 +1007,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 					}
 				}
 				for _, val4 := range y3.GetSearchAttributes() {
-					if !opts.Payloads.SkipSearchAttributes {
+					if !opts.PayloadOptions.SkipSearchAttributes {
 						if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 							return err
 						}
@@ -1105,7 +1105,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 							}
 						}
 						for _, val3 := range y5.GetSearchAttributes() {
-							if !opts.Payloads.SkipSearchAttributes {
+							if !opts.PayloadOptions.SkipSearchAttributes {
 								if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 									return err
 								}
@@ -1221,7 +1221,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 							}
 						}
 						for _, val5 := range y5.GetSearchAttributes() {
-							if !opts.Payloads.SkipSearchAttributes {
+							if !opts.PayloadOptions.SkipSearchAttributes {
 								if err := visitPayloadInPlace(ctx, opts, val5); err != nil {
 									return err
 								}
@@ -1295,7 +1295,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						}
 					}
 					for _, val5 := range y2.GetSearchAttributes() {
-						if !opts.Payloads.SkipSearchAttributes {
+						if !opts.PayloadOptions.SkipSearchAttributes {
 							if err := visitPayloadInPlace(ctx, opts, val5); err != nil {
 								return err
 							}
@@ -1433,7 +1433,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 							}
 						}
 						for _, val2 := range y5.GetSearchAttributes() {
-							if !opts.Payloads.SkipSearchAttributes {
+							if !opts.PayloadOptions.SkipSearchAttributes {
 								if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 									return err
 								}
@@ -1549,7 +1549,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 							}
 						}
 						for _, val4 := range y5.GetSearchAttributes() {
-							if !opts.Payloads.SkipSearchAttributes {
+							if !opts.PayloadOptions.SkipSearchAttributes {
 								if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 									return err
 								}
@@ -1623,7 +1623,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						}
 					}
 					for _, val4 := range y2.GetSearchAttributes() {
-						if !opts.Payloads.SkipSearchAttributes {
+						if !opts.PayloadOptions.SkipSearchAttributes {
 							if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 								return err
 							}
@@ -1674,7 +1674,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 				}
 			}
 			for _, val2 := range y5.GetSearchAttributes() {
-				if !opts.Payloads.SkipSearchAttributes {
+				if !opts.PayloadOptions.SkipSearchAttributes {
 					if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 						return err
 					}
@@ -1790,7 +1790,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 				}
 			}
 			for _, val4 := range y5.GetSearchAttributes() {
-				if !opts.Payloads.SkipSearchAttributes {
+				if !opts.PayloadOptions.SkipSearchAttributes {
 					if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 						return err
 					}

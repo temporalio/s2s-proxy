@@ -38,8 +38,8 @@ func testSealer(calls *atomic.Int32) func(*proxy.VisitPayloadsContext, []*common
 
 func sealOpts(calls *atomic.Int32) AdminVisitOptions {
 	return AdminVisitOptions{
-		Payloads: &proxy.VisitPayloadsOptions{Visitor: testSealer(calls), SkipSearchAttributes: true},
-		Opaque:   func(string, []byte) error { return nil },
+		PayloadOptions: &proxy.VisitPayloadsOptions{Visitor: testSealer(calls), SkipSearchAttributes: true},
+		Opaque:         func(string, []byte) error { return nil },
 	}
 }
 
@@ -56,7 +56,7 @@ func TestVisitPayloadInPlace(t *testing.T) {
 	})
 
 	t.Run("visitor returning the same pointer leaves it intact", func(t *testing.T) {
-		opts := AdminVisitOptions{Payloads: &proxy.VisitPayloadsOptions{
+		opts := AdminVisitOptions{PayloadOptions: &proxy.VisitPayloadsOptions{
 			Visitor: func(_ *proxy.VisitPayloadsContext, in []*common.Payload) ([]*common.Payload, error) { return in, nil },
 		}}
 		p := &common.Payload{Data: []byte("x")}
@@ -66,7 +66,7 @@ func TestVisitPayloadInPlace(t *testing.T) {
 	})
 
 	t.Run("wrong payload count is an error", func(t *testing.T) {
-		opts := AdminVisitOptions{Payloads: &proxy.VisitPayloadsOptions{
+		opts := AdminVisitOptions{PayloadOptions: &proxy.VisitPayloadsOptions{
 			Visitor: func(*proxy.VisitPayloadsContext, []*common.Payload) ([]*common.Payload, error) { return nil, nil },
 		}}
 
@@ -200,7 +200,7 @@ func TestVisitAdminPayloadsRequiresOptions(t *testing.T) {
 	ok := sealOpts(&calls)
 
 	noVisitor := ok
-	noVisitor.Payloads = nil
+	noVisitor.PayloadOptions = nil
 	require.ErrorContains(t, VisitAdminPayloads(context.Background(), &adminservice.ReapplyEventsRequest{}, noVisitor), "requires a payload visitor")
 
 	noOpaque := ok

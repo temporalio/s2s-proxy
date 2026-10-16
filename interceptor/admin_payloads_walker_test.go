@@ -175,7 +175,7 @@ func TestVisitAdminPayloadsReachesEveryPayload(t *testing.T) {
 			t.Run(string(mt.Descriptor().Name())+"/"+leaf.String(), func(t *testing.T) {
 				var calls atomic.Int32
 				opts := AdminVisitOptions{
-					Payloads: &proxy.VisitPayloadsOptions{Visitor: testSealer(&calls)},
+					PayloadOptions: &proxy.VisitPayloadsOptions{Visitor: testSealer(&calls)},
 					// Only a payload is set, so nothing opaque should be reported.
 					Opaque: func(path string, _ []byte) error { return fmt.Errorf("unexpected opaque data at %s", path) },
 				}
@@ -239,7 +239,7 @@ func TestVisitAdminPayloadsReportsEveryOpaqueField(t *testing.T) {
 				var calls atomic.Int32
 				var reported [][]byte
 				opts := AdminVisitOptions{
-					Payloads: &proxy.VisitPayloadsOptions{Visitor: testSealer(&calls)},
+					PayloadOptions: &proxy.VisitPayloadsOptions{Visitor: testSealer(&calls)},
 					Opaque: func(_ string, data []byte) error {
 						reported = append(reported, data)
 						return nil
