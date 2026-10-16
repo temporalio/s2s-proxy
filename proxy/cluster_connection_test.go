@@ -693,7 +693,7 @@ type encryptingConnection struct {
 
 var testEncryptionKeyURI = "testing://" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
 
-func startEncryptingConnection(t *testing.T, enabled bool, edits ...func(*config.EncryptionConfig)) encryptingConnection {
+func startEncryptingConnection(t *testing.T, enabled bool, edits ...func(*config.ClusterConnConfig)) encryptingConnection {
 	ports := getDynamicPorts(t, 4)
 	localTemporalAddr, remoteTemporalAddr, proxyOutbound, proxyInbound := ports[0], ports[1], ports[2], ports[3]
 
@@ -704,11 +704,12 @@ func startEncryptingConnection(t *testing.T, enabled bool, edits ...func(*config
 	cfg := makeTCPClusterConfig("encrypting", localFVI, remoteFVI, proxyOutbound,
 		localTemporalAddr, proxyInbound, proxyOutbound, remoteTemporalAddr)
 	cfg.EncryptionConfig = config.EncryptionConfig{
-		Enabled: enabled,
-		Default: &config.KeyPolicy{URI: testEncryptionKeyURI, Duration: time.Hour},
+		Enabled:          enabled,
+		Default:          &config.KeyPolicy{URI: testEncryptionKeyURI, Duration: time.Hour},
+		NamespaceBinding: config.NamespaceBindingOff,
 	}
 	for _, edit := range edits {
-		edit(&cfg.EncryptionConfig)
+		edit(&cfg)
 	}
 
 	loggers := logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{}))
@@ -767,8 +768,8 @@ func TestClusterConnectionEncryption(t *testing.T) {
 func TestClusterConnectionEncryptionAlreadySealed(t *testing.T) {
 	// The customer's codec encrypted these before they reached the proxy, so
 	// they cross as they are, for the customer's codec to open again.
-	c := startEncryptingConnection(t, true, func(ec *config.EncryptionConfig) {
-		ec.AlreadySealedEncodings = []string{"binary/customer-encrypted"}
+	c := startEncryptingConnection(t, true, func(cc *config.ClusterConnConfig) {
+		cc.EncryptionConfig.AlreadySealedEncodings = []string{"binary/customer-encrypted"}
 	})
 
 	theirs := func() *commonpb.Payload {
@@ -831,7 +832,7 @@ func TestClusterConnectionEncryptionDisabled(t *testing.T) {
 func TestNewEncryptorsAreNilWithoutKeys(t *testing.T) {
 	// No encryption block at all: nothing to seal or open with, and no reason to
 	// visit a single payload.
-	outbound, inbound, err := newEncryptors(t.Context(), config.EncryptionConfig{}, nil, log.NewTestLogger())
+	outbound, inbound, err := newEncryptors(t.Context(), config.EncryptionConfig{}, nil, nil, log.NewTestLogger())
 	require.NoError(t, err)
 	require.Equal(t, connEncryptors{}, outbound)
 	require.Equal(t, connEncryptors{}, inbound)
@@ -955,7 +956,7 @@ func TestClusterConnectionEncryptsReplicationStreams(t *testing.T) {
 }
 
 func TestClusterConnectionEncryptsFailures(t *testing.T) {
-	c := startEncryptingConnection(t, true, func(ec *config.EncryptionConfig) { ec.Failures = true })
+	c := startEncryptingConnection(t, true, func(cc *config.ClusterConnConfig) { cc.EncryptionConfig.Failures = true })
 
 	want := &failurepb.Failure{Message: "secret message", StackTrace: "secret stack"}
 	failedTask := func(f *failurepb.Failure) *replicationspb.ReplicationTask {
@@ -989,10 +990,55 @@ func TestClusterConnectionEncryptsFailures(t *testing.T) {
 }
 
 func TestClusterConnectionAllowsOpaquePlaintextWhenAsked(t *testing.T) {
-	c := startEncryptingConnection(t, true, func(ec *config.EncryptionConfig) { ec.AllowOpaquePlaintext = true })
+	c := startEncryptingConnection(t, true, func(cc *config.ClusterConnConfig) { cc.EncryptionConfig.AllowOpaquePlaintext = true })
 	c.localAdmin.setNext(replicationOf(hsmReplicationTask("hsm-state")))
 
 	resp, err := recvReplication(t, c.inbound)
 	require.NoError(t, err)
 	require.Equal(t, "hsm-state", string(resp.GetMessages().GetReplicationTasks()[0].GetSyncHsmAttributes().GetStateMachineNode().GetData()))
+}
+
+func TestClusterConnectionBindsToThePeerNamespace(t *testing.T) {
+	// "ns" is called "peer-ns" on the peer, so that is the label, in both
+	// directions, matching what a temporal-proxy in front of the peer derives.
+	translated := func(binding config.NamespaceBinding) func(*config.ClusterConnConfig) {
+		return func(cc *config.ClusterConnConfig) {
+			cc.EncryptionConfig.NamespaceBinding = binding
+			cc.NamespaceTranslation = config.StringTranslator{
+				Mappings: []config.StringMapping{{Local: "ns", Remote: "peer-ns"}},
+			}
+		}
+	}
+
+	t.Run("outbound payloads reach the peer bound to the peer's name", func(t *testing.T) {
+		c := startEncryptingConnection(t, true, translated(config.NamespaceBindingPermissive))
+		startWorkflowWithInput(t, c.outbound, plainPayload(`"secret"`))
+
+		require.Equal(t, "peer-ns", string(c.remote.lastInput(t).GetMetadata()[codec.MetadataEncryptionNamespace]))
+	})
+
+	t.Run("local responses reach the peer bound to the peer's name", func(t *testing.T) {
+		c := startEncryptingConnection(t, true, translated(config.NamespaceBindingPermissive))
+
+		got := queryResult(t, c.inbound)
+		require.Equal(t, "peer-ns", string(got.GetMetadata()[codec.MetadataEncryptionNamespace]))
+	})
+
+	t.Run("strict opens what the peer holds bound to the peer's name", func(t *testing.T) {
+		c := startEncryptingConnection(t, true, translated(config.NamespaceBindingStrict))
+		startWorkflowWithInput(t, c.inbound, c.sealedPayload(t, `"round-trip"`))
+
+		got := c.local.lastInput(t)
+		require.Equal(t, "json/plain", encodingOf(got))
+		require.Equal(t, `"round-trip"`, string(got.GetData()))
+	})
+
+	t.Run("an untranslated namespace is labeled with its own name", func(t *testing.T) {
+		c := startEncryptingConnection(t, true, func(cc *config.ClusterConnConfig) {
+			cc.EncryptionConfig.NamespaceBinding = config.NamespaceBindingPermissive
+		})
+		startWorkflowWithInput(t, c.outbound, plainPayload(`"secret"`))
+
+		require.Equal(t, "ns", string(c.remote.lastInput(t).GetMetadata()[codec.MetadataEncryptionNamespace]))
+	})
 }

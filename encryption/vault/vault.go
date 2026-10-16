@@ -83,6 +83,13 @@ func New(ctx context.Context, cfg Config) (*Vault, error) {
 		cfg.Meter = NewCryptoMeter()
 	}
 
+	// Validate rejected an empty or unknown value above, so this only fails if
+	// the two ever disagree about what is valid.
+	mode, err := cfg.Encryption.NamespaceBinding.Mode()
+	if err != nil {
+		return nil, fmt.Errorf("invalid encryption config: %w", err)
+	}
+
 	opts := make([]crypto.VaultOption, 0, len(cfg.Encryption.Overrides))
 	opts = append(opts,
 		crypto.WithDefaultKeyConfig(crypto.KeyConfig{
@@ -91,6 +98,7 @@ func New(ctx context.Context, cfg Config) (*Vault, error) {
 		}),
 		crypto.WithCacheSize(cfg.Encryption.CacheSize),
 		crypto.WithObserver(cfg.Meter),
+		crypto.WithBindingMode(mode),
 	)
 
 	if p := cfg.Encryption.Replication; p != nil {

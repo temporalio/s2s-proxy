@@ -29,8 +29,9 @@ func TestS2SProxyConfigValidate(t *testing.T) {
 				ClusterConnections: []ClusterConnConfig{{
 					Name: "cluster-a",
 					EncryptionConfig: EncryptionConfig{
-						Enabled: true,
-						Default: &KeyPolicy{URI: "awskms://primary", Duration: time.Hour},
+						Enabled:          true,
+						NamespaceBinding: NamespaceBindingOff,
+						Default:          &KeyPolicy{URI: "awskms://primary", Duration: time.Hour},
 					},
 				}},
 			},
@@ -41,8 +42,9 @@ func TestS2SProxyConfigValidate(t *testing.T) {
 				ClusterConnections: []ClusterConnConfig{{
 					Name: "cluster-a",
 					EncryptionConfig: EncryptionConfig{
-						Enabled:   true,
-						CacheSize: -1,
+						Enabled:          true,
+						NamespaceBinding: NamespaceBindingOff,
+						CacheSize:        -1,
 						Default: &KeyPolicy{
 							URI:         "vault://primary",
 							DecryptURIs: []string{"vault://retired"},
@@ -84,7 +86,8 @@ func TestS2SProxyConfigValidate(t *testing.T) {
 					{
 						Name: "cluster-b",
 						EncryptionConfig: EncryptionConfig{
-							Default: &KeyPolicy{URI: "vault://b", Duration: time.Hour},
+							NamespaceBinding: NamespaceBindingOff,
+							Default:          &KeyPolicy{URI: "vault://b", Duration: time.Hour},
 						},
 					},
 					{
@@ -129,6 +132,7 @@ clusterConnections:
   - name: cluster-a
     encryption:
       enabled: true
+      namespaceBinding: "off"
       default:
         uri: awskms://alias/primary
         duration: 24h

@@ -368,7 +368,7 @@ func TestS2SProxyConfigValidateExtensionReferences(t *testing.T) {
 	conn := func(name, uri string) ClusterConnConfig {
 		return ClusterConnConfig{
 			Name:             name,
-			EncryptionConfig: EncryptionConfig{Enabled: true, Default: policy(uri)},
+			EncryptionConfig: EncryptionConfig{Enabled: true, NamespaceBinding: NamespaceBindingOff, Default: policy(uri)},
 		}
 	}
 
@@ -454,6 +454,7 @@ clusterConnections:
   - name: a
     encryption:
       enabled: true
+      namespaceBinding: "off"
       default:
         uri: extension://vault/replication
         duration: 24h

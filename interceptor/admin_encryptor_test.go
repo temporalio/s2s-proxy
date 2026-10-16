@@ -13,6 +13,7 @@ import (
 	"go.temporal.io/api/errordetails/v1"
 	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/history/v1"
+	"go.temporal.io/proxy/pkg/crypto"
 	adminservice "go.temporal.io/server/api/adminservice/v1"
 	persistence "go.temporal.io/server/api/persistence/v1"
 	replication "go.temporal.io/server/api/replication/v1"
@@ -646,4 +647,25 @@ func TestAdminEncryptorAddTasks(t *testing.T) {
 			new(adminservice.AddTasksResponse), func() error { return nil })
 		require.Equal(t, codes.FailedPrecondition, status.Code(err))
 	})
+}
+
+func TestAdminEncryptorBindsToTheReplicationNamespace(t *testing.T) {
+	// Admin traffic has no label func, so it is bound to the replication key's
+	// name whatever namespace the context carries, and a strict vault still opens
+	// it, since nothing is compared on open.
+	ctx := context.WithValue(t.Context(), NamespaceKey, "some-namespace")
+	reply := dlqReply(activityTask(payloads("a")))
+
+	seal := requireAdminEncryptor(t, reverseConfig(realVault(t, crypto.BindingPermissive)))
+	require.NoError(t, adminCallWith(ctx, seal.Unary, &adminservice.ReapplyEventsRequest{}, reply, func() error { return nil }))
+	require.Equal(t, []string{config.ReplicationKeyNamespace}, boundTo(activityDetails(reply)))
+
+	obs := &recordingBindingObserver{}
+	cfg := adminConfig(realVault(t, crypto.BindingStrict))
+	cfg.Binding = obs
+	open := requireAdminEncryptor(t, cfg)
+
+	require.NoError(t, adminCallWith(ctx, open.Unary, &adminservice.ReapplyEventsRequest{}, reply, func() error { return nil }))
+	require.Equal(t, []string{"a"}, data(activityDetails(reply)))
+	require.Empty(t, obs.unbound)
 }
