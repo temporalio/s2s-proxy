@@ -985,8 +985,8 @@ func TestClusterConnectionEncryptsReplicationStreams(t *testing.T) {
 		c.localAdmin.setNext(replicationOf(hsmReplicationTask("hsm-state")))
 
 		resp, err := recvReplication(t, c.inbound)
-		require.Error(t, err)
 		require.Nil(t, resp)
+		require.Equal(t, codes.Internal, status.Code(err), "got %v", err)
 	})
 
 	t.Run("unary admin responses reach the peer sealed", func(t *testing.T) {
@@ -1124,11 +1124,30 @@ func TestClusterConnectionBindsToThePeerNamespace(t *testing.T) {
 		c := startEncryptingConnection(t, true, translated(config.NamespaceBindingStrict))
 		c.localAdmin.setNext(replicationOf(activityReplicationTaskIn("unknown-id", plainPayload(`"heartbeat"`))))
 
-		// The stream proxy ends the stream without passing the error on, so the
-		// peer sees it end; the interceptor tests check the error itself.
+		// The peer is told the stream failed and why in general, but not which
+		// namespace: that stays in this proxy's log.
 		resp, err := recvReplication(t, c.inbound)
-		require.Error(t, err)
 		require.Nil(t, resp)
+		st := status.Convert(err)
+		require.Equal(t, codes.Internal, st.Code(), "got %v", err)
+		require.Contains(t, st.Message(), "could not seal or open a replication message")
+		require.NotContains(t, st.Message(), "unknown-id")
+	})
+
+	t.Run("strict fails a unary call whose namespace does not resolve, saying only that", func(t *testing.T) {
+		c := startEncryptingConnection(t, true, translated(config.NamespaceBindingStrict))
+		c.localAdmin.setNext(replicationOf(activityReplicationTaskIn("unknown-id", plainPayload(`"dlq"`))))
+
+		conn, err := grpc.NewClient(c.inbound, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = conn.Close() })
+
+		_, err = adminservice.NewAdminServiceClient(conn).
+			GetDLQReplicationMessages(t.Context(), &adminservice.GetDLQReplicationMessagesRequest{})
+		st := status.Convert(err)
+		require.Equal(t, codes.Internal, st.Code(), "got %v", err)
+		require.Contains(t, st.Message(), "could not seal or open a replication message")
+		require.NotContains(t, st.Message(), "unknown-id")
 	})
 
 	t.Run("an untranslated namespace is labeled with its own name", func(t *testing.T) {

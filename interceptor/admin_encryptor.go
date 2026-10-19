@@ -5,9 +5,13 @@ import (
 	"errors"
 	"fmt"
 
+	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/proxy"
 	"go.temporal.io/proxy/pkg/codec"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/temporalio/s2s-proxy/config"
@@ -53,6 +57,17 @@ type (
 		// NamespaceObserver hears about namespace IDs that failed to resolve,
 		// whether the payload then failed or fell back. Optional.
 		NamespaceObserver NamespaceObserver
+		// VisitErrors hears about every unary call failed because a message could
+		// not be sealed or opened, with the full error, which the caller only gets
+		// a generic status for. Streams are not reported: whatever relays one
+		// already has the full error. Optional.
+		VisitErrors VisitErrorObserver
+	}
+
+	// VisitErrorObserver hears about a unary admin call that failed because this
+	// proxy could not seal or open one of its messages.
+	VisitErrorObserver interface {
+		VisitFailed(method string, err error)
 	}
 
 	// NamespaceResolver maps a namespace ID to the namespace's local name.
@@ -127,15 +142,21 @@ func NewAdminEncryptor(cfg AdminEncryptorConfig) (*AdminEncryptor, error) {
 		req, resp = open, seal
 	}
 
-	return &AdminEncryptor{Unary: adminUnary(req, resp), Stream: adminStream(req, resp)}, nil
+	return &AdminEncryptor{Unary: adminUnary(req, resp, cfg.VisitErrors), Stream: adminStream(req, resp)}, nil
 }
 
+// newAdminVisit returns the adminVisit doing payloads, failures, and opaque in
+// that order, or the reverse when failuresAfter. Whatever any of them fails
+// with is marked a [VisitError] where it happens, so it is known for one
+// wherever it surfaces, the error details of a failed call included.
 func newAdminVisit(
 	payloads *proxy.VisitPayloadsOptions,
 	failures *proxy.VisitFailuresOptions,
 	failuresAfter bool,
 	opaque func(string, []byte) error,
 ) (*adminVisit, error) {
+	payloads, failures, opaque = markPayloads(payloads), markFailures(failures), markOpaque(opaque)
+
 	details, err := proxy.NewPayloadVisitorInterceptor(proxy.PayloadVisitorInterceptorOptions{Inbound: payloads})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create admin encryption interceptor: %w", err)
@@ -158,7 +179,10 @@ func newAdminVisit(
 // A request naming a namespace by ID scopes both visits to it, since replies
 // such as raw history carry payloads but no ID of their own. IDs deeper in
 // either message still take precedence for the parts they cover.
-func adminUnary(req, resp *adminVisit) grpc.UnaryClientInterceptor {
+//
+// A failed visit is reported to obs in full, then returned as its
+// [VisitError], so the caller gets the generic status.
+func adminUnary(req, resp *adminVisit, obs VisitErrorObserver) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, request, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if named, ok := request.(interface{ GetNamespaceId() string }); ok {
 			if id := named.GetNamespaceId(); id != "" {
@@ -166,15 +190,27 @@ func adminUnary(req, resp *adminVisit) grpc.UnaryClientInterceptor {
 			}
 		}
 
+		failed := func(err error) error {
+			visitErr, ok := asVisitError(err)
+			if !ok {
+				return err
+			}
+			if obs != nil {
+				obs.VisitFailed(method, err)
+			}
+
+			return visitErr
+		}
+
 		if err := req.visit(ctx, request); err != nil {
-			return err
+			return failed(err)
 		}
 
 		if err := invoker(ctx, method, request, reply, cc, opts...); err != nil {
-			return resp.visitError(ctx, err)
+			return failed(resp.visitError(ctx, err))
 		}
 
-		return resp.visit(ctx, reply)
+		return failed(resp.visit(ctx, reply))
 	}
 }
 
@@ -207,7 +243,7 @@ type adminClientStream struct {
 
 func (s *adminClientStream) SendMsg(m any) error {
 	if err := s.send.visit(s.ctx, m); err != nil {
-		return err
+		return surface(err)
 	}
 
 	return s.ClientStream.SendMsg(m)
@@ -215,10 +251,97 @@ func (s *adminClientStream) SendMsg(m any) error {
 
 func (s *adminClientStream) RecvMsg(m any) error {
 	if err := s.ClientStream.RecvMsg(m); err != nil {
-		return s.recv.visitError(s.ctx, err)
+		return surface(s.recv.visitError(s.ctx, err))
 	}
 
-	return s.recv.visit(s.ctx, m)
+	return surface(s.recv.visit(s.ctx, m))
+}
+
+// VisitError is a message this proxy failed to seal or open, as opposed to an
+// error from the call or stream carrying it. Something relaying a stream can
+// tell the two apart with errors.As, and pass this one on.
+//
+// Error and Unwrap give the cause in full, for logging. GRPCStatus does not:
+// whatever receives the status may be the peer, and the cause can name keys
+// and namespaces, or carry codes from the systems behind them, such as the
+// local frontend or a KMS. So it is always Internal, with a generic message.
+type VisitError struct {
+	err error
+}
+
+func (e *VisitError) Error() string { return e.err.Error() }
+
+func (e *VisitError) Unwrap() error { return e.err }
+
+func (e *VisitError) GRPCStatus() *status.Status {
+	return status.New(codes.Internal, "s2s-proxy could not seal or open a replication message; see its logs")
+}
+
+// asVisitError returns the VisitError err is or wraps, if any.
+func asVisitError(err error) (*VisitError, bool) {
+	var visitErr *VisitError
+	if !errors.As(err, &visitErr) {
+		return nil, false
+	}
+
+	return visitErr, true
+}
+
+// surface returns the VisitError err wraps in its place, and any other err as
+// it is. gRPC builds a status from the outermost error, taking a wrapped
+// status's code but the wrapper's text, which would put the cause back in front
+// of the caller.
+func surface(err error) error {
+	if visitErr, ok := asVisitError(err); ok {
+		return visitErr
+	}
+
+	return err
+}
+
+// markVisitError returns err as a VisitError, unless it is nil or already one.
+func markVisitError(err error) error {
+	if _, ok := asVisitError(err); err == nil || ok {
+		return err
+	}
+
+	return &VisitError{err: err}
+}
+
+// markPayloads returns a copy of opts whose visitor marks its errors.
+func markPayloads(opts *proxy.VisitPayloadsOptions) *proxy.VisitPayloadsOptions {
+	if opts == nil {
+		return nil
+	}
+
+	marked, visitor := *opts, opts.Visitor
+	marked.Visitor = func(ctx *proxy.VisitPayloadsContext, ps []*common.Payload) ([]*common.Payload, error) {
+		out, err := visitor(ctx, ps)
+		return out, markVisitError(err)
+	}
+
+	return &marked
+}
+
+// markFailures returns a copy of opts whose visitor marks its errors.
+func markFailures(opts *proxy.VisitFailuresOptions) *proxy.VisitFailuresOptions {
+	if opts == nil {
+		return nil
+	}
+
+	marked, visitor := *opts, opts.Visitor
+	marked.Visitor = func(ctx *proxy.VisitFailuresContext, f *failure.Failure) error {
+		return markVisitError(visitor(ctx, f))
+	}
+
+	return &marked
+}
+
+// markOpaque returns opaque marking its errors.
+func markOpaque(opaque func(string, []byte) error) func(string, []byte) error {
+	return func(path string, data []byte) error {
+		return markVisitError(opaque(path, data))
+	}
 }
 
 // visit runs v over m when m is a proto message.
@@ -245,7 +368,10 @@ func (v *adminVisit) visitError(ctx context.Context, err error) error {
 	}
 
 	run := func(i grpc.UnaryClientInterceptor, err error) error {
-		if i == nil {
+		// A visit that already failed is not the call's error to visit: its
+		// status is the generic one, and building a new error from that would
+		// lose the VisitError, and the cause with it.
+		if _, failed := asVisitError(err); i == nil || failed {
 			return err
 		}
 

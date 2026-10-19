@@ -3,6 +3,7 @@ package interceptor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"testing"
@@ -142,8 +143,7 @@ func TestAdminEncryptorOpaque(t *testing.T) {
 		e := requireAdminEncryptor(t, cfg)
 
 		err := adminCall(t, e.Unary, &adminservice.ReapplyEventsRequest{}, hsm(), func() error { return nil })
-		require.Equal(t, codes.FailedPrecondition, status.Code(err))
-		require.ErrorContains(t, err, "allowOpaquePlaintext")
+		requireGenericVisitError(t, err, "allowOpaquePlaintext")
 		require.NotContains(t, err.Error(), "hsm-state", "the data stays out of the error")
 		require.Len(t, obs.rejected, 1)
 		require.Empty(t, obs.passed)
@@ -523,7 +523,7 @@ func TestAdminEncryptorStream(t *testing.T) {
 			recv: []*adminservice.StreamWorkflowReplicationMessagesResponse{streamMessages(hsmTask("x"))}})
 
 		err := cs.RecvMsg(new(adminservice.StreamWorkflowReplicationMessagesResponse))
-		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+		require.Equal(t, codes.Internal, status.Code(err))
 	})
 
 	t.Run("acks pass through unchanged", func(t *testing.T) {
@@ -631,7 +631,7 @@ func TestAdminEncryptorAddTasks(t *testing.T) {
 
 		err = adminCall(t, e.Unary, addTasks(int32(tasks.CategoryIDTransfer), withChasm),
 			new(adminservice.AddTasksResponse), func() error { return nil })
-		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+		requireGenericVisitError(t, err, "cannot seal opaque chasm data")
 		require.Equal(t, []string{"chasm TransferTaskInfo/TaskDetails/ChasmTaskInfo/ChasmTaskInfo/Data"}, obs.rejected)
 
 		err = adminCall(t, e.Unary, addTasks(int32(tasks.CategoryIDTransfer), without),
@@ -645,7 +645,7 @@ func TestAdminEncryptorAddTasks(t *testing.T) {
 
 		err := adminCall(t, e.Unary, addTasks(int32(tasks.CategoryIDReplication), garbage),
 			new(adminservice.AddTasksResponse), func() error { return nil })
-		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+		requireGenericVisitError(t, err, "cannot seal opaque task data")
 	})
 }
 
@@ -837,4 +837,176 @@ func TestAdminEncryptorBindsToTheStampedNamespace(t *testing.T) {
 	require.NoError(t, adminCallWith(ctx, e.Unary, req, new(adminservice.ImportWorkflowExecutionResponse), func() error { return nil }))
 	require.Equal(t, []string{"peer-a"}, boundTo(inputInBlob(t, req.GetHistoryBatches()[0])))
 	require.Zero(t, names.calls, "no lookup")
+}
+
+// A stream proxy passes on what the encryptor failed, and only that, so a
+// failed visit is marked, with a status that keeps the detail out of what
+// reaches the peer.
+func TestAdminEncryptorStreamVisitErrors(t *testing.T) {
+	t.Run("a failed visit is a VisitError with a generic status", func(t *testing.T) {
+		e := requireAdminEncryptor(t, reverseConfig(&fakeVault{}))
+		cs := openStream(t, e, &fakeClientStream{ctx: t.Context(), err: io.EOF,
+			recv: []*adminservice.StreamWorkflowReplicationMessagesResponse{streamMessages(hsmTask("x"))}})
+
+		err := cs.RecvMsg(new(adminservice.StreamWorkflowReplicationMessagesResponse))
+
+		var visitErr *VisitError
+		require.ErrorAs(t, err, &visitErr)
+		require.ErrorContains(t, err, "StateMachineNode", "the detail stays in the error for logging")
+
+		st := status.Convert(err)
+		require.Equal(t, codes.Internal, st.Code(), "not the cause's FailedPrecondition")
+		require.NotContains(t, st.Message(), "StateMachineNode", "the status carries no detail")
+		require.Contains(t, st.Message(), "see its logs")
+	})
+
+	t.Run("an unresolved namespace is Internal and not named", func(t *testing.T) {
+		cfg := namespacedConfig(reverseConfig(realVault(t, crypto.BindingStrict)), &fakeNamespaces{err: errors.New("frontend unavailable")})
+		cfg.StrictNamespaces = true
+		e := requireAdminEncryptor(t, cfg)
+		cs := openStream(t, e, &fakeClientStream{ctx: t.Context(), err: io.EOF,
+			recv: []*adminservice.StreamWorkflowReplicationMessagesResponse{streamMessages(activityTaskIn("id-a", payloads("1")))}})
+
+		err := cs.RecvMsg(new(adminservice.StreamWorkflowReplicationMessagesResponse))
+		require.ErrorContains(t, err, "id-a")
+
+		st := status.Convert(err)
+		require.Equal(t, codes.Internal, st.Code())
+		require.NotContains(t, st.Message(), "id-a")
+	})
+
+	t.Run("a stream error whose details fail to open", func(t *testing.T) {
+		e := requireAdminEncryptor(t, adminConfig(&fakeVault{openErr: errors.New("kms down")}))
+		st, err := status.New(codes.FailedPrecondition, "nope").WithDetails(&errordetails.QueryFailedFailure{
+			Failure: &failure.Failure{FailureInfo: &failure.Failure_ApplicationFailureInfo{
+				ApplicationFailureInfo: &failure.ApplicationFailureInfo{Details: sealed(t, "detail")},
+			}},
+		})
+		require.NoError(t, err)
+		cs := openStream(t, e, &fakeClientStream{ctx: t.Context(), err: st.Err()})
+
+		requireGenericVisitError(t, cs.RecvMsg(new(adminservice.StreamWorkflowReplicationMessagesResponse)), "kms down")
+	})
+
+	t.Run("errors from the stream itself are left as they are", func(t *testing.T) {
+		e := requireAdminEncryptor(t, adminConfig(&fakeVault{}))
+		upstream := status.Error(codes.Unavailable, "remote went away")
+		cs := openStream(t, e, &fakeClientStream{ctx: t.Context(), err: upstream})
+
+		err := cs.RecvMsg(new(adminservice.StreamWorkflowReplicationMessagesResponse))
+
+		var visitErr *VisitError
+		require.NotErrorAs(t, err, &visitErr)
+		require.Equal(t, "remote went away", status.Convert(err).Message())
+	})
+}
+
+// recordingVisitErrorObserver remembers every failed visit it is told about,
+// as "method: error".
+type recordingVisitErrorObserver struct {
+	mu     sync.Mutex
+	failed []string
+}
+
+func (o *recordingVisitErrorObserver) VisitFailed(method string, err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.failed = append(o.failed, method+": "+err.Error())
+}
+
+// requireGenericVisitError checks err is a VisitError as gRPC will see it:
+// outermost, Internal, and saying nothing about the cause.
+func requireGenericVisitError(t *testing.T, err error, cause string) {
+	t.Helper()
+
+	visitErr, ok := err.(*VisitError) //nolint:errorlint // outermost is the point: gRPC rewrites the message of a wrapped status
+	require.True(t, ok, "want a *VisitError outermost, got %T: %v", err, err)
+	require.ErrorContains(t, visitErr, cause, "the cause stays in the error")
+
+	st := status.Convert(err)
+	require.Equal(t, codes.Internal, st.Code())
+	require.NotContains(t, st.Message(), cause)
+}
+
+const testAdminMethod = "/temporal.server.api.adminservice.v1.AdminService/Test"
+
+func TestAdminEncryptorUnaryVisitErrors(t *testing.T) {
+	t.Run("a request that fails to seal", func(t *testing.T) {
+		obs := &recordingVisitErrorObserver{}
+		cfg := AdminEncryptorConfig{EncryptorConfig: EncryptorConfig{Enabled: true, Vault: &fakeVault{sealErr: errors.New("kms down")}}}
+		cfg.VisitErrors = obs
+		e := requireAdminEncryptor(t, cfg)
+
+		req := &adminservice.ImportWorkflowExecutionRequest{HistoryBatches: []*common.DataBlob{eventBlob(t, payloads("x"))}}
+		err := adminCall(t, e.Unary, req, new(adminservice.ImportWorkflowExecutionResponse), func() error { return nil })
+
+		requireGenericVisitError(t, err, "kms down")
+		require.Len(t, obs.failed, 1)
+		require.Contains(t, obs.failed[0], testAdminMethod+": ")
+		require.Contains(t, obs.failed[0], "kms down")
+	})
+
+	t.Run("a reply that fails to open", func(t *testing.T) {
+		obs := &recordingVisitErrorObserver{}
+		cfg := adminConfig(&fakeVault{openErr: errors.New("kms down")})
+		cfg.VisitErrors = obs
+		e := requireAdminEncryptor(t, cfg)
+
+		reply := new(adminservice.GetDLQReplicationMessagesResponse)
+		err := adminCall(t, e.Unary, &adminservice.ReapplyEventsRequest{}, reply, func() error {
+			reply.ReplicationTasks = []*replication.ReplicationTask{activityTask(sealed(t, "x"))}
+			return nil
+		})
+
+		requireGenericVisitError(t, err, "kms down")
+		require.Len(t, obs.failed, 1)
+	})
+
+	t.Run("error details that fail to open", func(t *testing.T) {
+		obs := &recordingVisitErrorObserver{}
+		cfg := adminConfig(&fakeVault{openErr: errors.New("kms down")})
+		cfg.VisitErrors = obs
+		e := requireAdminEncryptor(t, cfg)
+
+		st, err := status.New(codes.FailedPrecondition, "nope").WithDetails(&errordetails.QueryFailedFailure{
+			Failure: &failure.Failure{FailureInfo: &failure.Failure_ApplicationFailureInfo{
+				ApplicationFailureInfo: &failure.ApplicationFailureInfo{Details: sealed(t, "detail")},
+			}},
+		})
+		require.NoError(t, err)
+
+		got := adminCall(t, e.Unary, &adminservice.ReapplyEventsRequest{}, new(adminservice.ReapplyEventsResponse), st.Err)
+
+		requireGenericVisitError(t, got, "kms down")
+		require.Len(t, obs.failed, 1)
+	})
+
+	t.Run("errors from the call itself are left as they are and not reported", func(t *testing.T) {
+		obs := &recordingVisitErrorObserver{}
+		cfg := adminConfig(&fakeVault{})
+		cfg.VisitErrors = obs
+		e := requireAdminEncryptor(t, cfg)
+
+		upstream := status.Error(codes.Unavailable, "remote went away")
+		got := adminCall(t, e.Unary, &adminservice.ReapplyEventsRequest{}, new(adminservice.ReapplyEventsResponse), func() error {
+			return upstream
+		})
+
+		require.Equal(t, codes.Unavailable, status.Code(got))
+		require.Equal(t, "remote went away", status.Convert(got).Message())
+		require.Empty(t, obs.failed)
+	})
+}
+
+// Nothing wraps a visit failure today, but if something did, gRPC would take
+// the wrapper's text for the status, cause and all.
+func TestSurfaceUnwrapsAVisitError(t *testing.T) {
+	cause := &VisitError{err: errors.New("kms down for key arn:secret")}
+	wrapped := fmt.Errorf("visiting: %w", cause)
+	require.Contains(t, status.Convert(wrapped).Message(), "arn:secret", "control: gRPC uses the wrapper's text")
+
+	requireGenericVisitError(t, surface(wrapped), "arn:secret")
+
+	plain := errors.New("not ours")
+	require.Same(t, plain, surface(plain))
 }
