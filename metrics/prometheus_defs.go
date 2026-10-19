@@ -73,18 +73,19 @@ var (
 	EstablisherError = DefaultCounterVec("establisher_error", "Number of errors observed from connection establisher", muxManagerLabels...)
 
 	// Encryption
-	EncryptionKEKOps              = DefaultCounterVec("enc_kek_ops_total", "Total KEK operations (DEK wrap/unwrap), labeled by provider, operation, and result", "provider", "operation", "result")
-	EncryptionKEKOpDur            = DefaultHistogramVec("enc_kek_op_duration_secs", "Duration of KEK operations in seconds, labeled by provider and operation", "provider", "operation")
-	EncryptionDEKCacheHits        = DefaultCounterVec("enc_dek_cache_hits_total", "Total DEK cache hits").WithLabelValues()
-	EncryptionDEKCacheMisses      = DefaultCounterVec("enc_dek_cache_misses_total", "Total DEK cache misses").WithLabelValues()
-	EncryptionDEKCacheSize        = DefaultGauge("enc_dek_cache_size", "Current number of entries in the DEK cache")
-	EncryptionDEKOps              = DefaultCounterVec("enc_dek_ops_total", "Total DEK operations (payload encrypt/decrypt), labeled by operation and result", "operation", "result")
-	EncryptionDEKOpDur            = BucketedHistogramVec("enc_dek_op_duration_secs", "Duration of the AES-256-GCM step alone in seconds, excluding any KEK wrap or unwrap, labeled by operation", prometheus.ExponentialBuckets(0.00001, 4, 7), "operation")
-	EncryptionDEKRotations        = DefaultCounterVec("enc_dek_rotations_total", "Total DEK rotations, labeled by reason", "reason")
-	EncryptionUnboundOpens        = DefaultCounterVec("enc_unbound_opens_total", "Total sealed payloads handed to decrypt with no namespace binding, whatever the outcome, labeled by local namespace", "namespace")
-	EncryptionNamespaceMismatches = DefaultCounterVec("enc_namespace_mismatches_total", "Total sealed payloads handed to decrypt bound to a namespace other than the expected one, whatever the outcome, labeled by local namespace", "namespace")
-	EncryptionOpaquePassed        = DefaultCounterVec("enc_opaque_passthrough_total", "Total opaque fields sent to the peer unsealed because allowOpaquePlaintext is set, labeled by kind", "kind")
-	EncryptionOpaqueRejected      = DefaultCounterVec("enc_opaque_rejected_total", "Total admin messages refused because they carried opaque data that cannot be sealed, labeled by kind", "kind")
+	EncryptionKEKOps               = DefaultCounterVec("enc_kek_ops_total", "Total KEK operations (DEK wrap/unwrap), labeled by provider, operation, and result", "provider", "operation", "result")
+	EncryptionKEKOpDur             = DefaultHistogramVec("enc_kek_op_duration_secs", "Duration of KEK operations in seconds, labeled by provider and operation", "provider", "operation")
+	EncryptionDEKCacheHits         = DefaultCounterVec("enc_dek_cache_hits_total", "Total DEK cache hits").WithLabelValues()
+	EncryptionDEKCacheMisses       = DefaultCounterVec("enc_dek_cache_misses_total", "Total DEK cache misses").WithLabelValues()
+	EncryptionDEKCacheSize         = DefaultGauge("enc_dek_cache_size", "Current number of entries in the DEK cache")
+	EncryptionDEKOps               = DefaultCounterVec("enc_dek_ops_total", "Total DEK operations (payload encrypt/decrypt), labeled by operation and result", "operation", "result")
+	EncryptionDEKOpDur             = BucketedHistogramVec("enc_dek_op_duration_secs", "Duration of the AES-256-GCM step alone in seconds, excluding any KEK wrap or unwrap, labeled by operation", prometheus.ExponentialBuckets(0.00001, 4, 7), "operation")
+	EncryptionDEKRotations         = DefaultCounterVec("enc_dek_rotations_total", "Total DEK rotations, labeled by reason", "reason")
+	EncryptionUnboundOpens         = DefaultCounterVec("enc_unbound_opens_total", "Total sealed payloads handed to decrypt with no namespace binding, whatever the outcome, labeled by local namespace", "namespace")
+	EncryptionNamespaceMismatches  = DefaultCounterVec("enc_namespace_mismatches_total", "Total sealed payloads handed to decrypt bound to a namespace other than the expected one, whatever the outcome, labeled by local namespace", "namespace")
+	EncryptionUnresolvedNamespaces = DefaultCounterVec("enc_unresolved_namespaces_total", "Total admin payloads bound to the replication key because the namespace ID of their task did not resolve, labeled by namespace ID", "namespace_id")
+	EncryptionOpaquePassed         = DefaultCounterVec("enc_opaque_passthrough_total", "Total opaque fields sent to the peer unsealed because allowOpaquePlaintext is set, labeled by kind", "kind")
+	EncryptionOpaqueRejected       = DefaultCounterVec("enc_opaque_rejected_total", "Total admin messages refused because they carried opaque data that cannot be sealed, labeled by kind", "kind")
 
 	// Translation interceptor
 

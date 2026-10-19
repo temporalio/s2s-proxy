@@ -117,10 +117,10 @@ profiling:
 #       # name on the peer, after namespaceTranslation, and must match what a
 #       # temporal-proxy in front of the peer uses. Start on off, move to
 #       # permissive once every proxy holding the keys is upgraded, and to strict
-#       # once enc_unbound_opens_total and enc_namespace_mismatches_total stay at
-#       # zero for longer than retention. Replicated history is bound to the
-#       # replication key, so it counts as mismatched when read back through
-#       # workflow calls until it ages out.
+#       # once enc_unbound_opens_total, enc_namespace_mismatches_total, and
+#       # enc_unresolved_namespaces_total stay at zero for longer than retention.
+#       # Replication is bound the same way, by each task's namespace, which the
+#       # proxy looks up by ID with DescribeNamespace on the local cluster.
 #       namespaceBinding: "off"
 #       cacheSize: 1000
 #       default:

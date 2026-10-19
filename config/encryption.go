@@ -76,18 +76,22 @@ type (
 		// because the right mode depends on whether payloads sealed without a binding
 		// exist. The label is the namespace's name on the peer, after
 		// namespaceTranslation, which must match what a temporal-proxy in front of the
-		// peer derives for the same namespace. Admin traffic is bound to the
-		// replication key's name until it can be bound per namespace. Until then,
-		// admin payloads this proxy replicated count as mismatches when read back
-		// through workflow calls, by this proxy and by temporal-proxy alike, so strict
-		// is only safe once those have aged out of retention. Roll out like
-		// temporal-proxy: "off" until every proxy holding the keys is upgraded, then
-		// "permissive", then "strict" once no unbound or mismatched opens have been
-		// counted for longer than retention. Nexus payloads that cross namespaces, and
-		// child workflows started in another namespace, are not exempt, so deployments
-		// relying on them stay on "permissive". Calls that name no namespace, such as
-		// Nexus endpoint management, are bound to the empty namespace, as
-		// temporal-proxy does
+		// peer derives for the same namespace. Admin traffic, replication included,
+		// is bound the same way, by the namespace of the task or request carrying
+		// each payload, while still sealed under the replication key. Tasks name
+		// their namespace by ID, which the local cluster resolves through
+		// DescribeNamespace, so the credentials used for the local cluster must
+		// allow it. Under "permissive" an ID that does not resolve falls back to
+		// the replication key's name and is counted in
+		// enc_unresolved_namespaces_total; under "strict" the message fails
+		// instead. Roll out like temporal-proxy: "off" until every proxy holding
+		// the keys is upgraded, then "permissive", then "strict" once no unbound
+		// or mismatched opens, and no unresolved namespaces, have been counted for
+		// longer than retention. Nexus payloads
+		// that cross namespaces, and child workflows started in another namespace,
+		// are not exempt, so deployments relying on them stay on "permissive".
+		// Calls that name no namespace, such as Nexus endpoint management, are
+		// bound to the empty namespace, as temporal-proxy does
 		NamespaceBinding NamespaceBinding `yaml:"namespaceBinding"`
 		// Maximum number of unwrapped DEKs to hold in memory, or 0 to disable caching
 		CacheSize int `yaml:"cacheSize"`

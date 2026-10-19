@@ -669,3 +669,169 @@ func TestAdminEncryptorBindsToTheReplicationNamespace(t *testing.T) {
 	require.Equal(t, []string{"a"}, data(activityDetails(reply)))
 	require.Empty(t, obs.unbound)
 }
+
+// fakeNamespaces resolves IDs from a map, or fails with err when it is set,
+// counting the lookups it serves.
+type fakeNamespaces struct {
+	mu    sync.Mutex
+	names map[string]string
+	err   error
+	calls int
+}
+
+func (f *fakeNamespaces) LocalName(_ context.Context, id string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	if f.err != nil {
+		return "", f.err
+	}
+
+	name, ok := f.names[id]
+	if !ok {
+		return "", errors.New("no namespace with ID " + id)
+	}
+
+	return name, nil
+}
+
+// activityTaskIn is activityTask for the namespace with ID id.
+func activityTaskIn(id string, details *common.Payloads) *replication.ReplicationTask {
+	task := activityTask(details)
+	task.GetSyncActivityTaskAttributes().NamespaceId = id
+	return task
+}
+
+// namespacedConfig is cfg resolving IDs through names and labeling with
+// peerLabel.
+func namespacedConfig(cfg AdminEncryptorConfig, names NamespaceResolver) AdminEncryptorConfig {
+	cfg.Label = peerLabel
+	cfg.Namespaces = names
+	return cfg
+}
+
+func TestAdminEncryptorBindsEachTaskToItsNamespace(t *testing.T) {
+	names := &fakeNamespaces{names: map[string]string{"id-a": "a", "id-b": "b"}}
+	e := requireAdminEncryptor(t, namespacedConfig(reverseConfig(realVault(t, crypto.BindingPermissive)), names))
+
+	reply := dlqReply(activityTaskIn("id-a", payloads("1")), activityTaskIn("id-b", payloads("2")))
+	require.NoError(t, adminCall(t, e.Unary, &adminservice.ReapplyEventsRequest{}, reply, func() error { return nil }))
+
+	got := reply.GetReplicationTasks()
+	require.Equal(t, []string{"peer-a"}, boundTo(got[0].GetSyncActivityTaskAttributes().GetDetails()))
+	require.Equal(t, []string{"peer-b"}, boundTo(got[1].GetSyncActivityTaskAttributes().GetDetails()))
+}
+
+func TestAdminEncryptorChecksEachTaskOnOpen(t *testing.T) {
+	names := &fakeNamespaces{names: map[string]string{"id-a": "a"}}
+	sealer := realVault(t, crypto.BindingPermissive)
+
+	open := func(t *testing.T, mode crypto.BindingMode, held *common.Payloads) (*adminservice.GetDLQReplicationMessagesResponse, *recordingBindingObserver, error) {
+		obs := &recordingBindingObserver{}
+		cfg := namespacedConfig(adminConfig(realVault(t, mode)), names)
+		cfg.Binding = obs
+		e := requireAdminEncryptor(t, cfg)
+
+		reply := new(adminservice.GetDLQReplicationMessagesResponse)
+		err := adminCall(t, e.Unary, &adminservice.ReapplyEventsRequest{}, reply, func() error {
+			reply.ReplicationTasks = []*replication.ReplicationTask{activityTaskIn("id-a", held)}
+			return nil
+		})
+
+		return reply, obs, err
+	}
+
+	t.Run("strict opens a payload bound to the task's label", func(t *testing.T) {
+		reply, obs, err := open(t, crypto.BindingStrict, sealedFor(t, sealer, "peer-a", "mine"))
+		require.NoError(t, err)
+		require.Equal(t, []string{"mine"}, data(activityDetails(reply)))
+		require.Empty(t, obs.mismatched)
+	})
+
+	t.Run("strict refuses one bound to the replication key and counts it under the local name", func(t *testing.T) {
+		_, obs, err := open(t, crypto.BindingStrict, sealedFor(t, sealer, config.ReplicationKeyNamespace, "old"))
+		require.ErrorIs(t, err, crypto.ErrNamespaceMismatch)
+		require.Equal(t, []string{"a"}, obs.mismatched)
+	})
+}
+
+// recordingNamespaceObserver remembers the IDs it is told failed to resolve.
+type recordingNamespaceObserver struct {
+	mu  sync.Mutex
+	ids []string
+}
+
+func (o *recordingNamespaceObserver) UnresolvedNamespace(id string, _ error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.ids = append(o.ids, id)
+}
+
+func TestAdminEncryptorUnresolvedNamespace(t *testing.T) {
+	down := errors.New("frontend unavailable")
+
+	t.Run("falls back to the replication key and reports it", func(t *testing.T) {
+		obs := &recordingNamespaceObserver{}
+		cfg := namespacedConfig(reverseConfig(realVault(t, crypto.BindingPermissive)), &fakeNamespaces{err: down})
+		cfg.NamespaceObserver = obs
+		e := requireAdminEncryptor(t, cfg)
+
+		reply := dlqReply(activityTaskIn("id-a", payloads("1")))
+		require.NoError(t, adminCall(t, e.Unary, &adminservice.ReapplyEventsRequest{}, reply, func() error { return nil }))
+		require.Equal(t, []string{config.ReplicationKeyNamespace}, boundTo(activityDetails(reply)))
+		require.Equal(t, []string{"id-a"}, obs.ids)
+	})
+
+	t.Run("strict fails the call", func(t *testing.T) {
+		cfg := namespacedConfig(reverseConfig(realVault(t, crypto.BindingStrict)), &fakeNamespaces{err: down})
+		cfg.StrictNamespaces = true
+		e := requireAdminEncryptor(t, cfg)
+
+		reply := dlqReply(activityTaskIn("id-a", payloads("1")))
+		err := adminCall(t, e.Unary, &adminservice.ReapplyEventsRequest{}, reply, func() error { return nil })
+		require.ErrorContains(t, err, "frontend unavailable")
+		require.ErrorContains(t, err, "id-a")
+		require.Equal(t, []string{"1"}, data(activityDetails(reply)), "nothing is sealed")
+	})
+}
+
+// inputInBlob returns the input of the single event eventBlob wrote.
+func inputInBlob(t *testing.T, blob *common.DataBlob) *common.Payloads {
+	t.Helper()
+
+	events, err := serializer.DeserializeEvents(blob)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+
+	return events[0].GetWorkflowExecutionStartedEventAttributes().GetInput()
+}
+
+// A response whose payloads name no namespace is bound to the one its request
+// names by ID.
+func TestAdminEncryptorBindsRepliesToTheRequestNamespaceID(t *testing.T) {
+	names := &fakeNamespaces{names: map[string]string{"id-a": "a"}}
+	e := requireAdminEncryptor(t, namespacedConfig(reverseConfig(realVault(t, crypto.BindingPermissive)), names))
+
+	req := &adminservice.GetWorkflowExecutionRawHistoryV2Request{NamespaceId: "id-a"}
+	reply := &adminservice.GetWorkflowExecutionRawHistoryV2Response{
+		HistoryBatches: []*common.DataBlob{eventBlob(t, payloads("1"))},
+	}
+	require.NoError(t, adminCall(t, e.Unary, req, reply, func() error { return nil }))
+	require.Equal(t, []string{"peer-a"}, boundTo(inputInBlob(t, reply.GetHistoryBatches()[0])))
+}
+
+// A request naming its namespace by name has had the local name stamped on the
+// context by the server, so it is bound by that with no lookup.
+func TestAdminEncryptorBindsToTheStampedNamespace(t *testing.T) {
+	names := &fakeNamespaces{}
+	e := requireAdminEncryptor(t, namespacedConfig(adminConfig(realVault(t, crypto.BindingPermissive)), names))
+
+	ctx := context.WithValue(t.Context(), NamespaceKey, "a")
+	req := &adminservice.ImportWorkflowExecutionRequest{
+		Namespace:      "a",
+		HistoryBatches: []*common.DataBlob{eventBlob(t, payloads("1"))},
+	}
+	require.NoError(t, adminCallWith(ctx, e.Unary, req, new(adminservice.ImportWorkflowExecutionResponse), func() error { return nil }))
+	require.Equal(t, []string{"peer-a"}, boundTo(inputInBlob(t, req.GetHistoryBatches()[0])))
+	require.Zero(t, names.calls, "no lookup")
+}

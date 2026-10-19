@@ -94,22 +94,36 @@ type (
 		Open(context.Context, *crypto.Message, ...crypto.OpenOption) ([]byte, error)
 	}
 
-	// cipher pins a [Vault] to one namespace, its label, and one request's
-	// context so it can satisfy [codec.Cipher], whose Encrypt and Decrypt take
-	// none of them. Holding a context in a struct is normally worth avoiding;
-	// here it is the only way through that interface, and a cipher never
-	// outlives the visit that built it.
+	// cipher pins a [Vault] to one key namespace, a way to bind payloads, and
+	// one request's context so it can satisfy [codec.Cipher], whose Encrypt and
+	// Decrypt take none of them. Holding a context in a struct is normally worth
+	// avoiding; here it is the only way through that interface, and a cipher
+	// never outlives the visit that built it.
 	//
-	// check is false when there is no label func, so the vault's own default
-	// label (ns) applies and opening compares nothing.
+	// A nil bind leaves the vault's own default label (ns) in place, and opening
+	// compares nothing.
 	cipher struct {
-		ctx   context.Context
-		ns    string
-		label string
-		check bool
-		v     Vault
-		obs   BindingObserver
+		ctx  context.Context
+		ns   string
+		bind binder
+		v    Vault
+		obs  BindingObserver
 	}
+
+	// binding is how a cipher binds what it seals and checks what it opens.
+	binding struct {
+		// label is what payloads are bound to, and expected to be bound to.
+		label string
+		// check is false to leave the vault's default label, the key namespace,
+		// in place and compare nothing on open. label is unused then.
+		check bool
+		// ns is the local namespace the BindingObserver counts against.
+		ns string
+	}
+
+	// binder works out the binding for a payload sealed or opened under key
+	// namespace ns with ctx. An error fails that payload.
+	binder func(ctx context.Context, ns string) (binding, error)
 
 	// codecOpt defers a [codec.Option] until the namespace and context are
 	// known, which is not until a payload is in front of us.
@@ -157,7 +171,7 @@ func NewEncryptor(cfg EncryptorConfig) (*Encryptor, error) {
 
 	var seal, open []codecOpt
 	if cfg.Vault != nil {
-		enc := cipherOpt(cfg.Vault, cfg.Label, cfg.Binding)
+		enc := cipherOpt(cfg.Vault, labelBinder(cfg.Label), cfg.Binding)
 
 		open = append(open, enc)
 		if cfg.Enabled {
@@ -216,10 +230,15 @@ func NewEncryptor(cfg EncryptorConfig) (*Encryptor, error) {
 }
 
 // Encrypt seals data under the namespace this cipher was built for, bound to
-// its label when it has one.
+// its binding's label when it checks one.
 func (c *cipher) Encrypt(data []byte) (*crypto.Message, error) {
-	if c.check {
-		return c.v.Seal(c.ctx, c.ns, data, crypto.WithLabel(c.label))
+	b, err := c.binding()
+	if err != nil {
+		return nil, err
+	}
+
+	if b.check {
+		return c.v.Seal(c.ctx, c.ns, data, crypto.WithLabel(b.label))
 	}
 
 	return c.v.Seal(c.ctx, c.ns, data)
@@ -228,39 +247,62 @@ func (c *cipher) Encrypt(data []byte) (*crypto.Message, error) {
 // Decrypt opens m. The cipher's namespace does not pick the key: m names the
 // key that wrapped its DEK, so the vault finds it from the message alone. That
 // is what lets a payload sealed under an older key, or under a namespace's key
-// before its policy changed, still open. With a label, m must be bound to it,
-// which the vault enforces under a strict binding only.
+// before its policy changed, still open. With a checked label, m must be bound
+// to it, which the vault enforces under a strict binding only.
 //
 // Unbound and mismatched messages are counted first, whatever the vault then
 // does, so running permissive shows what strict would refuse.
 func (c *cipher) Decrypt(m *crypto.Message) ([]byte, error) {
+	b, err := c.binding()
+	if err != nil {
+		return nil, err
+	}
+
 	if c.obs != nil {
 		switch {
 		case !m.Bound:
-			c.obs.UnboundOpen(c.ns)
-		case c.check && m.Namespace != c.label:
-			c.obs.NamespaceMismatch(c.ns)
+			c.obs.UnboundOpen(b.ns)
+		case b.check && m.Namespace != b.label:
+			c.obs.NamespaceMismatch(b.ns)
 		}
 	}
 
-	if c.check {
-		return c.v.Open(c.ctx, m, crypto.ExpectNamespace(c.label))
+	if b.check {
+		return c.v.Open(c.ctx, m, crypto.ExpectNamespace(b.label))
 	}
 
 	return c.v.Open(c.ctx, m)
 }
 
-// cipherOpt returns the codecOpt that seals and opens through v, bound to
-// label(ns) when label is set, and reporting what a strict binding would
-// refuse to obs when that is set.
-func cipherOpt(v Vault, label func(string) string, obs BindingObserver) codecOpt {
-	return func(ctx context.Context, ns string) codec.Option {
-		c := &cipher{ctx: ctx, ns: ns, v: v, obs: obs}
-		if label != nil {
-			c.label, c.check = label(ns), true
-		}
+// binding returns how c binds, which is by its key namespace when it has no
+// binder.
+func (c *cipher) binding() (binding, error) {
+	if c.bind == nil {
+		return binding{ns: c.ns}, nil
+	}
 
-		return codec.WithCipher(c)
+	return c.bind(c.ctx, c.ns)
+}
+
+// cipherOpt returns the codecOpt that seals and opens through v, bound as bind
+// says when it is set, and reporting what a strict binding would refuse to obs
+// when that is set.
+func cipherOpt(v Vault, bind binder, obs BindingObserver) codecOpt {
+	return func(ctx context.Context, ns string) codec.Option {
+		return codec.WithCipher(&cipher{ctx: ctx, ns: ns, bind: bind, v: v, obs: obs})
+	}
+}
+
+// labelBinder binds every payload to label(ns), ns being the local namespace
+// that also picks the key, or returns nil to leave the key namespace in place
+// when there is no label func.
+func labelBinder(label func(string) string) binder {
+	if label == nil {
+		return nil
+	}
+
+	return func(_ context.Context, ns string) (binding, error) {
+		return binding{label: label(ns), check: true, ns: ns}, nil
 	}
 }
 

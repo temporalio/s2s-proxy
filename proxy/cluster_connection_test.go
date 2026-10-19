@@ -14,7 +14,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	historypb "go.temporal.io/api/history/v1"
+	namespacepb "go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/proxy/pkg/codec"
@@ -25,9 +28,12 @@ import (
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
+	"go.temporal.io/server/common/persistence/serialization"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/temporalio/s2s-proxy/auth"
@@ -592,6 +598,16 @@ func (s *recordingWorkflowService) QueryWorkflow(context.Context, *workflowservi
 	return &workflowservice.QueryWorkflowResponse{QueryResult: &commonpb.Payloads{Payloads: []*commonpb.Payload{result}}}, nil
 }
 
+// DescribeNamespace knows one namespace, "ns" with ID testNamespaceID, so
+// admin payloads can be bound to its name.
+func (s *recordingWorkflowService) DescribeNamespace(_ context.Context, req *workflowservice.DescribeNamespaceRequest) (*workflowservice.DescribeNamespaceResponse, error) {
+	if req.GetId() != testNamespaceID {
+		return nil, status.Errorf(codes.NotFound, "no namespace with ID %q", req.GetId())
+	}
+
+	return &workflowservice.DescribeNamespaceResponse{NamespaceInfo: &namespacepb.NamespaceInfo{Id: testNamespaceID, Name: "ns"}}, nil
+}
+
 func (s *recordingWorkflowService) setQueryResult(p *commonpb.Payload) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -628,8 +644,32 @@ func startRecordingCluster(t *testing.T, address string) (*recordingWorkflowServ
 type recordingAdminService struct {
 	adminservice.UnimplementedAdminServiceServer
 
-	mu   sync.Mutex
-	next *adminservice.StreamWorkflowReplicationMessagesResponse
+	mu         sync.Mutex
+	next       *adminservice.StreamWorkflowReplicationMessagesResponse
+	lastImport *adminservice.ImportWorkflowExecutionRequest
+}
+
+func (s *recordingAdminService) ImportWorkflowExecution(_ context.Context, req *adminservice.ImportWorkflowExecutionRequest) (*adminservice.ImportWorkflowExecutionResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastImport = req
+	return &adminservice.ImportWorkflowExecutionResponse{}, nil
+}
+
+// importedInput returns the workflow input in the history of the last import,
+// which must hold one batch of one started event.
+func (s *recordingAdminService) importedInput(t *testing.T) *commonpb.Payload {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	require.NotNil(t, s.lastImport, "no ImportWorkflowExecution request arrived")
+	require.Len(t, s.lastImport.GetHistoryBatches(), 1)
+
+	events, err := serialization.NewSerializer().DeserializeEvents(s.lastImport.GetHistoryBatches()[0])
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	input := events[0].GetWorkflowExecutionStartedEventAttributes().GetInput().GetPayloads()
+	require.Len(t, input, 1)
+	return input[0]
 }
 
 func (s *recordingAdminService) setNext(r *adminservice.StreamWorkflowReplicationMessagesResponse) {
@@ -832,7 +872,7 @@ func TestClusterConnectionEncryptionDisabled(t *testing.T) {
 func TestNewEncryptorsAreNilWithoutKeys(t *testing.T) {
 	// No encryption block at all: nothing to seal or open with, and no reason to
 	// visit a single payload.
-	outbound, inbound, err := newEncryptors(t.Context(), config.EncryptionConfig{}, nil, nil, log.NewTestLogger())
+	outbound, inbound, err := newEncryptors(t.Context(), config.EncryptionConfig{}, nil, nil, nil, log.NewTestLogger())
 	require.NoError(t, err)
 	require.Equal(t, connEncryptors{}, outbound)
 	require.Equal(t, connEncryptors{}, inbound)
@@ -866,6 +906,17 @@ func replicationOf(tasks ...*replicationspb.ReplicationTask) *adminservice.Strea
 			Messages: &replicationspb.WorkflowReplicationMessages{ReplicationTasks: tasks},
 		},
 	}
+}
+
+// testNamespaceID is the ID of "ns" on the recording cluster.
+const testNamespaceID = "ns-id"
+
+// activityReplicationTaskIn is activityReplicationTask for the namespace with
+// ID id.
+func activityReplicationTaskIn(id string, details ...*commonpb.Payload) *replicationspb.ReplicationTask {
+	task := activityReplicationTask(details...)
+	task.GetSyncActivityTaskAttributes().NamespaceId = id
+	return task
 }
 
 func activityReplicationTask(details ...*commonpb.Payload) *replicationspb.ReplicationTask {
@@ -1031,6 +1082,53 @@ func TestClusterConnectionBindsToThePeerNamespace(t *testing.T) {
 		got := c.local.lastInput(t)
 		require.Equal(t, "json/plain", encodingOf(got))
 		require.Equal(t, `"round-trip"`, string(got.GetData()))
+	})
+
+	t.Run("replication reaches the peer bound to the peer's name", func(t *testing.T) {
+		c := startEncryptingConnection(t, true, translated(config.NamespaceBindingPermissive))
+		c.localAdmin.setNext(replicationOf(activityReplicationTaskIn(testNamespaceID, plainPayload(`"heartbeat"`))))
+
+		resp, err := recvReplication(t, c.inbound)
+		require.NoError(t, err)
+		require.Equal(t, "peer-ns", string(activityDetail(t, resp).GetMetadata()[codec.MetadataEncryptionNamespace]))
+	})
+
+	t.Run("admin requests naming a namespace are bound to the peer's name", func(t *testing.T) {
+		c := startEncryptingConnection(t, true, translated(config.NamespaceBindingPermissive))
+
+		blob, err := serialization.NewSerializer().SerializeEvents([]*historypb.HistoryEvent{{
+			EventId:   1,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+			Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{
+				WorkflowExecutionStartedEventAttributes: &historypb.WorkflowExecutionStartedEventAttributes{
+					Input: &commonpb.Payloads{Payloads: []*commonpb.Payload{plainPayload(`"imported"`)}},
+				},
+			},
+		}})
+		require.NoError(t, err)
+
+		conn, err := grpc.NewClient(c.outbound, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = conn.Close() })
+
+		_, err = adminservice.NewAdminServiceClient(conn).ImportWorkflowExecution(t.Context(),
+			&adminservice.ImportWorkflowExecutionRequest{Namespace: "ns", HistoryBatches: []*commonpb.DataBlob{blob}})
+		require.NoError(t, err)
+
+		got := c.remoteAdmin.importedInput(t)
+		require.Equal(t, codec.EncryptionEncoding, encodingOf(got))
+		require.Equal(t, "peer-ns", string(got.GetMetadata()[codec.MetadataEncryptionNamespace]))
+	})
+
+	t.Run("strict fails replication whose namespace does not resolve", func(t *testing.T) {
+		c := startEncryptingConnection(t, true, translated(config.NamespaceBindingStrict))
+		c.localAdmin.setNext(replicationOf(activityReplicationTaskIn("unknown-id", plainPayload(`"heartbeat"`))))
+
+		// The stream proxy ends the stream without passing the error on, so the
+		// peer sees it end; the interceptor tests check the error itself.
+		resp, err := recvReplication(t, c.inbound)
+		require.Error(t, err)
+		require.Nil(t, resp)
 	})
 
 	t.Run("an untranslated namespace is labeled with its own name", func(t *testing.T) {
