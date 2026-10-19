@@ -44,6 +44,24 @@ func (t *Tree) Insert(path VisitPath, handler *Handler) {
 	current.Handlers = append(current.Handlers, boundHandler{handler: handler, path: path})
 }
 
+// hasScoped reports whether a scoped handler sits at or below t.
+func (t *Tree) hasScoped() bool {
+	if t == nil {
+		return false
+	}
+	for _, h := range t.Handlers {
+		if h.handler.Scoped {
+			return true
+		}
+	}
+	for _, ch := range t.Children {
+		if ch.hasScoped() {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *Tree) SortedTypes() []VisitType {
 	result := make([]VisitType, 0, len(t.Types))
 	for _, typ := range t.Types {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/format"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -129,4 +130,81 @@ func TestEmitterDoesNotRedeclareVariablesInScope(t *testing.T) {
 	require.NotNil(t, m)
 	decl := "\n" + m[1] + m[2] + " := "
 	require.Equal(t, 1, strings.Count(out, decl), "%s is declared more than once at the same depth:\n%s", m[2], out)
+}
+
+// scopedPayloadOutput generates with a scoped handler on every Payload and a
+// scope on every message named in scoped, and returns the output.
+func scopedPayloadOutput(t *testing.T, root protoreflect.FullName, scoped ...protoreflect.FullName) string {
+	t.Helper()
+	return scopedOutput(t, true, root, scoped...)
+}
+
+// scopedOutput is scopedPayloadOutput with the Payload handler added through
+// AddScopedHandler when handlerScoped is set, and AddHandler when not.
+func scopedOutput(t *testing.T, handlerScoped bool, root protoreflect.FullName, scoped ...protoreflect.FullName) string {
+	t.Helper()
+	e := newTestEmitter(t)
+	add := e.AddHandler
+	if handlerScoped {
+		add = e.AddScopedHandler
+	}
+	add(
+		func(vt VisitType, _ VisitPath) bool { return vt.GoTypeName() == "Payload" },
+		true,
+		func(v string, _ VisitPath) string { return "_ = " + v },
+	)
+	e.SetScope(func(v string, md protoreflect.MessageDescriptor) string {
+		if slices.Contains(scoped, md.FullName()) {
+			return fmt.Sprintf("scope(%s)", v)
+		}
+		return ""
+	})
+	visitByName(t, e, root)
+
+	var buf bytes.Buffer
+	require.NoError(t, e.Generate(&buf))
+	src, err := format.Source(buf.Bytes())
+	require.NoError(t, err)
+	return string(src)
+}
+
+// A scoped message's subtree is emitted in a block of its own that opens with
+// the scope's code, so what the scope declares reaches every handler below the
+// message and nothing beside it.
+func TestEmitterScopesNestedMessage(t *testing.T) {
+	out := scopedPayloadOutput(t,
+		"temporal.server.api.replication.v1.ReplicationTask",
+		"temporal.server.api.replication.v1.SyncActivityTaskAttributes",
+	)
+
+	m := regexp.MustCompile(`(?m)^(\t+)(x\d+) := oneof\.SyncActivityTaskAttributes\n(\t+)\{\n\t+scope\(x\d+\)\n`).FindStringSubmatch(out)
+	require.NotNil(t, m, "scope block opens right after the scoped message's variable:\n%s", out)
+	require.Equal(t, m[1], m[3], "block at the same depth as the variable")
+	require.Contains(t, out, "scope("+m[2]+")")
+
+	block := out[strings.Index(out, "scope("+m[2]+")"):]
+	block = block[:strings.Index(block, "\n"+m[1]+"}\n")]
+	require.Contains(t, block, "GetLastHeartbeatDetails()", "handlers below the message are inside the block")
+	require.Equal(t, 1, strings.Count(out, "scope("), "only the scoped message gets a block:\n%s", out)
+}
+
+// Roots are scoped like any other message, which is what the decoded history
+// tasks rely on.
+func TestEmitterScopesRootMessage(t *testing.T) {
+	const root = "temporal.server.api.replication.v1.SyncActivityTaskAttributes"
+	out := scopedPayloadOutput(t, root, root)
+
+	require.Regexp(t, `case \*serverapireplication\.SyncActivityTaskAttributes:\n\t+\{\n\t+scope\(root\)\n`, out)
+}
+
+// A scope only matters to handlers that read what it declares. With none below
+// the message, a block would declare variables nothing uses, which Go refuses.
+func TestEmitterSkipsScopeWithoutScopedHandlers(t *testing.T) {
+	out := scopedOutput(t, false,
+		"temporal.server.api.replication.v1.ReplicationTask",
+		"temporal.server.api.replication.v1.SyncActivityTaskAttributes",
+	)
+
+	require.NotContains(t, out, "scope(")
+	require.Contains(t, out, "GetLastHeartbeatDetails()", "the handlers are still emitted")
 }

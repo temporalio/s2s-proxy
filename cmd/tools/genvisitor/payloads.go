@@ -39,6 +39,11 @@ type (
 		// to visitAdminPayloads, so they are walked as roots alongside the admin
 		// messages.
 		DecodeTargets []protoreflect.FullName
+		// NamespaceIDs maps a message whose namespace ID is nested to the dotted
+		// path of the field holding it. Messages with a namespace_id field of their
+		// own need no entry. Either way, everything below the message is visited
+		// with that ID on its context.
+		NamespaceIDs map[protoreflect.FullName]string
 	}
 
 	// payloadHelper names the hand-written function that walks a message, and
@@ -58,6 +63,8 @@ type (
 		reach  map[protoreflect.FullName]bool
 		// inertMemo caches isInert answers that did not depend on a cycle.
 		inertMemo map[protoreflect.FullName]bool
+		// nsGetters holds the getter chain reading each NamespaceIDs entry's ID.
+		nsGetters map[protoreflect.FullName]string
 	}
 )
 
@@ -146,6 +153,11 @@ var adminPayloadTables = payloadTables{
 		"temporal.server.api.persistence.v1.TaskInfo.component_ref":                                    "serialized CHASM component reference (IDs and a path)",
 		"temporal.server.api.taskqueue.v1.PartitionScaleInfo.backlog_counts":                           "packed per-partition counters",
 	},
+	NamespaceIDs: map[protoreflect.FullName]string{
+		// Activities, buffered events, and CHASM nodes sit beside the execution
+		// info, not under it.
+		"temporal.server.api.persistence.v1.WorkflowMutableState": "execution_info.namespace_id",
+	},
 	// What a serialized history task decodes to, one per persisted category.
 	DecodeTargets: []protoreflect.FullName{
 		"temporal.server.api.persistence.v1.ArchivalTaskInfo",
@@ -171,19 +183,20 @@ func buildPayloads(logger log.Logger, tables payloadTables) (*Emitter, error) {
 	e.SetFunctionTrailer("return nil")
 	e.AddImport("context")
 
-	e.AddHandler(c.isPublicMessage, true, func(v string, _ VisitPath) string {
+	e.AddScopedHandler(c.isPublicMessage, true, func(v string, _ VisitPath) string {
 		return returnOnErr(fmt.Sprintf("visitMessage(ctx, opts, %s)", v))
 	})
-	e.AddHandler(c.isServerPayload, true, func(v string, path VisitPath) string {
+	e.AddScopedHandler(c.isServerPayload, true, func(v string, path VisitPath) string {
 		call := returnOnErr(fmt.Sprintf("visitPayloadInPlace(ctx, opts, %s)", v))
 		if isSearchAttributes(path) {
 			return fmt.Sprintf("if !opts.PayloadOptions.SkipSearchAttributes {\n%s\n}", call)
 		}
 		return call
 	})
-	e.AddHandler(c.isEventBlob, true, func(v string, _ VisitPath) string {
+	e.AddScopedHandler(c.isEventBlob, true, func(v string, _ VisitPath) string {
 		return returnOnErr(fmt.Sprintf("visitEventBlob(ctx, opts, %s)", v))
 	})
+	// Opaque data is never sealed, so it needs no namespace.
 	e.AddHandler(c.isOpaque, true, func(v string, path VisitPath) string {
 		data := v + ".GetData()"
 		if f, _ := path[len(path)-1].AsField(); f.Kind() == protoreflect.BytesKind {
@@ -191,11 +204,12 @@ func buildPayloads(logger log.Logger, tables payloadTables) (*Emitter, error) {
 		}
 		return returnOnErr(fmt.Sprintf("visitOpaque(opts, %q, %s)", path.String(), data))
 	})
-	e.AddHandler(c.isHelper, true, func(v string, path VisitPath) string {
+	e.AddScopedHandler(c.isHelper, true, func(v string, path VisitPath) string {
 		md, _ := path[len(path)-1].AsMessage()
 		return returnOnErr(fmt.Sprintf("%s(ctx, opts, %q, %s)", tables.Helpers[md.FullName()].Name, path.String(), v))
 	})
 	e.SetCheck(c.check)
+	e.SetScope(c.namespaceScope)
 
 	protoregistry.GlobalTypes.RangeMessages(func(mt protoreflect.MessageType) bool {
 		if mt.Descriptor().ParentFile().Package() == adminServicePackage {
@@ -234,6 +248,17 @@ func newPayloadClassifier(tables payloadTables) (*payloadClassifier, error) {
 			seen[n] = true
 		}
 	}
+
+	getters := make(map[protoreflect.FullName]string, len(tables.NamespaceIDs))
+	for name, path := range tables.NamespaceIDs {
+		g, err := namespaceIDGetter(name, path)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		getters[name] = g
+	}
+
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
@@ -243,7 +268,44 @@ func newPayloadClassifier(tables payloadTables) (*payloadClassifier, error) {
 		used:      map[protoreflect.FullName]bool{},
 		reach:     map[protoreflect.FullName]bool{},
 		inertMemo: map[protoreflect.FullName]bool{},
+		nsGetters: getters,
 	}, nil
+}
+
+// namespaceIDGetter returns the getter chain that reads the string field at
+// the dotted path from a message of type name.
+func namespaceIDGetter(name protoreflect.FullName, path string) (string, error) {
+	d, err := protoregistry.GlobalFiles.FindDescriptorByName(name)
+	if err != nil {
+		return "", fmt.Errorf("namespace ID of %s: %w", name, err)
+	}
+	md, ok := d.(protoreflect.MessageDescriptor)
+	if !ok {
+		return "", fmt.Errorf("namespace ID of %s: not a message", name)
+	}
+
+	var getters []string
+	parts := strings.Split(path, ".")
+	for i, part := range parts {
+		f := md.Fields().ByName(protoreflect.Name(part))
+		if f == nil || f.IsList() || f.IsMap() {
+			return "", fmt.Errorf("namespace ID of %s: %s is not a singular field of %s", name, part, md.FullName())
+		}
+		getters = append(getters, fmt.Sprintf("Get%s()", camelToPascalCase(f.JSONName())))
+
+		if i == len(parts)-1 {
+			if f.Kind() != protoreflect.StringKind {
+				return "", fmt.Errorf("namespace ID of %s: %s is not a string", name, f.FullName())
+			}
+			break
+		}
+		if f.Kind() != protoreflect.MessageKind {
+			return "", fmt.Errorf("namespace ID of %s: %s is not a message", name, f.FullName())
+		}
+		md = f.Message()
+	}
+
+	return strings.Join(getters, "."), nil
 }
 
 // isPublicMessage matches the first public API message on a path that can hold
@@ -284,6 +346,22 @@ func (c *payloadClassifier) isHelper(vt VisitType, _ VisitPath) bool {
 	return false
 }
 
+// namespaceScope returns the code that puts the namespace ID a message of type
+// md names, read from v, on ctx, or nothing when it names none: its own
+// namespace_id field, or the one NamespaceIDs points at.
+func (c *payloadClassifier) namespaceScope(v string, md protoreflect.MessageDescriptor) string {
+	getter, ok := c.nsGetters[md.FullName()]
+	if !ok {
+		f := md.Fields().ByName("namespace_id")
+		if f == nil || f.Kind() != protoreflect.StringKind || f.IsList() {
+			return ""
+		}
+		getter = "GetNamespaceId()"
+	}
+
+	return fmt.Sprintf("ctx := withNamespaceID(ctx, %s.%s)", v, getter)
+}
+
 func (c *payloadClassifier) matchField(vt VisitType, table map[protoreflect.FullName]bool) bool {
 	f, ok := vt.AsField()
 	if ok && table[f.FullName()] {
@@ -305,6 +383,11 @@ func (c *payloadClassifier) check(vt VisitType, path VisitPath, matched bool) (A
 			return Prune, nil
 		}
 		return Prune, fmt.Errorf("unhandled recursion: %s at %s; add it to Helpers with a hand-written helper", vt.FullName(), path)
+	}
+	if md, ok := vt.AsMessage(); ok {
+		if _, ok := c.nsGetters[md.FullName()]; ok {
+			c.used[md.FullName()] = true
+		}
 	}
 	if matched {
 		return Descend, nil
@@ -416,7 +499,7 @@ func (c *payloadClassifier) isInertField(f protoreflect.FieldDescriptor) bool {
 // the server has since removed.
 func (c *payloadClassifier) unused() error {
 	var names []protoreflect.FullName
-	for _, n := range slices.Concat(keys(c.tables.EventBlobs), keys(c.tables.Opaque), keys(c.tables.Helpers), keys(c.tables.Ignored)) {
+	for _, n := range slices.Concat(keys(c.tables.EventBlobs), keys(c.tables.Opaque), keys(c.tables.Helpers), keys(c.tables.Ignored), keys(c.tables.NamespaceIDs)) {
 		if !c.used[n] {
 			names = append(names, n)
 		}
