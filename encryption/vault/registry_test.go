@@ -105,12 +105,12 @@ func TestCreateRegistryKeySelection(t *testing.T) {
 		require.NoError(t, err)
 		material, err := retired.Encrypt(t.Context(), "some-namespace", dek)
 		require.NoError(t, err)
-		ciphertext, err := dek.Encrypt(t.Context(), []byte("payload"))
+		ciphertext, err := dek.Encrypt(t.Context(), []byte("payload"), nil)
 		require.NoError(t, err)
 
 		recovered, err := r.Decrypt(t.Context(), material)
 		require.NoError(t, err)
-		plaintext, err := recovered.Decrypt(t.Context(), ciphertext)
+		plaintext, err := recovered.Decrypt(t.Context(), ciphertext, nil)
 		require.NoError(t, err)
 		require.Equal(t, []byte("payload"), plaintext)
 

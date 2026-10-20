@@ -451,7 +451,7 @@ func TestVisitPayloads(t *testing.T) {
 	})
 }
 
-func (f *fakeVault) Seal(_ context.Context, ns string, data []byte) (*crypto.Message, error) {
+func (f *fakeVault) Seal(_ context.Context, ns string, data []byte, _ ...crypto.SealOption) (*crypto.Message, error) {
 	if f.sealErr != nil {
 		return nil, f.sealErr
 	}
@@ -466,7 +466,7 @@ func (f *fakeVault) Seal(_ context.Context, ns string, data []byte) (*crypto.Mes
 	}, nil
 }
 
-func (f *fakeVault) Open(_ context.Context, m *crypto.Message) ([]byte, error) {
+func (f *fakeVault) Open(_ context.Context, m *crypto.Message, _ ...crypto.OpenOption) ([]byte, error) {
 	if f.openErr != nil {
 		return nil, f.openErr
 	}
