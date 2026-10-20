@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/temporalio/temporal-proxy/pkg/crypto"
-	"github.com/temporalio/temporal-proxy/pkg/validation"
+	"go.temporal.io/proxy/pkg/crypto"
+	"go.temporal.io/proxy/pkg/validation"
 )
 
 // ExtensionKeyScheme addresses a key served by a configured extension server,

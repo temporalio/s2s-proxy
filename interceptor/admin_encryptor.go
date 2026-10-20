@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/temporalio/temporal-proxy/pkg/codec"
 	"go.temporal.io/api/proxy"
+	"go.temporal.io/proxy/pkg/codec"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
