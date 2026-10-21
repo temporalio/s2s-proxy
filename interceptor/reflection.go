@@ -149,7 +149,7 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
 	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
-		if vwp.Kind() == reflect.Ptr && vwp.IsNil() {
+		if vwp.Kind() == reflect.Pointer && vwp.IsNil() {
 			return visit.Skip, nil
 		}
 
@@ -215,7 +215,7 @@ func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (boo
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
 	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
-		if vwp.Kind() == reflect.Ptr && vwp.IsNil() {
+		if vwp.Kind() == reflect.Pointer && vwp.IsNil() {
 			return visit.Skip, nil
 		}
 
