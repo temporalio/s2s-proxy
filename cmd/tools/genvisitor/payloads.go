@@ -155,8 +155,9 @@ var adminPayloadTables = payloadTables{
 	},
 	NamespaceIDs: map[protoreflect.FullName]string{
 		// Activities, buffered events, and CHASM nodes sit beside the execution
-		// info, not under it.
-		"temporal.server.api.persistence.v1.WorkflowMutableState": "execution_info.namespace_id",
+		// info, not under it, in both the full state and a mutation of it.
+		"temporal.server.api.persistence.v1.WorkflowMutableState":         "execution_info.namespace_id",
+		"temporal.server.api.persistence.v1.WorkflowMutableStateMutation": "execution_info.namespace_id",
 	},
 	// What a serialized history task decodes to, one per persisted category.
 	DecodeTargets: []protoreflect.FullName{
