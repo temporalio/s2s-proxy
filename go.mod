@@ -1,6 +1,6 @@
 module github.com/temporalio/s2s-proxy
 
-go 1.26.8
+go 1.27.3
 
 require (
 	github.com/gogo/protobuf v1.3.2
