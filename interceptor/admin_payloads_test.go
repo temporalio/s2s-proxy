@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/api/proxy"
 	adminservice "go.temporal.io/server/api/adminservice/v1"
 	persistence "go.temporal.io/server/api/persistence/v1"
+	replication "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/common/persistence/serialization"
 	"go.temporal.io/server/service/history/tasks"
 	"google.golang.org/protobuf/proto"
@@ -289,4 +290,90 @@ func TestVisitAddTasksRequestTaskUndecodable(t *testing.T) {
 			require.ErrorContains(t, visitAddTasksRequestTask(context.Background(), opts, "Task", task), "refused")
 		})
 	}
+}
+
+// One stream message carries tasks from many namespaces, so each payload has to
+// be visited with the namespace of the task holding it, including the ones in
+// mutable state that sit beside its execution info rather than under it.
+func TestVisitAdminPayloadsScopesEachTaskToItsNamespace(t *testing.T) {
+	msg := &adminservice.StreamWorkflowReplicationMessagesResponse{
+		Attributes: &adminservice.StreamWorkflowReplicationMessagesResponse_Messages{
+			Messages: &replication.WorkflowReplicationMessages{
+				ReplicationTasks: []*replication.ReplicationTask{
+					{Attributes: &replication.ReplicationTask_SyncActivityTaskAttributes{
+						SyncActivityTaskAttributes: &replication.SyncActivityTaskAttributes{
+							NamespaceId: "ns-a",
+							Details:     &common.Payloads{Payloads: []*common.Payload{{Data: []byte("a")}}},
+						},
+					}},
+					{Attributes: &replication.ReplicationTask_SyncWorkflowStateTaskAttributes{
+						SyncWorkflowStateTaskAttributes: &replication.SyncWorkflowStateTaskAttributes{
+							WorkflowState: &persistence.WorkflowMutableState{
+								ExecutionInfo: &persistence.WorkflowExecutionInfo{NamespaceId: "ns-b"},
+								ActivityInfos: map[int64]*persistence.ActivityInfo{1: {
+									LastHeartbeatDetails: &common.Payloads{Payloads: []*common.Payload{{Data: []byte("b")}}},
+								}},
+							},
+						},
+					}},
+				},
+			},
+		},
+	}
+
+	seen := map[string]string{}
+	opts := AdminVisitOptions{
+		PayloadOptions: &proxy.VisitPayloadsOptions{
+			Visitor: func(vctx *proxy.VisitPayloadsContext, in []*common.Payload) ([]*common.Payload, error) {
+				for _, p := range in {
+					id, ok := namespaceIDFrom(vctx)
+					require.True(t, ok, "payload %q visited without a namespace ID", p.GetData())
+					seen[string(p.GetData())] = id
+				}
+				return in, nil
+			},
+		},
+		Opaque: func(string, []byte) error { return nil },
+	}
+
+	require.NoError(t, VisitAdminPayloads(context.Background(), msg, opts))
+	require.Equal(t, map[string]string{"a": "ns-a", "b": "ns-b"}, seen)
+}
+
+// A mutation lays out its activities beside its execution info just as full
+// mutable state does, and a unary SyncWorkflowStateResponse has no task around
+// it to supply the ID instead.
+func TestVisitAdminPayloadsScopesMutationsToTheirNamespace(t *testing.T) {
+	msg := &adminservice.SyncWorkflowStateResponse{
+		VersionedTransitionArtifact: &replication.VersionedTransitionArtifact{
+			StateAttributes: &replication.VersionedTransitionArtifact_SyncWorkflowStateMutationAttributes{
+				SyncWorkflowStateMutationAttributes: &replication.SyncWorkflowStateMutationAttributes{
+					StateMutation: &persistence.WorkflowMutableStateMutation{
+						ExecutionInfo: &persistence.WorkflowExecutionInfo{NamespaceId: "ns-a"},
+						UpdatedActivityInfos: map[int64]*persistence.ActivityInfo{1: {
+							LastHeartbeatDetails: &common.Payloads{Payloads: []*common.Payload{{Data: []byte("a")}}},
+						}},
+					},
+				},
+			},
+		},
+	}
+
+	seen := map[string]string{}
+	opts := AdminVisitOptions{
+		PayloadOptions: &proxy.VisitPayloadsOptions{
+			Visitor: func(vctx *proxy.VisitPayloadsContext, in []*common.Payload) ([]*common.Payload, error) {
+				for _, p := range in {
+					id, ok := namespaceIDFrom(vctx)
+					require.True(t, ok, "payload %q visited without a namespace ID", p.GetData())
+					seen[string(p.GetData())] = id
+				}
+				return in, nil
+			},
+		},
+		Opaque: func(string, []byte) error { return nil },
+	}
+
+	require.NoError(t, VisitAdminPayloads(context.Background(), msg, opts))
+	require.Equal(t, map[string]string{"a": "ns-a"}, seen)
 }

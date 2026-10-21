@@ -42,6 +42,7 @@ type (
 		funcTrailer   string
 		handlers      []*Handler
 		check         func(VisitType, VisitPath, bool) (Action, error)
+		scope         func(string, protoreflect.MessageDescriptor) string
 		errs          []error
 		// used holds the packages the generated code names, which are the only
 		// ones it may import: types reached through getters are never named.
@@ -68,6 +69,9 @@ type (
 		// Invocation returns a snippet of generated code. It is passed a variable
 		// holding the matched value and the path that matched.
 		Invocation func(string, VisitPath) string
+		// Scoped marks code that reads what a scope declares. A message is only
+		// scoped when a scoped handler sits below it. See SetScope.
+		Scoped bool
 	}
 
 	Mode int
@@ -98,12 +102,30 @@ func (e *Emitter) AddHandler(include func(VisitType, VisitPath) bool, prune bool
 	})
 }
 
+// AddScopedHandler is AddHandler for a handler whose code reads what a scope
+// declares. See SetScope.
+func (e *Emitter) AddScopedHandler(include func(VisitType, VisitPath) bool, prune bool, invocation func(string, VisitPath) string) {
+	e.AddHandler(include, prune, invocation)
+	e.handlers[len(e.handlers)-1].Scoped = true
+}
+
 // SetCheck installs a function offered every node after the handlers, with
 // whether any handler matched it. Cycle nodes are offered too, and only to it.
 // A non-Descend action overrides the handlers'; an error is collected, the node
 // is pruned, and Generate fails.
 func (e *Emitter) SetCheck(check func(VisitType, VisitPath, bool) (Action, error)) {
 	e.check = check
+}
+
+// SetScope installs a function offered every message the generated code
+// reaches, with the variable holding it, as long as a scoped handler sits below
+// the message. When it returns code, the message's subtree is emitted in a
+// block of its own that opens with that code, so whatever the code declares, a
+// narrower ctx above all, covers every handler below the message and nothing
+// beside it. Messages with only unscoped handlers below are never offered:
+// nothing there would use the declarations, and Go refuses unused variables.
+func (e *Emitter) SetScope(scope func(v string, md protoreflect.MessageDescriptor) string) {
+	e.scope = scope
 }
 
 // Err returns every error the check reported, sorted so the output is stable.
@@ -191,7 +213,7 @@ func (e *Emitter) Generate(out io.Writer) error {
 		writef(&body, "case *%s:\n", typ.GoQualifiedName())
 		if child := e.root.Children[typ.GoName()]; child != nil {
 			e.openBlock()
-			e.emit(&body, "root", child)
+			e.emitScoped(&body, "root", typ, child)
 			e.closeBlock()
 		}
 	}
@@ -292,13 +314,36 @@ func (e *Emitter) emit(out io.Writer, parentVar string, node *Tree) {
 			e.emitOneOfCases(out, "oneof", vt, node.Children[vt.GoName()])
 			writeln(out, "}")
 		default:
-			e.emit(out, parentVar, node.Children[vt.GoName()])
+			e.emitScoped(out, parentVar, vt, node.Children[vt.GoName()])
 		}
 	}
 
 	for _, h := range node.Handlers {
 		writeln(out, h.handler.Invocation(parentVar, h.path))
 	}
+}
+
+// emitScoped emits node, the subtree of the message vt held in v, inside a
+// block opened by the scope's code when it has any for vt.
+func (e *Emitter) emitScoped(out io.Writer, v string, vt VisitType, node *Tree) {
+	md, ok := vt.AsMessage()
+	if !ok || e.scope == nil || !node.hasScoped() {
+		e.emit(out, v, node)
+		return
+	}
+
+	code := e.scope(v, md)
+	if code == "" {
+		e.emit(out, v, node)
+		return
+	}
+
+	writeln(out, "{")
+	writeln(out, code)
+	e.openBlock()
+	e.emit(out, v, node)
+	e.closeBlock()
+	writeln(out, "}")
 }
 
 func (e *Emitter) emitOneOfCases(out io.Writer, parentVar string, oneof VisitType, node *Tree) {

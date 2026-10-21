@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"go/format"
 	"maps"
 	"os"
 	"slices"
@@ -18,6 +20,8 @@ func cloneTables(t payloadTables) payloadTables {
 		Opaque:     maps.Clone(t.Opaque),
 		Helpers:    maps.Clone(t.Helpers),
 		Ignored:    maps.Clone(t.Ignored),
+
+		NamespaceIDs: maps.Clone(t.NamespaceIDs),
 
 		DecodeTargets: slices.Clone(t.DecodeTargets),
 	}
@@ -139,4 +143,53 @@ func TestBuildPayloadsRejectsStaleHelperHandles(t *testing.T) {
 
 	_, err := buildPayloads(log.NewNoopLogger(), tables)
 	require.ErrorContains(t, err, "temporal.server.api.persistence.v1.StateMachineNode.nope never matched")
+}
+
+// generatePayloads returns the formatted source for tables.
+func generatePayloads(t *testing.T, tables payloadTables) string {
+	t.Helper()
+	e, err := buildPayloads(log.NewNoopLogger(), tables)
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	require.NoError(t, e.Generate(&buf))
+	src, err := format.Source(buf.Bytes())
+	require.NoError(t, err)
+	return string(src)
+}
+
+// Messages naming their namespace_id directly are scoped by it, and those in
+// NamespaceIDs by the field it points at, so mutable state's activities and
+// buffered events are covered, not just its execution info.
+func TestBuildPayloadsScopesByNamespaceID(t *testing.T) {
+	out := generatePayloads(t, adminPayloadTables)
+
+	require.Regexp(t, `x\d+ := oneof\.SyncActivityTaskAttributes\n\t+\{\n\t+ctx := withNamespaceID\(ctx, x\d+\.GetNamespaceId\(\)\)`, out)
+	require.Regexp(t, `y\d+ := x\d+\.GetWorkflowState\(\)\n\t+\{\n\t+ctx := withNamespaceID\(ctx, y\d+\.GetExecutionInfo\(\)\.GetNamespaceId\(\)\)`, out)
+}
+
+func TestBuildPayloadsRejectsBadNamespaceIDPath(t *testing.T) {
+	const n protoreflect.FullName = "temporal.server.api.persistence.v1.WorkflowMutableState"
+	for path, want := range map[string]string{
+		"execution_info.nope":         "nope is not a singular field of temporal.server.api.persistence.v1.WorkflowExecutionInfo",
+		"execution_info":              "temporal.server.api.persistence.v1.WorkflowMutableState.execution_info is not a string",
+		"activity_infos.namespace_id": "activity_infos is not a singular field",
+	} {
+		t.Run(path, func(t *testing.T) {
+			tables := cloneTables(adminPayloadTables)
+			tables.NamespaceIDs[n] = path
+
+			_, err := buildPayloads(log.NewNoopLogger(), tables)
+			require.ErrorContains(t, err, "namespace ID of "+string(n)+": "+want)
+		})
+	}
+}
+
+func TestBuildPayloadsRejectsStaleNamespaceID(t *testing.T) {
+	tables := cloneTables(adminPayloadTables)
+	// A real message with a real path, but nothing the walk reaches.
+	tables.NamespaceIDs["temporal.server.api.persistence.v1.NamespaceDetail"] = "info.id"
+
+	_, err := buildPayloads(log.NewNoopLogger(), tables)
+	require.ErrorContains(t, err, "temporal.server.api.persistence.v1.NamespaceDetail never matched")
 }

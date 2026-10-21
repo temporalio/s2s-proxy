@@ -55,6 +55,26 @@ func VisitAdminPayloads(ctx context.Context, msg proto.Message, opts AdminVisitO
 	return visitAdminPayloads(ctx, msg, opts)
 }
 
+// namespaceIDKey is where the generated visitor leaves the namespace ID of the
+// part of an admin message being visited.
+type namespaceIDKey struct{}
+
+// withNamespaceID returns ctx carrying id, the namespace ID the part of an admin
+// message about to be visited names. One message can carry replication tasks
+// from many namespaces, so the generated visitor calls this for each part that
+// names one, and the payloads below it see that part's ID. The ID is stored as
+// found, empty included; making sense of it is left to whoever reads it.
+func withNamespaceID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, namespaceIDKey{}, id)
+}
+
+// namespaceIDFrom returns the namespace ID withNamespaceID put on ctx, and
+// whether there was one.
+func namespaceIDFrom(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(namespaceIDKey{}).(string)
+	return id, ok
+}
+
 // visitPayloadInPlace runs the payload visitor over p, a payload held directly by
 // a server-internal message, and copies the result over p. Copying rather than
 // swapping the pointer means the generated code needs no setters, and it works
