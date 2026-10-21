@@ -16,7 +16,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/urfave/cli/v2 v2.27.7
 	go.temporal.io/api v1.63.5
-	go.temporal.io/proxy v1.0.0
+	go.temporal.io/proxy v1.0.1
 	go.temporal.io/server v1.32.0
 	go.uber.org/fx v1.24.0
 	go.uber.org/mock v0.6.0
