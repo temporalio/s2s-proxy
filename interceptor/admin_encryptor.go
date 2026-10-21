@@ -50,8 +50,8 @@ type (
 		// it to the replication key's name. For a strict binding, under which
 		// that fallback would be refused when read back.
 		StrictNamespaces bool
-		// NamespaceObserver hears about namespace IDs that failed to resolve and
-		// fell back. Optional.
+		// NamespaceObserver hears about namespace IDs that failed to resolve,
+		// whether the payload then failed or fell back. Optional.
 		NamespaceObserver NamespaceObserver
 	}
 
@@ -61,7 +61,8 @@ type (
 	}
 
 	// NamespaceObserver hears about a namespace ID that failed to resolve, once
-	// per payload that fell back to the replication key's name because of it.
+	// per payload it left unbound, which StrictNamespaces fails and otherwise
+	// falls back to the replication key's name.
 	NamespaceObserver interface {
 		UnresolvedNamespace(id string, err error)
 	}
@@ -275,9 +276,9 @@ func replicationKey(opt codecOpt) codecOpt {
 //
 // The namespace is the ID on the context, set for the task or request carrying
 // the payload and resolved through names, or else the local name a server
-// interceptor stamped for a request naming one. An ID names cannot resolve fails
-// the payload when strict, and otherwise falls back to the key namespace,
-// telling obs.
+// interceptor stamped for a request naming one. An ID names cannot resolve is
+// reported to obs, then fails the payload when strict, and otherwise falls back
+// to the key namespace.
 func namespaceBinder(names NamespaceResolver, label func(string) string, strict bool, obs NamespaceObserver) binder {
 	if names == nil {
 		return nil
@@ -303,11 +304,11 @@ func namespaceBinder(names NamespaceResolver, label func(string) string, strict 
 
 		local, err := names.LocalName(ctx, id)
 		if err != nil {
-			if strict {
-				return binding{}, fmt.Errorf("failed to resolve namespace ID %q: %w", id, err)
-			}
 			if obs != nil {
 				obs.UnresolvedNamespace(id, err)
+			}
+			if strict {
+				return binding{}, fmt.Errorf("failed to resolve namespace ID %q: %w", id, err)
 			}
 
 			return binding{ns: ns}, nil

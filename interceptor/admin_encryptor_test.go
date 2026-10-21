@@ -782,9 +782,11 @@ func TestAdminEncryptorUnresolvedNamespace(t *testing.T) {
 		require.Equal(t, []string{"id-a"}, obs.ids)
 	})
 
-	t.Run("strict fails the call", func(t *testing.T) {
+	t.Run("strict fails the call and reports it", func(t *testing.T) {
+		obs := &recordingNamespaceObserver{}
 		cfg := namespacedConfig(reverseConfig(realVault(t, crypto.BindingStrict)), &fakeNamespaces{err: down})
 		cfg.StrictNamespaces = true
+		cfg.NamespaceObserver = obs
 		e := requireAdminEncryptor(t, cfg)
 
 		reply := dlqReply(activityTaskIn("id-a", payloads("1")))
@@ -792,6 +794,7 @@ func TestAdminEncryptorUnresolvedNamespace(t *testing.T) {
 		require.ErrorContains(t, err, "frontend unavailable")
 		require.ErrorContains(t, err, "id-a")
 		require.Equal(t, []string{"1"}, data(activityDetails(reply)), "nothing is sealed")
+		require.Equal(t, []string{"id-a"}, obs.ids)
 	})
 }
 

@@ -83,7 +83,7 @@ var (
 	EncryptionDEKRotations         = DefaultCounterVec("enc_dek_rotations_total", "Total DEK rotations, labeled by reason", "reason")
 	EncryptionUnboundOpens         = DefaultCounterVec("enc_unbound_opens_total", "Total sealed payloads handed to decrypt with no namespace binding, whatever the outcome, labeled by local namespace", "namespace")
 	EncryptionNamespaceMismatches  = DefaultCounterVec("enc_namespace_mismatches_total", "Total sealed payloads handed to decrypt bound to a namespace other than the expected one, whatever the outcome, labeled by local namespace", "namespace")
-	EncryptionUnresolvedNamespaces = DefaultCounterVec("enc_unresolved_namespaces_total", "Total admin payloads bound to the replication key because the namespace ID of their task did not resolve, labeled by namespace ID", "namespace_id")
+	EncryptionUnresolvedNamespaces = DefaultCounterVec("enc_unresolved_namespaces_total", "Total admin payloads whose namespace ID did not resolve, failed under the strict namespace binding and otherwise bound to the replication key, labeled by namespace ID", "namespace_id")
 	EncryptionOpaquePassed         = DefaultCounterVec("enc_opaque_passthrough_total", "Total opaque fields sent to the peer unsealed because allowOpaquePlaintext is set, labeled by kind", "kind")
 	EncryptionOpaqueRejected       = DefaultCounterVec("enc_opaque_rejected_total", "Total admin messages refused because they carried opaque data that cannot be sealed, labeled by kind", "kind")
 

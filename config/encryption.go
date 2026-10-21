@@ -81,13 +81,13 @@ type (
 		// each payload, while still sealed under the replication key. Tasks name
 		// their namespace by ID, which the local cluster resolves through
 		// DescribeNamespace, so the credentials used for the local cluster must
-		// allow it. Under "permissive" an ID that does not resolve falls back to
-		// the replication key's name and is counted in
-		// enc_unresolved_namespaces_total; under "strict" the message fails
-		// instead. Roll out like temporal-proxy: "off" until every proxy holding
-		// the keys is upgraded, then "permissive", then "strict" once no unbound
-		// or mismatched opens, and no unresolved namespaces, have been counted for
-		// longer than retention. Nexus payloads
+		// allow it. An ID that does not resolve is counted in
+		// enc_unresolved_namespaces_total; under "permissive" it falls back to the
+		// replication key's name, and under "strict" the message fails. Roll out
+		// like temporal-proxy: "off" until every proxy holding the keys is
+		// upgraded, then "permissive", then "strict" once no unbound or mismatched
+		// opens, and no unresolved namespaces, have been counted for longer than
+		// retention. Nexus payloads
 		// that cross namespaces, and child workflows started in another namespace,
 		// are not exempt, so deployments relying on them stay on "permissive".
 		// Calls that name no namespace, such as Nexus endpoint management, are

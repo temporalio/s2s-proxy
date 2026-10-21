@@ -123,6 +123,6 @@ func newNamespaceObserver(logger log.Logger) namespaceObserver {
 
 func (o namespaceObserver) UnresolvedNamespace(id string, err error) {
 	metrics.EncryptionUnresolvedNamespaces.WithLabelValues(id).Inc()
-	o.logger.Warn("Binding admin payloads to the replication key: their namespace ID did not resolve",
+	o.logger.Warn("Admin payloads left unbound: their namespace ID did not resolve",
 		tag.NewStringTag("namespace_id", id), tag.Error(err))
 }
