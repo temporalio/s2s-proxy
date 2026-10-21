@@ -140,7 +140,7 @@ func generateNamespaceObjCases() []objCase {
 							CommandType: enums.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION,
 							Attributes: &command.Command_SignalExternalWorkflowExecutionCommandAttributes{
 								SignalExternalWorkflowExecutionCommandAttributes: &command.SignalExternalWorkflowExecutionCommandAttributes{
-									Namespace:  ns,
+									Namespace:  ns, //nolint:staticcheck // deprecated upstream but still translated
 									SignalName: "do-not-change",
 								},
 							},
@@ -149,7 +149,7 @@ func generateNamespaceObjCases() []objCase {
 							CommandType: enums.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION,
 							Attributes: &command.Command_StartChildWorkflowExecutionCommandAttributes{
 								StartChildWorkflowExecutionCommandAttributes: &command.StartChildWorkflowExecutionCommandAttributes{
-									Namespace:  ns,
+									Namespace:  ns, //nolint:staticcheck // deprecated upstream but still translated
 									WorkflowId: "do-not-change",
 								},
 							},
