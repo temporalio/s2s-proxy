@@ -324,8 +324,10 @@ func isSealed(p *common.Payload) bool {
 // context, and for the empty string when it left none. Empty is a valid answer
 // rather than a failure: the vault falls back to its default key policy, which
 // is what that policy is for. Refusing to seal would take down traffic the
-// proxy is meant to carry, and the payload would be no safer for it. Opening
-// ignores the namespace entirely, since a sealed message names its own key.
+// proxy is meant to carry, and the payload would be no safer for it. When
+// opening, the namespace does not pick the key, since a sealed message names its
+// own, but it does pick the label the message is expected to be bound to, which
+// a strict binding enforces.
 //
 // The chain is rebuilt on each visit because every [codecOpt] closes over that
 // visit's namespace and context. Visits run up to [runtime.NumCPU] at a time,

@@ -168,6 +168,8 @@ func init() {
 		EncryptionDEKOps,
 		EncryptionDEKOpDur,
 		EncryptionDEKRotations,
+		EncryptionUnboundOpens,
+		EncryptionNamespaceMismatches,
 		EncryptionOpaquePassed,
 		EncryptionOpaqueRejected,
 	)
