@@ -57,17 +57,18 @@ type (
 		// NamespaceObserver hears about namespace IDs that failed to resolve,
 		// whether the payload then failed or fell back. Optional.
 		NamespaceObserver NamespaceObserver
-		// VisitErrors hears about every unary call failed because a message could
-		// not be sealed or opened, with the full error, which the caller only gets
-		// a generic status for. Streams are not reported: whatever relays one
-		// already has the full error. Optional.
+		// VisitErrors hears about every unary call or stream failed because a
+		// message could not be sealed or opened, with the full error, which the
+		// caller of a unary call only gets a generic status for. Optional.
 		VisitErrors VisitErrorObserver
 	}
 
-	// VisitErrorObserver hears about a unary admin call that failed because this
-	// proxy could not seal or open one of its messages.
+	// VisitErrorObserver hears about an admin call that failed because this
+	// proxy could not seal or open one of its messages. Streams are told apart,
+	// since whatever relays one already has the full error.
 	VisitErrorObserver interface {
 		VisitFailed(method string, err error)
+		StreamVisitFailed(method string, err error)
 	}
 
 	// NamespaceResolver maps a namespace ID to the namespace's local name.
@@ -142,7 +143,7 @@ func NewAdminEncryptor(cfg AdminEncryptorConfig) (*AdminEncryptor, error) {
 		req, resp = open, seal
 	}
 
-	return &AdminEncryptor{Unary: adminUnary(req, resp, cfg.VisitErrors), Stream: adminStream(req, resp)}, nil
+	return &AdminEncryptor{Unary: adminUnary(req, resp, cfg.VisitErrors), Stream: adminStream(req, resp, cfg.VisitErrors)}, nil
 }
 
 // newAdminVisit returns the adminVisit doing payloads, failures, and opaque in
@@ -216,19 +217,28 @@ func adminUnary(req, resp *adminVisit, obs VisitErrorObserver) grpc.UnaryClientI
 
 // adminStream wraps each stream so SendMsg runs the request direction and
 // RecvMsg the response direction, one message at a time. With nothing to do in
-// either direction the stream is returned as it is.
-func adminStream(req, resp *adminVisit) grpc.StreamClientInterceptor {
+// either direction the stream is returned as it is. A failed visit is reported
+// to obs.
+func adminStream(req, resp *adminVisit, obs VisitErrorObserver) grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		failed := func(err error) error {
+			if _, ok := asVisitError(err); ok && obs != nil {
+				obs.StreamVisitFailed(method, err)
+			}
+
+			return err
+		}
+
 		cs, err := streamer(ctx, desc, cc, method, opts...)
 		if err != nil {
-			return nil, resp.visitError(ctx, err)
+			return nil, failed(resp.visitError(ctx, err))
 		}
 
 		if req == nil && resp == nil {
 			return cs, nil
 		}
 
-		return &adminClientStream{ClientStream: cs, ctx: ctx, send: req, recv: resp}, nil
+		return &adminClientStream{ClientStream: cs, ctx: ctx, send: req, recv: resp, failed: failed}, nil
 	}
 }
 
@@ -239,11 +249,13 @@ type adminClientStream struct {
 	grpc.ClientStream
 	ctx        context.Context
 	send, recv *adminVisit
+	// failed reports err if it is a failed visit, and returns it.
+	failed func(err error) error
 }
 
 func (s *adminClientStream) SendMsg(m any) error {
 	if err := s.send.visit(s.ctx, m); err != nil {
-		return surface(err)
+		return s.failed(surface(err))
 	}
 
 	return s.ClientStream.SendMsg(m)
@@ -251,10 +263,10 @@ func (s *adminClientStream) SendMsg(m any) error {
 
 func (s *adminClientStream) RecvMsg(m any) error {
 	if err := s.ClientStream.RecvMsg(m); err != nil {
-		return surface(s.recv.visitError(s.ctx, err))
+		return s.failed(surface(s.recv.visitError(s.ctx, err)))
 	}
 
-	return surface(s.recv.visit(s.ctx, m))
+	return s.failed(surface(s.recv.visit(s.ctx, m)))
 }
 
 // VisitError is a message this proxy failed to seal or open, as opposed to an

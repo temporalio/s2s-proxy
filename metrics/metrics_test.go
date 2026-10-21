@@ -17,6 +17,7 @@ func TestEncryptionMetricsRegistered(t *testing.T) {
 		"EncryptionUnboundOpens":         EncryptionUnboundOpens,
 		"EncryptionNamespaceMismatches":  EncryptionNamespaceMismatches,
 		"EncryptionUnresolvedNamespaces": EncryptionUnresolvedNamespaces,
+		"EncryptionAdminVisitFailures":   EncryptionAdminVisitFailures,
 	}
 
 	for name, c := range collectors {

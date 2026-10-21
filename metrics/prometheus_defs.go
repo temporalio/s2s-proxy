@@ -86,6 +86,7 @@ var (
 	EncryptionUnresolvedNamespaces = DefaultCounterVec("enc_unresolved_namespaces_total", "Total admin payloads whose namespace ID did not resolve, failed under the strict namespace binding and otherwise bound to the replication key, labeled by namespace ID", "namespace_id")
 	EncryptionOpaquePassed         = DefaultCounterVec("enc_opaque_passthrough_total", "Total opaque fields sent to the peer unsealed because allowOpaquePlaintext is set, labeled by kind", "kind")
 	EncryptionOpaqueRejected       = DefaultCounterVec("enc_opaque_rejected_total", "Total admin messages refused because they carried opaque data that cannot be sealed, labeled by kind", "kind")
+	EncryptionAdminVisitFailures   = DefaultCounterVec("enc_admin_visit_failures_total", "Total admin calls and streams failed because a message could not be sealed or opened, whatever the cause, labeled by method", "method")
 
 	// Translation interceptor
 
@@ -174,6 +175,7 @@ func init() {
 		EncryptionUnresolvedNamespaces,
 		EncryptionOpaquePassed,
 		EncryptionOpaqueRejected,
+		EncryptionAdminVisitFailures,
 	)
 
 	prometheus.MustRegister(TranslationCount)

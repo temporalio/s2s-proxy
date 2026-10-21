@@ -366,7 +366,7 @@ func newEncryptors(
 			Namespaces:           names,
 			StrictNamespaces:     cfg.NamespaceBinding == config.NamespaceBindingStrict,
 			NamespaceObserver:    newNamespaceObserver(logger),
-			VisitErrors:          newVisitErrorLogger(logger),
+			VisitErrors:          newVisitErrorObserver(logger),
 		})
 		if err != nil {
 			return connEncryptors{}, err

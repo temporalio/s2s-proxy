@@ -888,8 +888,11 @@ func TestAdminEncryptorStreamVisitErrors(t *testing.T) {
 		requireGenericVisitError(t, cs.RecvMsg(new(adminservice.StreamWorkflowReplicationMessagesResponse)), "kms down")
 	})
 
-	t.Run("errors from the stream itself are left as they are", func(t *testing.T) {
-		e := requireAdminEncryptor(t, adminConfig(&fakeVault{}))
+	t.Run("errors from the stream itself are left as they are and not reported", func(t *testing.T) {
+		obs := &recordingVisitErrorObserver{}
+		cfg := adminConfig(&fakeVault{})
+		cfg.VisitErrors = obs
+		e := requireAdminEncryptor(t, cfg)
 		upstream := status.Error(codes.Unavailable, "remote went away")
 		cs := openStream(t, e, &fakeClientStream{ctx: t.Context(), err: upstream})
 
@@ -898,20 +901,43 @@ func TestAdminEncryptorStreamVisitErrors(t *testing.T) {
 		var visitErr *VisitError
 		require.NotErrorAs(t, err, &visitErr)
 		require.Equal(t, "remote went away", status.Convert(err).Message())
+		require.Empty(t, obs.streams)
+	})
+
+	t.Run("a failed visit is reported as a stream, not a unary call", func(t *testing.T) {
+		obs := &recordingVisitErrorObserver{}
+		cfg := reverseConfig(&fakeVault{})
+		cfg.VisitErrors = obs
+		e := requireAdminEncryptor(t, cfg)
+		cs := openStream(t, e, &fakeClientStream{ctx: t.Context(), err: io.EOF,
+			recv: []*adminservice.StreamWorkflowReplicationMessagesResponse{streamMessages(hsmTask("x"))}})
+
+		require.Error(t, cs.RecvMsg(new(adminservice.StreamWorkflowReplicationMessagesResponse)))
+		require.Empty(t, obs.failed)
+		require.Len(t, obs.streams, 1)
+		require.Contains(t, obs.streams[0], "/StreamWorkflowReplicationMessages: ")
+		require.Contains(t, obs.streams[0], "StateMachineNode")
 	})
 }
 
 // recordingVisitErrorObserver remembers every failed visit it is told about,
-// as "method: error".
+// as "method: error", unary calls and streams apart.
 type recordingVisitErrorObserver struct {
-	mu     sync.Mutex
-	failed []string
+	mu      sync.Mutex
+	failed  []string
+	streams []string
 }
 
 func (o *recordingVisitErrorObserver) VisitFailed(method string, err error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.failed = append(o.failed, method+": "+err.Error())
+}
+
+func (o *recordingVisitErrorObserver) StreamVisitFailed(method string, err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.streams = append(o.streams, method+": "+err.Error())
 }
 
 // requireGenericVisitError checks err is a VisitError as gRPC will see it:
