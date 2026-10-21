@@ -171,6 +171,7 @@ func init() {
 		EncryptionDEKRotations,
 		EncryptionUnboundOpens,
 		EncryptionNamespaceMismatches,
+		EncryptionUnresolvedNamespaces,
 		EncryptionOpaquePassed,
 		EncryptionOpaqueRejected,
 	)

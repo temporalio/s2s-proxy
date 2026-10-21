@@ -14,8 +14,9 @@ import (
 // but it never reaches /metrics, where a missing series reads as zero.
 func TestEncryptionMetricsRegistered(t *testing.T) {
 	collectors := map[string]prometheus.Collector{
-		"EncryptionUnboundOpens":        EncryptionUnboundOpens,
-		"EncryptionNamespaceMismatches": EncryptionNamespaceMismatches,
+		"EncryptionUnboundOpens":         EncryptionUnboundOpens,
+		"EncryptionNamespaceMismatches":  EncryptionNamespaceMismatches,
+		"EncryptionUnresolvedNamespaces": EncryptionUnresolvedNamespaces,
 	}
 
 	for name, c := range collectors {
