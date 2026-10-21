@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"os"
 	"path/filepath"
@@ -501,19 +502,44 @@ func getTestingT(t testingT) *testing.T {
 	panic("testingT must be *testing.T or have T() method")
 }
 
-// GetFreePort returns an available TCP port by listening on localhost:0.
-// This is useful for tests that need to allocate ports dynamically.
+// Test ports come from below the OS ephemeral range (Linux: 32768-60999, macOS: 49152-65535). Ports returned by
+// GetFreePort aren't bound until later, and outbound connections get their local port from the ephemeral range, so
+// allocating from there lets an unrelated connection grab the port in the meantime.
+const (
+	minTestPort = 20000
+	maxTestPort = 32767
+)
+
+var (
+	testPortsMu sync.Mutex
+	testPorts   = map[int]struct{}{}
+)
+
+// GetFreePort returns a TCP port outside the ephemeral range that is currently bindable and hasn't been returned
+// before in this process. This is useful for tests that need to allocate ports dynamically.
 func GetFreePort() int {
-	l, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		panic(fmt.Sprintf("failed to get free port: %v", err))
-	}
-	defer func() {
+	testPortsMu.Lock()
+	defer testPortsMu.Unlock()
+
+	for range maxTestPort - minTestPort {
+		port := minTestPort + rand.IntN(maxTestPort-minTestPort+1)
+		if _, used := testPorts[port]; used {
+			continue
+		}
+
+		l, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+		if err != nil {
+			continue
+		}
 		if err := l.Close(); err != nil {
 			fmt.Printf("Failed to close listener: %v\n", err)
 		}
-	}()
-	return l.Addr().(*net.TCPAddr).Port
+
+		testPorts[port] = struct{}{}
+		return port
+	}
+
+	panic(fmt.Sprintf("failed to get free port in range %d-%d", minTestPort, maxTestPort))
 }
 
 // GetLocalhostAddress returns a localhost address with a free port
