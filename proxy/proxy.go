@@ -226,7 +226,7 @@ func (s *Proxy) Describe() string {
 	sb := strings.Builder{}
 	sb.WriteString("[proxy.Proxy with cluster connections:\n\t")
 	for k, v := range s.clusterConnections {
-		sb.WriteString(fmt.Sprintf("%s:", k.name))
+		fmt.Fprintf(&sb, "%s:", k.name)
 		sb.WriteString(v.Describe())
 		sb.WriteString("\n\t")
 	}
