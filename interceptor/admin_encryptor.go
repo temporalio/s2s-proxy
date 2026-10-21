@@ -19,7 +19,9 @@ type (
 	// same vault and directions, but it walks admin messages with
 	// [VisitAdminPayloads] and seals everything under
 	// [config.ReplicationKeyNamespace]: admin messages do not name their
-	// namespace, so there is nothing to key them by.
+	// namespace, so there is nothing to key them by. They do carry namespace IDs,
+	// per replication task, so with [AdminEncryptorConfig.Namespaces] payloads
+	// are bound to the label of the namespace their task belongs to.
 	//
 	// Unary goes wherever a [grpc.UnaryClientInterceptor] is wanted and Stream
 	// wherever a [grpc.StreamClientInterceptor] is.
@@ -37,6 +39,32 @@ type (
 		AllowOpaquePlaintext bool
 		// Observer hears about opaque data met while sealing. Optional.
 		Observer OpaqueObserver
+		// Namespaces resolves the namespace IDs admin messages carry to local
+		// names, which Label then maps to the label payloads are bound to. Nil,
+		// or a part of a message naming no ID, binds to the replication key's
+		// name and compares nothing on open, which is also what a namespace that
+		// fails to resolve gets unless StrictNamespaces is set.
+		Namespaces NamespaceResolver
+		// StrictNamespaces fails the payload, and so the call or stream message
+		// carrying it, when its namespace ID does not resolve, instead of binding
+		// it to the replication key's name. For a strict binding, under which
+		// that fallback would be refused when read back.
+		StrictNamespaces bool
+		// NamespaceObserver hears about namespace IDs that failed to resolve,
+		// whether the payload then failed or fell back. Optional.
+		NamespaceObserver NamespaceObserver
+	}
+
+	// NamespaceResolver maps a namespace ID to the namespace's local name.
+	NamespaceResolver interface {
+		LocalName(ctx context.Context, id string) (string, error)
+	}
+
+	// NamespaceObserver hears about a namespace ID that failed to resolve, once
+	// per payload it left unbound, which StrictNamespaces fails and otherwise
+	// falls back to the replication key's name.
+	NamespaceObserver interface {
+		UnresolvedNamespace(id string, err error)
 	}
 
 	// adminVisit is one direction's work over an admin message. A nil adminVisit
@@ -73,9 +101,8 @@ func NewAdminEncryptor(cfg AdminEncryptorConfig) (*AdminEncryptor, error) {
 
 	var seal, open *adminVisit
 	if cfg.Vault != nil {
-		// No label func: admin messages do not name their namespace, so they are
-		// bound to the replication key's name, the vault's default label.
-		enc := []codecOpt{cipherOpt(cfg.Vault, nil, cfg.Binding)}
+		bind := namespaceBinder(cfg.Namespaces, cfg.Label, cfg.StrictNamespaces, cfg.NamespaceObserver)
+		enc := []codecOpt{replicationKey(cipherOpt(cfg.Vault, bind, cfg.Binding))}
 
 		var err error
 		if open, err = newAdminVisit(visitPayloads(enc, codec.Chain.Decode), visitFailureOpts(restoreFailure), true, openOpaque); err != nil {
@@ -127,8 +154,18 @@ func newAdminVisit(
 // adminUnary seals or opens the request on its way out and the reply, or the
 // error's details, on the way back. A failed visit on the way out returns
 // before anything is sent.
+//
+// A request naming a namespace by ID scopes both visits to it, since replies
+// such as raw history carry payloads but no ID of their own. IDs deeper in
+// either message still take precedence for the parts they cover.
 func adminUnary(req, resp *adminVisit) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, request, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if named, ok := request.(interface{ GetNamespaceId() string }); ok {
+			if id := named.GetNamespaceId(); id != "" {
+				ctx = withNamespaceID(ctx, id)
+			}
+		}
+
 		if err := req.visit(ctx, request); err != nil {
 			return err
 		}
@@ -184,16 +221,13 @@ func (s *adminClientStream) RecvMsg(m any) error {
 	return s.recv.visit(s.ctx, m)
 }
 
-// visit runs v over m when m is a proto message. The replication namespace is
-// put on the visit's context, replacing any a server interceptor stamped, so
-// [visitPayloads] seals under the replication key.
+// visit runs v over m when m is a proto message.
 func (v *adminVisit) visit(ctx context.Context, m any) error {
 	msg, ok := m.(proto.Message)
 	if v == nil || !ok {
 		return nil
 	}
 
-	ctx = context.WithValue(ctx, NamespaceKey, config.ReplicationKeyNamespace)
 	return VisitAdminPayloads(ctx, msg, AdminVisitOptions{
 		PayloadOptions: v.payloads,
 		FailureOptions: v.failures,
@@ -210,7 +244,6 @@ func (v *adminVisit) visitError(ctx context.Context, err error) error {
 		return err
 	}
 
-	ctx = context.WithValue(ctx, NamespaceKey, config.ReplicationKeyNamespace)
 	run := func(i grpc.UnaryClientInterceptor, err error) error {
 		if i == nil {
 			return err
@@ -225,4 +258,62 @@ func (v *adminVisit) visitError(ctx context.Context, err error) error {
 	}
 
 	return run(v.details, run(v.failureDetails, err))
+}
+
+// replicationKey seals and opens through opt under the replication key,
+// whatever namespace the context names: admin traffic is keyed by it alone. The
+// context's namespace is left for the binder, which may bind by it.
+func replicationKey(opt codecOpt) codecOpt {
+	return func(ctx context.Context, _ string) codec.Option {
+		return opt(ctx, config.ReplicationKeyNamespace)
+	}
+}
+
+// namespaceBinder binds each payload to label(name), name being the local name
+// of the namespace the payload belongs to, or to the key namespace, the
+// replication key's name, when that is unknown or there are no names. A nil
+// label leaves the local name as the label.
+//
+// The namespace is the ID on the context, set for the task or request carrying
+// the payload and resolved through names, or else the local name a server
+// interceptor stamped for a request naming one. An ID names cannot resolve is
+// reported to obs, then fails the payload when strict, and otherwise falls back
+// to the key namespace.
+func namespaceBinder(names NamespaceResolver, label func(string) string, strict bool, obs NamespaceObserver) binder {
+	if names == nil {
+		return nil
+	}
+
+	bound := func(local string) binding {
+		if label == nil {
+			return binding{label: local, check: true, ns: local}
+		}
+
+		return binding{label: label(local), check: true, ns: local}
+	}
+
+	return func(ctx context.Context, ns string) (binding, error) {
+		id, ok := namespaceIDFrom(ctx)
+		if !ok || id == "" {
+			if stamped, _ := ctx.Value(NamespaceKey).(string); stamped != "" {
+				return bound(stamped), nil
+			}
+
+			return binding{ns: ns}, nil
+		}
+
+		local, err := names.LocalName(ctx, id)
+		if err != nil {
+			if obs != nil {
+				obs.UnresolvedNamespace(id, err)
+			}
+			if strict {
+				return binding{}, fmt.Errorf("failed to resolve namespace ID %q: %w", id, err)
+			}
+
+			return binding{ns: ns}, nil
+		}
+
+		return bound(local), nil
+	}
 }

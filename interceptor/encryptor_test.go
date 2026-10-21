@@ -746,7 +746,7 @@ func realVault(t *testing.T, mode crypto.BindingMode) *crypto.Vault {
 func sealedFor(t *testing.T, v Vault, label string, vals ...string) *common.Payloads {
 	t.Helper()
 
-	opt := cipherOpt(v, func(string) string { return label }, nil)
+	opt := cipherOpt(v, labelBinder(func(string) string { return label }), nil)
 	ps, err := codec.NewChain(opt(t.Context(), testNamespace)).Encode(payloads(vals...).Payloads)
 	require.NoError(t, err)
 

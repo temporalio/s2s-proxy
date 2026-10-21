@@ -188,7 +188,7 @@ func newClusterConnection(
 	}
 
 	cc.outboundClient.encryptors, cc.inboundClient.encryptors, err = newEncryptors(lifetime, connConfig.EncryptionConfig,
-		nsTranslations, extensions, cc.loggers.Get(LogClusterConnection))
+		nsTranslations, cc.inboundClient.conn, extensions, cc.loggers.Get(LogClusterConnection))
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +296,14 @@ func newClusterConnection(
 // sides see the local name on the context, so both agree, and so does a
 // temporal-proxy in front of the peer that translates the same way.
 //
+// Admin payloads are bound the same way, by the namespace of the replication
+// task carrying them. Tasks name it by ID, which the local cluster, reached
+// through local, resolves to a name. That only happens when cfg binds at all:
+// under "off" nothing is bound and admin payloads keep the replication key's
+// name. An ID that fails to resolve falls back to that name too, except under
+// "strict", where the fallback would be refused when read back, so the payload
+// fails instead.
+//
 // cfg.Enabled only decides whether either side seals. As long as cfg names keys
 // both sides open, so switching encryption off does not strand what was sealed
 // while it was on.
@@ -303,6 +311,7 @@ func newEncryptors(
 	lifetime context.Context,
 	cfg config.EncryptionConfig,
 	nsTranslations collect.StaticBiMap[string, string],
+	local grpc.ClientConnInterface,
 	extensions extension.Connections,
 	logger log.Logger,
 ) (outbound, inbound connEncryptors, err error) {
@@ -329,6 +338,11 @@ func newEncryptors(
 	}
 	binding := vault.NewBindingMeter()
 
+	var names interceptor.NamespaceResolver
+	if cfg.NamespaceBinding != config.NamespaceBindingOff {
+		names = newNamespaceNames(workflowservice.NewWorkflowServiceClient(local))
+	}
+
 	side := func(reverse bool) (connEncryptors, error) {
 		ec := interceptor.EncryptorConfig{
 			Enabled:                cfg.Enabled,
@@ -349,6 +363,9 @@ func newEncryptors(
 			EncryptorConfig:      ec,
 			AllowOpaquePlaintext: cfg.AllowOpaquePlaintext,
 			Observer:             observer,
+			Namespaces:           names,
+			StrictNamespaces:     cfg.NamespaceBinding == config.NamespaceBindingStrict,
+			NamespaceObserver:    newNamespaceObserver(logger),
 		})
 		if err != nil {
 			return connEncryptors{}, err
