@@ -273,9 +273,10 @@ func requireVault(t *testing.T, f *vaultFixture) *Vault {
 // and a cache big enough that nothing is evicted mid-test.
 func encryptionConfig() config.EncryptionConfig {
 	return config.EncryptionConfig{
-		Enabled:   true,
-		CacheSize: 10,
-		Default:   keyPolicy(1),
+		Enabled:          true,
+		CacheSize:        10,
+		Default:          keyPolicy(1),
+		NamespaceBinding: config.NamespaceBindingOff,
 	}
 }
 
@@ -437,5 +438,35 @@ func TestNewVaultReplicationKey(t *testing.T) {
 		v, err := New(t.Context(), newVaultFixture(ec).cfg)
 		require.Nil(t, v)
 		require.ErrorContains(t, err, "duplicate key id")
+	})
+}
+
+func TestNewVaultBindingMode(t *testing.T) {
+	vaultIn := func(t *testing.T, b config.NamespaceBinding) *Vault {
+		ec := encryptionConfig()
+		ec.NamespaceBinding = b
+		return requireVault(t, newVaultFixture(ec))
+	}
+
+	t.Run("off seals unbound", func(t *testing.T) {
+		msg, err := vaultIn(t, config.NamespaceBindingOff).Seal(t.Context(), "some-namespace", []byte("payload"))
+		require.NoError(t, err)
+		require.False(t, msg.Bound)
+	})
+
+	t.Run("permissive seals bound to the namespace", func(t *testing.T) {
+		msg, err := vaultIn(t, config.NamespaceBindingPermissive).Seal(t.Context(), "some-namespace", []byte("payload"))
+		require.NoError(t, err)
+		require.True(t, msg.Bound)
+		require.Equal(t, "some-namespace", msg.Namespace)
+	})
+
+	t.Run("strict refuses an unbound message", func(t *testing.T) {
+		v := vaultIn(t, config.NamespaceBindingStrict)
+		msg, err := vaultIn(t, config.NamespaceBindingOff).Seal(t.Context(), "some-namespace", []byte("payload"))
+		require.NoError(t, err)
+
+		_, err = v.Open(t.Context(), msg)
+		require.ErrorIs(t, err, crypto.ErrUnbound)
 	})
 }

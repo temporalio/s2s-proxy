@@ -73,9 +73,9 @@ func NewAdminEncryptor(cfg AdminEncryptorConfig) (*AdminEncryptor, error) {
 
 	var seal, open *adminVisit
 	if cfg.Vault != nil {
-		enc := []codecOpt{func(ctx context.Context, ns string) codec.Option {
-			return codec.WithCipher(&cipher{ctx: ctx, ns: ns, v: cfg.Vault})
-		}}
+		// No label func: admin messages do not name their namespace, so they are
+		// bound to the replication key's name, the vault's default label.
+		enc := []codecOpt{cipherOpt(cfg.Vault, nil, cfg.Binding)}
 
 		var err error
 		if open, err = newAdminVisit(visitPayloads(enc, codec.Chain.Decode), visitFailureOpts(restoreFailure), true, openOpaque); err != nil {

@@ -187,8 +187,8 @@ func newClusterConnection(
 		return nil, err
 	}
 
-	cc.outboundClient.encryptors, cc.inboundClient.encryptors, err = newEncryptors(lifetime, connConfig.EncryptionConfig, extensions,
-		cc.loggers.Get(LogClusterConnection))
+	cc.outboundClient.encryptors, cc.inboundClient.encryptors, err = newEncryptors(lifetime, connConfig.EncryptionConfig,
+		nsTranslations, extensions, cc.loggers.Get(LogClusterConnection))
 	if err != nil {
 		return nil, err
 	}
@@ -291,12 +291,18 @@ func newClusterConnection(
 // local cluster sends and opens what the peer returns; inbound opens what the
 // peer sends and seals what the local cluster returns.
 //
+// Workflow and operator payloads are bound to the namespace's name on the peer,
+// nsTranslations' remote side, or the local name when it has no mapping. Both
+// sides see the local name on the context, so both agree, and so does a
+// temporal-proxy in front of the peer that translates the same way.
+//
 // cfg.Enabled only decides whether either side seals. As long as cfg names keys
 // both sides open, so switching encryption off does not strand what was sealed
 // while it was on.
 func newEncryptors(
 	lifetime context.Context,
 	cfg config.EncryptionConfig,
+	nsTranslations collect.StaticBiMap[string, string],
 	extensions extension.Connections,
 	logger log.Logger,
 ) (outbound, inbound connEncryptors, err error) {
@@ -314,6 +320,15 @@ func newEncryptors(
 	}
 
 	observer := newOpaqueObserver(logger)
+	label := func(ns string) string {
+		if remote, ok := nsTranslations.GetExists(ns); ok {
+			return remote
+		}
+
+		return ns
+	}
+	binding := vault.NewBindingMeter()
+
 	side := func(reverse bool) (connEncryptors, error) {
 		ec := interceptor.EncryptorConfig{
 			Enabled:                cfg.Enabled,
@@ -321,6 +336,8 @@ func newEncryptors(
 			Reverse:                reverse,
 			AlreadySealedEncodings: cfg.AlreadySealedEncodings,
 			EncodeFailures:         cfg.Failures,
+			Label:                  label,
+			Binding:                binding,
 		}
 
 		payload, err := interceptor.NewEncryptor(ec)

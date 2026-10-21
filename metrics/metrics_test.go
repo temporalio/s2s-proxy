@@ -1,11 +1,35 @@
 package metrics
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestEncryptionMetricsRegistered guards against declaring a metric and leaving
+// it out of init: an unregistered vector still counts, so nothing else fails,
+// but it never reaches /metrics, where a missing series reads as zero.
+func TestEncryptionMetricsRegistered(t *testing.T) {
+	collectors := map[string]prometheus.Collector{
+		"EncryptionUnboundOpens":        EncryptionUnboundOpens,
+		"EncryptionNamespaceMismatches": EncryptionNamespaceMismatches,
+	}
+
+	for name, c := range collectors {
+		t.Run(name, func(t *testing.T) {
+			err := prometheus.DefaultRegisterer.Register(c)
+			if err == nil {
+				prometheus.DefaultRegisterer.Unregister(c)
+			}
+
+			var already prometheus.AlreadyRegisteredError
+			require.True(t, errors.As(err, &already), "%s is not registered in init: %v", name, err)
+		})
+	}
+}
 
 func TestSanitizeForPrometheus(t *testing.T) {
 	assert.Equal(t, "myCoolMetric_name:123", SanitizeForPrometheus("myCoolMetric_name:123"), "Overly aggressive replacement! We mangled a valid metric.")

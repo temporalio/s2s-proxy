@@ -112,6 +112,16 @@ profiling:
 #       # the failure's encoded attributes as the Temporal SDK does. Upgrade the
 #       # peer's proxy before turning this on, or it shows a placeholder message.
 #       failures: false
+#       # How sealed payloads are bound to their namespace: off, permissive, or
+#       # strict. Required whenever default is set. The label is the namespace's
+#       # name on the peer, after namespaceTranslation, and must match what a
+#       # temporal-proxy in front of the peer uses. Start on off, move to
+#       # permissive once every proxy holding the keys is upgraded, and to strict
+#       # once enc_unbound_opens_total and enc_namespace_mismatches_total stay at
+#       # zero for longer than retention. Replicated history is bound to the
+#       # replication key, so it counts as mismatched when read back through
+#       # workflow calls until it ages out.
+#       namespaceBinding: "off"
 #       cacheSize: 1000
 #       default:
 #         uri: "extension://hsm/payloads"

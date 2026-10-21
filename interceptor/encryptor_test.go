@@ -1,11 +1,14 @@
 package interceptor
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/common/v1"
@@ -710,4 +713,170 @@ func requireEncryptor(t *testing.T, cfg EncryptorConfig) *Encryptor {
 	require.NotNil(t, e)
 
 	return e
+}
+
+// testKeyURI is a fixed "testing://" key, so vaults built from it in one test
+// open each other's messages.
+var testKeyURI = "testing://" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+
+// realVault is a crypto.Vault under mode, for the tests that need what
+// fakeVault cannot see: the label a seal binds to, and whether an open compares
+// it.
+func realVault(t *testing.T, mode crypto.BindingMode) *crypto.Vault {
+	t.Helper()
+
+	kek, err := crypto.NewKeyFactory().Create(t.Context(), testKeyURI)
+	require.NoError(t, err)
+
+	r, err := crypto.NewKEKRegistry(crypto.WithDefaultKey(kek))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	v, err := crypto.NewVault(r,
+		crypto.WithDefaultKeyConfig(crypto.KeyConfig{Duration: time.Hour}),
+		crypto.WithBindingMode(mode),
+	)
+	require.NoError(t, err)
+
+	return v
+}
+
+// sealedFor seals vals through v bound to label, the way a peer holds them. A
+// vault under crypto.BindingOff ignores the label and seals them unbound.
+func sealedFor(t *testing.T, v Vault, label string, vals ...string) *common.Payloads {
+	t.Helper()
+
+	opt := cipherOpt(v, func(string) string { return label }, nil)
+	ps, err := codec.NewChain(opt(t.Context(), testNamespace)).Encode(payloads(vals...).Payloads)
+	require.NoError(t, err)
+
+	return &common.Payloads{Payloads: ps}
+}
+
+// boundTo reports the label each of ps is bound to, or "<unbound>".
+func boundTo(ps *common.Payloads) []string {
+	out := make([]string, len(ps.GetPayloads()))
+	for i, p := range ps.GetPayloads() {
+		ns, ok := p.GetMetadata()[codec.MetadataEncryptionNamespace]
+		if !ok {
+			out[i] = "<unbound>"
+			continue
+		}
+		out[i] = string(ns)
+	}
+
+	return out
+}
+
+// recordingBindingObserver remembers every count it is asked to make.
+type recordingBindingObserver struct {
+	mu                  sync.Mutex
+	unbound, mismatched []string
+}
+
+func (o *recordingBindingObserver) UnboundOpen(ns string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.unbound = append(o.unbound, ns)
+}
+
+func (o *recordingBindingObserver) NamespaceMismatch(ns string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.mismatched = append(o.mismatched, ns)
+}
+
+// peerLabel is the label func the tests use: a fixed rename, standing in for
+// namespaceTranslation.
+func peerLabel(ns string) string { return "peer-" + ns }
+
+func TestEncryptorBindsToTheLabel(t *testing.T) {
+	v := realVault(t, crypto.BindingPermissive)
+	e := requireEncryptor(t, EncryptorConfig{Enabled: true, Vault: v, Label: peerLabel})
+
+	req := &workflowservice.StartWorkflowExecutionRequest{Input: payloads("one")}
+	reply := new(workflowservice.QueryWorkflowResponse)
+
+	require.NoError(t, call(t, e, req, reply, func() error {
+		require.Equal(t, []string{"peer-" + testNamespace}, boundTo(req.Input))
+		reply.QueryResult = req.Input
+		return nil
+	}))
+
+	require.Equal(t, []string{"one"}, data(reply.QueryResult), "the response opened against the same label")
+}
+
+func TestEncryptorWithoutALabelBindsToTheKeyNamespace(t *testing.T) {
+	v := realVault(t, crypto.BindingPermissive)
+	e := requireEncryptor(t, enabledConfig(v))
+
+	req := &workflowservice.StartWorkflowExecutionRequest{Input: payloads("one")}
+	require.NoError(t, call(t, e, req, new(workflowservice.QueryWorkflowResponse), func() error {
+		require.Equal(t, []string{testNamespace}, boundTo(req.Input))
+		return nil
+	}))
+}
+
+func TestEncryptorBindingOnOpen(t *testing.T) {
+	// The response comes back from the peer already sealed, the way it holds
+	// payloads, and is opened with the label of the namespace on the context.
+	open := func(t *testing.T, mode crypto.BindingMode, held *common.Payloads) (*workflowservice.QueryWorkflowResponse, *recordingBindingObserver, error) {
+		obs := &recordingBindingObserver{}
+		e := requireEncryptor(t, EncryptorConfig{Enabled: true, Vault: realVault(t, mode), Label: peerLabel, Binding: obs})
+
+		reply := new(workflowservice.QueryWorkflowResponse)
+		err := call(t, e, &workflowservice.StartWorkflowExecutionRequest{}, reply, func() error {
+			reply.QueryResult = held
+			return nil
+		})
+
+		return reply, obs, err
+	}
+
+	t.Run("strict opens a payload bound to the label", func(t *testing.T) {
+		held := sealedFor(t, realVault(t, crypto.BindingPermissive), peerLabel(testNamespace), "mine")
+
+		reply, obs, err := open(t, crypto.BindingStrict, held)
+		require.NoError(t, err)
+		require.Equal(t, []string{"mine"}, data(reply.QueryResult))
+		require.Empty(t, obs.unbound)
+		require.Empty(t, obs.mismatched)
+	})
+
+	t.Run("strict refuses a mismatch", func(t *testing.T) {
+		held := sealedFor(t, realVault(t, crypto.BindingPermissive), "elsewhere", "theirs")
+
+		_, obs, err := open(t, crypto.BindingStrict, held)
+		require.ErrorIs(t, err, crypto.ErrNamespaceMismatch)
+		require.Equal(t, []string{testNamespace}, obs.mismatched, "counted before the vault refused it")
+	})
+
+	t.Run("permissive opens a mismatch and counts it", func(t *testing.T) {
+		// The same payload strict refused above: moving back to permissive makes
+		// it readable again.
+		held := sealedFor(t, realVault(t, crypto.BindingPermissive), "elsewhere", "theirs")
+
+		reply, obs, err := open(t, crypto.BindingPermissive, held)
+		require.NoError(t, err)
+		require.Equal(t, []string{"theirs"}, data(reply.QueryResult))
+		require.Equal(t, []string{testNamespace}, obs.mismatched)
+	})
+
+	t.Run("strict refuses an unbound payload", func(t *testing.T) {
+		held := sealedFor(t, realVault(t, crypto.BindingOff), "ignored", "legacy")
+
+		_, obs, err := open(t, crypto.BindingStrict, held)
+		require.ErrorIs(t, err, crypto.ErrUnbound)
+		require.Equal(t, []string{testNamespace}, obs.unbound)
+	})
+
+	t.Run("permissive opens an unbound payload and counts it", func(t *testing.T) {
+		held := sealedFor(t, realVault(t, crypto.BindingOff), "ignored", "legacy")
+
+		reply, obs, err := open(t, crypto.BindingPermissive, held)
+		require.NoError(t, err)
+		require.Equal(t, []string{"legacy"}, data(reply.QueryResult))
+		require.Equal(t, []string{testNamespace}, obs.unbound)
+		require.Empty(t, obs.mismatched)
+	})
 }

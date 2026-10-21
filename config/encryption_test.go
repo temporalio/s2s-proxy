@@ -208,7 +208,7 @@ func TestEncryptionConfigValidate(t *testing.T) {
 			name: "enabled with a valid default",
 			cfg: func() EncryptionConfig {
 				p := validPolicy()
-				return EncryptionConfig{Enabled: true, CacheSize: 10, Default: &p}
+				return EncryptionConfig{Enabled: true, CacheSize: 10, Default: &p, NamespaceBinding: NamespaceBindingOff}
 			}(),
 		},
 		{
@@ -229,14 +229,14 @@ func TestEncryptionConfigValidate(t *testing.T) {
 			name: "failures with encryption enabled",
 			cfg: func() EncryptionConfig {
 				p := validPolicy()
-				return EncryptionConfig{Enabled: true, Failures: true, Default: &p}
+				return EncryptionConfig{Enabled: true, Failures: true, Default: &p, NamespaceBinding: NamespaceBindingOff}
 			}(),
 		},
 		{
 			name: "failures cannot pass json/plain through unsealed",
 			cfg: func() EncryptionConfig {
 				p := validPolicy()
-				return EncryptionConfig{Enabled: true, Failures: true, Default: &p, AlreadySealedEncodings: []string{"json/plain"}}
+				return EncryptionConfig{Enabled: true, Failures: true, Default: &p, NamespaceBinding: NamespaceBindingOff, AlreadySealedEncodings: []string{"json/plain"}}
 			}(),
 			want: validation.Errors{
 				{Field: "failures", Message: `cannot be used with "json/plain" in alreadySealedEncodings, which would send encoded failures unsealed`},
@@ -251,7 +251,7 @@ func TestEncryptionConfigValidate(t *testing.T) {
 		},
 		{
 			name: "default is validated even while disabled",
-			cfg:  EncryptionConfig{Default: &badPolicy},
+			cfg:  EncryptionConfig{Default: &badPolicy, NamespaceBinding: NamespaceBindingOff},
 			want: badPolicyErrs("default"),
 		},
 		{
@@ -314,7 +314,7 @@ func TestEncryptionConfigValidate(t *testing.T) {
 			cfg: func() EncryptionConfig {
 				d, r := validPolicy(), validPolicy()
 				r.URI = "gcpkms://replication"
-				return EncryptionConfig{Enabled: true, Default: &d, Replication: &r}
+				return EncryptionConfig{Enabled: true, Default: &d, Replication: &r, NamespaceBinding: NamespaceBindingOff}
 			}(),
 		},
 		{
@@ -331,6 +331,33 @@ func TestEncryptionConfigValidate(t *testing.T) {
 				{Field: "overrides[$replication]", Message: "is reserved for the replication key policy; set encryption.replication instead"},
 			},
 		},
+		{
+			name: "keys without namespaceBinding are refused even while disabled",
+			cfg: func() EncryptionConfig {
+				p := validPolicy()
+				return EncryptionConfig{Default: &p}
+			}(),
+			want: validation.Errors{
+				{Field: "namespaceBinding", Message: `is required when keys are configured: set "off", "permissive", or "strict"; start with "off" and follow the rollout steps in the namespaceBinding docs`},
+			},
+		},
+		{
+			name: "unknown namespaceBinding",
+			cfg: func() EncryptionConfig {
+				p := validPolicy()
+				return EncryptionConfig{Default: &p, NamespaceBinding: "lenient"}
+			}(),
+			want: validation.Errors{
+				{Field: "namespaceBinding", Message: `unknown value "lenient", valid values: [off,permissive,strict]`},
+			},
+		},
+		{
+			name: "unknown namespaceBinding is reported without keys too",
+			cfg:  EncryptionConfig{NamespaceBinding: "lenient"},
+			want: validation.Errors{
+				{Field: "namespaceBinding", Message: `unknown value "lenient", valid values: [off,permissive,strict]`},
+			},
+		},
 	}
 
 	for _, c := range cases {
@@ -343,6 +370,23 @@ func TestEncryptionConfigValidate(t *testing.T) {
 
 			requireErrors(t, err, c.want)
 		})
+	}
+}
+
+func TestNamespaceBindingMode(t *testing.T) {
+	for b, want := range map[NamespaceBinding]crypto.BindingMode{
+		NamespaceBindingOff:        crypto.BindingOff,
+		NamespaceBindingPermissive: crypto.BindingPermissive,
+		NamespaceBindingStrict:     crypto.BindingStrict,
+	} {
+		got, err := b.Mode()
+		require.NoError(t, err, string(b))
+		require.Equal(t, want, got, string(b))
+	}
+
+	for _, b := range []NamespaceBinding{"", "lenient"} {
+		_, err := b.Mode()
+		require.Error(t, err, "%q", b)
 	}
 }
 
@@ -489,6 +533,7 @@ clusterConnections:
     encryption:
       enabled: true
       cacheSize: 64
+      namespaceBinding: "off"
       default:
         uri: awskms://alias/primary
         duration: 24h
@@ -501,8 +546,9 @@ clusterConnections:
 
 	got := cfg.ClusterConnections[0].EncryptionConfig
 	require.Equal(t, EncryptionConfig{
-		Enabled:   true,
-		CacheSize: 64,
+		Enabled:          true,
+		CacheSize:        64,
+		NamespaceBinding: NamespaceBindingOff,
 		Default: &KeyPolicy{
 			URI:         "awskms://alias/primary",
 			Duration:    24 * time.Hour,
@@ -514,8 +560,9 @@ clusterConnections:
 
 func TestEncryptionConfigYAMLRoundTrip(t *testing.T) {
 	original := EncryptionConfig{
-		Enabled:   true,
-		CacheSize: 128,
+		Enabled:          true,
+		CacheSize:        128,
+		NamespaceBinding: NamespaceBindingOff,
 		Default: &KeyPolicy{
 			URI:         "awskms://alias/primary",
 			DecryptURIs: []string{"gcpkms://projects/p/locations/l/keyRings/r/cryptoKeys/old"},
@@ -563,6 +610,7 @@ func TestEncryptionConfigYAMLOmitsEmptyCollections(t *testing.T) {
 func TestEncryptionConfigYAMLThenValidate(t *testing.T) {
 	path := writeYAML(t, `
 enabled: true
+namespaceBinding: "off"
 default:
   uri: awskms://alias/primary
   duration: 24h

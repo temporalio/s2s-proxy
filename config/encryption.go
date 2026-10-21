@@ -32,7 +32,22 @@ var validKeySchemes = append(crypto.DefaultSchemes(), ExtensionKeyScheme)
 // the vault seals with the default key instead. No override may use it.
 const ReplicationKeyNamespace = "$replication"
 
+// The encryption.namespaceBinding values, in rollout order. See
+// [crypto.BindingMode] for what each one seals and opens.
+const (
+	NamespaceBindingOff        NamespaceBinding = "off"
+	NamespaceBindingPermissive NamespaceBinding = "permissive"
+	NamespaceBindingStrict     NamespaceBinding = "strict"
+)
+
+// namespaceBindings lists the valid values in rollout order, for error messages.
+var namespaceBindings = []NamespaceBinding{NamespaceBindingOff, NamespaceBindingPermissive, NamespaceBindingStrict}
+
 type (
+	// NamespaceBinding is the encryption.namespaceBinding setting: "off",
+	// "permissive", or "strict".
+	NamespaceBinding string
+
 	// EncryptionConfig configures envelope encryption of the payloads crossing
 	// the connection: workflow and operator calls, sealed per namespace, and
 	// admin calls including replication streams, sealed under Replication.
@@ -56,6 +71,24 @@ type (
 		// must restore them, so upgrade it first: one that does not leaves the
 		// "Encoded failure" placeholder in place of the message
 		Failures bool `yaml:"failures,omitempty"`
+		// How sealed payloads are bound to their namespace through AES-GCM additional
+		// data: "off", "permissive", or "strict". Required whenever Default is set,
+		// because the right mode depends on whether payloads sealed without a binding
+		// exist. The label is the namespace's name on the peer, after
+		// namespaceTranslation, which must match what a temporal-proxy in front of the
+		// peer derives for the same namespace. Admin traffic is bound to the
+		// replication key's name until it can be bound per namespace. Until then,
+		// admin payloads this proxy replicated count as mismatches when read back
+		// through workflow calls, by this proxy and by temporal-proxy alike, so strict
+		// is only safe once those have aged out of retention. Roll out like
+		// temporal-proxy: "off" until every proxy holding the keys is upgraded, then
+		// "permissive", then "strict" once no unbound or mismatched opens have been
+		// counted for longer than retention. Nexus payloads that cross namespaces, and
+		// child workflows started in another namespace, are not exempt, so deployments
+		// relying on them stay on "permissive". Calls that name no namespace, such as
+		// Nexus endpoint management, are bound to the empty namespace, as
+		// temporal-proxy does
+		NamespaceBinding NamespaceBinding `yaml:"namespaceBinding"`
 		// Maximum number of unwrapped DEKs to hold in memory, or 0 to disable caching
 		CacheSize int `yaml:"cacheSize"`
 		// Key policy for namespaces with no entry in Overrides. Setting it is what
@@ -106,6 +139,16 @@ func (e *EncryptionConfig) Validate() error {
 				return errors.New("requires encryption to be enabled")
 			case on && slices.Contains(e.AlreadySealedEncodings, "json/plain"):
 				return errors.New(`cannot be used with "json/plain" in alreadySealedEncodings, which would send encoded failures unsealed`)
+			}
+
+			return nil
+		}),
+		validation.Field("namespaceBinding", e.NamespaceBinding, func(b NamespaceBinding) error {
+			switch {
+			case b == "" && e.Default != nil:
+				return errors.New(`is required when keys are configured: set "off", "permissive", or "strict"; start with "off" and follow the rollout steps in the namespaceBinding docs`)
+			case b != "" && !slices.Contains(namespaceBindings, b):
+				return fmt.Errorf("unknown value %q, valid values: [%s]", b, joinBindings())
 			}
 
 			return nil
@@ -260,4 +303,29 @@ func notReservedNamespace() validation.Check[string] {
 
 		return nil
 	}
+}
+
+// Mode maps b to the vault's binding mode. An empty or unknown value is an
+// error rather than a quiet "off": Validate rejects both, so reaching here with
+// one means validation was skipped.
+func (b NamespaceBinding) Mode() (crypto.BindingMode, error) {
+	switch b {
+	case NamespaceBindingOff:
+		return crypto.BindingOff, nil
+	case NamespaceBindingPermissive:
+		return crypto.BindingPermissive, nil
+	case NamespaceBindingStrict:
+		return crypto.BindingStrict, nil
+	default:
+		return 0, fmt.Errorf("unknown namespace binding %q, valid values: [%s]", b, joinBindings())
+	}
+}
+
+func joinBindings() string {
+	s := make([]string, len(namespaceBindings))
+	for i, b := range namespaceBindings {
+		s[i] = string(b)
+	}
+
+	return strings.Join(s, ",")
 }
