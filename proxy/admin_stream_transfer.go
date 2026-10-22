@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/temporalio/s2s-proxy/common"
 	"github.com/temporalio/s2s-proxy/config"
+	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/metrics"
 )
 
@@ -67,6 +69,11 @@ type StreamForwarder struct {
 
 	sourceStreamClient adminservice.AdminService_StreamWorkflowReplicationMessagesClient
 	shutdownChan       channel.ShutdownOnce
+	// visitErr is a message from the source this proxy failed to seal or open,
+	// which Run returns so the target learns why the stream ended. Every other
+	// error ends the stream as an EOF, as it always has. Written only by
+	// forwardReplicationMessages, and read once both forwarders are done.
+	visitErr error
 }
 
 func newStreamForwarder(
@@ -152,7 +159,7 @@ func (f *StreamForwarder) Run() error {
 	wg.Wait()
 
 	metrics.AdminServiceStreamDuration.WithLabelValues(f.metricLabelValues...).Observe(time.Since(streamStartTime).Seconds())
-	return nil
+	return f.visitErr
 }
 
 func (f *StreamForwarder) forwardReplicationMessages(wg *sync.WaitGroup) {
@@ -184,6 +191,10 @@ func (f *StreamForwarder) forwardReplicationMessages(wg *sync.WaitGroup) {
 
 		if err != nil {
 			f.logger.Error("sourceStreamClient.Recv encountered error", tag.Error(err))
+			var visitErr *interceptor.VisitError
+			if errors.As(err, &visitErr) {
+				f.visitErr = visitErr
+			}
 			return
 		}
 		switch attr := resp.GetAttributes().(type) {
