@@ -89,7 +89,9 @@ type (
 
 		workflows []*WorkflowDistribution
 
-		workflowsPerPair int
+		workflowsPerPair         int
+		encryptionEnabled        bool
+		transitionHistoryEnabled bool
 	}
 
 	WorkflowDistribution struct {
@@ -229,6 +231,22 @@ func TestReplicationFailoverTestSuite(t *testing.T) {
 	}
 }
 
+func TestEncryptedReplicationFailoverTestSuite(t *testing.T) {
+	for _, transitionHistoryEnabled := range []bool{true, false} {
+		transitionHistoryEnabled := transitionHistoryEnabled
+		t.Run(fmt.Sprintf("TransitionHistoryEnabled_%t", transitionHistoryEnabled), func(t *testing.T) {
+			suite.Run(t, &ReplicationTestSuite{
+				shardCountA:              1,
+				shardCountB:              1,
+				workflowsPerPair:         1,
+				setupMode:                SetupModeSimple,
+				encryptionEnabled:        true,
+				transitionHistoryEnabled: transitionHistoryEnabled,
+			})
+		})
+	}
+}
+
 func (s *ReplicationTestSuite) SetupSuite() {
 	s.Assertions = require.New(s.T())
 	s.logger = log.NewTestLogger()
@@ -240,8 +258,12 @@ func (s *ReplicationTestSuite) SetupSuite() {
 		tag.NewStringTag("setupMode", string(s.setupMode)),
 	)
 
-	s.clusterA = createCluster(s.logger, s.T(), "cluster-a", s.shardCountA, 1, 1)
-	s.clusterB = createCluster(s.logger, s.T(), "cluster-b", s.shardCountB, 2, 1)
+	transitionHistoryOverride := []bool(nil)
+	if s.encryptionEnabled {
+		transitionHistoryOverride = []bool{s.transitionHistoryEnabled}
+	}
+	s.clusterA = createCluster(s.logger, s.T(), "cluster-a", s.shardCountA, 1, 1, transitionHistoryOverride...)
+	s.clusterB = createCluster(s.logger, s.T(), "cluster-b", s.shardCountB, 2, 1, transitionHistoryOverride...)
 
 	if s.setupMode == SetupModeSimple {
 		s.setupSimple()
@@ -283,7 +305,14 @@ func (s *ReplicationTestSuite) setupSimple() {
 		proxyBShardConfig.RemoteShardCount = int32(s.shardCountA)
 	}
 
-	s.proxyA = createProxy(s.logger, s.T(), "proxy-a", "", proxyAOutbound, muxServerAddress, s.clusterA, config.ConnTypeMuxClient, config.ShardCountConfig{}, "", "", 0, nil, nil)
+	if s.encryptionEnabled {
+		// Proxy A represents the customer side and owns the encryption key. The
+		// regression test expects it to seal application payloads in replication
+		// traffic before Cluster B persists them.
+		s.proxyA = createProxy(s.logger, s.T(), "proxy-a", "", proxyAOutbound, muxServerAddress, s.clusterA, config.ConnTypeMuxClient, config.ShardCountConfig{}, "", "", 0, nil, nil, replicationEncryptionConfig())
+	} else {
+		s.proxyA = createProxy(s.logger, s.T(), "proxy-a", "", proxyAOutbound, muxServerAddress, s.clusterA, config.ConnTypeMuxClient, config.ShardCountConfig{}, "", "", 0, nil, nil)
+	}
 	s.proxyB = createProxy(s.logger, s.T(), "proxy-b", "", proxyBOutbound, muxServerAddress, s.clusterB, config.ConnTypeMuxServer, proxyBShardConfig, "", "", 0, nil, nil)
 }
 
@@ -612,6 +641,10 @@ func (s *ReplicationTestSuite) waitForClusterConnected(
 }
 
 func (s *ReplicationTestSuite) TestReplication() {
+	if s.encryptionEnabled {
+		s.T().Skip("the encrypted setup is covered by the encryption regression tests")
+	}
+
 	ctx := context.Background()
 
 	s.workflows = s.generateWorkflowsWithLoad(s.workflowsPerPair)
