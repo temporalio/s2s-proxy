@@ -27,6 +27,17 @@ data:
         - myNamespace
       local:
         connectionType: tcp
+        keepalive:
+          client:
+            permitWithoutStream: true
+            time: 30s
+            timeout: 20s
+          server:
+            enforcementPolicy:
+              minTime: 10s
+              permitWithoutStream: true
+            time: 1m
+            timeout: 20s
         tcpClient:
           address: frontend-address:7233
         tcpServer:
@@ -38,6 +49,13 @@ data:
           remote: my-cloud.acct
       remote:
         connectionType: mux-client
+        keepalive:
+          server:
+            enforcementPolicy:
+              minTime: 10s
+              permitWithoutStream: true
+            time: 1m
+            timeout: 20s
         muxAddressInfo:
           address: s2s-proxy-sample.example.tmprl.cloud:8233
           tls:

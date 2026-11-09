@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -103,6 +104,10 @@ func TestBasic(t *testing.T) {
 	require.Contains(t, cc.ACLPolicy.AllowedMethods.AdminService, "StreamWorkflowReplicationMessages")
 	require.Equal(t, []string{"namespace1", "namespace2"}, cc.ACLPolicy.AllowedNamespaces)
 	require.True(t, cc.Remote.MuxAddressInfo.TLSConfig.SkipCAVerification)
+	requireShortKeepaliveClient(t, cc.Local.ClientKeepalive())
+	requireShortKeepaliveServer(t, cc.Local.ServerKeepalive())
+	requireShortKeepaliveClient(t, cc.Remote.ClientKeepalive())
+	requireShortKeepaliveServer(t, cc.Remote.ServerKeepalive())
 
 	customSAAliases := cc.CustomSearchAttributeAliases
 	require.True(t, customSAAliases.IsEnabled())
@@ -278,6 +283,26 @@ func TestDefaultChart(t *testing.T) {
 	require.Equal(t, "remote_proxy_service:8233", cc.Remote.MuxAddressInfo.ConnectionString)
 	require.Equal(t, "my-s2s-proxy.svc.cluster.local:9233", cc.ReplicationEndpoint)
 	require.False(t, cc.Remote.MuxAddressInfo.TLSConfig.IsEnabled())
+	requireShortKeepaliveServer(t, cc.Local.ServerKeepalive())
+	requireShortKeepaliveClient(t, cc.Local.ClientKeepalive())
+	requireShortKeepaliveServer(t, cc.Remote.ServerKeepalive())
+	// Pings to the remote proxy stay off until the remote proxy accepts them.
+	require.Nil(t, cc.Remote.ClientKeepalive())
+	require.NoError(t, proxyConfig.Validate())
+}
+
+func requireShortKeepaliveClient(t *testing.T, ka *ClientKeepaliveConfig) {
+	t.Helper()
+	require.NotNil(t, ka)
+	require.Equal(t, ClientKeepaliveConfig{Time: 30 * time.Second, Timeout: 20 * time.Second, PermitWithoutStream: true}, *ka)
+}
+
+func requireShortKeepaliveServer(t *testing.T, ka *ServerKeepaliveConfig) {
+	t.Helper()
+	require.NotNil(t, ka)
+	require.Equal(t, time.Minute, ka.Time)
+	require.Equal(t, 20*time.Second, ka.Timeout)
+	require.Equal(t, &KeepaliveEnforcementPolicyConfig{MinTime: 10 * time.Second, PermitWithoutStream: true}, ka.EnforcementPolicy)
 }
 
 func TestExampleChart(t *testing.T) {

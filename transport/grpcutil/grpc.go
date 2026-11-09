@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/temporalio/s2s-proxy/proto/compat"
@@ -39,6 +40,8 @@ type ClientOptions struct {
 	// StripOutgoingMetadataKeys are removed from the outgoing metadata of every call made on the connection.
 	// PerRPCCredentials are added after this runs, so they are never removed.
 	StripOutgoingMetadataKeys []string
+	// Keepalive, when set, makes the client send HTTP/2 keepalive pings. Unset keeps grpc-go's default: no pings.
+	Keepalive *keepalive.ClientParameters
 }
 
 func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics, clientOptions ...ClientOptions) []grpc.DialOption {
@@ -80,6 +83,9 @@ func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetric
 		}
 		if options.PerRPCCredentials != nil {
 			dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(options.PerRPCCredentials))
+		}
+		if options.Keepalive != nil {
+			dialOptions = append(dialOptions, grpc.WithKeepaliveParams(*options.Keepalive))
 		}
 	}
 	unaryInterceptors = append(unaryInterceptors, clientMetrics.UnaryClientInterceptor())

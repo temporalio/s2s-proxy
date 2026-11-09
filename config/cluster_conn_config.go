@@ -55,6 +55,8 @@ type (
 		// Credentials controls which identity calls on this connection present to the cluster.
 		// Only the local cluster definition supports it.
 		Credentials *CredentialsConfig `yaml:"credentials"`
+		// Keepalive configures HTTP/2 keepalive on the gRPC client and server built from this definition.
+		Keepalive *KeepaliveConfig `yaml:"keepalive"`
 	}
 
 	CredentialsConfig struct {
@@ -120,12 +122,14 @@ func (c ClusterDefinition) CredentialIdentity() CredentialIdentity {
 	return c.Credentials.Identity
 }
 
-// Validate reports problems in this connection's config. Only the encryption
-// and credentials blocks are covered so far; the checks NewProxy makes inline could move here.
+// Validate reports problems in this connection's config. Only the encryption, credentials
+// and keepalive blocks are covered so far; the checks NewProxy makes inline could move here.
 func (c *ClusterConnConfig) Validate() error {
 	return validation.Validate(
 		"",
 		validation.Nested("encryption", &c.EncryptionConfig),
+		validation.Nested("local.keepalive", c.Local.Keepalive),
+		validation.Nested("remote.keepalive", c.Remote.Keepalive),
 		validation.Field("local.credentials.identity", c.Local, func(local ClusterDefinition) error {
 			switch identity := local.CredentialIdentity(); identity {
 			case CredentialIdentityDefault, CredentialIdentityStrip:

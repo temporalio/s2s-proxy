@@ -445,6 +445,10 @@ func createClient(
 	default:
 		return nil, fmt.Errorf("%s client: unsupported credentials identity %q", directionLabel, identity)
 	}
+	if ka := transportCfg.ClientKeepalive(); ka != nil {
+		params := ka.Parameters()
+		clientOptions.Keepalive = &params
+	}
 
 	switch transportCfg.ConnectionType {
 	case config.ConnTypeTCP:
@@ -651,6 +655,7 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 		grpc.ChainUnaryInterceptor(unaryInterceptors...),
 		grpc.ChainStreamInterceptor(streamInterceptors...),
 	}
+	opts = append(opts, serverKeepaliveOptions(c.clusterDefinition.ServerKeepalive())...)
 
 	if tlsConfig.IsEnabled() {
 		c.loggers.Get(LogTLSHandshake).Info("TLS is enabled", tag.NewStringTag("direction", c.directionLabel),
@@ -667,6 +672,20 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	}
 
 	return opts, nil
+}
+
+// serverKeepaliveOptions returns the gRPC server options for ka. With ka nil, or its enforcement policy nil, it adds
+// nothing for that part, so grpc-go's defaults apply: the server pings an idle client after 2h, and accepts at most one
+// client ping every 5m, only while a stream is open.
+func serverKeepaliveOptions(ka *config.ServerKeepaliveConfig) []grpc.ServerOption {
+	if ka == nil {
+		return nil
+	}
+	opts := []grpc.ServerOption{grpc.KeepaliveParams(ka.Parameters())}
+	if ka.EnforcementPolicy != nil {
+		opts = append(opts, grpc.KeepaliveEnforcementPolicy(ka.EnforcementPolicy.Policy()))
+	}
+	return opts
 }
 
 // stampAndTranslate returns [interceptor.StampNamespace] and translate in the
