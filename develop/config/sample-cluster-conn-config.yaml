@@ -18,6 +18,26 @@ clusterConnections:
           remoteCAPath: ""
           caServerName: ""
           skipCAVerification: true
+      # HTTP/2 keepalive for the gRPC client and server built from this definition. Omit the block, or any field in
+      # it, to keep grpc-go's defaults: the client never pings, and the server pings an idle client after 2h and
+      # accepts at most one client ping every 5m, only while a stream is open.
+      # A client must not ping more often than the server on the other end allows, or the server closes the
+      # connection with GOAWAY "too_many_pings". Configure the server side first.
+      keepalive:
+        # Client: the tcpClient connection to the local Temporal frontend. Temporal frontends accept a ping every
+        # 10s by default, so these values are safe.
+        client:
+          time: 30s                   # ping after 30s without receiving anything (minimum 10s, 0 = never)
+          timeout: 20s                # close the connection if the ping isn't answered within 20s
+          permitWithoutStream: true   # also ping idle connections
+        # Server: the tcpServer listener the local Temporal server dials. The enforcement policy lets Temporal send
+        # client keepalive pings every 30s (services.frontend.rpc.clientConnectionConfig) without being rejected.
+        server:
+          time: 1m                    # ping a client after 1m without receiving anything
+          timeout: 20s                # close the connection if the ping isn't answered within 20s
+          enforcementPolicy:
+            minTime: 10s              # accept a client ping every 10s, as Temporal history, matching and frontend do
+            permitWithoutStream: true # accept pings on connections with no open stream
     remote:
       connectionType: "mux-server" # One mux represents both inbound and outbound
       muxCount: 10
@@ -29,6 +49,22 @@ clusterConnections:
           remoteCAPath: ""
           caServerName: ""
           skipCAVerification: true
+      # On a mux definition, keepalive applies to the gRPC traffic inside the mux. yamux already pings the TCP
+      # session every 30s; these settings also catch a single gRPC connection that stalls inside a healthy session.
+      keepalive:
+        # Client: calls this proxy makes to the peer proxy. Only turn this on once the peer proxy accepts pings
+        # (its remote.keepalive.server.enforcementPolicy), or the peer closes the connection with too_many_pings.
+        client:
+          time: 30s
+          timeout: 20s
+          permitWithoutStream: true
+        # Server: calls the peer proxy makes to this one.
+        server:
+          time: 1m
+          timeout: 20s
+          enforcementPolicy:
+            minTime: 10s
+            permitWithoutStream: true
     aclPolicy:
       allowedMethods:
         adminService:
