@@ -19,6 +19,22 @@ clusterConnections:
         #   certificatePath: ""
         #   keyPath: ""
         #   remoteCAPath: ""
+      # HTTP/2 keepalive closes connections that die silently within about a minute, instead of the ~15 minutes TCP
+      # takes. Remove a block to keep grpc-go's defaults.
+      keepalive:
+        # Pings from the proxy to your Temporal frontend. Temporal frontends accept a ping every 10s by default.
+        client:
+          time: 30s
+          timeout: 20s
+          permitWithoutStream: true
+        # Lets your Temporal server ping the proxy every 30s (services.frontend.rpc.clientConnectionConfig), and has
+        # the proxy ping your Temporal server after 1m without traffic.
+        server:
+          time: 1m
+          timeout: 20s
+          enforcementPolicy:
+            minTime: 10s
+            permitWithoutStream: true
     # remote describes the remote cluster's connection details
     remote:
       # Remotes are usually "mux-client" or "mux-server", but "tcp" is supported
@@ -33,6 +49,21 @@ clusterConnections:
           keyPath: ""
           remoteCAPath: "" # path to the CA cert that signed the remote server's cert; empty = use system root CAs
           caServerName: "" # required unless skipCAVerification: true; must match the remote cert's SAN/CN
+      # Keepalive for the gRPC traffic inside the mux. yamux already pings the TCP session every 30s.
+      keepalive:
+        # Accept pings from the remote proxy, and ping it after 1m without traffic.
+        server:
+          time: 1m
+          timeout: 20s
+          enforcementPolicy:
+            minTime: 10s
+            permitWithoutStream: true
+        # Pings from this proxy to the remote proxy. Uncomment only once the remote proxy accepts pings
+        # (remote.keepalive.server.enforcementPolicy), or it closes the connection with GOAWAY "too_many_pings".
+        # client:
+        #   time: 30s
+        #   timeout: 20s
+        #   permitWithoutStream: true
     # This should be the routable address
     replicationEndpoint: "my-s2s-proxy.svc.cluster.local:9233"
     # This is what the remote cluster is allowed to access on your local cluster

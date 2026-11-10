@@ -283,6 +283,12 @@ func TestDefaultChart(t *testing.T) {
 	require.Equal(t, "remote_proxy_service:8233", cc.Remote.MuxAddressInfo.ConnectionString)
 	require.Equal(t, "my-s2s-proxy.svc.cluster.local:9233", cc.ReplicationEndpoint)
 	require.False(t, cc.Remote.MuxAddressInfo.TLSConfig.IsEnabled())
+	requireShortKeepaliveServer(t, cc.Local.ServerKeepalive())
+	requireShortKeepaliveClient(t, cc.Local.ClientKeepalive())
+	requireShortKeepaliveServer(t, cc.Remote.ServerKeepalive())
+	// Pings to the remote proxy stay off until the remote proxy accepts them.
+	require.Nil(t, cc.Remote.ClientKeepalive())
+	require.NoError(t, proxyConfig.Validate())
 }
 
 func requireShortKeepaliveClient(t *testing.T, ka *ClientKeepaliveConfig) {
