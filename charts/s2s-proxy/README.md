@@ -43,37 +43,6 @@ configOverride:
             remote: my-cloud.acct # Corresponding namespace pre-created in Temporal Cloud.
 ```
 
-### gRPC keepalive
-
-The default config turns on HTTP/2 keepalive so connections that die silently are closed within about a minute,
-instead of the ~15 minutes TCP takes:
-
-* `local.keepalive.client`: the proxy pings your Temporal frontend every 30s. Temporal frontends accept a ping every 10s by default.
-* `local.keepalive.server`: the proxy accepts a ping every 10s from your Temporal server, and pings it after 1m without traffic.
-* `remote.keepalive.server`: the same, for the gRPC traffic the remote proxy sends inside the mux.
-
-Pings from this proxy to the remote proxy (`remote.keepalive.client`) stay off, because the remote proxy closes the
-connection with GOAWAY `too_many_pings` unless it accepts them. Turn them on once the remote proxy runs with
-`remote.keepalive.server.enforcementPolicy`.
-
-To let your Temporal server ping the proxy, set this in its static config and turn on the
-`system.enableInternodeClientKeepAlive` dynamic config:
-
-```yaml
-services:
-  frontend:
-    rpc:
-      clientConnectionConfig:
-        keepAliveClientParameters:
-          keepAliveTime: "30s"
-          keepAliveTimeout: "20s"
-          keepAlivePermitWithoutStream: true
-```
-
-To change a value, set it in `configOverride`. `configOverride` is merged over the defaults, so a value set to `null`,
-`0` or `false` there falls back to the default rather than removing it. To stop the proxy pinging your frontend, set
-`local.keepalive.client.time: 0s`.
-
 Generate example helm chart
 ---------------------------
 
