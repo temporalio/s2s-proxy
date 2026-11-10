@@ -65,10 +65,10 @@ kind: Service
 metadata:
   name: example-s2s-proxy
   labels:
-    helm.sh/chart: s2s-proxy-0.1.1
+    helm.sh/chart: s2s-proxy-0.1.2
     app.kubernetes.io/name: s2s-proxy
     app.kubernetes.io/instance: example
-    app.kubernetes.io/version: "0.2.5"
+    app.kubernetes.io/version: "0.3.1"
     app.kubernetes.io/managed-by: Helm
 spec:
   # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
@@ -92,10 +92,10 @@ kind: Deployment
 metadata:
   name: example-s2s-proxy
   labels:
-    helm.sh/chart: s2s-proxy-0.1.1
+    helm.sh/chart: s2s-proxy-0.1.2
     app.kubernetes.io/name: s2s-proxy
     app.kubernetes.io/instance: example
-    app.kubernetes.io/version: "0.2.5"
+    app.kubernetes.io/version: "0.3.1"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -106,15 +106,15 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: s2s-proxy-0.1.1
+        helm.sh/chart: s2s-proxy-0.1.2
         app.kubernetes.io/name: s2s-proxy
         app.kubernetes.io/instance: example
-        app.kubernetes.io/version: "0.2.5"
+        app.kubernetes.io/version: "0.3.1"
         app.kubernetes.io/managed-by: Helm
     spec:
       containers:
         - name: s2s-proxy
-          image: "temporalio/s2s-proxy:v0.2.5"
+          image: "temporalio/s2s-proxy:v0.3.1"
           imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 9233
