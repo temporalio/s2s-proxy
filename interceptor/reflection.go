@@ -149,6 +149,9 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
 	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
+		if isByteSlice(vwp.Value) {
+			return visit.Skip, nil
+		}
 		if vwp.Kind() == reflect.Pointer && vwp.IsNil() {
 			return visit.Skip, nil
 		}
@@ -215,6 +218,9 @@ func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (boo
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
 	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
+		if isByteSlice(vwp.Value) {
+			return visit.Skip, nil
+		}
 		if vwp.Kind() == reflect.Pointer && vwp.IsNil() {
 			return visit.Skip, nil
 		}
@@ -274,6 +280,15 @@ func translateIndexedFields(fields map[string]*common.Payload, match stringMatch
 		}
 	}
 	return newIndexed, anyMatched
+}
+
+// isByteSlice reports whether v is a []byte, including named types such as
+// json.RawMessage. A byte slice holds opaque data, such as a payload or a
+// serialized history blob, and has no namespace or search attribute field.
+// The visit library queues each element of a slice, so walking a byte slice
+// costs time and allocations for every byte and can never match.
+func isByteSlice(v reflect.Value) bool {
+	return v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8
 }
 
 func getParentFieldType(vwp visit.ValueWithParent) (result reflect.StructField, action visit.Action) {
