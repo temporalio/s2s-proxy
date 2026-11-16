@@ -2,7 +2,6 @@ package interceptor
 
 import (
 	"bytes"
-	"math/rand/v2"
 	"slices"
 	"strings"
 	"testing"
@@ -33,10 +32,10 @@ var proxiedServices = []protoreflect.FullName{
 }
 
 // knownDeepFields are fields that the visitors translate, which stream replication carries deep
-// inside a response. The random builder stops at randomMessageMaxDepth, so a random
+// inside a response. The builder stops at testMessageMaxDepth, so a test
 // StreamWorkflowReplicationMessagesResponse has no event attributes in its history blobs and no
-// mutable state in its state snapshots. visitorTargets finds the fields and the types to start
-// random messages at. This list only checks that it finds these.
+// mutable state in its state snapshots. reachableMessageTypes finds the types that hold these
+// fields, so the test builds them as messages of their own. This list only checks that it does.
 var knownDeepFields = []protoreflect.FullName{
 	"temporal.server.api.replication.v1.HistoryTaskAttributes.events",
 	"temporal.server.api.replication.v1.HistoryTaskAttributes.new_run_events",
@@ -46,12 +45,6 @@ var knownDeepFields = []protoreflect.FullName{
 	"temporal.server.api.replication.v1.VersionedTransitionArtifact.event_batches",
 	"temporal.server.api.persistence.v1.WorkflowExecutionInfo.search_attributes",
 }
-
-// randomMessagesPerType is the number of random messages for each request and response type.
-const randomMessagesPerType = 50
-
-// randomMessagesPerTargetType is the number of random messages for each type from visitorTargets.
-const randomMessagesPerTargetType = 50
 
 // visitorRule is a rule that the visitors apply to a field by its name.
 type visitorRule string
@@ -117,14 +110,11 @@ func visitorRuleOf(field protoreflect.FieldDescriptor) (visitorRule, bool) {
 	return "", false
 }
 
-// visitorTargets returns every message type with a field that the visitors translate, that a
-// proxied request or response or a history blob can hold, and those fields. A random message
-// that starts at a proxied request or response stops at randomMessageMaxDepth, so the deep types
-// are only filled when a random message starts at them.
-func visitorTargets(t *testing.T) ([]protoreflect.MessageType, []protoreflect.FieldDescriptor) {
+// reachableMessageTypes returns every message type that a proxied request or response, or a
+// history blob, can hold, at any depth, including the requests and responses themselves.
+func reachableMessageTypes(t *testing.T) []protoreflect.MessageType {
 	t.Helper()
 	var types []protoreflect.MessageType
-	var fields []protoreflect.FieldDescriptor
 	seen := map[protoreflect.FullName]bool{}
 	var walk func(desc protoreflect.MessageDescriptor)
 	walk = func(desc protoreflect.MessageDescriptor) {
@@ -132,26 +122,21 @@ func visitorTargets(t *testing.T) ([]protoreflect.MessageType, []protoreflect.Fi
 			return
 		}
 		seen[desc.FullName()] = true
-		isTarget := false
-		descFields := desc.Fields()
-		for i := range descFields.Len() {
-			field := descFields.Get(i)
-			if _, ok := visitorRuleOf(field); ok {
-				isTarget = true
-				fields = append(fields, field)
-			}
-			valueField := field
-			if field.IsMap() {
-				valueField = field.MapValue()
-			}
-			if valueField.Kind() == protoreflect.MessageKind {
-				walk(valueField.Message())
-			}
-		}
-		if isTarget {
+		// A map entry is part of its map field, not a message of its own.
+		if !desc.IsMapEntry() {
 			msgType, err := protoregistry.GlobalTypes.FindMessageByName(desc.FullName())
 			require.NoError(t, err)
 			types = append(types, msgType)
+		}
+		fields := desc.Fields()
+		for i := range fields.Len() {
+			field := fields.Get(i)
+			if field.IsMap() {
+				field = field.MapValue()
+			}
+			if field.Kind() == protoreflect.MessageKind {
+				walk(field.Message())
+			}
 		}
 	}
 	for _, msgType := range proxiedMessageTypes(t) {
@@ -159,7 +144,21 @@ func visitorTargets(t *testing.T) ([]protoreflect.MessageType, []protoreflect.Fi
 	}
 	// A history blob holds a History, which a proxied message does not always reach as a field.
 	walk((&history.History{}).ProtoReflect().Descriptor())
-	return types, fields
+	return types
+}
+
+// visitorRules returns the rules that the visitors apply to the fields of desc, and those fields.
+func visitorRules(desc protoreflect.MessageDescriptor) (map[visitorRule]bool, []protoreflect.FieldDescriptor) {
+	rules := map[visitorRule]bool{}
+	var ruleFields []protoreflect.FieldDescriptor
+	fields := desc.Fields()
+	for i := range fields.Len() {
+		if rule, ok := visitorRuleOf(fields.Get(i)); ok {
+			rules[rule] = true
+			ruleFields = append(ruleFields, fields.Get(i))
+		}
+	}
+	return rules, ruleFields
 }
 
 // proxiedMessageTypes returns the request and response types of every method in proxiedServices.
@@ -187,7 +186,7 @@ func proxiedMessageTypes(t *testing.T) []protoreflect.MessageType {
 }
 
 // skipCheckVisitors are the visitors that the byte slice checks run, each with a matcher that
-// translates or allows one of the names in randomStrings.
+// translates or allows one of the names in testStrings.
 var skipCheckVisitors = []struct {
 	name  string
 	visit visitor
@@ -198,64 +197,49 @@ var skipCheckVisitors = []struct {
 	{name: "access control", visit: visitNamespace, match: createNamespaceAccessControl(auth.NewAccesControl([]string{"orig"}))},
 }
 
-// TestSkippingByteSlicesKeepsVisitorResults checks that skipping byte slices only saves work,
-// for random requests and responses of every method in proxiedServices.
+// TestSkippingByteSlicesKeepsVisitorResults checks that skipping byte slices only saves work, for
+// requests and responses of every method in proxiedServices. Each message starts at the request or
+// response, so it also checks what the visitors do with the whole message, such as skipping some
+// responses. It builds variantsFor messages of each type.
 func TestSkippingByteSlicesKeepsVisitorResults(t *testing.T) {
 	t.Cleanup(func() { walkByteSlices = false })
 	logger := log.NewNoopLogger()
 
-	for _, serviceName := range proxiedServices {
-		desc, err := protoregistry.GlobalFiles.FindDescriptorByName(serviceName)
-		require.NoError(t, err)
-		methods := desc.(protoreflect.ServiceDescriptor).Methods()
-		for i := range methods.Len() {
-			method := methods.Get(i)
-			for _, msgDesc := range []protoreflect.MessageDescriptor{method.Input(), method.Output()} {
-				msgType, err := protoregistry.GlobalTypes.FindMessageByName(msgDesc.FullName())
-				require.NoError(t, err)
-				for seed := range uint64(randomMessagesPerType) {
-					requireSameVisitorResults(t, logger, msgType, seed, nil, "method", method.FullName())
-				}
-			}
+	for _, msgType := range proxiedMessageTypes(t) {
+		for variant := range variantsFor(msgType.Descriptor()) {
+			requireSameVisitorResults(t, logger, msgType, variant, nil)
 		}
 	}
 }
 
-// TestSkippingByteSlicesKeepsVisitorResultsInTargetMessages runs the same check on random messages
-// of every type from visitorTargets, so that it also covers the types that stream replication
-// carries deeper than a random request or response reaches. It also checks that the check covers
-// translation, and not only messages with nothing to translate:
+// TestSkippingByteSlicesKeepsVisitorResultsInEveryMessageType runs the same check on messages of
+// every type from reachableMessageTypes. A visitor decides what to do with a value from the value
+// type and the name of the field that holds it. So building each type as a message of its own, in
+// variantsFor variants, gives every field of every type each kind of value: each of testStrings,
+// each oneof field, and history blobs and other bytes. This also covers the types that stream
+// replication carries deeper than a request or response reaches.
+//
+// It also checks that the comparison covers translation, and not only messages with nothing to
+// translate:
 //   - for each type, each visitor that one of its fields has a rule for must match in at least one
 //     message, and
 //   - each field that the visitors translate must hold a value that a test matcher translates in at
 //     least one message.
-func TestSkippingByteSlicesKeepsVisitorResultsInTargetMessages(t *testing.T) {
+func TestSkippingByteSlicesKeepsVisitorResultsInEveryMessageType(t *testing.T) {
 	t.Cleanup(func() { walkByteSlices = false })
 	logger := log.NewNoopLogger()
-	types, fields := visitorTargets(t)
+	types := reachableMessageTypes(t)
 
-	fieldNames := map[protoreflect.FullName]bool{}
-	for _, field := range fields {
-		fieldNames[field.FullName()] = true
-	}
-	for _, name := range knownDeepFields {
-		require.True(t, fieldNames[name], "visitorTargets did not find %s", name)
-	}
-
+	var ruleFields []protoreflect.FieldDescriptor
 	filled := map[protoreflect.FullName]bool{}
 	for _, msgType := range types {
 		desc := msgType.Descriptor()
-		rules := map[visitorRule]bool{}
-		descFields := desc.Fields()
-		for i := range descFields.Len() {
-			if rule, ok := visitorRuleOf(descFields.Get(i)); ok {
-				rules[rule] = true
-			}
-		}
+		rules, fields := visitorRules(desc)
+		ruleFields = append(ruleFields, fields...)
 
 		matched := map[string]bool{}
-		for seed := range uint64(randomMessagesPerTargetType) {
-			for _, visitorName := range requireSameVisitorResults(t, logger, msgType, seed, filled) {
+		for variant := range variantsFor(desc) {
+			for _, visitorName := range requireSameVisitorResults(t, logger, msgType, variant, filled) {
 				matched[visitorName] = true
 			}
 		}
@@ -267,9 +251,18 @@ func TestSkippingByteSlicesKeepsVisitorResultsInTargetMessages(t *testing.T) {
 		}
 	}
 
-	for _, field := range fields {
-		require.True(t, filled[field.FullName()],
-			"no random message set %s to a value that a test matcher translates; raise randomMessagesPerTargetType", field.FullName())
+	for _, field := range ruleFields {
+		require.True(t, filled[field.FullName()], "no message set %s to a value that a test matcher translates", field.FullName())
+	}
+
+	// The types must include the stream replication types, and the rules must find their fields.
+	require.Greater(t, len(types), 500, "message types checked")
+	ruleFieldNames := map[protoreflect.FullName]bool{}
+	for _, field := range ruleFields {
+		ruleFieldNames[field.FullName()] = true
+	}
+	for _, name := range knownDeepFields {
+		require.True(t, ruleFieldNames[name], "no message type has the field %s", name)
 	}
 }
 
@@ -493,20 +486,20 @@ func makeTranslatableEvents(namespace, searchAttribute string, payloadSize int) 
 	}
 }
 
-// requireSameVisitorResults runs each visitor in skipCheckVisitors on one random message of msgType,
-// once with the byte slice walk and once without it. Both runs must return the same message and
-// the same matched value, or both must return an error. After an error the message is only partly
+// requireSameVisitorResults runs each visitor in skipCheckVisitors on test message number variant of
+// msgType, once with the byte slice walk and once without it. Both runs must return the same message
+// and the same matched value, or both must return an error. After an error the message is only partly
 // translated and its content is not defined, so then it only checks that both fail.
-// If filled is not nil, it adds each field that the random message sets to a translatable value.
+// If filled is not nil, it adds each field that the message sets to a translatable value.
 // It returns the names of the visitors that matched without an error.
-func requireSameVisitorResults(t *testing.T, logger log.Logger, msgType protoreflect.MessageType, seed uint64, filled map[protoreflect.FullName]bool, location ...any) []string {
+func requireSameVisitorResults(t *testing.T, logger log.Logger, msgType protoreflect.MessageType, variant int, filled map[protoreflect.FullName]bool) []string {
 	t.Helper()
-	msg := newRandomMessage(msgType, seed, filled)
+	msg := newTestMessage(msgType, variant, filled)
 	var matched []string
 	for _, v := range skipCheckVisitors {
 		walked := runVisitor(logger, v.visit, v.match, msg, true)
 		skipped := runVisitor(logger, v.visit, v.match, msg, false)
-		where := append(slices.Clip(location), "type", msgType.Descriptor().FullName(), "visitor", v.name, "seed", seed)
+		where := []any{"type", msgType.Descriptor().FullName(), "visitor", v.name, "variant", variant}
 		require.Equal(t, walked.err == nil, skipped.err == nil,
 			"only one run failed: walked=%v skipped=%v %v", walked.err, skipped.err, where)
 		if walked.err != nil {
@@ -609,32 +602,53 @@ var historyBlobsAsEvents = cmp.FilterPath(func(path cmp.Path) bool {
 	return &events
 }))
 
-// randomStrings holds the names that the test matchers translate, and names that they do not.
-var randomStrings = []string{"orig", "other", "AudienceId", ""}
+// testStrings holds the names that the test matchers translate, and names that they do not.
+var testStrings = []string{"orig", "other", "AudienceId", ""}
 
-// randomMessageMaxDepth limits how deep the builder fills nested messages.
-const randomMessageMaxDepth = 5
+// testMessageMaxDepth limits how deep the builder fills nested messages. Every reachable type is
+// also built as a message of its own, so deeper fields are still checked.
+const testMessageMaxDepth = 5
 
-// randomMessageBuilder fills a message with random values. Most data blobs, and some other byte
-// fields, hold a serialized history of random events, so the visitors also translate inside blobs.
-type randomMessageBuilder struct {
-	rand *rand.Rand
+// variantsFor returns the number of test messages to build for a type: enough that each string
+// field holds each of testStrings, and each oneof is unset or holds each of its fields, in at
+// least one message.
+func variantsFor(desc protoreflect.MessageDescriptor) int {
+	variants := len(testStrings)
+	oneofs := desc.Oneofs()
+	for i := range oneofs.Len() {
+		if oneof := oneofs.Get(i); !oneof.IsSynthetic() {
+			variants = max(variants, oneof.Fields().Len()+1)
+		}
+	}
+	return variants
+}
+
+// messageBuilder fills a message with values that depend only on the variant number and on where
+// each value is, so the same variant always gives the same message. A value at field index i of
+// a message gets the number c = variant + offset + i, and the builder picks a value by c modulo
+// the number of choices. In the variants from variantsFor, each field of the top message so gets
+// each choice. The offset makes nested messages, list elements and map entries differ from each
+// other. Most data blobs, and some other byte fields, hold a serialized history with a translatable
+// event, so the visitors also translate inside blobs.
+type messageBuilder struct {
+	variant int
 	// filled, if not nil, collects each field with a visitor rule that the builder set to a value
 	// that a test matcher translates.
 	filled map[protoreflect.FullName]bool
 }
 
-func newRandomMessage(msgType protoreflect.MessageType, seed uint64, filled map[protoreflect.FullName]bool) proto.Message {
-	b := &randomMessageBuilder{rand: rand.New(rand.NewPCG(seed, 0)), filled: filled}
+// newTestMessage returns test message number variant of msgType.
+func newTestMessage(msgType protoreflect.MessageType, variant int, filled map[protoreflect.FullName]bool) proto.Message {
+	b := &messageBuilder{variant: variant, filled: filled}
 	m := msgType.New()
-	b.fill(m, 0)
+	b.fill(m, 0, 0)
 	return m.Interface()
 }
 
 // recordTranslatable adds field to b.filled if field has a visitor rule and m holds a value in it
 // that a test matcher translates: the namespace "orig" in a field or a NamespaceInfo, a search
 // attribute "AudienceId", or a History or a history blob, which always has a translatable event.
-func (b *randomMessageBuilder) recordTranslatable(m protoreflect.Message, field protoreflect.FieldDescriptor) {
+func (b *messageBuilder) recordTranslatable(m protoreflect.Message, field protoreflect.FieldDescriptor) {
 	if b.filled == nil || !m.Has(field) {
 		return
 	}
@@ -707,84 +721,91 @@ func isHistoryBlob(blob protoreflect.Message) bool {
 	return proto.Unmarshal(blob.Get(fields.ByName("data")).Bytes(), &events) == nil && len(events.Events) > 0
 }
 
-func (b *randomMessageBuilder) fill(m protoreflect.Message, depth int) {
+// fill sets the fields of m. Every field that is not in a oneof is set. Oneof j is unset or holds
+// one of its fields, picked by variant + offset + j.
+func (b *messageBuilder) fill(m protoreflect.Message, depth, offset int) {
 	desc := m.Descriptor()
-	if desc.FullName() == dataBlobName && b.rand.IntN(10) < 7 {
+	c := b.variant + offset
+	if desc.FullName() == dataBlobName && c%4 != 3 {
 		m.Set(desc.Fields().ByName("encoding_type"), protoreflect.ValueOfEnum(enums.ENCODING_TYPE_PROTO3.Number()))
-		m.Set(desc.Fields().ByName("data"), protoreflect.ValueOfBytes(b.historyBytes(depth)))
+		m.Set(desc.Fields().ByName("data"), protoreflect.ValueOfBytes(b.historyBytes(depth, c)))
 		return
 	}
-	filledOneofs := map[protoreflect.FullName]bool{}
 	fields := desc.Fields()
 	for i := range fields.Len() {
 		field := fields.Get(i)
 		if oneof := field.ContainingOneof(); oneof != nil && !oneof.IsSynthetic() {
-			if filledOneofs[oneof.FullName()] {
-				continue
-			}
-			filledOneofs[oneof.FullName()] = true
-			if b.rand.IntN(3) == 0 {
-				continue
-			}
-			field = oneof.Fields().Get(b.rand.IntN(oneof.Fields().Len()))
-		} else if b.rand.IntN(4) == 0 {
 			continue
 		}
-		b.setField(m, field, depth)
+		b.setField(m, field, depth, c+i)
+	}
+	oneofs := desc.Oneofs()
+	for j := range oneofs.Len() {
+		oneof := oneofs.Get(j)
+		if oneof.IsSynthetic() {
+			continue
+		}
+		if pick := (c + j) % (oneof.Fields().Len() + 1); pick < oneof.Fields().Len() {
+			field := oneof.Fields().Get(pick)
+			b.setField(m, field, depth, c+field.Index())
+		}
 	}
 	// Like a history blob, a History message always gets an event with a name to translate.
-	if desc.FullName() == historyName && depth < randomMessageMaxDepth {
+	if desc.FullName() == historyName && depth < testMessageMaxDepth {
 		events := m.Mutable(desc.Fields().ByName("events")).List()
-		events.Append(protoreflect.ValueOfMessage(b.translatableEvent().ProtoReflect()))
+		events.Append(protoreflect.ValueOfMessage(translatableEvent(c).ProtoReflect()))
 	}
 }
 
-// translatableEvent returns a random event from makeTranslatableEvents with a namespace or a search
-// attribute that a test matcher translates.
-func (b *randomMessageBuilder) translatableEvent() *history.HistoryEvent {
+// translatableEvent returns an event from makeTranslatableEvents, picked by c, with a namespace or
+// a search attribute that a test matcher translates.
+func translatableEvent(c int) *history.HistoryEvent {
 	// The last event from makeTranslatableEvents has no name to translate.
 	events := makeTranslatableEvents("orig", "AudienceId", 16)[:4]
-	return events[b.rand.IntN(len(events))]
+	return events[c%len(events)]
 }
 
-func (b *randomMessageBuilder) setField(m protoreflect.Message, field protoreflect.FieldDescriptor, depth int) {
+// setField sets field of m from c: the variant, plus the offset of m, plus the field index.
+// A list gets c modulo 3 elements, each with its own offset. A map gets one or two entries, so that
+// the key of its first entry is c and, like a string field, takes each of testStrings.
+func (b *messageBuilder) setField(m protoreflect.Message, field protoreflect.FieldDescriptor, depth, c int) {
 	defer b.recordTranslatable(m, field)
 	switch {
 	case field.IsMap():
-		if depth >= randomMessageMaxDepth {
+		if depth >= testMessageMaxDepth {
 			return
 		}
 		entries := m.Mutable(field).Map()
-		for range b.rand.IntN(3) {
-			key := b.scalar(field.MapKey(), depth).MapKey()
+		for e := range 1 + c%2 {
+			key := b.scalar(field.MapKey(), depth, c+e).MapKey()
 			if isMessageField(field.MapValue()) {
 				value := entries.NewValue()
-				b.fill(value.Message(), depth+1)
+				b.fill(value.Message(), depth+1, c+e)
 				entries.Set(key, value)
 			} else {
-				entries.Set(key, b.scalar(field.MapValue(), depth))
+				entries.Set(key, b.scalar(field.MapValue(), depth, c+e+1))
 			}
 		}
 	case field.IsList():
-		if isMessageField(field) && depth >= randomMessageMaxDepth {
+		if isMessageField(field) && depth >= testMessageMaxDepth {
 			return
 		}
 		list := m.Mutable(field).List()
-		for range b.rand.IntN(3) {
+		for e := range c % 3 {
 			if isMessageField(field) {
 				element := list.NewElement()
-				b.fill(element.Message(), depth+1)
+				b.fill(element.Message(), depth+1, c+e)
 				list.Append(element)
 			} else {
-				list.Append(b.scalar(field, depth))
+				list.Append(b.scalar(field, depth, c+e))
 			}
 		}
 	case isMessageField(field):
-		if depth < randomMessageMaxDepth {
-			b.fill(m.Mutable(field).Message(), depth+1)
+		if depth < testMessageMaxDepth {
+			b.fill(m.Mutable(field).Message(), depth+1, c)
 		}
 	default:
-		m.Set(field, b.scalar(field, depth))
+		m.Set(field, b.scalar(field, depth, c))
 	}
 }
 
@@ -792,61 +813,63 @@ func isMessageField(field protoreflect.FieldDescriptor) bool {
 	return field.Kind() == protoreflect.MessageKind || field.Kind() == protoreflect.GroupKind
 }
 
-func (b *randomMessageBuilder) scalar(field protoreflect.FieldDescriptor, depth int) protoreflect.Value {
+// scalar returns a value of the kind of field, picked by c.
+func (b *messageBuilder) scalar(field protoreflect.FieldDescriptor, depth, c int) protoreflect.Value {
 	switch field.Kind() {
 	case protoreflect.BoolKind:
-		return protoreflect.ValueOfBool(b.rand.IntN(2) == 0)
+		return protoreflect.ValueOfBool(c%2 == 0)
 	case protoreflect.EnumKind:
 		values := field.Enum().Values()
-		return protoreflect.ValueOfEnum(values.Get(b.rand.IntN(values.Len())).Number())
+		return protoreflect.ValueOfEnum(values.Get(c % values.Len()).Number())
 	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
-		return protoreflect.ValueOfInt32(b.rand.Int32N(1000))
+		return protoreflect.ValueOfInt32(int32(c % 1000))
 	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
-		return protoreflect.ValueOfInt64(b.rand.Int64N(100000))
+		return protoreflect.ValueOfInt64(int64(c))
 	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
-		return protoreflect.ValueOfUint32(b.rand.Uint32N(1000))
+		return protoreflect.ValueOfUint32(uint32(c % 1000))
 	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
-		return protoreflect.ValueOfUint64(b.rand.Uint64N(100000))
+		return protoreflect.ValueOfUint64(uint64(c))
 	case protoreflect.FloatKind:
-		return protoreflect.ValueOfFloat32(b.rand.Float32())
+		return protoreflect.ValueOfFloat32(float32(c%1000) / 8)
 	case protoreflect.DoubleKind:
-		return protoreflect.ValueOfFloat64(b.rand.Float64())
+		return protoreflect.ValueOfFloat64(float64(c) / 8)
 	case protoreflect.StringKind:
-		return protoreflect.ValueOfString(randomStrings[b.rand.IntN(len(randomStrings))])
+		return protoreflect.ValueOfString(testStrings[c%len(testStrings)])
 	case protoreflect.BytesKind:
-		switch b.rand.IntN(3) {
+		switch c % 3 {
 		case 0:
 			// Translatable names as raw bytes. The visitors must leave them unchanged.
 			return protoreflect.ValueOfBytes([]byte("orig AudienceId"))
 		case 1:
-			data := make([]byte, b.rand.IntN(64))
+			// Bytes that are not a history.
+			data := make([]byte, c%64)
 			for i := range data {
-				data[i] = byte(b.rand.Uint32())
+				data[i] = byte(c*31 + i*7)
 			}
 			return protoreflect.ValueOfBytes(data)
 		default:
-			return protoreflect.ValueOfBytes(b.historyBytes(depth))
+			return protoreflect.ValueOfBytes(b.historyBytes(depth, c))
 		}
 	default:
 		panic("unhandled field kind " + field.Kind().String())
 	}
 }
 
-// historyBytes returns a serialized history of zero to two random events and, at a random place,
-// one event from makeTranslatableEvents with a namespace or a search attribute that a test matcher
-// translates. Few random events hold a translatable name, so without that event most blobs would
-// have nothing to translate, and the walk and skip runs would only be compared on blobs they ignore.
-func (b *randomMessageBuilder) historyBytes(depth int) []byte {
-	if depth >= randomMessageMaxDepth {
+// historyBytes returns a serialized history of zero to two events that the builder fills and, at
+// a place picked by c, one event from makeTranslatableEvents with a namespace or a search attribute
+// that a test matcher translates. Without that event most blobs would have nothing to translate,
+// and the walk and skip runs would only be compared on blobs that they both ignore.
+func (b *messageBuilder) historyBytes(depth, c int) []byte {
+	if depth >= testMessageMaxDepth {
 		return nil
 	}
 	var events history.History
-	for range b.rand.IntN(3) {
+	for e := range c % 3 {
 		var event history.HistoryEvent
-		b.fill(event.ProtoReflect(), depth+1)
+		b.fill(event.ProtoReflect(), depth+1, c+e)
 		events.Events = append(events.Events, &event)
 	}
-	events.Events = slices.Insert(events.Events, b.rand.IntN(len(events.Events)+1), b.translatableEvent())
+	events.Events = slices.Insert(events.Events, c%(len(events.Events)+1), translatableEvent(c))
 	data, err := proto.Marshal(&events)
 	if err != nil {
 		panic(err)
