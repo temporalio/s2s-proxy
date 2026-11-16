@@ -114,9 +114,9 @@ func visitorRuleOf(field protoreflect.FieldDescriptor) (visitorRule, bool) {
 	return "", false
 }
 
-// reachableMessageTypes returns every message type that a proxied request or response, or a
-// history blob, can hold, at any depth, including the requests and responses themselves.
-func reachableMessageTypes(t *testing.T) []protoreflect.MessageType {
+// reachableMessageTypes returns every message type of schema that a proxied request or response,
+// or a history blob, can hold, at any depth, including the requests and responses themselves.
+func reachableMessageTypes(t *testing.T, schema *testSchema) []protoreflect.MessageType {
 	t.Helper()
 	var types []protoreflect.MessageType
 	seen := map[protoreflect.FullName]bool{}
@@ -128,7 +128,7 @@ func reachableMessageTypes(t *testing.T) []protoreflect.MessageType {
 		seen[desc.FullName()] = true
 		// A map entry is part of its map field, not a message of its own.
 		if !desc.IsMapEntry() {
-			msgType, err := protoregistry.GlobalTypes.FindMessageByName(desc.FullName())
+			msgType, err := schema.types.FindMessageByName(desc.FullName())
 			require.NoError(t, err)
 			types = append(types, msgType)
 		}
@@ -143,11 +143,11 @@ func reachableMessageTypes(t *testing.T) []protoreflect.MessageType {
 			}
 		}
 	}
-	for _, msgType := range proxiedMessageTypes(t) {
+	for _, msgType := range proxiedMessageTypes(t, schema) {
 		walk(msgType.Descriptor())
 	}
 	// A history blob holds a History, which a proxied message does not always reach as a field.
-	walk((&history.History{}).ProtoReflect().Descriptor())
+	walk(schema.history.Descriptor())
 	return types
 }
 
@@ -165,13 +165,14 @@ func visitorRules(desc protoreflect.MessageDescriptor) (map[visitorRule]bool, []
 	return rules, ruleFields
 }
 
-// proxiedMessageTypes returns the request and response types of every method in proxiedServices.
-func proxiedMessageTypes(t *testing.T) []protoreflect.MessageType {
+// proxiedMessageTypes returns the request and response types of schema of every method in
+// proxiedServices.
+func proxiedMessageTypes(t *testing.T, schema *testSchema) []protoreflect.MessageType {
 	t.Helper()
 	var out []protoreflect.MessageType
 	seen := map[protoreflect.FullName]bool{}
 	for _, serviceName := range proxiedServices {
-		desc, err := protoregistry.GlobalFiles.FindDescriptorByName(serviceName)
+		desc, err := schema.files.FindDescriptorByName(serviceName)
 		require.NoError(t, err)
 		methods := desc.(protoreflect.ServiceDescriptor).Methods()
 		for i := range methods.Len() {
@@ -180,7 +181,7 @@ func proxiedMessageTypes(t *testing.T) []protoreflect.MessageType {
 					continue
 				}
 				seen[msgDesc.FullName()] = true
-				msgType, err := protoregistry.GlobalTypes.FindMessageByName(msgDesc.FullName())
+				msgType, err := schema.types.FindMessageByName(msgDesc.FullName())
 				require.NoError(t, err)
 				out = append(out, msgType)
 			}
@@ -210,13 +211,14 @@ func TestSkippingByteSlicesKeepsVisitorResults(t *testing.T) {
 	logger := log.NewNoopLogger()
 
 	cov := newTestCoverage()
-	for _, msgType := range proxiedMessageTypes(t) {
+	for _, msgType := range proxiedMessageTypes(t, proxySchema) {
 		for variant := range variantsFor(msgType.Descriptor()) {
-			requireSameVisitorResults(t, logger, msgType, variant, cov)
+			msg := newTestMessage(proxySchema, msgType, variant, cov)
+			requireSameVisitorResults(t, logger, msg, "variant", variant)
 		}
 	}
 	// Report the coverage of every reachable type, to compare with the test that builds each of them.
-	t.Logf("coverage: %v", cov.summary(reachableMessageTypes(t)))
+	t.Logf("coverage: %v", cov.summary(reachableMessageTypes(t, proxySchema)))
 }
 
 // TestSkippingByteSlicesKeepsVisitorResultsInEveryMessageType runs the same check on messages of
@@ -235,7 +237,7 @@ func TestSkippingByteSlicesKeepsVisitorResults(t *testing.T) {
 func TestSkippingByteSlicesKeepsVisitorResultsInEveryMessageType(t *testing.T) {
 	t.Cleanup(func() { walkByteSlices = false })
 	logger := log.NewNoopLogger()
-	types := reachableMessageTypes(t)
+	types := reachableMessageTypes(t, proxySchema)
 
 	var ruleFields []protoreflect.FieldDescriptor
 	cov := newTestCoverage()
@@ -246,7 +248,8 @@ func TestSkippingByteSlicesKeepsVisitorResultsInEveryMessageType(t *testing.T) {
 
 		matched := map[string]bool{}
 		for variant := range variantsFor(desc) {
-			for _, visitorName := range requireSameVisitorResults(t, logger, msgType, variant, cov) {
+			msg := newTestMessage(proxySchema, msgType, variant, cov)
+			for _, visitorName := range requireSameVisitorResults(t, logger, msg, "variant", variant) {
 				matched[visitorName] = true
 			}
 		}
@@ -500,20 +503,18 @@ func makeTranslatableEvents(namespace, searchAttribute string, payloadSize int) 
 	}
 }
 
-// requireSameVisitorResults runs each visitor in skipCheckVisitors on test message number variant of
-// msgType, once with the byte slice walk and once without it. Both runs must return the same message
-// and the same matched value, or both must return an error. After an error the message is only partly
-// translated and its content is not defined, so then it only checks that both fail.
-// It adds what the message holds to cov, and returns the names of the visitors that matched
-// without an error.
-func requireSameVisitorResults(t *testing.T, logger log.Logger, msgType protoreflect.MessageType, variant int, cov *testCoverage) []string {
+// requireSameVisitorResults runs each visitor in skipCheckVisitors on msg, once with the byte slice
+// walk and once without it. Both runs must return the same message and the same matched value, or
+// both must return an error. After an error the message is only partly translated and its content
+// is not defined, so then it only checks that both fail. location describes msg in failure messages.
+// It returns the names of the visitors that matched without an error.
+func requireSameVisitorResults(t *testing.T, logger log.Logger, msg proto.Message, location ...any) []string {
 	t.Helper()
-	msg := newTestMessage(msgType, variant, cov)
 	var matched []string
 	for _, v := range skipCheckVisitors {
 		walked := runVisitor(logger, v.visit, v.match, msg, true)
 		skipped := runVisitor(logger, v.visit, v.match, msg, false)
-		where := []any{"type", msgType.Descriptor().FullName(), "visitor", v.name, "variant", variant}
+		where := append([]any{"type", msg.ProtoReflect().Descriptor().FullName(), "visitor", v.name}, location...)
 		require.Equal(t, walked.err == nil, skipped.err == nil,
 			"only one run failed: walked=%v skipped=%v %v", walked.err, skipped.err, where)
 		if walked.err != nil {
@@ -645,14 +646,16 @@ func variantsFor(desc protoreflect.MessageDescriptor) int {
 // other. Most data blobs, and some other byte fields, hold a serialized history with a translatable
 // event, so the visitors also translate inside blobs.
 type messageBuilder struct {
+	schema  *testSchema
 	variant int
 	// cov collects what the builder set.
 	cov *testCoverage
 }
 
-// newTestMessage returns test message number variant of msgType, and adds what it set to cov.
-func newTestMessage(msgType protoreflect.MessageType, variant int, cov *testCoverage) proto.Message {
-	b := &messageBuilder{variant: variant, cov: cov}
+// newTestMessage returns test message number variant of msgType, a type of schema, and adds what
+// it set to cov.
+func newTestMessage(schema *testSchema, msgType protoreflect.MessageType, variant int, cov *testCoverage) proto.Message {
+	b := &messageBuilder{schema: schema, variant: variant, cov: cov}
 	m := msgType.New()
 	b.fill(m, 0, 0)
 	cov.messages++
@@ -924,7 +927,7 @@ func (b *messageBuilder) fill(m protoreflect.Message, depth, offset int) {
 	// Like a history blob, a History message always gets an event with a name to translate.
 	if desc.FullName() == historyName && depth < testMessageMaxDepth {
 		events := m.Mutable(desc.Fields().ByName("events")).List()
-		events.Append(protoreflect.ValueOfMessage(translatableEvent(c).ProtoReflect()))
+		events.Append(protoreflect.ValueOfMessage(b.schema.translatableEvent(c)))
 	}
 }
 
@@ -1043,16 +1046,61 @@ func (b *messageBuilder) historyBytes(depth, c int) []byte {
 	if depth >= testMessageMaxDepth {
 		return nil
 	}
-	var events history.History
+	var events []protoreflect.Message
 	for e := range c % 3 {
-		var event history.HistoryEvent
-		b.fill(event.ProtoReflect(), depth+1, c+e)
-		events.Events = append(events.Events, &event)
+		event := b.schema.historyEvent.New()
+		b.fill(event, depth+1, c+e)
+		events = append(events, event)
 	}
-	events.Events = slices.Insert(events.Events, c%(len(events.Events)+1), translatableEvent(c))
-	data, err := proto.Marshal(&events)
+	events = slices.Insert(events, c%(len(events)+1), b.schema.translatableEvent(c))
+
+	hist := b.schema.history.New()
+	list := hist.Mutable(hist.Descriptor().Fields().ByName("events")).List()
+	for _, event := range events {
+		list.Append(protoreflect.ValueOfMessage(event))
+	}
+	data, err := proto.Marshal(hist.Interface())
 	if err != nil {
 		panic(err)
 	}
 	return data
+}
+
+// testSchema is the proto schema that the builder makes messages of: the types that the proxy is
+// built with, or the types of an older server release from a descriptor set.
+type testSchema struct {
+	name string
+	// history and historyEvent are the types for the history in a blob.
+	history, historyEvent protoreflect.MessageType
+	// files and types hold the schema, or are the global registries for the proxy schema.
+	files *protoregistry.Files
+	types interface {
+		FindMessageByName(protoreflect.FullName) (protoreflect.MessageType, error)
+	}
+}
+
+// proxySchema is the schema that the proxy is built with.
+var proxySchema = &testSchema{
+	name:         "proxy",
+	history:      (&history.History{}).ProtoReflect().Type(),
+	historyEvent: (&history.HistoryEvent{}).ProtoReflect().Type(),
+	files:        protoregistry.GlobalFiles,
+	types:        protoregistry.GlobalTypes,
+}
+
+// translatableEvent returns translatableEvent(c) as a HistoryEvent of the schema.
+func (s *testSchema) translatableEvent(c int) protoreflect.Message {
+	event := translatableEvent(c)
+	if s.historyEvent == event.ProtoReflect().Type() {
+		return event.ProtoReflect()
+	}
+	data, err := proto.Marshal(event)
+	if err != nil {
+		panic(err)
+	}
+	out := s.historyEvent.New()
+	if err := proto.Unmarshal(data, out.Interface()); err != nil {
+		panic(err)
+	}
+	return out
 }
