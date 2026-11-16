@@ -2,6 +2,10 @@ package interceptor
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
+	"hash"
+	"hash/fnv"
 	"slices"
 	"strings"
 	"testing"
@@ -205,11 +209,14 @@ func TestSkippingByteSlicesKeepsVisitorResults(t *testing.T) {
 	t.Cleanup(func() { walkByteSlices = false })
 	logger := log.NewNoopLogger()
 
+	cov := newTestCoverage()
 	for _, msgType := range proxiedMessageTypes(t) {
 		for variant := range variantsFor(msgType.Descriptor()) {
-			requireSameVisitorResults(t, logger, msgType, variant, nil)
+			requireSameVisitorResults(t, logger, msgType, variant, cov)
 		}
 	}
+	// Report the coverage of every reachable type, to compare with the test that builds each of them.
+	t.Logf("coverage: %v", cov.summary(reachableMessageTypes(t)))
 }
 
 // TestSkippingByteSlicesKeepsVisitorResultsInEveryMessageType runs the same check on messages of
@@ -231,7 +238,7 @@ func TestSkippingByteSlicesKeepsVisitorResultsInEveryMessageType(t *testing.T) {
 	types := reachableMessageTypes(t)
 
 	var ruleFields []protoreflect.FieldDescriptor
-	filled := map[protoreflect.FullName]bool{}
+	cov := newTestCoverage()
 	for _, msgType := range types {
 		desc := msgType.Descriptor()
 		rules, fields := visitorRules(desc)
@@ -239,7 +246,7 @@ func TestSkippingByteSlicesKeepsVisitorResultsInEveryMessageType(t *testing.T) {
 
 		matched := map[string]bool{}
 		for variant := range variantsFor(desc) {
-			for _, visitorName := range requireSameVisitorResults(t, logger, msgType, variant, filled) {
+			for _, visitorName := range requireSameVisitorResults(t, logger, msgType, variant, cov) {
 				matched[visitorName] = true
 			}
 		}
@@ -252,8 +259,15 @@ func TestSkippingByteSlicesKeepsVisitorResultsInEveryMessageType(t *testing.T) {
 	}
 
 	for _, field := range ruleFields {
-		require.True(t, filled[field.FullName()], "no message set %s to a value that a test matcher translates", field.FullName())
+		require.True(t, cov.translatable[field.FullName()], "no message set %s to a value that a test matcher translates", field.FullName())
 	}
+
+	summary := cov.summary(types)
+	t.Logf("coverage: %v", summary)
+	// variantsFor gives each type a variant for each choice of each of its oneofs, and for each test
+	// string in each of its string fields that are not lists, maps or in a oneof.
+	require.Equal(t, summary.oneofChoices, summary.oneofChoicesMade, "oneof choices made")
+	require.Equal(t, summary.stringFields, summary.stringFieldsWithEveryValue, "string fields with every test string")
 
 	// The types must include the stream replication types, and the rules must find their fields.
 	require.Greater(t, len(types), 500, "message types checked")
@@ -490,11 +504,11 @@ func makeTranslatableEvents(namespace, searchAttribute string, payloadSize int) 
 // msgType, once with the byte slice walk and once without it. Both runs must return the same message
 // and the same matched value, or both must return an error. After an error the message is only partly
 // translated and its content is not defined, so then it only checks that both fail.
-// If filled is not nil, it adds each field that the message sets to a translatable value.
-// It returns the names of the visitors that matched without an error.
-func requireSameVisitorResults(t *testing.T, logger log.Logger, msgType protoreflect.MessageType, variant int, filled map[protoreflect.FullName]bool) []string {
+// It adds what the message holds to cov, and returns the names of the visitors that matched
+// without an error.
+func requireSameVisitorResults(t *testing.T, logger log.Logger, msgType protoreflect.MessageType, variant int, cov *testCoverage) []string {
 	t.Helper()
-	msg := newTestMessage(msgType, variant, filled)
+	msg := newTestMessage(msgType, variant, cov)
 	var matched []string
 	for _, v := range skipCheckVisitors {
 		walked := runVisitor(logger, v.visit, v.match, msg, true)
@@ -632,24 +646,177 @@ func variantsFor(desc protoreflect.MessageDescriptor) int {
 // event, so the visitors also translate inside blobs.
 type messageBuilder struct {
 	variant int
-	// filled, if not nil, collects each field with a visitor rule that the builder set to a value
-	// that a test matcher translates.
-	filled map[protoreflect.FullName]bool
+	// cov collects what the builder set.
+	cov *testCoverage
 }
 
-// newTestMessage returns test message number variant of msgType.
-func newTestMessage(msgType protoreflect.MessageType, variant int, filled map[protoreflect.FullName]bool) proto.Message {
-	b := &messageBuilder{variant: variant, filled: filled}
+// newTestMessage returns test message number variant of msgType, and adds what it set to cov.
+func newTestMessage(msgType protoreflect.MessageType, variant int, cov *testCoverage) proto.Message {
+	b := &messageBuilder{variant: variant, cov: cov}
 	m := msgType.New()
 	b.fill(m, 0, 0)
+	cov.messages++
+	cov.shapes[messageShape(m)] = true
 	return m.Interface()
 }
 
-// recordTranslatable adds field to b.filled if field has a visitor rule and m holds a value in it
-// that a test matcher translates: the namespace "orig" in a field or a NamespaceInfo, a search
-// attribute "AudienceId", or a History or a history blob, which always has a translatable event.
+// testCoverage collects what the test messages hold, to check and to report how much they cover.
+type testCoverage struct {
+	// messages is the number of test messages built.
+	messages int
+	// shapes holds the shape of each test message from messageShape.
+	shapes map[uint64]bool
+	// oneofChoices holds each oneof choice that a message made: a oneof field, or the oneof unset.
+	oneofChoices map[string]bool
+	// stringValues holds, for each string field that is not a list, a map or in a oneof, the
+	// test strings that it held.
+	stringValues map[protoreflect.FullName]map[string]bool
+	// translatable holds each field with a visitor rule that held a value that a test matcher translates.
+	translatable map[protoreflect.FullName]bool
+}
+
+func newTestCoverage() *testCoverage {
+	return &testCoverage{
+		shapes:       map[uint64]bool{},
+		oneofChoices: map[string]bool{},
+		stringValues: map[protoreflect.FullName]map[string]bool{},
+		translatable: map[protoreflect.FullName]bool{},
+	}
+}
+
+// oneofChoiceKey names a oneof choice: field is the oneof field that is set, or nil for unset.
+func oneofChoiceKey(oneof protoreflect.OneofDescriptor, field protoreflect.FieldDescriptor) string {
+	if field == nil {
+		return string(oneof.FullName()) + " unset"
+	}
+	return string(field.FullName())
+}
+
+// coverageSummary is how much of a set of message types the test messages cover.
+type coverageSummary struct {
+	messages int
+	types    int
+	// shapes is the number of distinct message shapes from messageShape.
+	shapes int
+	// oneofChoicesMade of oneofChoices: each oneof field, and each oneof unset.
+	oneofChoicesMade, oneofChoices int
+	// stringFieldsWithEveryValue of stringFields: the string fields that are not lists, maps or in a
+	// oneof, and those that held each of testStrings.
+	stringFieldsWithEveryValue, stringFields int
+	// translatedFieldsFilled of translatedFields: the fields with a visitor rule, and those that held
+	// a value that a test matcher translates.
+	translatedFieldsFilled, translatedFields int
+}
+
+func (s coverageSummary) String() string {
+	return fmt.Sprintf("%d messages of %d types, %d distinct shapes; oneof choices %d/%d; "+
+		"string fields with every test string %d/%d; translated fields with a translatable value %d/%d",
+		s.messages, s.types, s.shapes, s.oneofChoicesMade, s.oneofChoices,
+		s.stringFieldsWithEveryValue, s.stringFields, s.translatedFieldsFilled, s.translatedFields)
+}
+
+// summary returns how much of types the test messages cover. A choice or a field counts as covered
+// if any test message had it, at any depth.
+func (cov *testCoverage) summary(types []protoreflect.MessageType) coverageSummary {
+	s := coverageSummary{messages: cov.messages, types: len(types), shapes: len(cov.shapes)}
+	for _, msgType := range types {
+		desc := msgType.Descriptor()
+		oneofs := desc.Oneofs()
+		for i := range oneofs.Len() {
+			oneof := oneofs.Get(i)
+			if oneof.IsSynthetic() {
+				continue
+			}
+			s.oneofChoices += oneof.Fields().Len() + 1
+			if cov.oneofChoices[oneofChoiceKey(oneof, nil)] {
+				s.oneofChoicesMade++
+			}
+			for j := range oneof.Fields().Len() {
+				if cov.oneofChoices[oneofChoiceKey(oneof, oneof.Fields().Get(j))] {
+					s.oneofChoicesMade++
+				}
+			}
+		}
+		fields := desc.Fields()
+		for i := range fields.Len() {
+			field := fields.Get(i)
+			if isPlainStringField(field) {
+				s.stringFields++
+				if len(cov.stringValues[field.FullName()]) == len(testStrings) {
+					s.stringFieldsWithEveryValue++
+				}
+			}
+			if _, ok := visitorRuleOf(field); ok {
+				s.translatedFields++
+				if cov.translatable[field.FullName()] {
+					s.translatedFieldsFilled++
+				}
+			}
+		}
+	}
+	return s
+}
+
+// isPlainStringField reports whether field is a string field that is not a list, a map or in a oneof.
+func isPlainStringField(field protoreflect.FieldDescriptor) bool {
+	oneof := field.ContainingOneof()
+	return field.Kind() == protoreflect.StringKind && !field.IsList() && !field.IsMap() &&
+		(oneof == nil || oneof.IsSynthetic())
+}
+
+// messageShape returns a hash of which fields m sets, at every depth, without their values. Two
+// messages have the same shape if they set the same fields, with the same number of list elements
+// and map entries, and their nested messages have the same shapes.
+func messageShape(m protoreflect.Message) uint64 {
+	h := fnv.New64a()
+	writeShape(h, m)
+	return h.Sum64()
+}
+
+func writeShape(h hash.Hash64, m protoreflect.Message) {
+	writeInt := func(n int) { _ = binary.Write(h, binary.LittleEndian, int64(n)) }
+	_, _ = h.Write([]byte(m.Descriptor().FullName()))
+	fields := m.Descriptor().Fields()
+	for i := range fields.Len() {
+		field := fields.Get(i)
+		if !m.Has(field) {
+			continue
+		}
+		writeInt(int(field.Number()))
+		value := m.Get(field)
+		switch {
+		case field.IsList():
+			writeInt(value.List().Len())
+			if isMessageField(field) {
+				for j := range value.List().Len() {
+					writeShape(h, value.List().Get(j).Message())
+				}
+			}
+		case field.IsMap():
+			writeInt(value.Map().Len())
+			if isMessageField(field.MapValue()) {
+				// Map order is random, so write the entry shapes in sorted order.
+				var entries []uint64
+				value.Map().Range(func(_ protoreflect.MapKey, v protoreflect.Value) bool {
+					entries = append(entries, messageShape(v.Message()))
+					return true
+				})
+				slices.Sort(entries)
+				for _, entry := range entries {
+					writeInt(int(entry))
+				}
+			}
+		case isMessageField(field):
+			writeShape(h, value.Message())
+		}
+	}
+}
+
+// recordTranslatable adds field to b.cov.translatable if field has a visitor rule and m holds a
+// value in it that a test matcher translates: the namespace "orig" in a field or a NamespaceInfo, a
+// search attribute "AudienceId", or a History or a history blob, which always has a translatable event.
 func (b *messageBuilder) recordTranslatable(m protoreflect.Message, field protoreflect.FieldDescriptor) {
-	if b.filled == nil || !m.Has(field) {
+	if !m.Has(field) {
 		return
 	}
 	if _, ok := visitorRuleOf(field); !ok {
@@ -658,7 +825,7 @@ func (b *messageBuilder) recordTranslatable(m protoreflect.Message, field protor
 	value := m.Get(field)
 	if field.Kind() == protoreflect.StringKind {
 		if value.String() == "orig" {
-			b.filled[field.FullName()] = true
+			b.cov.translatable[field.FullName()] = true
 		}
 		return
 	}
@@ -666,7 +833,7 @@ func (b *messageBuilder) recordTranslatable(m protoreflect.Message, field protor
 		field.MapValue().Message().FullName() == payloadName {
 		// Search attributes as a map from name to payload.
 		if value.Map().Has(protoreflect.ValueOfString("AudienceId").MapKey()) {
-			b.filled[field.FullName()] = true
+			b.cov.translatable[field.FullName()] = true
 		}
 		return
 	}
@@ -688,7 +855,7 @@ func (b *messageBuilder) recordTranslatable(m protoreflect.Message, field protor
 	}
 	for _, msg := range messages {
 		if isTranslatableMessage(msg) {
-			b.filled[field.FullName()] = true
+			b.cov.translatable[field.FullName()] = true
 			return
 		}
 	}
@@ -745,10 +912,14 @@ func (b *messageBuilder) fill(m protoreflect.Message, depth, offset int) {
 		if oneof.IsSynthetic() {
 			continue
 		}
-		if pick := (c + j) % (oneof.Fields().Len() + 1); pick < oneof.Fields().Len() {
-			field := oneof.Fields().Get(pick)
-			b.setField(m, field, depth, c+field.Index())
+		pick := (c + j) % (oneof.Fields().Len() + 1)
+		if pick == oneof.Fields().Len() {
+			b.cov.oneofChoices[oneofChoiceKey(oneof, nil)] = true
+			continue
 		}
+		field := oneof.Fields().Get(pick)
+		b.cov.oneofChoices[oneofChoiceKey(oneof, field)] = true
+		b.setField(m, field, depth, c+field.Index())
 	}
 	// Like a history blob, a History message always gets an event with a name to translate.
 	if desc.FullName() == historyName && depth < testMessageMaxDepth {
@@ -805,7 +976,16 @@ func (b *messageBuilder) setField(m protoreflect.Message, field protoreflect.Fie
 			b.fill(m.Mutable(field).Message(), depth+1, c)
 		}
 	default:
-		m.Set(field, b.scalar(field, depth, c))
+		value := b.scalar(field, depth, c)
+		m.Set(field, value)
+		if isPlainStringField(field) {
+			values := b.cov.stringValues[field.FullName()]
+			if values == nil {
+				values = map[string]bool{}
+				b.cov.stringValues[field.FullName()] = values
+			}
+			values[value.String()] = true
+		}
 	}
 }
 
