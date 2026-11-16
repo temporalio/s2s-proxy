@@ -45,37 +45,60 @@ func TestSkippingByteSlicesKeepsVisitorResultsOnEveryBytesField(t *testing.T) {
 			if isBlob {
 				blobLeafCount++
 			}
-			msg := populateBytes(msgType, leaf, historyData).Interface()
-
-			for _, v := range skipCheckVisitors {
-				where := []any{"type", msgType.Descriptor().FullName(), "path", leaf.String(), "visitor", v.name}
-				walked := runVisitor(logger, v.visit, v.match, msg, true)
-				skipped := runVisitor(logger, v.visit, v.match, msg, false)
-				require.Equal(t, walked.err == nil, skipped.err == nil,
-					"only one run failed: walked=%v skipped=%v %v", walked.err, skipped.err, where)
-				if walked.err != nil {
-					continue
-				}
-				require.Equal(t, walked.matched, skipped.matched, "matched differs %v", where)
-				require.True(t, proto.Equal(walked.msg, skipped.msg), "message differs %v", where)
-
-				// The access control matcher also matches the empty namespace of an unset field,
-				// so only the translating visitors tell whether the history was read.
-				if v.name == "access control" {
-					continue
-				}
-				if isBlob {
-					require.True(t, skipped.matched, "history blob not translated %v", where)
-				} else {
-					require.False(t, skipped.matched, "opaque bytes translated %v", where)
-				}
-			}
+			typedPath := typedLeafPath(leaf)
+			t.Run(typedPath, func(t *testing.T) {
+				requireSameVisitorResultsForLeaf(t, logger, msgType, leaf, typedPath, isBlob, historyData)
+			})
 		}
 	}
 
 	// The roots must reach the stream replication blobs, not only top level fields.
 	require.Greater(t, leafCount, 1000, "bytes fields checked")
 	require.Greater(t, blobLeafCount, 10, "history blob fields checked")
+}
+
+// typedLeafPath names each step of leaf with the message type that holds the field, such as
+// GetReplicationMessagesResponse.shard_messages/ReplicationMessages.replication_tasks/...
+// The subtest names use it, so go test -v lists each type that the test visits on the way to a
+// bytes field, and the failure messages say where the field is.
+func typedLeafPath(leaf leafPath) string {
+	parts := make([]string, len(leaf))
+	for i, f := range leaf {
+		parts[i] = string(f.ContainingMessage().Name()) + "." + string(f.Name())
+	}
+	return strings.Join(parts, "/")
+}
+
+// requireSameVisitorResultsForLeaf runs each visitor in skipCheckVisitors on a message of msgType
+// with only the bytes field at leaf set to historyData, once with the byte slice walk and once
+// without it, and checks the results as described in TestSkippingByteSlicesKeepsVisitorResultsOnEveryBytesField.
+func requireSameVisitorResultsForLeaf(t *testing.T, logger log.Logger, msgType protoreflect.MessageType, leaf leafPath, typedPath string, isBlob bool, historyData []byte) {
+	t.Helper()
+	msg := populateBytes(msgType, leaf, historyData).Interface()
+
+	for _, v := range skipCheckVisitors {
+		where := []any{"path", typedPath, "visitor", v.name}
+		walked := runVisitor(logger, v.visit, v.match, msg, true)
+		skipped := runVisitor(logger, v.visit, v.match, msg, false)
+		require.Equal(t, walked.err == nil, skipped.err == nil,
+			"only one run failed: walked=%v skipped=%v %v", walked.err, skipped.err, where)
+		if walked.err != nil {
+			continue
+		}
+		require.Equal(t, walked.matched, skipped.matched, "matched differs %v", where)
+		require.True(t, proto.Equal(walked.msg, skipped.msg), "message differs %v", where)
+
+		// The access control matcher also matches the empty namespace of an unset field,
+		// so only the translating visitors tell whether the history was read.
+		if v.name == "access control" {
+			continue
+		}
+		if isBlob {
+			require.True(t, skipped.matched, "history blob not translated %v", where)
+		} else {
+			require.False(t, skipped.matched, "opaque bytes translated %v", where)
+		}
+	}
 }
 
 // proxiedMessageTypes returns the request and response types of every method in proxiedServices.
