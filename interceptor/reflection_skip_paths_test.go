@@ -1,6 +1,7 @@
 package interceptor
 
 import (
+	"flag"
 	"strings"
 	"testing"
 
@@ -46,9 +47,10 @@ func TestSkippingByteSlicesKeepsVisitorResultsOnEveryBytesField(t *testing.T) {
 				blobLeafCount++
 			}
 			typedPath := typedLeafPath(leaf)
-			t.Run(typedPath, func(t *testing.T) {
-				requireSameVisitorResultsForLeaf(t, logger, msgType, leaf, typedPath, isBlob, historyData)
-			})
+			if *logBytesPaths {
+				t.Logf("blob=%t %s", isBlob, typedPath)
+			}
+			requireSameVisitorResultsForLeaf(t, logger, msgType, leaf, typedPath, isBlob, historyData)
 		}
 	}
 
@@ -57,10 +59,15 @@ func TestSkippingByteSlicesKeepsVisitorResultsOnEveryBytesField(t *testing.T) {
 	require.Greater(t, blobLeafCount, 10, "history blob fields checked")
 }
 
+// logBytesPaths makes TestSkippingByteSlicesKeepsVisitorResultsOnEveryBytesField log the typed
+// path of each bytes field it checks. It is for debugging, and is off by default:
+//
+//	go test -tags test_dep ./interceptor/ -run EveryBytesField -v -log-bytes-paths
+var logBytesPaths = flag.Bool("log-bytes-paths", false, "log each bytes field path that the byte slice skip test checks")
+
 // typedLeafPath names each step of leaf with the message type that holds the field, such as
 // GetReplicationMessagesResponse.shard_messages/ReplicationMessages.replication_tasks/...
-// The subtest names use it, so go test -v lists each type that the test visits on the way to a
-// bytes field, and the failure messages say where the field is.
+// The failure messages use it to say where the field is, and -log-bytes-paths logs it.
 func typedLeafPath(leaf leafPath) string {
 	parts := make([]string, len(leaf))
 	for i, f := range leaf {
