@@ -149,7 +149,7 @@ func visitNamespace(logger log.Logger, obj any, match stringMatcher) (bool, erro
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
 	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
-		if isByteSlice(vwp.Value) {
+		if isByteSlice(vwp.Value) && !walkByteSlices {
 			return visit.Skip, nil
 		}
 		if vwp.Kind() == reflect.Pointer && vwp.IsNil() {
@@ -218,7 +218,7 @@ func visitSearchAttributes(logger log.Logger, obj any, match stringMatcher) (boo
 
 	// The visitor function can return Skip, Stop, or Continue to control recursion.
 	err := visit.Values(obj, func(vwp visit.ValueWithParent) (visit.Action, error) {
-		if isByteSlice(vwp.Value) {
+		if isByteSlice(vwp.Value) && !walkByteSlices {
 			return visit.Skip, nil
 		}
 		if vwp.Kind() == reflect.Pointer && vwp.IsNil() {
@@ -281,6 +281,10 @@ func translateIndexedFields(fields map[string]*common.Payload, match stringMatch
 	}
 	return newIndexed, anyMatched
 }
+
+// walkByteSlices makes the visitors walk into byte slices, as they did before
+// they skipped them. Only tests set it, to check that both walks give the same result.
+var walkByteSlices = false
 
 // isByteSlice reports whether v is a []byte, including named types such as
 // json.RawMessage. A byte slice holds opaque data, such as a payload or a
