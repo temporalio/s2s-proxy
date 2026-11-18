@@ -43,8 +43,20 @@ func (s *saTranslator) TranslateRequest(req any) (bool, error) {
 	return visitSearchAttributes(s.logger, req, s.resolveReq, "")
 }
 
-func (s *saTranslator) TranslateResponse(resp any) (bool, error) {
-	return visitSearchAttributes(s.logger, resp, s.resolveResp, "")
+// TranslateResponse translates the search attributes in resp. Some admin service responses
+// carry history blobs but no namespace field of their own, for example the raw history replies
+// and the event batches of SyncWorkflowStateResponse. For these, the NamespaceId of the paired
+// request seeds the namespace. A namespace owner inside resp still takes precedence for the
+// parts it encloses. req is nil for streams, which have no request to pair with.
+//
+// This relies on NamespaceId surviving TranslateRequest: the namespace name translator rewrites
+// Namespace, never NamespaceId. Adding namespace id translation later would silently break it.
+func (s *saTranslator) TranslateResponse(req, resp any) (bool, error) {
+	var fallbackNamespaceID string
+	if named, ok := req.(interface{ GetNamespaceId() string }); ok {
+		fallbackNamespaceID = named.GetNamespaceId()
+	}
+	return visitSearchAttributes(s.logger, resp, s.resolveResp, fallbackNamespaceID)
 }
 
 // newSingleMappingResolver applies one mapping to every namespace, whatever namespace id the

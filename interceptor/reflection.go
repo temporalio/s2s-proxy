@@ -382,7 +382,8 @@ func mustBuildNamespaceIDOwners(ownerTypes ...reflect.Type) map[reflect.Type]int
 // NamespaceId seen while descending would make the result depend on that order.
 //
 // fallback carries context across a boundary the parent chain cannot cross: a data blob, whose
-// events are visited in a fresh traversal.
+// events are visited in a fresh traversal, or a unary response whose paired request holds the
+// only namespace id.
 func resolveNamespaceID(vwp visit.ValueWithParent, fallback string) string {
 	for p := vwp.Parent; p != nil; p = p.Parent {
 		if p.Kind() != reflect.Struct {

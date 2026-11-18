@@ -280,6 +280,13 @@ func visitWithTestMappings(t *testing.T, obj any, fallbackNamespaceID string) bo
 	return changed
 }
 
+// newPerNamespaceTestSATranslator returns a translator that uses the mapping in testSAMappings
+// for each namespace, so that a test can see which namespace a search attribute resolved to.
+func newPerNamespaceTestSATranslator() Translator {
+	resolve := testResolver(testSAMappings())
+	return &saTranslator{logger: log.NewTestLogger(), resolveReq: resolve, resolveResp: resolve}
+}
+
 // makeMultiNamespaceFrame builds one replication frame carrying four tasks spanning three
 // namespaces, which is what the wire actually looks like: resolution has to happen per subtree.
 //
@@ -574,6 +581,120 @@ func TestTranslateSearchAttributeIgnoresParentNamespaceId(t *testing.T) {
 	require.Equal(t, []string{keywordA}, mapKeys(execInfo.GetSearchAttributes()))
 }
 
+func TestTranslateSearchAttributeRawHistoryUsesPairedRequest(t *testing.T) {
+	tr := newPerNamespaceTestSATranslator()
+
+	// These responses carry history blobs but no namespace field of their own. The test
+	// translator has no mapping for an empty namespace id, so without the paired request no
+	// namespace resolves and the response stays as it is.
+	newV2Resp := func() *adminservice.GetWorkflowExecutionRawHistoryV2Response {
+		return &adminservice.GetWorkflowExecutionRawHistoryV2Response{
+			HistoryBatches: []*common.DataBlob{makeHistoryEventsBlobWithSearchAttribute(testSAName)},
+		}
+	}
+	newResp := func() *adminservice.GetWorkflowExecutionRawHistoryResponse {
+		return &adminservice.GetWorkflowExecutionRawHistoryResponse{
+			HistoryBatches: []*common.DataBlob{makeHistoryEventsBlobWithSearchAttribute(testSAName)},
+		}
+	}
+
+	t.Run("V2 unpaired", func(t *testing.T) {
+		resp := newV2Resp()
+		changed, err := tr.TranslateResponse(nil, resp)
+		require.NoError(t, err)
+		require.False(t, changed)
+		require.Equal(t, []string{testSAName, testSAName}, blobSAKeys(t, resp.HistoryBatches[0]))
+	})
+
+	t.Run("V2 paired", func(t *testing.T) {
+		resp := newV2Resp()
+		req := &adminservice.GetWorkflowExecutionRawHistoryV2Request{NamespaceId: testNsB}
+		changed, err := tr.TranslateResponse(req, resp)
+		require.NoError(t, err)
+		require.True(t, changed)
+		require.Equal(t, []string{keywordB, keywordB}, blobSAKeys(t, resp.HistoryBatches[0]))
+	})
+
+	t.Run("unpaired", func(t *testing.T) {
+		resp := newResp()
+		changed, err := tr.TranslateResponse(nil, resp)
+		require.NoError(t, err)
+		require.False(t, changed)
+		require.Equal(t, []string{testSAName, testSAName}, blobSAKeys(t, resp.HistoryBatches[0]))
+	})
+
+	t.Run("paired", func(t *testing.T) {
+		resp := newResp()
+		req := &adminservice.GetWorkflowExecutionRawHistoryRequest{NamespaceId: testNsB}
+		changed, err := tr.TranslateResponse(req, resp)
+		require.NoError(t, err)
+		require.True(t, changed)
+		require.Equal(t, []string{keywordB, keywordB}, blobSAKeys(t, resp.HistoryBatches[0]))
+	})
+}
+
+func TestTranslateSearchAttributeSyncWorkflowStateUsesPairedRequest(t *testing.T) {
+	tr := newPerNamespaceTestSATranslator()
+
+	// The snapshot's WorkflowExecutionInfo owns its namespace. The event batches and the new
+	// run's events have no owner above them, so only the paired request names their namespace.
+	newResp := func(snapshotNamespaceID string) *adminservice.SyncWorkflowStateResponse {
+		return &adminservice.SyncWorkflowStateResponse{
+			VersionedTransitionArtifact: &replicationspb.VersionedTransitionArtifact{
+				StateAttributes: &replicationspb.VersionedTransitionArtifact_SyncWorkflowStateSnapshotAttributes{
+					SyncWorkflowStateSnapshotAttributes: &replicationspb.SyncWorkflowStateSnapshotAttributes{
+						State: &persistence.WorkflowMutableState{
+							ExecutionInfo: &persistence.WorkflowExecutionInfo{
+								NamespaceId:      snapshotNamespaceID,
+								SearchAttributes: makeTestIndexedFieldMap(testSAName),
+							},
+						},
+					},
+				},
+				EventBatches: []*common.DataBlob{makeHistoryEventsBlobWithSearchAttribute(testSAName)},
+				NewRunInfo: &replicationspb.NewRunInfo{
+					RunId:      "new-run",
+					EventBatch: makeHistoryEventsBlobWithSearchAttribute(testSAName),
+				},
+			},
+		}
+	}
+	requireKeys := func(t *testing.T, resp *adminservice.SyncWorkflowStateResponse, wantSnapshot, wantBatches string) {
+		t.Helper()
+		artifact := resp.GetVersionedTransitionArtifact()
+		execInfo := artifact.GetSyncWorkflowStateSnapshotAttributes().GetState().GetExecutionInfo()
+		require.Equal(t, []string{wantSnapshot}, mapKeys(execInfo.GetSearchAttributes()), "snapshot")
+		require.Equal(t, []string{wantBatches, wantBatches}, blobSAKeys(t, artifact.GetEventBatches()[0]), "event batches")
+		require.Equal(t, []string{wantBatches, wantBatches}, blobSAKeys(t, artifact.GetNewRunInfo().GetEventBatch()), "new run")
+	}
+
+	t.Run("paired", func(t *testing.T) {
+		resp := newResp(testNsB)
+		req := &adminservice.SyncWorkflowStateRequest{NamespaceId: testNsB}
+		changed, err := tr.TranslateResponse(req, resp)
+		require.NoError(t, err)
+		require.True(t, changed)
+		requireKeys(t, resp, keywordB, keywordB)
+	})
+
+	t.Run("unpaired", func(t *testing.T) {
+		resp := newResp(testNsB)
+		changed, err := tr.TranslateResponse(nil, resp)
+		require.NoError(t, err)
+		require.True(t, changed)
+		requireKeys(t, resp, keywordB, testSAName)
+	})
+
+	t.Run("an owner in the response takes precedence over the request", func(t *testing.T) {
+		resp := newResp(testNsA)
+		req := &adminservice.SyncWorkflowStateRequest{NamespaceId: testNsB}
+		changed, err := tr.TranslateResponse(req, resp)
+		require.NoError(t, err)
+		require.True(t, changed)
+		requireKeys(t, resp, keywordA, keywordB)
+	})
+}
+
 func TestTranslateSearchAttributeOneMappingAppliesToEveryNamespace(t *testing.T) {
 	// The translator applies its one mapping to every search attribute, whatever namespace owns
 	// it and also where no namespace resolves. The mapping can have an empty namespace id.
@@ -582,7 +703,7 @@ func TestTranslateSearchAttributeOneMappingAppliesToEveryNamespace(t *testing.T)
 			tr := newTestSATranslator(t, map[string]map[string]string{mappingNamespaceID: {testSAName: keywordA}})
 
 			frame := makeMultiNamespaceFrame(testSAName)
-			changed, err := tr.TranslateResponse(frame)
+			changed, err := tr.TranslateResponse(nil, frame)
 			require.NoError(t, err)
 			require.True(t, changed)
 			tasks := frame.GetMessages().GetReplicationTasks()
@@ -598,10 +719,20 @@ func TestTranslateSearchAttributeOneMappingAppliesToEveryNamespace(t *testing.T)
 			resp := &adminservice.GetWorkflowExecutionRawHistoryV2Response{
 				HistoryBatches: []*common.DataBlob{makeHistoryEventsBlobWithSearchAttribute(testSAName)},
 			}
-			changed, err = tr.TranslateResponse(resp)
+			changed, err = tr.TranslateResponse(nil, resp)
 			require.NoError(t, err)
 			require.True(t, changed)
 			require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, resp.GetHistoryBatches()[0]))
+
+			// A paired request of another namespace does not change the mapping.
+			pairedResp := &adminservice.GetWorkflowExecutionRawHistoryV2Response{
+				HistoryBatches: []*common.DataBlob{makeHistoryEventsBlobWithSearchAttribute(testSAName)},
+			}
+			pairedReq := &adminservice.GetWorkflowExecutionRawHistoryV2Request{NamespaceId: testNsB}
+			changed, err = tr.TranslateResponse(pairedReq, pairedResp)
+			require.NoError(t, err)
+			require.True(t, changed)
+			require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, pairedResp.GetHistoryBatches()[0]))
 
 			req := &adminservice.ImportWorkflowExecutionRequest{
 				HistoryBatches: []*common.DataBlob{makeHistoryEventsBlobWithSearchAttribute(testSAName)},

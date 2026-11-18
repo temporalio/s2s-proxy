@@ -10,7 +10,10 @@ type (
 	Translator interface {
 		MatchMethod(string) bool
 		TranslateRequest(any) (bool, error)
-		TranslateResponse(any) (bool, error)
+		// TranslateResponse receives the request paired with resp, so that a translator can
+		// take context from it that the response itself does not carry. req is nil for
+		// streams, whose messages have no request to pair with.
+		TranslateResponse(req, resp any) (bool, error)
 		Kind() string
 	}
 
@@ -47,7 +50,7 @@ func (n *translatorImpl) TranslateRequest(req any) (bool, error) {
 	return n.visitor(n.logger, req, n.matchReq)
 }
 
-func (n *translatorImpl) TranslateResponse(resp any) (bool, error) {
+func (n *translatorImpl) TranslateResponse(_, resp any) (bool, error) {
 	return n.visitor(n.logger, resp, n.matchResp)
 }
 
