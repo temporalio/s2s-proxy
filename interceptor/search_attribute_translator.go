@@ -13,8 +13,8 @@ type (
 	saTranslator struct {
 		logger      log.Logger
 		matchMethod func(string) bool
-		reqMap      map[string]stringMatcher
-		respMap     map[string]stringMatcher
+		resolveReq  saMatcherResolver
+		resolveResp saMatcherResolver
 	}
 )
 
@@ -26,8 +26,8 @@ func NewSearchAttributeTranslator(logger log.Logger, reqMap, respMap map[string]
 			// We should never translate these responses to the search attribute's indexed field.
 			return !strings.HasPrefix(method, api.WorkflowServicePrefix)
 		},
-		reqMap:  createStringMatchers(reqMap),
-		respMap: createStringMatchers(respMap),
+		resolveReq:  newSingleMappingResolver(reqMap),
+		resolveResp: newSingleMappingResolver(respMap),
 	}
 }
 
@@ -40,27 +40,25 @@ func (s *saTranslator) MatchMethod(m string) bool {
 }
 
 func (s *saTranslator) TranslateRequest(req any) (bool, error) {
-	return visitSearchAttributes(s.logger, req, s.getNamespaceReqMatcher(""))
+	return visitSearchAttributes(s.logger, req, s.resolveReq, "")
 }
 
 func (s *saTranslator) TranslateResponse(resp any) (bool, error) {
-	return visitSearchAttributes(s.logger, resp, s.getNamespaceRespMatcher(""))
+	return visitSearchAttributes(s.logger, resp, s.resolveResp, "")
 }
 
-func (s *saTranslator) getNamespaceReqMatcher(namespaceId string) stringMatcher {
-	// Placeholder: Just return the first one (only support one namespace mapping)
-	for _, matcher := range s.reqMap {
-		return matcher
+// newSingleMappingResolver applies one mapping to every namespace, whatever namespace id the
+// visitor resolves. The proxy does not start with more than one namespace mapping, so the first
+// mapping is the only one. With no mapping, it returns a matcher that matches nothing.
+func newSingleMappingResolver(nsMappings map[string]map[string]string) saMatcherResolver {
+	match := createStringMatcher(nil)
+	for _, matcher := range createStringMatchers(nsMappings) {
+		match = matcher
+		break
 	}
-	return createStringMatcher(nil)
-}
-
-func (s *saTranslator) getNamespaceRespMatcher(namespaceId string) stringMatcher {
-	// Placeholder: Just return the first one (only support one namespace mappping)
-	for _, matcher := range s.respMap {
-		return matcher
+	return func(string) (stringMatcher, bool) {
+		return match, true
 	}
-	return createStringMatcher(nil)
 }
 
 func createStringMatchers(nsMappings map[string]map[string]string) map[string]stringMatcher {
