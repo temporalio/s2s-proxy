@@ -11,6 +11,8 @@ import (
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/server/api/adminservice/v1"
+	persistencespb "go.temporal.io/server/api/persistence/v1"
+	replicationspb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/common/log"
 	"google.golang.org/protobuf/proto"
 )
@@ -24,7 +26,13 @@ var historyVisitors = []struct {
 	visit visitor
 }{
 	{name: "namespace", visit: visitNamespace},
-	{name: "search attribute", visit: visitSearchAttributes},
+	{name: "search attribute", visit: visitSearchAttributesWithOneMapping},
+}
+
+// visitSearchAttributesWithOneMapping applies one mapping to every namespace. Tests that only
+// check how the visitor walks a message use it.
+func visitSearchAttributesWithOneMapping(logger log.Logger, obj any, match stringMatcher) (bool, error) {
+	return visitSearchAttributes(logger, obj, constMatcherResolver(match), "")
 }
 
 // makeStartedEventWithLargePayload returns a started event that has a
@@ -132,6 +140,40 @@ func TestVisitorsDoNotWalkByteSlices(t *testing.T) {
 	}
 }
 
+// TestNamespaceIDOwnersAreValid pins the reviewed set of owners and guards it against an
+// upstream proto rename or retype. TestTranslateSearchAttributeOwnersAreAnAllowlist guards
+// against a match on the field name.
+func TestNamespaceIDOwnersAreValid(t *testing.T) {
+	expectedOwners := []reflect.Type{
+		reflect.TypeFor[replicationspb.HistoryTaskAttributes](),
+		reflect.TypeFor[replicationspb.BackfillHistoryTaskAttributes](),
+		reflect.TypeFor[replicationspb.SyncVersionedTransitionTaskAttributes](),
+		reflect.TypeFor[persistencespb.WorkflowExecutionInfo](),
+		reflect.TypeFor[history.StartChildWorkflowExecutionInitiatedEventAttributes](),
+	}
+	require.Len(t, namespaceIDOwners, len(expectedOwners))
+
+	for _, ownerType := range expectedOwners {
+		fieldIdx, ok := namespaceIDOwners[ownerType]
+		require.True(t, ok, "%v is missing from namespaceIDOwners", ownerType)
+
+		field := ownerType.Field(fieldIdx)
+		require.Equal(t, namespaceIDFieldName, field.Name, "owner %v", ownerType)
+		require.Equal(t, reflect.String, field.Type.Kind(), "owner %v", ownerType)
+	}
+}
+
+func TestMustBuildNamespaceIDOwnersRejectsBadOwners(t *testing.T) {
+	type noNamespaceID struct{ Name string }
+	type intNamespaceID struct{ NamespaceId int }
+	type embedded struct{ NamespaceId string }
+	type promotedNamespaceID struct{ embedded }
+
+	require.Panics(t, func() { mustBuildNamespaceIDOwners(reflect.TypeFor[noNamespaceID]()) }, "no NamespaceId field")
+	require.Panics(t, func() { mustBuildNamespaceIDOwners(reflect.TypeFor[intNamespaceID]()) }, "NamespaceId is not a string")
+	require.Panics(t, func() { mustBuildNamespaceIDOwners(reflect.TypeFor[promotedNamespaceID]()) }, "NamespaceId is promoted")
+}
+
 func BenchmarkVisitNamespace(b *testing.B) {
 	variants := []struct {
 		testName    string
@@ -168,4 +210,48 @@ func BenchmarkVisitNamespace(b *testing.B) {
 			}
 		})
 	}
+}
+
+func BenchmarkVisitSearchAttributes(b *testing.B) {
+	variants := []struct {
+		testName    string
+		inputSAName string
+		mapping     map[string]string
+	}{
+		{
+			testName:    "name changed",
+			inputSAName: "orig",
+			mapping:     map[string]string{"orig": "orig.cloud"},
+		},
+		{
+			testName:    "name unchanged",
+			inputSAName: "orig",
+			mapping:     map[string]string{"other": "other.cloud"},
+		},
+	}
+	cases := generateSearchAttributeObjs()
+
+	logger := log.NewTestLogger()
+	for _, c := range cases {
+		b.Run(c.objName, func(b *testing.B) {
+			for _, variant := range variants {
+				resolve := constMatcherResolver(createStringMatcher(variant.mapping))
+				b.Run(variant.testName, func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						b.StopTimer()
+						input := c.makeType(variant.inputSAName)
+
+						b.StartTimer()
+						_, _ = visitSearchAttributes(logger, input, resolve, "")
+					}
+				})
+			}
+		})
+	}
+}
+
+// constMatcherResolver applies one matcher to every namespace, for tests that are not
+// exercising per-namespace resolution.
+func constMatcherResolver(match stringMatcher) saMatcherResolver {
+	return func(string) (stringMatcher, bool) { return match, true }
 }

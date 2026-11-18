@@ -58,7 +58,7 @@ var skipCheckVisitors = []struct {
 	match stringMatcher
 }{
 	{name: "namespace", visit: visitNamespace, match: createStringMatcher(map[string]string{"orig": "orig.cloud"})},
-	{name: "search attribute", visit: visitSearchAttributes, match: createStringMatcher(map[string]string{"AudienceId": "Keyword01"})},
+	{name: "search attribute", visit: visitSearchAttributesWithOneMapping, match: createStringMatcher(map[string]string{"AudienceId": "Keyword01"})},
 	{name: "access control", visit: visitNamespace, match: createNamespaceAccessControl(auth.NewAccesControl([]string{"orig"}))},
 }
 
