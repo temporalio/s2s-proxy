@@ -45,7 +45,7 @@ clusterConnections:
 #    searchAttributeTranslation:
 #      namespaceMappings:
 #        - name: "leftName"
-#          namespaceId: "leftName"
+#          namespaceId: "00000000-0000-0000-0000-000000000000"
 #          mappings:
 #            - localFieldName: "localSearchAttribute"
 #              remoteFieldName: "remoteSearchAttribute"

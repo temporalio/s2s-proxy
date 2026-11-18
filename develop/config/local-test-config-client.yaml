@@ -33,7 +33,8 @@ clusterConnections:
     searchAttributeTranslation:
       namespaceMappings:
         - name: "left-ns"
-          namespaceId: "left-ns"
+          # The namespace id, not the name. Replace this placeholder with the id of left-ns.
+          namespaceId: "00000000-0000-0000-0000-000000000000"
           mappings:
             - localFieldName: "localSearchAttribute"
               remoteFieldName: "remoteSearchAttribute"
