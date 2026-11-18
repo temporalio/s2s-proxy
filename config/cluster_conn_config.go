@@ -13,20 +13,21 @@ import (
 // Looking for examples? Check ./develop/sample-cluster-conn-config.yaml
 type (
 	ClusterConnConfig struct {
-		Name                         string              `yaml:"name"`
-		Local                        ClusterDefinition   `yaml:"local"`
-		Remote                       ClusterDefinition   `yaml:"remote"`
-		ReplicationEndpoint          string              `yaml:"replicationEndpoint"`
-		FVITranslation               IntMapping          `yaml:"failoverVersionIncrementTranslation"`
-		ACLPolicy                    *ACLPolicy          `yaml:"aclPolicy"`
-		NamespaceTranslation         StringTranslator    `yaml:"namespaceTranslation"`
-		SearchAttributeTranslation   SATranslationConfig `yaml:"searchAttributeTranslation"`
-		CustomSearchAttributeAliases CustomSAAliasConfig `yaml:"customSearchAttributeAliases"`
-		RemoteClusterHealthCheck     HealthCheckConfig   `yaml:"remoteClusterHealthCheck"`
-		LocalClusterHealthCheck      HealthCheckConfig   `yaml:"localClusterHealthCheck"`
-		ShardCountConfig             ShardCountConfig    `yaml:"shardCount"`
-		MemberlistConfig             *MemberlistConfig   `yaml:"memberlist"`
-		EncryptionConfig             EncryptionConfig    `yaml:"encryption"`
+		Name                            string                          `yaml:"name"`
+		Local                           ClusterDefinition               `yaml:"local"`
+		Remote                          ClusterDefinition               `yaml:"remote"`
+		ReplicationEndpoint             string                          `yaml:"replicationEndpoint"`
+		NamespaceFailoverVersionRewrite NamespaceFailoverVersionRewrite `yaml:"namespaceFailoverVersionRewrite"`
+		FVITranslation                  IntMapping                      `yaml:"failoverVersionIncrementTranslation"`
+		ACLPolicy                       *ACLPolicy                      `yaml:"aclPolicy"`
+		NamespaceTranslation            StringTranslator                `yaml:"namespaceTranslation"`
+		SearchAttributeTranslation      SATranslationConfig             `yaml:"searchAttributeTranslation"`
+		CustomSearchAttributeAliases    CustomSAAliasConfig             `yaml:"customSearchAttributeAliases"`
+		RemoteClusterHealthCheck        HealthCheckConfig               `yaml:"remoteClusterHealthCheck"`
+		LocalClusterHealthCheck         HealthCheckConfig               `yaml:"localClusterHealthCheck"`
+		ShardCountConfig                ShardCountConfig                `yaml:"shardCount"`
+		MemberlistConfig                *MemberlistConfig               `yaml:"memberlist"`
+		EncryptionConfig                EncryptionConfig                `yaml:"encryption"`
 	}
 
 	StringTranslator struct {
@@ -122,12 +123,15 @@ func (c ClusterDefinition) CredentialIdentity() CredentialIdentity {
 	return c.Credentials.Identity
 }
 
-// Validate reports problems in this connection's config. Only the encryption, credentials
-// and keepalive blocks are covered so far; the checks NewProxy makes inline could move here.
+// Validate reports problems in the encryption, credentials, keepalive and
+// namespace failover rewrite blocks. Other checks remain inline in NewProxy.
 func (c *ClusterConnConfig) Validate() error {
 	return validation.Validate(
 		"",
 		validation.Nested("encryption", &c.EncryptionConfig),
+		validation.Field("namespaceFailoverVersionRewrite", c.NamespaceFailoverVersionRewrite, func(rewrite NamespaceFailoverVersionRewrite) error {
+			return rewrite.Validate()
+		}),
 		validation.Nested("local.keepalive", c.Local.Keepalive),
 		validation.Nested("remote.keepalive", c.Remote.Keepalive),
 		validation.Field("local.credentials.identity", c.Local, func(local ClusterDefinition) error {
