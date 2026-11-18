@@ -26,8 +26,10 @@ func NewSearchAttributeTranslator(logger log.Logger, reqMap, respMap map[string]
 			// We should never translate these responses to the search attribute's indexed field.
 			return !strings.HasPrefix(method, api.WorkflowServicePrefix)
 		},
-		resolveReq:  newSingleMappingResolver(reqMap),
-		resolveResp: newSingleMappingResolver(respMap),
+		// The resolvers are built once here and hold no per-message state, so a single
+		// translator serves every concurrent stream.
+		resolveReq:  newSAMatcherResolver(reqMap),
+		resolveResp: newSAMatcherResolver(respMap),
 	}
 }
 
@@ -59,17 +61,12 @@ func (s *saTranslator) TranslateResponse(req, resp any) (bool, error) {
 	return visitSearchAttributes(s.logger, resp, s.resolveResp, fallbackNamespaceID)
 }
 
-// newSingleMappingResolver applies one mapping to every namespace, whatever namespace id the
-// visitor resolves. The proxy does not start with more than one namespace mapping, so the first
-// mapping is the only one. With no mapping, it returns a matcher that matches nothing.
-func newSingleMappingResolver(nsMappings map[string]map[string]string) saMatcherResolver {
-	match := createStringMatcher(nil)
-	for _, matcher := range createStringMatchers(nsMappings) {
-		match = matcher
-		break
-	}
-	return func(string) (stringMatcher, bool) {
-		return match, true
+func newSAMatcherResolver(nsMappings map[string]map[string]string) saMatcherResolver {
+	matchers := createStringMatchers(nsMappings)
+
+	return func(nsID string) (stringMatcher, bool) {
+		match, ok := matchers[nsID]
+		return match, ok
 	}
 }
 

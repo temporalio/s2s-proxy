@@ -4,6 +4,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
@@ -13,6 +14,8 @@ import (
 	replicationspb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/persistence/serialization"
+
+	"github.com/temporalio/s2s-proxy/metrics"
 )
 
 type (
@@ -261,30 +264,13 @@ func newTestSATranslator(t *testing.T, nsMappings map[string]map[string]string) 
 	return NewSearchAttributeTranslator(log.NewTestLogger(), nsMappings, nsMappings)
 }
 
-// testResolver returns the mapping in nsMappings for each namespace id, and no mapping for an
-// id that is not in nsMappings.
-func testResolver(nsMappings map[string]map[string]string) saMatcherResolver {
-	matchers := createStringMatchers(nsMappings)
-	return func(nsID string) (stringMatcher, bool) {
-		match, ok := matchers[nsID]
-		return match, ok
-	}
-}
-
 // visitWithTestMappings visits obj with the mapping in testSAMappings for each namespace, and
 // reports whether anything matched.
 func visitWithTestMappings(t *testing.T, obj any, fallbackNamespaceID string) bool {
 	t.Helper()
-	changed, err := visitSearchAttributes(log.NewTestLogger(), obj, testResolver(testSAMappings()), fallbackNamespaceID)
+	changed, err := visitSearchAttributes(log.NewTestLogger(), obj, newSAMatcherResolver(testSAMappings()), fallbackNamespaceID)
 	require.NoError(t, err)
 	return changed
-}
-
-// newPerNamespaceTestSATranslator returns a translator that uses the mapping in testSAMappings
-// for each namespace, so that a test can see which namespace a search attribute resolved to.
-func newPerNamespaceTestSATranslator() Translator {
-	resolve := testResolver(testSAMappings())
-	return &saTranslator{logger: log.NewTestLogger(), resolveReq: resolve, resolveResp: resolve}
 }
 
 // makeMultiNamespaceFrame builds one replication frame carrying four tasks spanning three
@@ -582,7 +568,7 @@ func TestTranslateSearchAttributeIgnoresParentNamespaceId(t *testing.T) {
 }
 
 func TestTranslateSearchAttributeRawHistoryUsesPairedRequest(t *testing.T) {
-	tr := newPerNamespaceTestSATranslator()
+	tr := newTestSATranslator(t, testSAMappings())
 
 	// These responses carry history blobs but no namespace field of their own. The test
 	// translator has no mapping for an empty namespace id, so without the paired request no
@@ -634,7 +620,7 @@ func TestTranslateSearchAttributeRawHistoryUsesPairedRequest(t *testing.T) {
 }
 
 func TestTranslateSearchAttributeSyncWorkflowStateUsesPairedRequest(t *testing.T) {
-	tr := newPerNamespaceTestSATranslator()
+	tr := newTestSATranslator(t, testSAMappings())
 
 	// The snapshot's WorkflowExecutionInfo owns its namespace. The event batches and the new
 	// run's events have no owner above them, so only the paired request names their namespace.
@@ -695,52 +681,114 @@ func TestTranslateSearchAttributeSyncWorkflowStateUsesPairedRequest(t *testing.T
 	})
 }
 
-func TestTranslateSearchAttributeOneMappingAppliesToEveryNamespace(t *testing.T) {
-	// The translator applies its one mapping to every search attribute, whatever namespace owns
-	// it and also where no namespace resolves. The mapping can have an empty namespace id.
-	for _, mappingNamespaceID := range []string{"", testNsA} {
-		t.Run("mapping namespace id "+mappingNamespaceID, func(t *testing.T) {
-			tr := newTestSATranslator(t, map[string]map[string]string{mappingNamespaceID: {testSAName: keywordA}})
+func TestSearchAttributeTranslatorUsesEachNamespaceMapping(t *testing.T) {
+	tr := newTestSATranslator(t, testSAMappings())
 
-			frame := makeMultiNamespaceFrame(testSAName)
-			changed, err := tr.TranslateResponse(nil, frame)
-			require.NoError(t, err)
-			require.True(t, changed)
-			tasks := frame.GetMessages().GetReplicationTasks()
-			require.Len(t, tasks, 4)
-			require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, tasks[0].GetHistoryTaskAttributes().GetEvents()))
-			require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, tasks[0].GetHistoryTaskAttributes().GetNewRunEvents()))
-			require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, tasks[1].GetHistoryTaskAttributes().GetEvents()))
-			execInfo := tasks[2].GetSyncWorkflowStateTaskAttributes().GetWorkflowState().GetExecutionInfo()
-			require.Equal(t, []string{keywordA}, mapKeys(execInfo.GetSearchAttributes()))
-			require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, tasks[3].GetHistoryTaskAttributes().GetEvents()))
+	frame := makeMultiNamespaceFrame(testSAName)
+	changed, err := tr.TranslateResponse(nil, frame)
+	require.NoError(t, err)
+	require.True(t, changed)
 
-			// No namespace owner encloses these history batches.
-			resp := &adminservice.GetWorkflowExecutionRawHistoryV2Response{
-				HistoryBatches: []*common.DataBlob{makeHistoryEventsBlobWithSearchAttribute(testSAName)},
-			}
-			changed, err = tr.TranslateResponse(nil, resp)
-			require.NoError(t, err)
-			require.True(t, changed)
-			require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, resp.GetHistoryBatches()[0]))
+	tasks := frame.GetMessages().GetReplicationTasks()
+	require.Len(t, tasks, 4)
+	require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, tasks[0].GetHistoryTaskAttributes().GetEvents()))
+	require.Equal(t, []string{keywordB, keywordB}, blobSAKeys(t, tasks[1].GetHistoryTaskAttributes().GetEvents()))
+	execInfo := tasks[2].GetSyncWorkflowStateTaskAttributes().GetWorkflowState().GetExecutionInfo()
+	require.Equal(t, []string{keywordA}, mapKeys(execInfo.GetSearchAttributes()))
+	require.Equal(t, []string{testSAName, testSAName}, blobSAKeys(t, tasks[3].GetHistoryTaskAttributes().GetEvents()),
+		"ns-c has no mapping and must be left untouched")
+}
 
-			// A paired request of another namespace does not change the mapping.
-			pairedResp := &adminservice.GetWorkflowExecutionRawHistoryV2Response{
-				HistoryBatches: []*common.DataBlob{makeHistoryEventsBlobWithSearchAttribute(testSAName)},
-			}
-			pairedReq := &adminservice.GetWorkflowExecutionRawHistoryV2Request{NamespaceId: testNsB}
-			changed, err = tr.TranslateResponse(pairedReq, pairedResp)
-			require.NoError(t, err)
-			require.True(t, changed)
-			require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, pairedResp.GetHistoryBatches()[0]))
+func TestTranslateSearchAttributeEmptyNamespaceIdMatchesNothing(t *testing.T) {
+	// There is no mapping that applies to every namespace: an entry keyed by an empty namespace
+	// id matches only an unresolved namespace, which no well formed replication task produces.
+	// config.SATranslationConfig.Validate rejects such a config before it gets this far; this is
+	// the second line of defence, and it fails if a wildcard fallback is ever reintroduced.
+	tr := newTestSATranslator(t, map[string]map[string]string{"": {testSAName: keywordA}})
 
-			req := &adminservice.ImportWorkflowExecutionRequest{
-				HistoryBatches: []*common.DataBlob{makeHistoryEventsBlobWithSearchAttribute(testSAName)},
-			}
-			changed, err = tr.TranslateRequest(req)
-			require.NoError(t, err)
-			require.True(t, changed)
-			require.Equal(t, []string{keywordA, keywordA}, blobSAKeys(t, req.GetHistoryBatches()[0]))
-		})
+	frame := makeMultiNamespaceFrame(testSAName)
+	changed, err := tr.TranslateResponse(nil, frame)
+	require.NoError(t, err)
+	require.False(t, changed)
+
+	tasks := frame.GetMessages().GetReplicationTasks()
+	require.Len(t, tasks, 4)
+	for i, task := range tasks {
+		if hta := task.GetHistoryTaskAttributes(); hta != nil {
+			require.Equal(t, []string{testSAName, testSAName}, blobSAKeys(t, hta.GetEvents()),
+				"task %d must be untouched", i)
+			continue
+		}
+		execInfo := task.GetSyncWorkflowStateTaskAttributes().GetWorkflowState().GetExecutionInfo()
+		require.Equal(t, []string{testSAName}, mapKeys(execInfo.GetSearchAttributes()),
+			"task %d must be untouched", i)
 	}
+}
+
+func TestTranslateSearchAttributeUnsupportedFieldTypes(t *testing.T) {
+	// Add- and RemoveSearchAttributesRequest name their fields SearchAttributes too, but hold a
+	// map[string]enums.IndexedValueType and a []string. No namespace owner encloses them, so no
+	// namespace resolves and the visitor skips them before it checks the field type.
+	tr := newTestSATranslator(t, testSAMappings())
+
+	addReq := &adminservice.AddSearchAttributesRequest{
+		SearchAttributes: map[string]enums.IndexedValueType{
+			testSAName: enums.INDEXED_VALUE_TYPE_KEYWORD,
+		},
+	}
+	changed, err := tr.TranslateRequest(addReq)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, map[string]enums.IndexedValueType{
+		testSAName: enums.INDEXED_VALUE_TYPE_KEYWORD,
+	}, addReq.SearchAttributes)
+
+	removeReq := &adminservice.RemoveSearchAttributesRequest{
+		SearchAttributes: []string{testSAName},
+	}
+	changed, err = tr.TranslateRequest(removeReq)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, []string{testSAName}, removeReq.SearchAttributes)
+}
+
+func TestSearchAttributeTranslatorCountsOnlyUnresolvedNamespaces(t *testing.T) {
+	tr := newTestSATranslator(t, testSAMappings())
+	skipped := func(obj any) float64 {
+		return testutil.ToFloat64(metrics.SearchAttrTranslationSkipped.WithLabelValues(
+			metrics.SkipReasonUnresolvedNamespace, metrics.SanitizedTypeName(obj)))
+	}
+
+	// No namespace owner encloses this field, so no namespace resolves.
+	unowned := &SAWithOneField{SearchAttributes: &common.SearchAttributes{IndexedFields: makeTestIndexedFieldMap(testSAName)}}
+	before := skipped(unowned)
+	changed, err := tr.TranslateResponse(nil, unowned)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, []string{testSAName}, mapKeys(unowned.SearchAttributes.GetIndexedFields()))
+	require.InDelta(t, before+1, skipped(unowned), 0)
+
+	// ns-c resolves but has no mapping. That is normal and is not counted.
+	unmapped := &persistence.WorkflowExecutionInfo{NamespaceId: testNsC, SearchAttributes: makeTestIndexedFieldMap(testSAName)}
+	before = skipped(unmapped)
+	changed, err = tr.TranslateResponse(nil, unmapped)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, []string{testSAName}, mapKeys(unmapped.GetSearchAttributes()))
+	require.InDelta(t, before, skipped(unmapped), 0)
+}
+
+func TestSearchAttributeTranslatorLeavesImportHistoryAsItIs(t *testing.T) {
+	// ImportWorkflowExecutionRequest has the namespace name but no namespace id, and no
+	// namespace owner encloses its history batches. No namespace resolves, so the batches stay
+	// as they are. The server unaliases them with the namespace of the request.
+	tr := newTestSATranslator(t, testSAMappings())
+	req := &adminservice.ImportWorkflowExecutionRequest{
+		Namespace:      testNsA,
+		HistoryBatches: []*common.DataBlob{makeHistoryEventsBlobWithSearchAttribute(testSAName)},
+	}
+	changed, err := tr.TranslateRequest(req)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, []string{testSAName, testSAName}, blobSAKeys(t, req.GetHistoryBatches()[0]))
 }

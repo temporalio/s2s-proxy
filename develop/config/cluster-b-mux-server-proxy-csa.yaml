@@ -20,7 +20,8 @@ clusterConnections:
     searchAttributeTranslation:
       namespaceMappings:
       - name: csa
-        namespaceId:
+        # The namespace id, not the name. Replace this placeholder with the id of the csa namespace.
+        namespaceId: "00000000-0000-0000-0000-000000000000"
         mappings:
         - remoteFieldName: CustomStringField
           localFieldName: Text01

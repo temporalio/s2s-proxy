@@ -282,6 +282,7 @@ func visitSearchAttributes(logger log.Logger, obj any, resolve saMatcherResolver
 			nsID := resolveNamespaceID(vwp, fallbackNamespaceID)
 			match, ok := resolve(nsID)
 			if !ok {
+				logSkippedSearchAttributes(logger, obj, nsID)
 				return visit.Continue, nil
 			}
 
@@ -309,6 +310,24 @@ func visitSearchAttributes(logger log.Logger, obj any, resolve saMatcherResolver
 		return visit.Continue, nil
 	})
 	return matched, err
+}
+
+func logSkippedSearchAttributes(logger log.Logger, obj any, nsID string) {
+	msgType := metrics.SanitizedTypeName(obj)
+	if nsID == "" {
+		// No enclosing namespace owner and nothing seeded a fallback. That is a gap in
+		// namespaceIDOwners or an unpaired response, not a configuration decision.
+		logger.Warn("could not resolve namespace for search attributes",
+			tag.NewStringTag("type", msgType))
+		metrics.SearchAttrTranslationSkipped.WithLabelValues(
+			metrics.SkipReasonUnresolvedNamespace, msgType).Inc()
+		return
+	}
+
+	// A namespace with no configured mapping is the expected steady state for every namespace
+	// that is not being migrated, so it is not counted.
+	logger.Debug("no search attribute mapping configured for namespace",
+		tag.NewStringTag("namespace-id", nsID), tag.NewStringTag("type", msgType))
 }
 
 func translateIndexedFields(fields map[string]*common.Payload, match stringMatcher) (map[string]*common.Payload, bool) {
