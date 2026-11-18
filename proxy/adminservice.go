@@ -45,7 +45,8 @@ type (
 		lifetime           context.Context
 	}
 	AdminServiceOverrides struct {
-		// Failover Version Increment. Overrides the value returned by DescribeCluster
+		NamespaceFailoverVersionRules []config.NamespaceFailoverVersionRule
+		// Failover Version Increment. Overrides the value returned by DescribeCluster.
 		FVI                 int64
 		ReplicationEndpoint string
 		// CustomSearchAttributeAliases are the per-namespace custom search attribute aliases
@@ -215,7 +216,14 @@ func (s *adminServiceProxyServer) GetDLQTasks(ctx context.Context, in0 *adminser
 }
 
 func (s *adminServiceProxyServer) GetNamespace(ctx context.Context, in0 *adminservice.GetNamespaceRequest) (*adminservice.GetNamespaceResponse, error) {
-	return s.adminClient.GetNamespace(ctx, in0)
+	resp, err := s.adminClient.GetNamespace(ctx, in0)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.rewriteNamespaceFailoverVersion(resp.GetInfo().GetName(), resp.GetReplicationConfig().GetActiveClusterName(), &resp.FailoverVersion, resp.GetFailoverHistory()); err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Context, in0 *adminservice.GetNamespaceReplicationMessagesRequest) (resp *adminservice.GetNamespaceReplicationMessagesResponse, err error) {
@@ -224,7 +232,19 @@ func (s *adminServiceProxyServer) GetNamespaceReplicationMessages(ctx context.Co
 		// This is a duplicate of the grpc client metrics, but not everyone has metrics set up
 		s.loggers.Get(logging.AdminService).Error("Failed to get namespace replication messages", tag.NewStringTag("Cluster", in0.GetClusterName()),
 			tag.Error(err), tag.Operation("GetNamespaceReplicationMessages"))
-	} else if s.overrides.CustomSearchAttributeAliases.IsEnabled() {
+	} else {
+		for _, task := range resp.GetMessages().GetReplicationTasks() {
+			attrs := task.GetNamespaceTaskAttributes()
+			if attrs == nil {
+				continue
+			}
+			if err := s.rewriteNamespaceFailoverVersion(attrs.GetInfo().GetName(), attrs.GetReplicationConfig().GetActiveClusterName(), &attrs.FailoverVersion, attrs.GetFailoverHistory()); err != nil {
+				return nil, err
+			}
+		}
+		if !s.overrides.CustomSearchAttributeAliases.IsEnabled() {
+			return resp, nil
+		}
 		// Set the custom search attribute aliases on namespace replication tasks for namespaces
 		// configured with custom search attribute aliases.
 		for _, task := range resp.GetMessages().GetReplicationTasks() {

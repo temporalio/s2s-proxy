@@ -240,9 +240,10 @@ func newClusterConnection(
 		nsTranslations:             nsTranslations.Inverse(),
 		saTranslations:             saTranslations.Inverse(),
 		overrides: AdminServiceOverrides{
-			FVI:                          connConfig.FVITranslation.Local,
-			ReplicationEndpoint:          connConfig.ReplicationEndpoint,
-			CustomSearchAttributeAliases: connConfig.CustomSearchAttributeAliases,
+			FVI:                           connConfig.FVITranslation.Local,
+			NamespaceFailoverVersionRules: connConfig.NamespaceFailoverVersionRewrite.Inbound,
+			ReplicationEndpoint:           connConfig.ReplicationEndpoint,
+			CustomSearchAttributeAliases:  connConfig.CustomSearchAttributeAliases,
 		},
 		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
 		aclPolicy:         connConfig.ACLPolicy,
@@ -267,7 +268,7 @@ func newClusterConnection(
 		callerNamesLocalNamespaces: true,
 		nsTranslations:             nsTranslations,
 		saTranslations:             saTranslations,
-		overrides:                  AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote},
+		overrides:                  AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote, NamespaceFailoverVersionRules: connConfig.NamespaceFailoverVersionRewrite.Outbound},
 		shardCountConfig:           connConfig.ShardCountConfig,
 		loggers:                    cc.loggers,
 		shardManager:               cc.shardManager,
