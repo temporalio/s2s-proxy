@@ -133,10 +133,13 @@ var (
 const namespaceIDFieldName = "NamespaceId"
 
 // namespaceIDOwners maps struct types that OWN a namespace to their NamespaceId field index.
-// Deliberately an allowlist, not a name match: other types have a NamespaceId naming a
-// DIFFERENT namespace -- notably history.StartChildWorkflowExecutionInitiatedEventAttributes,
-// whose NamespaceId is the *child's* and which also carries SearchAttributes. Matching on the
-// field name would translate a parent's history event with the child's mapping.
+// It is an allowlist, not a match on the field name. Add a type only after a review shows that
+// its NamespaceId names the namespace of the search attributes below it.
+//
+// history.StartChildWorkflowExecutionInitiatedEventAttributes is in the parent's history, but
+// its NamespaceId is the child's. The server unaliases its search attributes with the child
+// namespace and starts the child with them, so the child's mapping applies. An event with an
+// empty NamespaceId falls back to the enclosing owner, which is the parent.
 //
 // Built once at init and never mutated afterwards, so reads need no lock.
 var namespaceIDOwners = mustBuildNamespaceIDOwners(
@@ -144,6 +147,7 @@ var namespaceIDOwners = mustBuildNamespaceIDOwners(
 	reflect.TypeFor[replicationspb.BackfillHistoryTaskAttributes](),
 	reflect.TypeFor[replicationspb.SyncVersionedTransitionTaskAttributes](),
 	reflect.TypeFor[persistencespb.WorkflowExecutionInfo](),
+	reflect.TypeFor[history.StartChildWorkflowExecutionInitiatedEventAttributes](),
 )
 
 // stringMatcher returns 2 values:
@@ -397,8 +401,8 @@ func mustBuildNamespaceIDOwners(ownerTypes ...reflect.Type) map[reflect.Type]int
 	return owners
 }
 
-// resolveNamespaceID walks UP from vwp to the nearest enclosing namespace owner and returns its
-// NamespaceId. Walking only upward keeps the result independent of traversal order, which is
+// resolveNamespaceID walks UP from vwp to the nearest enclosing namespace owner with a non-empty
+// NamespaceId and returns that NamespaceId. Walking only upward keeps the result independent of traversal order, which is
 // unspecified: visit.ValuesUnsafe pops the front of its worklist but swaps in the last element,
 // so it is neither breadth- nor depth-first. Tracking the most recent NamespaceId seen while
 // descending would be non-deterministic.

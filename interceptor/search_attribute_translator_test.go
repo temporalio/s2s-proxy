@@ -431,31 +431,142 @@ func TestTranslateSearchAttributeInBlobUsesEnclosingNamespace(t *testing.T) {
 	require.Equal(t, []string{keywordA}, blobSAKeys(t, firstTaskEvents(frame)))
 }
 
-func TestTranslateSearchAttributeIgnoresChildNamespaceId(t *testing.T) {
-	tr := newTestSATranslator(t, testSAMappings())
-
-	// StartChildWorkflowExecutionInitiatedEventAttributes has both a NamespaceId (the child's)
-	// and SearchAttributes (the parent's). Resolving by nearest struct with a NamespaceId field
-	// would translate this event with ns-b's mapping. This test fails if the owner allowlist is
-	// ever replaced with a field-name match.
-	frame := makeHistoryTaskFrame(testNsA, &history.HistoryEvent{
-		EventId:   1,
+// makeStartChildEvent returns a StartChildWorkflowExecutionInitiated event for a child in the
+// namespace with the given id. Its search attributes have the key testSAName.
+func makeStartChildEvent(childNamespaceID string) *history.HistoryEvent {
+	return &history.HistoryEvent{
+		EventId:   2,
 		EventType: enums.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED,
 		Attributes: &history.HistoryEvent_StartChildWorkflowExecutionInitiatedEventAttributes{
 			StartChildWorkflowExecutionInitiatedEventAttributes: &history.StartChildWorkflowExecutionInitiatedEventAttributes{
 				Namespace:   "child-ns",
-				NamespaceId: testNsB,
+				NamespaceId: childNamespaceID,
 				SearchAttributes: &common.SearchAttributes{
 					IndexedFields: makeTestIndexedFieldMap(testSAName),
 				},
 			},
 		},
+	}
+}
+
+func startChildSAKeys(evt *history.HistoryEvent) []string {
+	return mapKeys(evt.GetStartChildWorkflowExecutionInitiatedEventAttributes().GetSearchAttributes().GetIndexedFields())
+}
+
+func TestTranslateSearchAttributeStartChildUsesChildNamespace(t *testing.T) {
+	tr := newTestSATranslator(t, testSAMappings())
+
+	// The ns-a parent's history has its own started event and a StartChildWorkflowExecutionInitiated
+	// event. The server unaliases the child's search attributes with the child namespace and starts
+	// the child with them, so each event in the same blob needs a different mapping.
+	parentStarted := func() *history.HistoryEvent {
+		return &history.HistoryEvent{
+			EventId:   1,
+			EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+			Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
+				WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
+					SearchAttributes: &common.SearchAttributes{
+						IndexedFields: makeTestIndexedFieldMap(testSAName),
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name             string
+		childNamespaceID string
+		wantChild        string
+	}{
+		{name: "child in another namespace", childNamespaceID: testNsB, wantChild: keywordB},
+		{name: "child in the same namespace", childNamespaceID: testNsA, wantChild: keywordA},
+		// Old servers wrote no NamespaceId, so the event falls back to the enclosing owner. For a
+		// cross-namespace child, the parent's mapping is wrong. This is a known limitation.
+		{name: "child namespace id not set", childNamespaceID: "", wantChild: keywordA},
+		// The parent's mapping must not apply to a child namespace that has no mapping.
+		{name: "child namespace has no mapping", childNamespaceID: testNsC, wantChild: testSAName},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			frame := makeHistoryTaskFrame(testNsA, parentStarted(), makeStartChildEvent(tc.childNamespaceID))
+
+			changed, err := tr.TranslateResponse(nil, frame)
+			require.NoError(t, err)
+			require.True(t, changed)
+
+			events, err := serialization.NewSerializer().DeserializeEvents(firstTaskEvents(frame))
+			require.NoError(t, err)
+			require.Len(t, events, 2)
+			require.Equal(t, []string{keywordA},
+				mapKeys(events[0].GetWorkflowExecutionStartedEventAttributes().GetSearchAttributes().GetIndexedFields()),
+				"parent started event")
+			require.Equal(t, []string{tc.wantChild}, startChildSAKeys(events[1]), "start child event")
+		})
+	}
+}
+
+func TestTranslateSearchAttributeUsesNearestOwner(t *testing.T) {
+	tr := newTestSATranslator(t, testSAMappings())
+
+	// Outside a blob, the StartChild event and the ns-a task are both owners on one parent chain.
+	// The nearest owner with a NamespaceId applies. An owner with an empty NamespaceId passes the
+	// lookup to the next owner up. The server never buffers this event type, but the rule is the
+	// same for any nested owners.
+	newTask := func(childNamespaceID string) *replicationspb.SyncVersionedTransitionTaskAttributes {
+		return &replicationspb.SyncVersionedTransitionTaskAttributes{
+			NamespaceId: testNsA,
+			VersionedTransitionArtifact: &replicationspb.VersionedTransitionArtifact{
+				StateAttributes: &replicationspb.VersionedTransitionArtifact_SyncWorkflowStateSnapshotAttributes{
+					SyncWorkflowStateSnapshotAttributes: &replicationspb.SyncWorkflowStateSnapshotAttributes{
+						State: &persistence.WorkflowMutableState{
+							BufferedEvents: []*history.HistoryEvent{makeStartChildEvent(childNamespaceID)},
+						},
+					},
+				},
+			},
+		}
+	}
+	bufferedEvent := func(task *replicationspb.SyncVersionedTransitionTaskAttributes) *history.HistoryEvent {
+		return task.GetVersionedTransitionArtifact().GetSyncWorkflowStateSnapshotAttributes().GetState().GetBufferedEvents()[0]
+	}
+
+	t.Run("child namespace id set", func(t *testing.T) {
+		task := newTask(testNsB)
+		changed, err := tr.TranslateResponse(nil, task)
+		require.NoError(t, err)
+		require.True(t, changed)
+		require.Equal(t, []string{keywordB}, startChildSAKeys(bufferedEvent(task)))
 	})
 
-	changed, err := tr.TranslateResponse(nil, frame)
+	t.Run("child namespace id not set", func(t *testing.T) {
+		task := newTask("")
+		changed, err := tr.TranslateResponse(nil, task)
+		require.NoError(t, err)
+		require.True(t, changed)
+		require.Equal(t, []string{keywordA}, startChildSAKeys(bufferedEvent(task)))
+	})
+}
+
+// nonOwnerWithNamespaceID has a NamespaceId field but is not in namespaceIDOwners.
+type nonOwnerWithNamespaceID struct {
+	NamespaceId      string
+	SearchAttributes *common.SearchAttributes
+}
+
+func TestTranslateSearchAttributeOwnersAreAnAllowlist(t *testing.T) {
+	tr := newTestSATranslator(t, testSAMappings())
+
+	// A NamespaceId field alone does not make a type an owner. This test fails if the allowlist
+	// is replaced with a match on the field name.
+	obj := &nonOwnerWithNamespaceID{
+		NamespaceId:      testNsB,
+		SearchAttributes: &common.SearchAttributes{IndexedFields: makeTestIndexedFieldMap(testSAName)},
+	}
+	req := &adminservice.SyncWorkflowStateRequest{NamespaceId: testNsA}
+	changed, err := tr.TranslateResponse(req, obj)
 	require.NoError(t, err)
 	require.True(t, changed)
-	require.Equal(t, []string{keywordA}, blobSAKeys(t, firstTaskEvents(frame)))
+	require.Equal(t, []string{keywordA}, mapKeys(obj.SearchAttributes.GetIndexedFields()))
 }
 
 func TestTranslateSearchAttributeIgnoresParentNamespaceId(t *testing.T) {

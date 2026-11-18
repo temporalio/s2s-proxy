@@ -140,14 +140,16 @@ func TestVisitorsDoNotWalkByteSlices(t *testing.T) {
 	}
 }
 
-// TestNamespaceIDOwnersAreValid guards the allowlist against an upstream proto rename and,
-// more importantly, against anyone replacing it with a NamespaceId field-name match.
+// TestNamespaceIDOwnersAreValid pins the reviewed set of owners and guards it against an
+// upstream proto rename or retype. TestTranslateSearchAttributeOwnersAreAnAllowlist guards
+// against a match on the field name.
 func TestNamespaceIDOwnersAreValid(t *testing.T) {
 	expectedOwners := []reflect.Type{
 		reflect.TypeFor[replicationspb.HistoryTaskAttributes](),
 		reflect.TypeFor[replicationspb.BackfillHistoryTaskAttributes](),
 		reflect.TypeFor[replicationspb.SyncVersionedTransitionTaskAttributes](),
 		reflect.TypeFor[persistencespb.WorkflowExecutionInfo](),
+		reflect.TypeFor[history.StartChildWorkflowExecutionInitiatedEventAttributes](),
 	}
 	require.Len(t, namespaceIDOwners, len(expectedOwners))
 
@@ -159,12 +161,6 @@ func TestNamespaceIDOwnersAreValid(t *testing.T) {
 		require.Equal(t, namespaceIDFieldName, field.Name, "owner %v", ownerType)
 		require.Equal(t, reflect.String, field.Type.Kind(), "owner %v", ownerType)
 	}
-
-	// StartChildWorkflowExecutionInitiatedEventAttributes carries the *child's* NamespaceId
-	// alongside its own SearchAttributes. Treating it as an owner would translate a parent's
-	// history event with the child's mapping.
-	require.NotContains(t, namespaceIDOwners,
-		reflect.TypeFor[history.StartChildWorkflowExecutionInitiatedEventAttributes]())
 }
 
 func BenchmarkVisitNamespace(b *testing.B) {
