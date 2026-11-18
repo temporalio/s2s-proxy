@@ -3,7 +3,6 @@ package interceptor
 import (
 	"strings"
 
-	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/api"
 	"go.temporal.io/server/common/log"
 
@@ -47,18 +46,17 @@ func (s *saTranslator) TranslateRequest(req any) (bool, error) {
 }
 
 // TranslateResponse translates the search attributes in resp. Some admin service responses
-// carry history blobs but no namespace field of their own, so the paired request is used to
-// seed the namespace. req is nil for streams, which have no request to pair with.
+// carry history blobs but no namespace field of their own, for example the raw history replies
+// and the event batches of SyncWorkflowStateResponse. For these, the NamespaceId of the paired
+// request seeds the namespace. A namespace owner inside resp still takes precedence for the
+// parts it encloses. req is nil for streams, which have no request to pair with.
 //
 // This relies on NamespaceId surviving TranslateRequest: the namespace name translator rewrites
 // Namespace, never NamespaceId. Adding namespace id translation later would silently break it.
 func (s *saTranslator) TranslateResponse(req, resp any) (bool, error) {
 	var fallbackNamespaceID string
-	switch r := req.(type) {
-	case *adminservice.GetWorkflowExecutionRawHistoryV2Request:
-		fallbackNamespaceID = r.NamespaceId
-	case *adminservice.GetWorkflowExecutionRawHistoryRequest:
-		fallbackNamespaceID = r.NamespaceId
+	if named, ok := req.(interface{ GetNamespaceId() string }); ok {
+		fallbackNamespaceID = named.GetNamespaceId()
 	}
 	return visitSearchAttributes(s.logger, resp, s.resolveResp, fallbackNamespaceID)
 }

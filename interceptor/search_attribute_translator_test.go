@@ -527,6 +527,68 @@ func TestTranslateSearchAttributeRawHistoryUsesPairedRequest(t *testing.T) {
 	})
 }
 
+func TestTranslateSearchAttributeSyncWorkflowStateUsesPairedRequest(t *testing.T) {
+	tr := newTestSATranslator(t, testSAMappings())
+
+	// The snapshot's WorkflowExecutionInfo owns its namespace. The event batches and the new
+	// run's events have no owner above them, so only the paired request names their namespace.
+	newResp := func(snapshotNamespaceID string) *adminservice.SyncWorkflowStateResponse {
+		return &adminservice.SyncWorkflowStateResponse{
+			VersionedTransitionArtifact: &replicationspb.VersionedTransitionArtifact{
+				StateAttributes: &replicationspb.VersionedTransitionArtifact_SyncWorkflowStateSnapshotAttributes{
+					SyncWorkflowStateSnapshotAttributes: &replicationspb.SyncWorkflowStateSnapshotAttributes{
+						State: &persistence.WorkflowMutableState{
+							ExecutionInfo: &persistence.WorkflowExecutionInfo{
+								NamespaceId:      snapshotNamespaceID,
+								SearchAttributes: makeTestIndexedFieldMap(testSAName),
+							},
+						},
+					},
+				},
+				EventBatches: []*common.DataBlob{makeHistoryEventsBlobWithSearchAttribute(testSAName)},
+				NewRunInfo: &replicationspb.NewRunInfo{
+					RunId:      "new-run",
+					EventBatch: makeHistoryEventsBlobWithSearchAttribute(testSAName),
+				},
+			},
+		}
+	}
+	requireKeys := func(t *testing.T, resp *adminservice.SyncWorkflowStateResponse, wantSnapshot, wantBatches string) {
+		t.Helper()
+		artifact := resp.GetVersionedTransitionArtifact()
+		execInfo := artifact.GetSyncWorkflowStateSnapshotAttributes().GetState().GetExecutionInfo()
+		require.Equal(t, []string{wantSnapshot}, mapKeys(execInfo.GetSearchAttributes()), "snapshot")
+		require.Equal(t, []string{wantBatches, wantBatches}, blobSAKeys(t, artifact.GetEventBatches()[0]), "event batches")
+		require.Equal(t, []string{wantBatches, wantBatches}, blobSAKeys(t, artifact.GetNewRunInfo().GetEventBatch()), "new run")
+	}
+
+	t.Run("paired", func(t *testing.T) {
+		resp := newResp(testNsB)
+		req := &adminservice.SyncWorkflowStateRequest{NamespaceId: testNsB}
+		changed, err := tr.TranslateResponse(req, resp)
+		require.NoError(t, err)
+		require.True(t, changed)
+		requireKeys(t, resp, keywordB, keywordB)
+	})
+
+	t.Run("unpaired", func(t *testing.T) {
+		resp := newResp(testNsB)
+		changed, err := tr.TranslateResponse(nil, resp)
+		require.NoError(t, err)
+		require.True(t, changed)
+		requireKeys(t, resp, keywordB, testSAName)
+	})
+
+	t.Run("an owner in the response takes precedence over the request", func(t *testing.T) {
+		resp := newResp(testNsA)
+		req := &adminservice.SyncWorkflowStateRequest{NamespaceId: testNsB}
+		changed, err := tr.TranslateResponse(req, resp)
+		require.NoError(t, err)
+		require.True(t, changed)
+		requireKeys(t, resp, keywordA, keywordB)
+	})
+}
+
 func TestTranslateSearchAttributeEmptyNamespaceIdMatchesNothing(t *testing.T) {
 	// There is no mapping that applies to every namespace: an entry keyed by an empty namespace
 	// id matches only an unresolved namespace, which no well formed replication task produces.
