@@ -37,6 +37,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/temporalio/s2s-proxy/auth"
+	"github.com/temporalio/s2s-proxy/collect"
 	"github.com/temporalio/s2s-proxy/config"
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/endtoendtest/testservices"
@@ -1158,4 +1159,66 @@ func TestClusterConnectionBindsToThePeerNamespace(t *testing.T) {
 
 		require.Equal(t, "ns", string(c.remote.lastInput(t).GetMetadata()[codec.MetadataEncryptionNamespace]))
 	})
+}
+
+// TestMakeServerOptionsMultiNamespaceSATranslation guards the removal of the former
+// panic("multiple namespace search attribute mappings are not supported"), which fired on the
+// startup path and so crash-looped the whole proxy -- including namespaces that used no custom
+// search attributes.
+func TestMakeServerOptionsMultiNamespaceSATranslation(t *testing.T) {
+	saMappings := func(pairs ...config.SANamespaceMapping) config.SearchAttributeTranslation {
+		t.Helper()
+		translation, err := (&config.SATranslationConfig{NamespaceMappings: pairs}).AsLocalToRemoteSATranslation()
+		require.NoError(t, err)
+		return translation
+	}
+
+	for _, tc := range []struct {
+		name         string
+		saTranslator config.SearchAttributeTranslation
+	}{
+		{
+			name: "two namespaces",
+			saTranslator: saMappings(
+				config.SANamespaceMapping{
+					Name:        "ns-a",
+					NamespaceId: "11111111-1111-1111-1111-111111111111",
+					Mappings:    []config.SAMapping{{LocalName: "Keyword01", RemoteName: "TestSA"}},
+				},
+				config.SANamespaceMapping{
+					Name:        "ns-b",
+					NamespaceId: "22222222-2222-2222-2222-222222222222",
+					Mappings:    []config.SAMapping{{LocalName: "Keyword02", RemoteName: "TestSA"}},
+				},
+			),
+		},
+		{
+			name: "one namespace",
+			saTranslator: saMappings(config.SANamespaceMapping{
+				Name:        "ns-a",
+				NamespaceId: "11111111-1111-1111-1111-111111111111",
+				Mappings:    []config.SAMapping{{LocalName: "Keyword01", RemoteName: "TestSA"}},
+			}),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// nsTranslations is an interface, so it must be non-nil: makeServerOptions calls
+			// Len() on it unconditionally.
+			emptyNsTranslations, err := collect.NewStaticBiMap(func(func(string, string) bool) {}, 0)
+			require.NoError(t, err)
+
+			cfg := serverConfiguration{
+				directionLabel: "outbound",
+				nsTranslations: emptyNsTranslations,
+				saTranslations: tc.saTranslator,
+				loggers:        logging.NewLoggerProvider(log.NewTestLogger(), config.NewMockConfigProvider(config.S2SProxyConfig{})),
+			}
+
+			require.NotPanics(t, func() {
+				opts, err := makeServerOptions(cfg, encryption.TLSConfig{})
+				require.NoError(t, err)
+				require.NotEmpty(t, opts)
+			})
+		})
+	}
 }
