@@ -26,6 +26,7 @@ import (
 	"github.com/temporalio/s2s-proxy/encryption"
 	"github.com/temporalio/s2s-proxy/encryption/extension"
 	"github.com/temporalio/s2s-proxy/encryption/vault"
+	"github.com/temporalio/s2s-proxy/failoverversion"
 	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/logging"
 	"github.com/temporalio/s2s-proxy/metrics"
@@ -69,11 +70,13 @@ type (
 		// inboundServer receives connections from a remote Temporal server and calls using the inboundClient.
 		inboundServer contextAwareServer
 		// inboundClient talks to the local Temporal frontend.
-		inboundClient    upstream
-		inboundObserver  *ReplicationStreamObserver
-		outboundObserver *ReplicationStreamObserver
-		shardManager     ShardManager
-		loggers          logging.LoggerProvider
+		inboundClient         upstream
+		inboundObserver       *ReplicationStreamObserver
+		outboundObserver      *ReplicationStreamObserver
+		shardManager          ShardManager
+		loggers               logging.LoggerProvider
+		translationDescriptor *failoverversion.MappingDescriptor
+		translationObserver   *interceptor.TranslationDebugObserver
 	}
 	// upstream is a conn the proxy forwards calls on, together with the
 	// encryptors for the side it faces. Encryptors belong to the conn, not to the
@@ -126,6 +129,8 @@ type (
 		// nsTranslations and saTranslations are used to translate namespace and search attribute names.
 		nsTranslations   collect.StaticBiMap[string, string]
 		saTranslations   config.SearchAttributeTranslation
+		semanticPairs    []interceptor.SemanticTranslationPair
+		semanticObserver interceptor.TranslationObserver
 		overrides        AdminServiceOverrides
 		aclPolicy        *config.ACLPolicy
 		shardCountConfig config.ShardCountConfig
@@ -168,6 +173,33 @@ func newClusterConnection(
 	cc := &ClusterConnection{
 		lifetime: lifetime,
 		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
+	}
+	var inboundSemanticPairs []interceptor.SemanticTranslationPair
+	var outboundSemanticPairs []interceptor.SemanticTranslationPair
+	var localToRemoteClusterIDs clusterIDTranslator
+	var remoteToLocalClusterIDs clusterIDTranslator
+	if connConfig.FailoverVersionTranslation != nil {
+		mapping, mappingErr := failoverversion.NewMapping(*connConfig.FailoverVersionTranslation)
+		if mappingErr != nil {
+			return nil, fmt.Errorf("invalid failover version translation: %w", mappingErr)
+		}
+		localToRemoteVersions := mapping.LocalToRemote()
+		remoteToLocalVersions := mapping.RemoteToLocal()
+		localToRemoteClusterIDs = localToRemoteVersions
+		remoteToLocalClusterIDs = remoteToLocalVersions
+		localToRemote := interceptor.NewFailoverVersionTranslator(localToRemoteVersions)
+		remoteToLocal := interceptor.NewFailoverVersionTranslator(remoteToLocalVersions)
+		descriptor := mapping.Descriptor()
+		cc.translationDescriptor = &descriptor
+		cc.translationObserver = interceptor.NewTranslationDebugObserver(100)
+		outboundSemanticPairs = []interceptor.SemanticTranslationPair{{
+			Requests:  localToRemote,
+			Responses: remoteToLocal,
+		}}
+		inboundSemanticPairs = []interceptor.SemanticTranslationPair{{
+			Requests:  remoteToLocal,
+			Responses: localToRemote,
+		}}
 	}
 	var err error
 	cc.inboundClient.conn, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound", credentialProvider)
@@ -239,10 +271,13 @@ func newClusterConnection(
 		callerNamesLocalNamespaces: false,
 		nsTranslations:             nsTranslations.Inverse(),
 		saTranslations:             saTranslations.Inverse(),
+		semanticPairs:              inboundSemanticPairs,
+		semanticObserver:           cc.translationObserver,
 		overrides: AdminServiceOverrides{
 			FVI:                          connConfig.FVITranslation.Local,
 			ReplicationEndpoint:          connConfig.ReplicationEndpoint,
 			CustomSearchAttributeAliases: connConfig.CustomSearchAttributeAliases,
+			incomingClusterIDs:           remoteToLocalClusterIDs,
 		},
 		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
 		aclPolicy:         connConfig.ACLPolicy,
@@ -267,12 +302,17 @@ func newClusterConnection(
 		callerNamesLocalNamespaces: true,
 		nsTranslations:             nsTranslations,
 		saTranslations:             saTranslations,
-		overrides:                  AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote},
-		shardCountConfig:           connConfig.ShardCountConfig,
-		loggers:                    cc.loggers,
-		shardManager:               cc.shardManager,
-		lcmParameters:              getLCMParameters(connConfig.ShardCountConfig, false),
-		routingParameters:          getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
+		semanticPairs:              outboundSemanticPairs,
+		semanticObserver:           cc.translationObserver,
+		overrides: AdminServiceOverrides{
+			FVI:                connConfig.FVITranslation.Remote,
+			outgoingClusterIDs: localToRemoteClusterIDs,
+		},
+		shardCountConfig:  connConfig.ShardCountConfig,
+		loggers:           cc.loggers,
+		shardManager:      cc.shardManager,
+		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, false),
+		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
 	}
 	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, outboundCfg)
 	if err != nil {
@@ -640,6 +680,16 @@ func makeServerOptions(c serverConfiguration, tlsConfig encryption.TLSConfig) ([
 	}
 
 	unaryInterceptors = append(unaryInterceptors, stampAndTranslate(c.callerNamesLocalNamespaces, translate)...)
+
+	if len(c.semanticPairs) > 0 {
+		semantic := interceptor.NewSemanticTranslationInterceptor(
+			c.loggers.Get(LogInterceptor),
+			c.semanticPairs,
+			interceptor.WithSemanticTranslationObserver(c.semanticObserver),
+		)
+		unaryInterceptors = append(unaryInterceptors, semantic.Intercept)
+		streamInterceptors = append(streamInterceptors, semantic.InterceptStream)
+	}
 
 	if c.aclPolicy != nil {
 		c.loggers.Get("init").Info("ACL policy enabled",

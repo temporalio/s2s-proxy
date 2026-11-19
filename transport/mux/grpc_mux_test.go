@@ -2,9 +2,12 @@ package mux
 
 import (
 	"context"
+	"errors"
+	"net"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/server/api/adminservice/v1"
 	"go.temporal.io/server/common/log"
@@ -75,4 +78,117 @@ func TestGRPCMux(t *testing.T) {
 	establishingMuxManager, err := NewGRPCMuxManager(t.Context(), "establishingMM", clientConfig, establishingClient, establishingServer, logger)
 	require.NoError(t, err)
 	establishingMuxManager.Start()
+}
+
+func TestGRPCMuxReconnectsAfterReceiverRestart(t *testing.T) {
+	logger := log.NewTestLogger()
+	clientLifetime, cancelClient := context.WithCancel(t.Context())
+	defer cancelClient()
+
+	establishingClient, err := grpcutil.NewMultiClientConn(clientLifetime, "reconnectingClientConns",
+		grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
+	require.NoError(t, err)
+	establishingServer := grpc.NewServer()
+	adminservice.RegisterAdminServiceServer(establishingServer, &testservices.EchoAdminService{
+		ServiceName: "establishingServer",
+		Logger:      logger,
+	})
+
+	receiverLifetime, cancelReceiver := context.WithCancel(t.Context())
+	receivingClient, receivingManager := startTestMuxReceiver(t, receiverLifetime, "receiver-before-restart", "127.0.0.1:0", logger)
+	establishingManager, err := NewGRPCMuxManager(clientLifetime, "reconnecting-client", config.ClusterDefinition{
+		ConnectionType: config.ConnTypeMuxClient,
+		MuxCount:       1,
+		MuxAddressInfo: config.TCPTLSInfo{ConnectionString: receivingManager.Address()},
+	}, establishingClient, establishingServer, logger)
+	require.NoError(t, err)
+	establishingManager.Start()
+
+	requireBidirectionalMuxCalls(t, receivingClient, establishingClient)
+
+	receiverAddress := receivingManager.Address()
+	cancelReceiver()
+	require.Eventually(t, receivingManager.IsClosed, 5*time.Second, 10*time.Millisecond)
+
+	restartedLifetime, cancelRestarted := context.WithCancel(t.Context())
+	defer cancelRestarted()
+	restartedReceivingClient, restartedManager := startTestMuxReceiver(t, restartedLifetime, "receiver-after-restart", receiverAddress, logger)
+	requireBidirectionalMuxCalls(t, restartedReceivingClient, establishingClient)
+	require.Eventually(t, func() bool {
+		return len(establishingManager.GetMuxConnections()) == 1 && len(restartedManager.GetMuxConnections()) == 1
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
+func TestGRPCServerRecyclesFailedMuxListenerWithoutRetrying(t *testing.T) {
+	wantErr := errors.New("listener failed")
+	listener := &failingListener{err: wantErr}
+	serveGRPCOnMux(t.Context(), "test", "mux-1", grpc.NewServer(), listener,
+		[]string{"test-address", "test-mode", "test-name"}, log.NewTestLogger())
+	require.Equal(t, 1, listener.accepts)
+	require.Positive(t, listener.closes)
+}
+
+type failingListener struct {
+	err     error
+	accepts int
+	closes  int
+}
+
+func (l *failingListener) Accept() (net.Conn, error) {
+	l.accepts++
+	return nil, l.err
+}
+
+func (l *failingListener) Close() error {
+	l.closes++
+	return nil
+}
+
+func (l *failingListener) Addr() net.Addr { return testAddr("failed-mux") }
+
+type testAddr string
+
+func (a testAddr) Network() string { return string(a) }
+func (a testAddr) String() string  { return string(a) }
+
+func startTestMuxReceiver(
+	t *testing.T,
+	lifetime context.Context,
+	name string,
+	address string,
+	logger log.Logger,
+) (*grpcutil.MultiClientConn, MultiMuxManager) {
+	t.Helper()
+	client, err := grpcutil.NewMultiClientConn(lifetime, name+"-client",
+		grpcutil.MakeDialOptions(nil, metrics.GRPCOutboundClientMetrics)...)
+	require.NoError(t, err)
+	server := grpc.NewServer()
+	adminservice.RegisterAdminServiceServer(server, &testservices.EchoAdminService{
+		ServiceName: name,
+		Logger:      logger,
+	})
+	manager, err := NewGRPCMuxManager(lifetime, name, config.ClusterDefinition{
+		ConnectionType: config.ConnTypeMuxServer,
+		MuxCount:       1,
+		MuxAddressInfo: config.TCPTLSInfo{ConnectionString: address},
+	}, client, server, logger)
+	require.NoError(t, err)
+	manager.Start()
+	return client, manager
+}
+
+func requireBidirectionalMuxCalls(t *testing.T, receivingClient, establishingClient *grpcutil.MultiClientConn) {
+	t.Helper()
+	for name, connection := range map[string]*grpcutil.MultiClientConn{
+		"receiver-to-establisher": receivingClient,
+		"establisher-to-receiver": establishingClient,
+	} {
+		client := adminservice.NewAdminServiceClient(connection)
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
+			defer cancel()
+			_, callErr := client.DescribeCluster(ctx, &adminservice.DescribeClusterRequest{})
+			assert.NoError(collect, callErr, name)
+		}, 5*time.Second, 10*time.Millisecond)
+	}
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"go.temporal.io/proxy/pkg/validation"
 
@@ -13,20 +14,21 @@ import (
 // Looking for examples? Check ./develop/sample-cluster-conn-config.yaml
 type (
 	ClusterConnConfig struct {
-		Name                         string              `yaml:"name"`
-		Local                        ClusterDefinition   `yaml:"local"`
-		Remote                       ClusterDefinition   `yaml:"remote"`
-		ReplicationEndpoint          string              `yaml:"replicationEndpoint"`
-		FVITranslation               IntMapping          `yaml:"failoverVersionIncrementTranslation"`
-		ACLPolicy                    *ACLPolicy          `yaml:"aclPolicy"`
-		NamespaceTranslation         StringTranslator    `yaml:"namespaceTranslation"`
-		SearchAttributeTranslation   SATranslationConfig `yaml:"searchAttributeTranslation"`
-		CustomSearchAttributeAliases CustomSAAliasConfig `yaml:"customSearchAttributeAliases"`
-		RemoteClusterHealthCheck     HealthCheckConfig   `yaml:"remoteClusterHealthCheck"`
-		LocalClusterHealthCheck      HealthCheckConfig   `yaml:"localClusterHealthCheck"`
-		ShardCountConfig             ShardCountConfig    `yaml:"shardCount"`
-		MemberlistConfig             *MemberlistConfig   `yaml:"memberlist"`
-		EncryptionConfig             EncryptionConfig    `yaml:"encryption"`
+		Name                         string                            `yaml:"name"`
+		Local                        ClusterDefinition                 `yaml:"local"`
+		Remote                       ClusterDefinition                 `yaml:"remote"`
+		ReplicationEndpoint          string                            `yaml:"replicationEndpoint"`
+		FVITranslation               IntMapping                        `yaml:"failoverVersionIncrementTranslation"`
+		FailoverVersionTranslation   *FailoverVersionTranslationConfig `yaml:"failoverVersionTranslation"`
+		ACLPolicy                    *ACLPolicy                        `yaml:"aclPolicy"`
+		NamespaceTranslation         StringTranslator                  `yaml:"namespaceTranslation"`
+		SearchAttributeTranslation   SATranslationConfig               `yaml:"searchAttributeTranslation"`
+		CustomSearchAttributeAliases CustomSAAliasConfig               `yaml:"customSearchAttributeAliases"`
+		RemoteClusterHealthCheck     HealthCheckConfig                 `yaml:"remoteClusterHealthCheck"`
+		LocalClusterHealthCheck      HealthCheckConfig                 `yaml:"localClusterHealthCheck"`
+		ShardCountConfig             ShardCountConfig                  `yaml:"shardCount"`
+		MemberlistConfig             *MemberlistConfig                 `yaml:"memberlist"`
+		EncryptionConfig             EncryptionConfig                  `yaml:"encryption"`
 	}
 
 	StringTranslator struct {
@@ -42,6 +44,15 @@ type (
 	IntMapping struct {
 		Local  int64 `yaml:"local"`
 		Remote int64 `yaml:"remote"`
+	}
+
+	FailoverVersionTranslationConfig struct {
+		FVI IntMapping           `yaml:"fvi"`
+		IFV IFVTranslationConfig `yaml:"ifv"`
+	}
+
+	IFVTranslationConfig struct {
+		Mappings []IntMapping `yaml:"mappings"`
 	}
 
 	ConnectionType string
@@ -151,5 +162,96 @@ func (c *ClusterConnConfig) Validate() error {
 			}
 			return nil
 		}),
+		validation.WhenNested(
+			func() bool { return c.FailoverVersionTranslation != nil },
+			"failoverVersionTranslation",
+			c.FailoverVersionTranslation,
+		),
+		validation.Field("failoverVersionTranslation", c.FailoverVersionTranslation, func(translation *FailoverVersionTranslationConfig) error {
+			if translation != nil && (c.FVITranslation.Local != 0 || c.FVITranslation.Remote != 0) {
+				return errors.New("cannot be combined with failoverVersionIncrementTranslation")
+			}
+			return nil
+		}),
 	)
+}
+
+func (c *FailoverVersionTranslationConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+
+	rules := []validation.Rule{
+		validation.Field("fvi.local", c.FVI.Local, validation.GT(int64(0))),
+		validation.Field("fvi.remote", c.FVI.Remote, validation.GT(int64(0))),
+		validation.Field("ifv.mappings", c.IFV.Mappings, func(mappings []IntMapping) error {
+			if len(mappings) == 0 {
+				return errors.New("is required")
+			}
+			return nil
+		}),
+	}
+
+	localLanes := make(map[int64]int, len(c.IFV.Mappings))
+	remoteLanes := make(map[int64]int, len(c.IFV.Mappings))
+	for i, mapping := range c.IFV.Mappings {
+		subject := fmt.Sprintf("ifv.mappings[%d]", i)
+		rules = append(rules,
+			validation.Field(subject+".local", mapping.Local, laneChecks(c.FVI.Local)...),
+			validation.Field(subject+".remote", mapping.Remote, laneChecks(c.FVI.Remote)...),
+		)
+		if previous, ok := localLanes[mapping.Local]; ok {
+			rules = append(rules, validation.Field(subject+".local", mapping.Local, func(int64) error {
+				return fmt.Errorf("duplicates ifv.mappings[%d].local", previous)
+			}))
+		} else {
+			localLanes[mapping.Local] = i
+		}
+		if previous, ok := remoteLanes[mapping.Remote]; ok {
+			rules = append(rules, validation.Field(subject+".remote", mapping.Remote, func(int64) error {
+				return fmt.Errorf("duplicates ifv.mappings[%d].remote", previous)
+			}))
+		} else {
+			remoteLanes[mapping.Remote] = i
+		}
+	}
+	type indexedMapping struct {
+		index int
+		pair  IntMapping
+	}
+	sortedMappings := make([]indexedMapping, len(c.IFV.Mappings))
+	for i, pair := range c.IFV.Mappings {
+		sortedMappings[i] = indexedMapping{index: i, pair: pair}
+	}
+	sort.Slice(sortedMappings, func(i, j int) bool { return sortedMappings[i].pair.Local < sortedMappings[j].pair.Local })
+	for i := 1; i < len(sortedMappings); i++ {
+		if sortedMappings[i].pair.Remote <= sortedMappings[i-1].pair.Remote {
+			current := sortedMappings[i]
+			rules = append(rules, validation.Field(
+				fmt.Sprintf("ifv.mappings[%d].remote", current.index),
+				current.pair.Remote,
+				func(int64) error { return errors.New("must preserve local lane ordering") },
+			))
+		}
+	}
+
+	return validation.Validate("", rules...)
+}
+
+func laneChecks(fvi int64) []validation.Check[int64] {
+	return []validation.Check[int64]{
+		validation.GT(int64(0)),
+		func(lane int64) error {
+			if fvi > 0 && lane > fvi {
+				return fmt.Errorf("greater than failover version increment %d", fvi)
+			}
+			return nil
+		},
+		func(lane int64) error {
+			if lane > int64(^uint32(0)>>1) {
+				return errors.New("does not fit in int32")
+			}
+			return nil
+		},
+	}
 }

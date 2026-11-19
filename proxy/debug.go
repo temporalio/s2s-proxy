@@ -3,12 +3,16 @@ package proxy
 import (
 	"encoding/json"
 	"net/http"
+	"runtime"
+	"sort"
 	"time"
 
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
+	"github.com/temporalio/s2s-proxy/failoverversion"
+	"github.com/temporalio/s2s-proxy/interceptor"
 	"github.com/temporalio/s2s-proxy/transport/mux"
 )
 
@@ -104,13 +108,45 @@ type (
 		ConnectionCount int                 `json:"connection_count"`
 	}
 
+	// FailoverVersionTranslationDebugInfo exposes the safe shape and runtime
+	// observations of a connection's semantic translation. Individual lane
+	// pairs are deliberately represented only by the canonical fingerprint.
+	FailoverVersionTranslationDebugInfo struct {
+		ConnectionName            string                                    `json:"connection_name"`
+		Enabled                   bool                                      `json:"enabled"`
+		Role                      string                                    `json:"role"`
+		Mapping                   failoverversion.MappingDescriptor         `json:"mapping,omitempty"`
+		OutboundRequestDirection  failoverversion.Direction                 `json:"outbound_request_direction,omitempty"`
+		OutboundResponseDirection failoverversion.Direction                 `json:"outbound_response_direction,omitempty"`
+		InboundRequestDirection   failoverversion.Direction                 `json:"inbound_request_direction,omitempty"`
+		InboundResponseDirection  failoverversion.Direction                 `json:"inbound_response_direction,omitempty"`
+		Latest                    *interceptor.TranslationObservation       `json:"latest,omitempty"`
+		LastSuccess               *interceptor.TranslationObservation       `json:"last_success,omitempty"`
+		Recent                    []interceptor.TranslationObservation      `json:"recent,omitempty"`
+		RecentFailures            []interceptor.TranslationObservation      `json:"recent_failures,omitempty"`
+		OperationSummaries        []interceptor.TranslationOperationSummary `json:"operation_summaries,omitempty"`
+	}
+
+	RuntimeMemoryDebugInfo struct {
+		HeapAlloc    uint64 `json:"heap_alloc_bytes"`
+		HeapInuse    uint64 `json:"heap_inuse_bytes"`
+		HeapReleased uint64 `json:"heap_released_bytes"`
+		HeapObjects  uint64 `json:"heap_objects"`
+		StackInuse   uint64 `json:"stack_inuse_bytes"`
+		Sys          uint64 `json:"sys_bytes"`
+		NumGC        uint32 `json:"num_gc"`
+		Goroutines   int    `json:"goroutines"`
+	}
+
 	DebugResponse struct {
-		Timestamp      time.Time                 `json:"timestamp"`
-		ActiveStreams  []StreamInfo              `json:"active_streams"`
-		StreamCount    int                       `json:"stream_count"`
-		ShardInfos     []ShardDebugInfo          `json:"shard_infos"`
-		ChannelInfos   []ChannelDebugInfo        `json:"channel_infos"`
-		MuxConnections []MuxConnectionsDebugInfo `json:"mux_connections"`
+		Timestamp                   time.Time                             `json:"timestamp"`
+		ActiveStreams               []StreamInfo                          `json:"active_streams"`
+		StreamCount                 int                                   `json:"stream_count"`
+		ShardInfos                  []ShardDebugInfo                      `json:"shard_infos"`
+		ChannelInfos                []ChannelDebugInfo                    `json:"channel_infos"`
+		MuxConnections              []MuxConnectionsDebugInfo             `json:"mux_connections"`
+		FailoverVersionTranslations []FailoverVersionTranslationDebugInfo `json:"failover_version_translations"`
+		RuntimeMemory               RuntimeMemoryDebugInfo                `json:"runtime_memory"`
 	}
 )
 
@@ -122,12 +158,13 @@ func HandleDebugInfo(w http.ResponseWriter, r *http.Request, proxyInstance *Prox
 	var shardInfos []ShardDebugInfo
 	var channelInfos []ChannelDebugInfo
 	var muxConnections []MuxConnectionsDebugInfo
+	var failoverVersionTranslations []FailoverVersionTranslationDebugInfo
 
 	// Get active streams information
 	streamTracker := GetGlobalStreamTracker()
 	activeStreams = streamTracker.GetActiveStreams()
 	streamCount = streamTracker.GetStreamCount()
-	for _, clusterConnection := range proxyInstance.clusterConnections {
+	for id, clusterConnection := range proxyInstance.clusterConnections {
 		if clusterConnection.shardManager != nil {
 			shardInfos = append(shardInfos, clusterConnection.shardManager.GetShardInfos()...)
 			channelInfos = append(channelInfos, clusterConnection.shardManager.GetChannelInfo())
@@ -136,15 +173,42 @@ func HandleDebugInfo(w http.ResponseWriter, r *http.Request, proxyInstance *Prox
 		// Collect mux connection info from inbound and outbound servers
 		muxConnections = append(muxConnections, getMuxConnectionsInfo(clusterConnection.inboundServer, "inbound")...)
 		muxConnections = append(muxConnections, getMuxConnectionsInfo(clusterConnection.outboundServer, "outbound")...)
+
+		translation := FailoverVersionTranslationDebugInfo{ConnectionName: id.name, Role: "pass_through"}
+		if clusterConnection.translationDescriptor != nil {
+			translation.Enabled = true
+			translation.Role = "owner"
+			translation.Mapping = *clusterConnection.translationDescriptor
+			translation.OutboundRequestDirection = failoverversion.LocalToRemote
+			translation.OutboundResponseDirection = failoverversion.RemoteToLocal
+			translation.InboundRequestDirection = failoverversion.RemoteToLocal
+			translation.InboundResponseDirection = failoverversion.LocalToRemote
+			translation.Latest, translation.LastSuccess, translation.Recent, translation.RecentFailures =
+				clusterConnection.translationObserver.SnapshotDetailed()
+			translation.OperationSummaries = clusterConnection.translationObserver.OperationSummaries()
+		}
+		failoverVersionTranslations = append(failoverVersionTranslations, translation)
 	}
+	sort.Slice(failoverVersionTranslations, func(i, j int) bool {
+		return failoverVersionTranslations[i].ConnectionName < failoverVersionTranslations[j].ConnectionName
+	})
+	var memory runtime.MemStats
+	runtime.ReadMemStats(&memory)
 
 	response := DebugResponse{
-		Timestamp:      time.Now(),
-		ActiveStreams:  activeStreams,
-		StreamCount:    streamCount,
-		ShardInfos:     shardInfos,
-		ChannelInfos:   channelInfos,
-		MuxConnections: muxConnections,
+		Timestamp:                   time.Now(),
+		ActiveStreams:               activeStreams,
+		StreamCount:                 streamCount,
+		ShardInfos:                  shardInfos,
+		ChannelInfos:                channelInfos,
+		MuxConnections:              muxConnections,
+		FailoverVersionTranslations: failoverVersionTranslations,
+		RuntimeMemory: RuntimeMemoryDebugInfo{
+			HeapAlloc: memory.HeapAlloc, HeapInuse: memory.HeapInuse,
+			HeapReleased: memory.HeapReleased, HeapObjects: memory.HeapObjects,
+			StackInuse: memory.StackInuse, Sys: memory.Sys, NumGC: memory.NumGC,
+			Goroutines: runtime.NumGoroutine(),
+		},
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {

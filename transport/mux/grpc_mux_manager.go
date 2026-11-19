@@ -2,7 +2,9 @@ package mux
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 
 	"github.com/hashicorp/yamux"
 	"go.temporal.io/server/common/log"
@@ -69,10 +71,28 @@ func registerGRPCServer(mode string, serverConfig *grpc.Server, metricLabels []s
 			logger.Info("Starting inbound server for mux",
 				tag.NewStringTag("remote_addr", common.GetHost(session.RemoteAddr().String())),
 				tag.NewStringTag("mode", mode), tag.NewStringTag("mux_id", id))
-			for lifetime.Err() == nil {
-				_ = serverConfig.Serve(session)
-				metrics.MuxServerDisconnected.WithLabelValues(metricLabels...).Inc()
-			}
+			serveGRPCOnMux(lifetime, mode, id, serverConfig, session, metricLabels, logger)
 		}()
+	}
+}
+
+func serveGRPCOnMux(
+	lifetime context.Context,
+	mode string,
+	id string,
+	server *grpc.Server,
+	listener net.Listener,
+	metricLabels []string,
+	logger log.Logger,
+) {
+	err := server.Serve(listener)
+	metrics.MuxServerDisconnected.WithLabelValues(metricLabels...).Inc()
+	if lifetime.Err() == nil && !errors.Is(err, grpc.ErrServerStopped) {
+		// A listener that has returned from Serve is not reusable. Retrying
+		// Serve on the same failed yamux session can spin and accumulate gRPC
+		// goroutines. Closing it drives the normal manager/provider reconnect.
+		logger.Warn("Inbound gRPC server exited; recycling mux session",
+			tag.NewStringTag("mode", mode), tag.NewStringTag("mux_id", id), tag.Error(err))
+		_ = listener.Close()
 	}
 }

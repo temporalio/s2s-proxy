@@ -51,6 +51,11 @@ lint:
 bench:
 	@go test -run '^$$' -benchmem -bench=. ./... $(BENCH_ARG)
 
+.PHONY: bench-failover-version-translation
+bench-failover-version-translation:
+	@go test -run '^$$' -benchmem -bench='FailoverVersion|TranslateVersion' \
+		./failoverversion ./interceptor $(BENCH_ARG)
+
 .PHONY: genvisitor
 GENVISITOR_FLAGS ?= # -debug -dump-tre
 genvisitor:
