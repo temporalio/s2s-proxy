@@ -322,6 +322,7 @@ func handleStream(
 	shardManager ShardManager,
 	metricLabelValues []string,
 	lifetime context.Context,
+	outgoingClusterIDs clusterIDTranslator,
 ) error {
 	switch shardCountConfig.Mode {
 	case config.ShardCountLCM:
@@ -358,6 +359,13 @@ func handleStream(
 		}
 		return streamRouting(logger, streamServer, sourceClusterShardID, targetClusterShardID, shardManager, adminClientReverse, routingParameters, lifetime)
 	}
+	if outgoingClusterIDs != nil && !common.IsRequestTranslationDisabled(streamServer.Context()) && !common.IsIntraProxy(streamServer.Context()) {
+		var err error
+		targetMetadata, err = translateClusterShardMetadata(targetMetadata, outgoingClusterIDs)
+		if err != nil {
+			return serviceerror.NewInternal(err.Error())
+		}
+	}
 
 	forwarder := newStreamForwarder(
 		adminClient,
@@ -370,6 +378,13 @@ func handleStream(
 	)
 	return forwarder.Run()
 }
+
+type clusterMetadataServerStream struct {
+	adminservice.AdminService_StreamWorkflowReplicationMessagesServer
+	ctx context.Context
+}
+
+func (s *clusterMetadataServerStream) Context() context.Context { return s.ctx }
 
 func streamIntraProxyRouting(
 	logger log.Logger,

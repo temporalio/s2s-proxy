@@ -90,15 +90,26 @@ var (
 
 	// Translation interceptor
 
-	translationLabels  = []string{"kind", "message_type"}
-	TranslationCount   = DefaultCounterVec("translation_success", "Count of message translations", translationLabels...)
-	TranslationErrors  = DefaultCounterVec("translation_error", "Count of message translation errors", translationLabels...)
-	TranslationLatency = DefaultHistogramVec("translation_latency", "Latency of message translations", translationLabels...)
+	translationLabels                    = []string{"kind", "message_type"}
+	TranslationCount                     = DefaultCounterVec("translation_success", "Count of message translations", translationLabels...)
+	TranslationErrors                    = DefaultCounterVec("translation_error", "Count of message translation errors", translationLabels...)
+	TranslationLatency                   = DefaultHistogramVec("translation_latency", "Latency of message translations", translationLabels...)
+	FailoverVersionTranslationOperations = DefaultCounterVec(
+		"failover_version_translation_operations_total",
+		"Failover-version semantic translation operations by bounded outcome and reason",
+		"direction", "outcome", "reason",
+	)
+	FailoverVersionTranslationFields = DefaultCounterVec(
+		"failover_version_translation_fields_total",
+		"Failover-version semantic fields committed by category",
+		"direction", "semantic",
+	)
 
-	UTF8RepairTranslationKind = "utf8repair"
-	NamespaceTranslationKind  = "namespace"
-	SearchAttrTranslationKind = "search-attribute"
-	HistoryBlobMessageType    = "HistoryEventBlob"
+	UTF8RepairTranslationKind      = "utf8repair"
+	NamespaceTranslationKind       = "namespace"
+	SearchAttrTranslationKind      = "search-attribute"
+	FailoverVersionTranslationKind = "failover_version"
+	HistoryBlobMessageType         = "HistoryEventBlob"
 )
 
 // GetGRPCClientMetrics helps the GRPC client metrics objects feel more like the server one
@@ -181,4 +192,6 @@ func init() {
 	prometheus.MustRegister(TranslationCount)
 	prometheus.MustRegister(TranslationErrors)
 	prometheus.MustRegister(TranslationLatency)
+	prometheus.MustRegister(FailoverVersionTranslationOperations)
+	prometheus.MustRegister(FailoverVersionTranslationFields)
 }

@@ -51,6 +51,8 @@ type (
 		// CustomSearchAttributeAliases are the per-namespace custom search attribute aliases
 		// (internal field name -> customer-provided name). Inbound only.
 		CustomSearchAttributeAliases config.CustomSAAliasConfig
+		incomingClusterIDs           clusterIDTranslator
+		outgoingClusterIDs           clusterIDTranslator
 	}
 )
 
@@ -378,6 +380,17 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 	if !ok {
 		return serviceerror.NewInvalidArgument("missing cluster & shard ID metadata")
 	}
+	if s.overrides.incomingClusterIDs != nil && !common.IsRequestTranslationDisabled(streamServer.Context()) && !common.IsIntraProxy(streamServer.Context()) {
+		translatedMetadata, translateErr := translateClusterShardMetadata(targetMetadata, s.overrides.incomingClusterIDs)
+		if translateErr != nil {
+			return serviceerror.NewInternal(translateErr.Error())
+		}
+		targetMetadata = translatedMetadata
+		streamServer = &clusterMetadataServerStream{
+			AdminService_StreamWorkflowReplicationMessagesServer: streamServer,
+			ctx: metadata.NewIncomingContext(streamServer.Context(), translatedMetadata),
+		}
+	}
 	targetClusterShardID, sourceClusterShardID, err := history.DecodeClusterShardMD(
 		headers.NewGRPCHeaderGetter(streamServer.Context()),
 	)
@@ -410,6 +423,7 @@ func (s *adminServiceProxyServer) StreamWorkflowReplicationMessages(
 		s.shardManager,
 		s.metricLabelValues,
 		s.lifetime,
+		s.overrides.outgoingClusterIDs,
 	)
 	if err != nil {
 		return err

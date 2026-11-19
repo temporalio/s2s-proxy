@@ -87,6 +87,15 @@ Local and remote namespace names and search attributes can be renamed through th
 namespace confirm to what it should be on the remote. This skips the step of renaming the namespace by doing it
 in-flight as it migrates.
 
+### Translate failover versions between cluster domains
+
+An owner-side proxy can translate Temporal failover versions when connected
+clusters use different failover-version increments. Translation covers
+replication histories, mutable state, error details, and stream identities and
+fails closed on unknown lanes. See
+[failover-version translation](docs/failover-version-translation.md) for the
+configuration, generator, and rollout procedure.
+
 ### Adapt between different versions of Temporal
 We will be keeping the Proxy updated with translations between modern versions of Temporal. The most notable 
 recent incompatibility between servers is the switch from GoGo protobufs to Go-GRPC's reference protobufs.
