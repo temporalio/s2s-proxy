@@ -182,6 +182,28 @@ func newClusterConnection(
 	if err != nil {
 		return nil, err
 	}
+	localToRemoteRewriter, remoteToLocalRewriter, err := newNamespaceFailoverVersionRewriters(
+		sanitizedConnectionName,
+		connConfig.NamespaceFailoverVersionRewrite,
+		connConfig.FVITranslation,
+		nsTranslations,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("invalid namespace failover version rewrite: %w", err)
+	}
+	if rewrite := connConfig.NamespaceFailoverVersionRewrite; rewrite != nil {
+		cc.loggers.Get(LogClusterConnection).Info(
+			"Namespace failover version rewrite configured",
+			tag.NewStringTag("mode", string(rewrite.Mode)),
+			tag.NewInt("namespace-count", len(rewrite.Namespaces)),
+			tag.NewStringTag("local-cluster", rewrite.Local.ClusterName),
+			tag.NewInt64("local-fvi", connConfig.FVITranslation.Remote),
+			tag.NewInt64("local-ifv", rewrite.Local.InitialFailoverVersion),
+			tag.NewStringTag("remote-cluster", rewrite.Remote.ClusterName),
+			tag.NewInt64("remote-fvi", connConfig.FVITranslation.Local),
+			tag.NewInt64("remote-ifv", rewrite.Remote.InitialFailoverVersion),
+		)
+	}
 	saTranslations, err := connConfig.SearchAttributeTranslation.AsLocalToRemoteSATranslation()
 	if err != nil {
 		return nil, err
@@ -240,9 +262,10 @@ func newClusterConnection(
 		nsTranslations:             nsTranslations.Inverse(),
 		saTranslations:             saTranslations.Inverse(),
 		overrides: AdminServiceOverrides{
-			FVI:                          connConfig.FVITranslation.Local,
-			ReplicationEndpoint:          connConfig.ReplicationEndpoint,
-			CustomSearchAttributeAliases: connConfig.CustomSearchAttributeAliases,
+			FVI:                              connConfig.FVITranslation.Local,
+			ReplicationEndpoint:              connConfig.ReplicationEndpoint,
+			CustomSearchAttributeAliases:     connConfig.CustomSearchAttributeAliases,
+			NamespaceFailoverVersionRewriter: localToRemoteRewriter,
 		},
 		// TODO: There is no test checking that ACLPolicy isn't accidentally dropped
 		aclPolicy:         connConfig.ACLPolicy,
@@ -267,12 +290,15 @@ func newClusterConnection(
 		callerNamesLocalNamespaces: true,
 		nsTranslations:             nsTranslations,
 		saTranslations:             saTranslations,
-		overrides:                  AdminServiceOverrides{FVI: connConfig.FVITranslation.Remote},
-		shardCountConfig:           connConfig.ShardCountConfig,
-		loggers:                    cc.loggers,
-		shardManager:               cc.shardManager,
-		lcmParameters:              getLCMParameters(connConfig.ShardCountConfig, false),
-		routingParameters:          getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
+		overrides: AdminServiceOverrides{
+			FVI:                              connConfig.FVITranslation.Remote,
+			NamespaceFailoverVersionRewriter: remoteToLocalRewriter,
+		},
+		shardCountConfig:  connConfig.ShardCountConfig,
+		loggers:           cc.loggers,
+		shardManager:      cc.shardManager,
+		lcmParameters:     getLCMParameters(connConfig.ShardCountConfig, false),
+		routingParameters: getRoutingParameters(connConfig.ShardCountConfig, false, "outbound"),
 	}
 	cc.outboundServer, cc.outboundObserver, err = createServer(lifetime, outboundCfg)
 	if err != nil {

@@ -87,6 +87,15 @@ Local and remote namespace names and search attributes can be renamed through th
 namespace confirm to what it should be on the remote. This skips the step of renaming the namespace by doing it
 in-flight as it migrates.
 
+### Experiment with namespace cutover versions across FVI domains
+
+An opt-in experimental mode can rewrite only the namespace handover version
+when two clusters use different failover-version increments, leaving workflow
+history unchanged. It supports two-cluster migrations only and is not yet
+production-ready. See
+[namespace cutover failover-version rewrite](docs/failover-version-cutover-rewrite.md)
+for its constraints, failure modes, rollout gates, and test plan.
+
 ### Adapt between different versions of Temporal
 We will be keeping the Proxy updated with translations between modern versions of Temporal. The most notable 
 recent incompatibility between servers is the switch from GoGo protobufs to Go-GRPC's reference protobufs.
