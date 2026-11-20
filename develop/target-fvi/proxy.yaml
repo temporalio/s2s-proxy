@@ -1,0 +1,37 @@
+clusterConnections:
+  - name: target-fvi
+    local:
+      connectionType: tcp
+      tcpClient:
+        address: 127.0.0.1:7233
+      tcpServer:
+        address: 127.0.0.1:38233
+    remote:
+      connectionType: tcp
+      tcpClient:
+        address: 127.0.0.1:8233
+      tcpServer:
+        address: 127.0.0.1:37233
+    # Caller-facing DescribeCluster values are crossed: Cloud must see FVI 10
+    # when describing S, and S must see FVI 7 when describing Cloud.
+    failoverVersionIncrementTranslation:
+      local: 10
+      remote: 7
+    namespaceFailoverVersionRewrite:
+      # Seed with observe, then restart with enforce for the full probe.
+      mode: observe
+      namespaces:
+        - fvi-cutover-test
+      local:
+        clusterName: cluster-fvi-s
+        initialFailoverVersion: 1
+      remote:
+        clusterName: cluster-fvi-c
+        initialFailoverVersion: 2
+
+metrics:
+  prometheus:
+    listenAddress: 127.0.0.1:19090
+
+profiling:
+  pprofAddress: 127.0.0.1:16060
