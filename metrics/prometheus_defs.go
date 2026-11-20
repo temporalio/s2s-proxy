@@ -20,6 +20,11 @@ var (
 	AdminServiceStreamRespCount    = DefaultCounterVec("admin_service_stream_response_count", "Number of messages received", "direction")
 	// AdminServiceStreamTerminatedCount labels are direction (inbound/outbound) and terminated_by (source/target)
 	AdminServiceStreamTerminatedCount = DefaultCounterVec("admin_service_stream_terminated_count", "Stream was terminated by remote server", "direction", "terminated_by")
+	NamespaceFailoverVersionRewrite   = DefaultCounterVec(
+		"namespace_failover_version_rewrite_total",
+		"Namespace cutover rewrite decisions",
+		"connection", "direction", "operation", "result",
+	)
 
 	// /proxy/health_check.go
 
@@ -129,6 +134,7 @@ func init() {
 	prometheus.MustRegister(AdminServiceStreamReqCount)
 	prometheus.MustRegister(AdminServiceStreamRespCount)
 	prometheus.MustRegister(AdminServiceStreamTerminatedCount)
+	prometheus.MustRegister(NamespaceFailoverVersionRewrite)
 
 	prometheus.MustRegister(LBHealthSuccessCount)
 	prometheus.MustRegister(LBHealthCheckCount)

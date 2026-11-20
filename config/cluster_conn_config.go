@@ -13,20 +13,21 @@ import (
 // Looking for examples? Check ./develop/sample-cluster-conn-config.yaml
 type (
 	ClusterConnConfig struct {
-		Name                         string              `yaml:"name"`
-		Local                        ClusterDefinition   `yaml:"local"`
-		Remote                       ClusterDefinition   `yaml:"remote"`
-		ReplicationEndpoint          string              `yaml:"replicationEndpoint"`
-		FVITranslation               IntMapping          `yaml:"failoverVersionIncrementTranslation"`
-		ACLPolicy                    *ACLPolicy          `yaml:"aclPolicy"`
-		NamespaceTranslation         StringTranslator    `yaml:"namespaceTranslation"`
-		SearchAttributeTranslation   SATranslationConfig `yaml:"searchAttributeTranslation"`
-		CustomSearchAttributeAliases CustomSAAliasConfig `yaml:"customSearchAttributeAliases"`
-		RemoteClusterHealthCheck     HealthCheckConfig   `yaml:"remoteClusterHealthCheck"`
-		LocalClusterHealthCheck      HealthCheckConfig   `yaml:"localClusterHealthCheck"`
-		ShardCountConfig             ShardCountConfig    `yaml:"shardCount"`
-		MemberlistConfig             *MemberlistConfig   `yaml:"memberlist"`
-		EncryptionConfig             EncryptionConfig    `yaml:"encryption"`
+		Name                            string                                 `yaml:"name"`
+		Local                           ClusterDefinition                      `yaml:"local"`
+		Remote                          ClusterDefinition                      `yaml:"remote"`
+		ReplicationEndpoint             string                                 `yaml:"replicationEndpoint"`
+		FVITranslation                  IntMapping                             `yaml:"failoverVersionIncrementTranslation"`
+		NamespaceFailoverVersionRewrite *NamespaceFailoverVersionRewriteConfig `yaml:"namespaceFailoverVersionRewrite"`
+		ACLPolicy                       *ACLPolicy                             `yaml:"aclPolicy"`
+		NamespaceTranslation            StringTranslator                       `yaml:"namespaceTranslation"`
+		SearchAttributeTranslation      SATranslationConfig                    `yaml:"searchAttributeTranslation"`
+		CustomSearchAttributeAliases    CustomSAAliasConfig                    `yaml:"customSearchAttributeAliases"`
+		RemoteClusterHealthCheck        HealthCheckConfig                      `yaml:"remoteClusterHealthCheck"`
+		LocalClusterHealthCheck         HealthCheckConfig                      `yaml:"localClusterHealthCheck"`
+		ShardCountConfig                ShardCountConfig                       `yaml:"shardCount"`
+		MemberlistConfig                *MemberlistConfig                      `yaml:"memberlist"`
+		EncryptionConfig                EncryptionConfig                       `yaml:"encryption"`
 	}
 
 	StringTranslator struct {
@@ -128,6 +129,9 @@ func (c *ClusterConnConfig) Validate() error {
 	return validation.Validate(
 		"",
 		validation.Nested("encryption", &c.EncryptionConfig),
+		validation.Field("namespaceFailoverVersionRewrite", c.NamespaceFailoverVersionRewrite, func(rewrite *NamespaceFailoverVersionRewriteConfig) error {
+			return rewrite.Validate(c.FVITranslation)
+		}),
 		validation.Nested("local.keepalive", c.Local.Keepalive),
 		validation.Nested("remote.keepalive", c.Remote.Keepalive),
 		validation.Field("local.credentials.identity", c.Local, func(local ClusterDefinition) error {
