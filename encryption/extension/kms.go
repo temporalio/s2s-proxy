@@ -6,7 +6,10 @@ import (
 
 	kms "go.temporal.io/proxy/pkg/api/kms/v1"
 	"go.temporal.io/proxy/pkg/crypto"
+	"go.temporal.io/server/common/primitives"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 var _ crypto.KEK = (*KMS)(nil)
@@ -48,6 +51,12 @@ func (k *KMS) ID() string {
 // Encrypt wraps a DEK on the extension server, returning the ciphertext. The
 // namespace is forwarded so the server can select a per-namespace wrapping key.
 func (k *KMS) Encrypt(ctx context.Context, ns string, pt []byte) ([]byte, error) {
+	// The replication namespace is private to s2s-proxy. Extension servers select
+	// keys by Temporal namespace, so use their system-namespace fallback for it.
+	if ns == config.ReplicationKeyNamespace {
+		ns = primitives.SystemLocalNamespace
+	}
+
 	res, err := k.kms.Encrypt(ctx, &kms.EncryptRequest{
 		Namespace: ns,
 		Plaintext: pt,

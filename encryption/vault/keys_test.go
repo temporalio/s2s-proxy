@@ -252,6 +252,7 @@ func TestKeyFactoryCreateExtensionKey(t *testing.T) {
 // that went in.
 type stubConn struct {
 	ciphertext []byte
+	namespaces []string
 }
 
 func (c *stubConn) Invoke(_ context.Context, _ string, args any, reply any, _ ...grpc.CallOption) error {
@@ -261,6 +262,7 @@ func (c *stubConn) Invoke(_ context.Context, _ string, args any, reply any, _ ..
 		if !ok {
 			return errors.New("unexpected request type")
 		}
+		c.namespaces = append(c.namespaces, req.Namespace)
 
 		res.Ciphertext = c.ciphertext
 		if res.Ciphertext == nil {

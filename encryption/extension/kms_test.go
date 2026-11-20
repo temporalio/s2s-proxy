@@ -7,7 +7,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 	kms "go.temporal.io/proxy/pkg/api/kms/v1"
+	"go.temporal.io/server/common/primitives"
 	"google.golang.org/grpc"
+
+	"github.com/temporalio/s2s-proxy/config"
 )
 
 func TestKMSID(t *testing.T) {
@@ -36,6 +39,22 @@ func TestKMSEncrypt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte("wrapped"), ct)
 	require.Equal(t, "tenant-a", got.Namespace)
+	require.Equal(t, []byte("dek"), got.Plaintext)
+}
+
+func TestKMSEncryptUsesSystemNamespaceForReplication(t *testing.T) {
+	var got *kms.EncryptRequest
+	k := &KMS{id: "extension://hsm/replication", kms: &stubClient{
+		encrypt: func(req *kms.EncryptRequest) (*kms.EncryptResponse, error) {
+			got = req
+			return &kms.EncryptResponse{Ciphertext: []byte("wrapped")}, nil
+		},
+	}}
+
+	ct, err := k.Encrypt(t.Context(), config.ReplicationKeyNamespace, []byte("dek"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("wrapped"), ct)
+	require.Equal(t, primitives.SystemLocalNamespace, got.Namespace)
 	require.Equal(t, []byte("dek"), got.Plaintext)
 }
 
