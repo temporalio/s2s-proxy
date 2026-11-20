@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+
 	"github.com/temporalio/temporal-proxy/pkg/validation"
 
 	"github.com/temporalio/s2s-proxy/collect"
@@ -48,7 +50,15 @@ type (
 		TcpClient      TCPTLSInfo     `yaml:"tcpClient"`
 		TcpServer      TCPTLSInfo     `yaml:"tcpServer"`
 		MuxCount       int            `yaml:"muxCount"`
+		MuxPools       *MuxPoolConfig `yaml:"muxPools,omitempty"`
 		MuxAddressInfo TCPTLSInfo     `yaml:"muxAddressInfo"`
+	}
+
+	// MuxPoolConfig reserves independent physical mux sessions for general and
+	// replication traffic. Both pools are required when the block is present.
+	MuxPoolConfig struct {
+		GeneralCount     int `yaml:"generalCount"`
+		ReplicationCount int `yaml:"replicationCount"`
 	}
 
 	TCPTLSInfo struct {
@@ -87,11 +97,42 @@ func (config *StringTranslator) AsLocalToRemoteBiMap() (collect.StaticBiMap[stri
 	return config.cachedBiMap, nil
 }
 
-// Validate reports problems in this connection's config. Only the encryption
-// block is covered so far; the checks NewProxy makes inline could move here.
+// Validate reports problems in nested transport and encryption configuration.
+// The remaining checks NewProxy makes inline could move here over time.
 func (c *ClusterConnConfig) Validate() error {
 	return validation.Validate(
 		"",
+		validation.Nested("local", &c.Local),
+		validation.Nested("remote", &c.Remote),
 		validation.Nested("encryption", &c.EncryptionConfig),
 	)
+}
+
+func (c *ClusterDefinition) Validate() error {
+	rules := []validation.Rule{
+		validation.WhenNested(func() bool { return c.MuxPools != nil }, "muxPools", c.MuxPools),
+	}
+	if c.MuxPools != nil && c.ConnectionType != ConnTypeMuxClient && c.ConnectionType != ConnTypeMuxServer {
+		rules = append(rules, validation.Field("muxPools", c.MuxPools, func(*MuxPoolConfig) error {
+			return errors.New("is only supported for mux-client and mux-server connections")
+		}))
+	}
+	if c.MuxPools != nil && c.MuxCount != 0 {
+		rules = append(rules, validation.Field("muxCount", c.MuxCount, func(int) error {
+			return errors.New("cannot be set together with muxPools")
+		}))
+	}
+	return validation.Validate("", rules...)
+}
+
+func (c *MuxPoolConfig) Validate() error {
+	return validation.Validate(
+		"",
+		validation.Field("generalCount", c.GeneralCount, validation.GTE(1)),
+		validation.Field("replicationCount", c.ReplicationCount, validation.GTE(1)),
+	)
+}
+
+func (c MuxPoolConfig) Total() int {
+	return c.GeneralCount + c.ReplicationCount
 }

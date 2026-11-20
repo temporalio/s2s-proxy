@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding"
 
+	proxymetrics "github.com/temporalio/s2s-proxy/metrics"
 	"github.com/temporalio/s2s-proxy/proto/compat"
 )
 
@@ -30,7 +31,14 @@ const (
 	maxInternodeRecvPayloadSize = 128 * 1024 * 1024 // 128 Mb
 )
 
-func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics) []grpc.DialOption {
+// ClientOptions configures optional per-client transport instrumentation.
+type ClientOptions struct {
+	Direction string
+	Pool      string
+}
+
+// MakeDialOptions returns the standard dial options used by proxy clients.
+func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetrics, clientOptions ...ClientOptions) []grpc.DialOption {
 	var grpcSecureOpt grpc.DialOption
 	if tlsConfig == nil {
 		grpcSecureOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
@@ -60,6 +68,11 @@ func MakeDialOptions(tlsConfig *tls.Config, clientMetrics *grpcprom.ClientMetric
 		grpc.WithConnectParams(cp),
 		grpc.WithUnaryInterceptor(clientMetrics.UnaryClientInterceptor()),
 		grpc.WithStreamInterceptor(clientMetrics.StreamClientInterceptor()),
+	}
+	if len(clientOptions) > 0 && clientOptions[0].Direction != "" {
+		dialOptions = append(dialOptions, grpc.WithStatsHandler(
+			proxymetrics.NewClientTransportWaitStatsHandler(clientOptions[0].Direction, clientOptions[0].Pool),
+		))
 	}
 	return dialOptions
 }

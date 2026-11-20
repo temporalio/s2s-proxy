@@ -3,12 +3,14 @@ package proxy
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"time"
 
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 
+	"github.com/temporalio/s2s-proxy/transport/grpcutil"
 	"github.com/temporalio/s2s-proxy/transport/mux"
 )
 
@@ -89,19 +91,28 @@ type (
 	// MuxConnectionInfo holds debug information about a mux connection
 	MuxConnectionInfo struct {
 		ID         string `json:"id"`
+		Pool       string `json:"pool"`
 		LocalAddr  string `json:"local_addr"`
 		RemoteAddr string `json:"remote_addr"`
 		State      string `json:"state"`
 		IsClosed   bool   `json:"is_closed"`
 	}
 
+	// MuxPoolDebugInfo describes one traffic pool in the debug response.
+	MuxPoolDebugInfo struct {
+		Target    int `json:"target"`
+		Assigned  int `json:"assigned"`
+		Connected int `json:"connected"`
+	}
+
 	// MuxConnectionsDebugInfo holds debug information about mux connections for a cluster connection
 	MuxConnectionsDebugInfo struct {
-		ConnectionName  string              `json:"connection_name"`
-		Direction       string              `json:"direction"`
-		Address         string              `json:"address"`
-		Connections     []MuxConnectionInfo `json:"connections"`
-		ConnectionCount int                 `json:"connection_count"`
+		ConnectionName  string                      `json:"connection_name"`
+		Direction       string                      `json:"direction"`
+		Address         string                      `json:"address"`
+		Connections     []MuxConnectionInfo         `json:"connections"`
+		ConnectionCount int                         `json:"connection_count"`
+		Pools           map[string]MuxPoolDebugInfo `json:"pools,omitempty"`
 	}
 
 	DebugResponse struct {
@@ -134,8 +145,8 @@ func HandleDebugInfo(w http.ResponseWriter, r *http.Request, proxyInstance *Prox
 		}
 
 		// Collect mux connection info from inbound and outbound servers
-		muxConnections = append(muxConnections, getMuxConnectionsInfo(clusterConnection.inboundServer, "inbound")...)
-		muxConnections = append(muxConnections, getMuxConnectionsInfo(clusterConnection.outboundServer, "outbound")...)
+		muxConnections = append(muxConnections, getMuxConnectionsInfo(clusterConnection.inboundServer, clusterConnection.outboundClient, "inbound")...)
+		muxConnections = append(muxConnections, getMuxConnectionsInfo(clusterConnection.outboundServer, clusterConnection.inboundClient, "outbound")...)
 	}
 
 	response := DebugResponse{
@@ -153,18 +164,23 @@ func HandleDebugInfo(w http.ResponseWriter, r *http.Request, proxyInstance *Prox
 	}
 }
 
-func getMuxConnectionsInfo(server contextAwareServer, direction string) []MuxConnectionsDebugInfo {
+func getMuxConnectionsInfo(server contextAwareServer, client closableClientConn, direction string) []MuxConnectionsDebugInfo {
 	muxMgr, ok := server.(mux.MultiMuxManager)
 	if !ok {
 		return nil
 	}
 
 	connections := muxMgr.GetMuxConnections()
-	if len(connections) == 0 {
-		return nil
-	}
 
 	var connInfos []MuxConnectionInfo
+	assignments := map[string]string{}
+	poolDebug := map[string]MuxPoolDebugInfo{}
+	if pooled, ok := client.(interface{ Snapshot() grpcutil.PoolSnapshot }); ok {
+		snapshot := pooled.Snapshot()
+		assignments = snapshot.Assignments
+		poolDebug[grpcutil.GeneralPoolName] = muxPoolDebugInfo(snapshot.General)
+		poolDebug[grpcutil.ReplicationPoolName] = muxPoolDebugInfo(snapshot.Replication)
+	}
 	for id, muxSession := range connections {
 		localAddr, remoteAddr := muxSession.GetConnectionInfo()
 		stateStr := mux.SessionStateName(muxSession.State())
@@ -180,12 +196,14 @@ func getMuxConnectionsInfo(server contextAwareServer, direction string) []MuxCon
 
 		connInfos = append(connInfos, MuxConnectionInfo{
 			ID:         id,
+			Pool:       assignments[id],
 			LocalAddr:  localAddrStr,
 			RemoteAddr: remoteAddrStr,
 			State:      stateStr,
 			IsClosed:   muxSession.IsClosed(),
 		})
 	}
+	sort.Slice(connInfos, func(i int, j int) bool { return connInfos[i].ID < connInfos[j].ID })
 
 	return []MuxConnectionsDebugInfo{
 		{
@@ -194,6 +212,11 @@ func getMuxConnectionsInfo(server contextAwareServer, direction string) []MuxCon
 			Address:         muxMgr.Address(),
 			Connections:     connInfos,
 			ConnectionCount: len(connInfos),
+			Pools:           poolDebug,
 		},
 	}
+}
+
+func muxPoolDebugInfo(status grpcutil.PoolStatus) MuxPoolDebugInfo {
+	return MuxPoolDebugInfo{Target: status.Target, Assigned: status.Assigned, Connected: status.Connected}
 }

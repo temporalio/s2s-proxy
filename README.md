@@ -39,6 +39,23 @@ Setting the S2S-Proxy in Mux mode allows you to pick from Server and Client sett
 an open port. The client connects to that port, handshakes with TLS, and then establishes a set of multiplexed sessions
 for data transfer.
 
+Mux sessions are split into independent general and replication traffic pools so long-running replication cannot
+consume the connections used by administrative and WorkflowService calls. Existing `muxCount` configurations reserve
+one session for general traffic and assign the remainder to replication (with an effective minimum of two sessions).
+To choose both sizes explicitly, replace `muxCount` with:
+
+```yaml
+muxPools:
+  generalCount: 1
+  replicationCount: 9
+```
+
+Pool sizing is exposed through `temporal_s2s_proxy_mux_pool_sessions_target` and
+`temporal_s2s_proxy_mux_pool_sessions_assigned`. The `temporal_s2s_proxy_grpc_client_transport_waiting` gauge and
+`temporal_s2s_proxy_grpc_client_time_to_out_header_seconds` histogram identify the pool and distinguish transport
+readiness from calls that end before getting a transport. The debug endpoint reports the pool assigned to every mux
+session.
+
 ## S2S-Proxy network setup
 ```mermaid
 architecture-beta

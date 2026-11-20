@@ -127,11 +127,11 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 		loggers:  logProvider.With(tag.NewStringTag("clusterConn", sanitizedConnectionName)),
 	}
 	var err error
-	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound")
+	cc.inboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Local, "inbound", cc.loggers.Get(LogMuxManager))
 	if err != nil {
 		return nil, err
 	}
-	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound")
+	cc.outboundClient, err = createClient(lifetime, sanitizedConnectionName, connConfig.Remote, "outbound", cc.loggers.Get(LogMuxManager))
 	if err != nil {
 		return nil, err
 	}
@@ -229,14 +229,27 @@ func NewClusterConnection(lifetime context.Context, connConfig config.ClusterCon
 	return cc, nil
 }
 
-func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string) (closableClientConn, error) {
+func createClient(lifetime context.Context, connectionName string, transportCfg config.ClusterDefinition, directionLabel string, logger log.Logger) (closableClientConn, error) {
 	switch transportCfg.ConnectionType {
 	case config.ConnTypeTCP:
 		return buildTLSTCPClient(lifetime, transportCfg.TcpClient.ConnectionString, transportCfg.TcpClient.TLSConfig, directionLabel)
 	case config.ConnTypeMuxClient, config.ConnTypeMuxServer:
-		return grpcutil.NewMultiClientConn(lifetime, fmt.Sprintf("client-conn-%s", connectionName),
-			// TLS is handled by the mux connection, so tlsConfig will always be nil
-			grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics(directionLabel))...)
+		pools := mux.DesiredMuxPools(transportCfg)
+		return grpcutil.NewPartitionedClientConn(lifetime, grpcutil.PartitionedClientConnOptions{
+			Name:              connectionName,
+			GeneralTarget:     pools.GeneralCount,
+			ReplicationTarget: pools.ReplicationCount,
+			IsReplication:     isReplicationMuxMethod,
+			GeneralDialOptions: grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics(directionLabel), grpcutil.ClientOptions{
+				Direction: directionLabel,
+				Pool:      grpcutil.GeneralPoolName,
+			}),
+			ReplicationDialOptions: grpcutil.MakeDialOptions(nil, metrics.GetGRPCClientMetrics(directionLabel), grpcutil.ClientOptions{
+				Direction: directionLabel,
+				Pool:      grpcutil.ReplicationPoolName,
+			}),
+			OnUpdate: newMuxPoolObserver(connectionName, directionLabel, logger),
+		})
 	default:
 		return nil, errors.New("invalid connection type")
 	}
@@ -254,8 +267,12 @@ func createServer(lifetime context.Context, c serverConfiguration) (contextAware
 			return nil, nil, err
 		}
 		// The Mux manager needs to update its associated client
+		listener, ok := c.managedClient.(mux.ConnListener)
+		if !ok {
+			return nil, nil, fmt.Errorf("mux client %T is not a connection listener", c.managedClient)
+		}
 		muxMgr, err := mux.NewGRPCMuxManager(lifetime, c.name, c.clusterDefinition,
-			c.managedClient.(*grpcutil.MultiClientConn), grpcServer, c.loggers.Get(LogMuxManager))
+			listener, grpcServer, c.loggers.Get(LogMuxManager))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -298,7 +315,11 @@ func buildTLSTCPClient(lifetime context.Context, serverAddress string, tlsCfg en
 			return nil, fmt.Errorf("config error when creating tls config: %w", err)
 		}
 	}
-	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(parsedTLSCfg, metrics.GetGRPCClientMetrics(metricLabel))...)
+	client, err := grpc.NewClient(serverAddress, grpcutil.MakeDialOptions(
+		parsedTLSCfg,
+		metrics.GetGRPCClientMetrics(metricLabel),
+		grpcutil.ClientOptions{Direction: metricLabel},
+	)...)
 	if err != nil {
 		return nil, fmt.Errorf("could not create inbound client: %w", err)
 	}

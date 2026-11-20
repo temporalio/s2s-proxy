@@ -23,7 +23,9 @@ clusterConnections:
     remote:
       # Remotes are usually "mux-client" or "mux-server", but "tcp" is supported
       connectionType: "mux-client"
-      # When using mux-*, the muxCount defines how many connections to open to the remote server. We recommend at least 10.
+      # When using mux-*, muxCount defines the total connection count. One connection is reserved for general
+      # traffic and the remainder carry replication traffic. The effective minimum is two. To size both pools
+      # explicitly, remove muxCount and use muxPools: {generalCount: 1, replicationCount: 9}.
       muxCount: 10
       # The proxy will use this address to connect to the remote mux-server.
       muxAddressInfo:

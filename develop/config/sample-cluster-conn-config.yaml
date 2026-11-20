@@ -20,6 +20,8 @@ clusterConnections:
           skipCAVerification: true
     remote:
       connectionType: "mux-server" # One mux represents both inbound and outbound
+      # Legacy totals reserve one connection for general traffic and use the remainder for replication.
+      # Alternatively, replace muxCount with muxPools: {generalCount: 1, replicationCount: 9}.
       muxCount: 10
       muxAddressInfo:
         address: "127.0.0.1:9004"

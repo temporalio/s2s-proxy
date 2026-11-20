@@ -19,13 +19,25 @@ type ConnListener interface {
 	OnConnectionListUpdate(map[string]session.ManagedMuxSession)
 }
 
-// DesiredMuxCount is how many sessions a cluster definition asks for.
-func DesiredMuxCount(cd config.ClusterDefinition) int {
-	// sane default for existing configs
-	if cd.MuxCount == 0 {
-		return 10
+// DesiredMuxPools resolves explicit pool sizes and legacy muxCount values into
+// the effective general and replication session counts.
+func DesiredMuxPools(cd config.ClusterDefinition) config.MuxPoolConfig {
+	if cd.MuxPools != nil {
+		return *cd.MuxPools
 	}
-	return cd.MuxCount
+	total := cd.MuxCount
+	if total == 0 {
+		total = 10
+	}
+	if total < 2 {
+		total = 2
+	}
+	return config.MuxPoolConfig{GeneralCount: 1, ReplicationCount: total - 1}
+}
+
+// DesiredMuxCount is the total number of physical sessions required by both pools.
+func DesiredMuxCount(cd config.ClusterDefinition) int {
+	return DesiredMuxPools(cd).Total()
 }
 
 // NewGRPCMuxManager starts a MuxManager that will start a grpc.Server using the provided definition on every generated mux,

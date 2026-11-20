@@ -39,6 +39,17 @@ var (
 	GRPCOutboundClientMetrics   = GetStandardGRPCClientInterceptor("outbound")
 	GRPCInboundClientMetrics    = GetStandardGRPCClientInterceptor("inbound")
 	GRPCIntraProxyClientMetrics = GetStandardGRPCClientInterceptor("intra_proxy")
+	GRPCClientTimeToOutHeader   = BucketedHistogramVec(
+		"grpc_client_time_to_out_header_seconds",
+		"Time from starting a client RPC until outbound headers are emitted or the RPC ends first",
+		[]float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		"direction", "pool", "grpc_type", "grpc_service", "grpc_method", "outcome",
+	)
+	GRPCClientTransportWaiting = DefaultGaugeVec(
+		"grpc_client_transport_waiting",
+		"Client RPC attempts that have started but have not emitted outbound headers",
+		"direction", "pool",
+	)
 
 	// /transport/mux
 
@@ -58,11 +69,13 @@ var (
 		muxSessionLabels...)
 
 	// Mux Manager
-	muxManagerLabels       = []string{"addr", "mode", "config_name"}
-	MuxErrors              = DefaultCounterVec("mux_errors", "Number of errors observed from mux", append(muxManagerLabels, "error")...)
-	MuxConnectionEstablish = DefaultCounterVec("mux_connection_establish", "Number of times mux has established", muxManagerLabels...)
-	MuxServerDisconnected  = DefaultCounterVec("mux_server_disconnected", "Mux server disconnected", muxManagerLabels...)
-	NumMuxesActive         = DefaultGaugeVec("num_muxes_active", "Host-local number of active muxes for config", muxManagerLabels...)
+	muxManagerLabels        = []string{"addr", "mode", "config_name"}
+	MuxErrors               = DefaultCounterVec("mux_errors", "Number of errors observed from mux", append(muxManagerLabels, "error")...)
+	MuxConnectionEstablish  = DefaultCounterVec("mux_connection_establish", "Number of times mux has established", muxManagerLabels...)
+	MuxServerDisconnected   = DefaultCounterVec("mux_server_disconnected", "Mux server disconnected", muxManagerLabels...)
+	NumMuxesActive          = DefaultGaugeVec("num_muxes_active", "Host-local number of active muxes for config", muxManagerLabels...)
+	MuxPoolSessionsTarget   = DefaultGaugeVec("mux_pool_sessions_target", "Configured number of mux sessions for a traffic pool", "config_name", "direction", "pool")
+	MuxPoolSessionsAssigned = DefaultGaugeVec("mux_pool_sessions_assigned", "Mux sessions assigned to a traffic pool", "config_name", "direction", "pool")
 
 	// Connection provider
 	ReceiverError    = DefaultCounterVec("receiver_error", "Number of errors observed from connection receiver", append(muxManagerLabels, "error")...)
@@ -129,6 +142,8 @@ func init() {
 	prometheus.MustRegister(GRPCOutboundClientMetrics)
 	prometheus.MustRegister(GRPCInboundClientMetrics)
 	prometheus.MustRegister(GRPCIntraProxyClientMetrics)
+	prometheus.MustRegister(GRPCClientTimeToOutHeader)
+	prometheus.MustRegister(GRPCClientTransportWaiting)
 
 	// Mux Session
 	prometheus.MustRegister(MuxSessionOpen)
@@ -145,6 +160,8 @@ func init() {
 	prometheus.MustRegister(EstablisherError)
 	prometheus.MustRegister(MuxServerDisconnected)
 	prometheus.MustRegister(NumMuxesActive)
+	prometheus.MustRegister(MuxPoolSessionsTarget)
+	prometheus.MustRegister(MuxPoolSessionsAssigned)
 
 	// Encryption
 	prometheus.MustRegister(

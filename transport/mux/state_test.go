@@ -29,8 +29,30 @@ func TestSessionStateName(t *testing.T) {
 }
 
 func TestDesiredMuxCount(t *testing.T) {
-	require.Equal(t, 7, DesiredMuxCount(config.ClusterDefinition{MuxCount: 7}))
-	require.Equal(t, 10, DesiredMuxCount(config.ClusterDefinition{}))
+	tests := []struct {
+		name       string
+		definition config.ClusterDefinition
+		wantPools  config.MuxPoolConfig
+	}{
+		{name: "default", wantPools: config.MuxPoolConfig{GeneralCount: 1, ReplicationCount: 9}},
+		{name: "legacy negative", definition: config.ClusterDefinition{MuxCount: -1}, wantPools: config.MuxPoolConfig{GeneralCount: 1, ReplicationCount: 1}},
+		{name: "legacy one", definition: config.ClusterDefinition{MuxCount: 1}, wantPools: config.MuxPoolConfig{GeneralCount: 1, ReplicationCount: 1}},
+		{name: "legacy two", definition: config.ClusterDefinition{MuxCount: 2}, wantPools: config.MuxPoolConfig{GeneralCount: 1, ReplicationCount: 1}},
+		{name: "legacy seven", definition: config.ClusterDefinition{MuxCount: 7}, wantPools: config.MuxPoolConfig{GeneralCount: 1, ReplicationCount: 6}},
+		{
+			name: "explicit",
+			definition: config.ClusterDefinition{MuxPools: &config.MuxPoolConfig{
+				GeneralCount: 3, ReplicationCount: 7,
+			}},
+			wantPools: config.MuxPoolConfig{GeneralCount: 3, ReplicationCount: 7},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.wantPools, DesiredMuxPools(tt.definition))
+			require.Equal(t, tt.wantPools.Total(), DesiredMuxCount(tt.definition))
+		})
+	}
 }
 
 // stubManager reports a fixed session set. CountSessions reaches only GetMuxConnections.

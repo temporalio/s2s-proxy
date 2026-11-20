@@ -149,3 +149,103 @@ clusterConnections:
 		},
 	})
 }
+
+func TestMuxPoolConfigValidation(t *testing.T) {
+	tests := []struct {
+		name   string
+		remote ClusterDefinition
+		want   validation.Errors
+	}{
+		{
+			name: "valid client pools",
+			remote: ClusterDefinition{
+				ConnectionType: ConnTypeMuxClient,
+				MuxPools:       &MuxPoolConfig{GeneralCount: 1, ReplicationCount: 9},
+			},
+		},
+		{
+			name: "valid server pools",
+			remote: ClusterDefinition{
+				ConnectionType: ConnTypeMuxServer,
+				MuxPools:       &MuxPoolConfig{GeneralCount: 2, ReplicationCount: 8},
+			},
+		},
+		{
+			name:   "legacy count remains valid",
+			remote: ClusterDefinition{ConnectionType: ConnTypeMuxClient, MuxCount: 10},
+		},
+		{
+			name: "both counts are required",
+			remote: ClusterDefinition{
+				ConnectionType: ConnTypeMuxClient,
+				MuxPools:       &MuxPoolConfig{},
+			},
+			want: validation.Errors{
+				{Subject: "clusterConnections[0].remote.muxPools", Field: "generalCount", Message: "not greater than or equal to 1"},
+				{Subject: "clusterConnections[0].remote.muxPools", Field: "replicationCount", Message: "not greater than or equal to 1"},
+			},
+		},
+		{
+			name: "negative counts are rejected",
+			remote: ClusterDefinition{
+				ConnectionType: ConnTypeMuxClient,
+				MuxPools:       &MuxPoolConfig{GeneralCount: -1, ReplicationCount: -2},
+			},
+			want: validation.Errors{
+				{Subject: "clusterConnections[0].remote.muxPools", Field: "generalCount", Message: "not greater than or equal to 1"},
+				{Subject: "clusterConnections[0].remote.muxPools", Field: "replicationCount", Message: "not greater than or equal to 1"},
+			},
+		},
+		{
+			name: "legacy and explicit counts conflict",
+			remote: ClusterDefinition{
+				ConnectionType: ConnTypeMuxClient,
+				MuxCount:       10,
+				MuxPools:       &MuxPoolConfig{GeneralCount: 1, ReplicationCount: 9},
+			},
+			want: validation.Errors{
+				{Subject: "clusterConnections[0].remote", Field: "muxCount", Message: "cannot be set together with muxPools"},
+			},
+		},
+		{
+			name: "pools require a mux transport",
+			remote: ClusterDefinition{
+				ConnectionType: ConnTypeTCP,
+				MuxPools:       &MuxPoolConfig{GeneralCount: 1, ReplicationCount: 1},
+			},
+			want: validation.Errors{
+				{Subject: "clusterConnections[0].remote", Field: "muxPools", Message: "is only supported for mux-client and mux-server connections"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := S2SProxyConfig{ClusterConnections: []ClusterConnConfig{{Remote: tt.remote}}}
+			err := cfg.Validate()
+			if tt.want == nil {
+				require.NoError(t, err)
+				return
+			}
+			requireErrors(t, err, tt.want)
+		})
+	}
+}
+
+func TestLoadExplicitMuxPools(t *testing.T) {
+	path := writeYAML(t, `
+clusterConnections:
+  - name: cluster-a
+    remote:
+      connectionType: mux-client
+      muxPools:
+        generalCount: 2
+        replicationCount: 8
+`)
+
+	cfg, err := LoadConfig[S2SProxyConfig](path)
+	require.NoError(t, err)
+	require.NoError(t, cfg.Validate())
+	require.Equal(t, &MuxPoolConfig{GeneralCount: 2, ReplicationCount: 8}, cfg.ClusterConnections[0].Remote.MuxPools)
+	require.Equal(t, 10, cfg.ClusterConnections[0].Remote.MuxPools.Total())
+}
