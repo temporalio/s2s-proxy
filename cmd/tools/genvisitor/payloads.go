@@ -33,6 +33,10 @@ type (
 		// or its fields only make sense together, to the hand-written helper that
 		// walks it.
 		Helpers map[protoreflect.FullName]payloadHelper
+		// MapHelpers maps a map field whose values only make sense with their keys
+		// and the values beside them to the hand-written helper that takes the
+		// whole map. Handles names the fields of the value message it reads.
+		MapHelpers map[protoreflect.FullName]payloadHelper
 		// Ignored maps a field that cannot hold payloads to the reason why.
 		Ignored map[protoreflect.FullName]string
 		// DecodeTargets are messages a helper decodes out of a blob and hands back
@@ -68,6 +72,21 @@ type (
 	}
 )
 
+// chasmNodesHelper walks a map of CHASM nodes: the state of each component,
+// its tasks and user metadata, and each data node.
+var chasmNodesHelper = payloadHelper{
+	Name: "visitChasmNodes",
+	Handles: []protoreflect.FullName{
+		"temporal.server.api.persistence.v1.ChasmNode.data",
+		"temporal.server.api.persistence.v1.ChasmNode.metadata",
+		"temporal.server.api.persistence.v1.ChasmNodeMetadata.component_attributes",
+		"temporal.server.api.persistence.v1.ChasmComponentAttributes.side_effect_tasks",
+		"temporal.server.api.persistence.v1.ChasmComponentAttributes.pure_tasks",
+		"temporal.server.api.persistence.v1.ChasmComponentAttributes.user_metadata",
+		"temporal.server.api.persistence.v1.ChasmComponentAttributes.Task.data",
+	},
+}
+
 var adminPayloadTables = payloadTables{
 	EventBlobs: map[protoreflect.FullName]bool{
 		"temporal.server.api.replication.v1.HistoryTaskAttributes.events":                              true,
@@ -82,9 +101,6 @@ var adminPayloadTables = payloadTables{
 		"temporal.server.api.adminservice.v1.ImportWorkflowExecutionRequest.history_batches":           true,
 	},
 	Opaque: map[protoreflect.FullName]bool{
-		// CHASM component state. The server decodes it, so it cannot be sealed
-		// whole, and decoding it here needs the server's component registry.
-		"temporal.server.api.persistence.v1.ChasmNode.data": true,
 		// Documented as the future home of every task attribute.
 		"temporal.server.api.replication.v1.ReplicationTask.data": true,
 		// Serialized mutable state, handed back and forth between import calls.
@@ -92,16 +108,20 @@ var adminPayloadTables = payloadTables{
 		"temporal.server.api.adminservice.v1.ImportWorkflowExecutionResponse.token": true,
 		// HSM node data in a mutation, the same thing StateMachineNode.data holds.
 		"temporal.server.api.persistence.v1.WorkflowMutableStateMutation.StateMachineNodeMutation.data": true,
-		// HSM and CHASM task data. CHASM types come from the server's component
-		// registry, which the proxy does not have.
-		"temporal.server.api.persistence.v1.StateMachineTaskInfo.data":          true,
-		"temporal.server.api.persistence.v1.ChasmComponentAttributes.Task.data": true,
-		"temporal.server.api.persistence.v1.ChasmTaskInfo.data":                 true,
+		// HSM task data.
+		"temporal.server.api.persistence.v1.StateMachineTaskInfo.data": true,
 		// A serialized history task. Its category, which says what it decodes to,
 		// is on the GetDLQTasksRequest, and the response is visited on its own.
 		"temporal.server.api.common.v1.HistoryTask.blob": true,
 	},
 	Helpers: map[protoreflect.FullName]payloadHelper{
+		// A CHASM task in a history task, typed by its type ID.
+		"temporal.server.api.persistence.v1.ChasmTaskInfo": {
+			Name: "visitChasmTaskInfo",
+			Handles: []protoreflect.FullName{
+				"temporal.server.api.persistence.v1.ChasmTaskInfo.data",
+			},
+		},
 		// A serialized history task, which decodes to one of DecodeTargets
 		// depending on its category.
 		"temporal.server.api.adminservice.v1.AddTasksRequest.Task": {
@@ -119,6 +139,12 @@ var adminPayloadTables = payloadTables{
 				"temporal.server.api.persistence.v1.StateMachineMap.machines_by_id",
 			},
 		},
+	},
+	MapHelpers: map[protoreflect.FullName]payloadHelper{
+		// CHASM nodes, keyed by path. A data node is typed by where it sits in the
+		// tree, so the helper needs the keys and the other nodes.
+		"temporal.server.api.persistence.v1.WorkflowMutableState.chasm_nodes":                 chasmNodesHelper,
+		"temporal.server.api.persistence.v1.WorkflowMutableStateMutation.updated_chasm_nodes": chasmNodesHelper,
 	},
 	Ignored: map[protoreflect.FullName]string{
 		"temporal.server.api.adminservice.v1.CancelDLQJobRequest.job_token":                            "DLQ job cursor",
@@ -205,6 +231,10 @@ func buildPayloads(logger log.Logger, tables payloadTables) (*Emitter, error) {
 		}
 		return returnOnErr(fmt.Sprintf("visitOpaque(opts, %q, %s)", path.String(), data))
 	})
+	e.AddWholeFieldHandler(c.isMapHelper, func(v string, path VisitPath) string {
+		f, _ := path[len(path)-1].AsField()
+		return returnOnErr(fmt.Sprintf("%s(ctx, opts, %q, %s)", tables.MapHelpers[f.FullName()].Name, path.String(), v))
+	})
 	e.AddScopedHandler(c.isHelper, true, func(v string, path VisitPath) string {
 		md, _ := path[len(path)-1].AsMessage()
 		return returnOnErr(fmt.Sprintf("%s(ctx, opts, %q, %s)", tables.Helpers[md.FullName()].Name, path.String(), v))
@@ -240,7 +270,7 @@ func newPayloadClassifier(tables payloadTables) (*payloadClassifier, error) {
 	seen := map[protoreflect.FullName]bool{}
 	var errs []error
 	for _, names := range [][]protoreflect.FullName{
-		keys(tables.EventBlobs), keys(tables.Opaque), keys(tables.Helpers), keys(tables.Ignored),
+		keys(tables.EventBlobs), keys(tables.Opaque), keys(tables.Helpers), keys(tables.MapHelpers), keys(tables.Ignored),
 	} {
 		for _, n := range names {
 			if seen[n] {
@@ -347,20 +377,45 @@ func (c *payloadClassifier) isHelper(vt VisitType, _ VisitPath) bool {
 	return false
 }
 
-// namespaceScope returns the code that puts the namespace ID a message of type
-// md names, read from v, on ctx, or nothing when it names none: its own
-// namespace_id field, or the one NamespaceIDs points at.
+// namespaceScope returns the code that puts on ctx what a message of type md,
+// read from v, says about the execution below it, or nothing when it says
+// nothing: the namespace ID, from its own namespace_id field or the one
+// NamespaceIDs points at, and the archetype ID, from its own archetype_id field.
 func (c *payloadClassifier) namespaceScope(v string, md protoreflect.MessageDescriptor) string {
+	ctx := "ctx"
+
 	getter, ok := c.nsGetters[md.FullName()]
 	if !ok {
-		f := md.Fields().ByName("namespace_id")
-		if f == nil || f.Kind() != protoreflect.StringKind || f.IsList() {
-			return ""
+		if f := md.Fields().ByName("namespace_id"); f != nil && f.Kind() == protoreflect.StringKind && !f.IsList() {
+			getter, ok = "GetNamespaceId()", true
 		}
-		getter = "GetNamespaceId()"
+	}
+	if ok {
+		ctx = fmt.Sprintf("withNamespaceID(%s, %s.%s)", ctx, v, getter)
 	}
 
-	return fmt.Sprintf("ctx := withNamespaceID(ctx, %s.%s)", v, getter)
+	if f := md.Fields().ByName("archetype_id"); f != nil && f.Kind() == protoreflect.Uint32Kind && !f.IsList() {
+		ctx = fmt.Sprintf("withArchetypeID(%s, %s.GetArchetypeId())", ctx, v)
+	}
+
+	if ctx == "ctx" {
+		return ""
+	}
+
+	return "ctx := " + ctx
+}
+
+// isMapHelper matches a map field listed in MapHelpers.
+func (c *payloadClassifier) isMapHelper(vt VisitType, _ VisitPath) bool {
+	f, ok := vt.AsField()
+	if !ok || !f.IsMap() {
+		return false
+	}
+	if _, ok := c.tables.MapHelpers[f.FullName()]; ok {
+		c.used[f.FullName()] = true
+		return true
+	}
+	return false
 }
 
 func (c *payloadClassifier) matchField(vt VisitType, table map[protoreflect.FullName]bool) bool {
@@ -419,10 +474,25 @@ func (c *payloadClassifier) check(vt VisitType, path VisitPath, matched bool) (A
 // checkHelpers requires every field a helper does not read to be inert, so that
 // a field added to the type later cannot slip past the helper.
 // Handled fields that hold messages pull those messages into the check too,
-// except bytes, DataBlob, and Any fields, which the helper takes whole.
+// except bytes, DataBlob, and Any fields, which the helper takes whole, and
+// public API messages, which the helper hands to visitMessage whole.
 func (c *payloadClassifier) checkHelpers() error {
-	var errs []error
+	type entry struct {
+		name   protoreflect.FullName
+		helper payloadHelper
+		isMap  bool
+	}
+	var entries []entry
 	for name, helper := range c.tables.Helpers {
+		entries = append(entries, entry{name, helper, false})
+	}
+	for name, helper := range c.tables.MapHelpers {
+		entries = append(entries, entry{name, helper, true})
+	}
+
+	var errs []error
+	for _, ent := range entries {
+		name, helper := ent.name, ent.helper
 		handled := map[protoreflect.FullName]bool{}
 		for _, f := range helper.Handles {
 			handled[f] = false
@@ -432,6 +502,15 @@ func (c *payloadClassifier) checkHelpers() error {
 		if err != nil {
 			errs = append(errs, fmt.Errorf("helper type %s: %w", name, err))
 			continue
+		}
+		// A map helper's walk starts at the map's value message.
+		if ent.isMap {
+			if f, ok := d.(protoreflect.FieldDescriptor); ok && f.IsMap() && f.MapValue().Kind() == protoreflect.MessageKind {
+				d = f.MapValue().Message()
+			} else {
+				errs = append(errs, fmt.Errorf("map helper field %s is not a map of messages", name))
+				continue
+			}
 		}
 		md, ok := d.(protoreflect.MessageDescriptor)
 		if !ok {
@@ -457,7 +536,8 @@ func (c *payloadClassifier) checkHelpers() error {
 					if f.IsMap() {
 						vf = f.MapValue()
 					}
-					if vf.Kind() == protoreflect.MessageKind && !seen[vf.Message().FullName()] {
+					if vf.Kind() == protoreflect.MessageKind && !seen[vf.Message().FullName()] &&
+						!strings.HasPrefix(string(vf.Message().FullName()), publicAPIPrefix) {
 						seen[vf.Message().FullName()] = true
 						queue = append(queue, vf.Message())
 					}
@@ -500,7 +580,7 @@ func (c *payloadClassifier) isInertField(f protoreflect.FieldDescriptor) bool {
 // the server has since removed.
 func (c *payloadClassifier) unused() error {
 	var names []protoreflect.FullName
-	for _, n := range slices.Concat(keys(c.tables.EventBlobs), keys(c.tables.Opaque), keys(c.tables.Helpers), keys(c.tables.Ignored), keys(c.tables.NamespaceIDs)) {
+	for _, n := range slices.Concat(keys(c.tables.EventBlobs), keys(c.tables.Opaque), keys(c.tables.Helpers), keys(c.tables.MapHelpers), keys(c.tables.Ignored), keys(c.tables.NamespaceIDs)) {
 		if !c.used[n] {
 			names = append(names, n)
 		}

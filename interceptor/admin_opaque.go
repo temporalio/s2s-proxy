@@ -9,9 +9,10 @@ import (
 
 type (
 	// OpaqueObserver is told about every piece of opaque data met while sealing
-	// admin traffic: data such as HSM and CHASM state that the receiving server
-	// decodes itself, so it cannot be sealed. kind is [OpaqueKind] of path, and
-	// is bounded, which path is not; label metrics with kind only.
+	// admin traffic: data such as HSM state, or CHASM state of an unknown type,
+	// that the receiving server decodes itself, so it cannot be sealed. kind is
+	// [OpaqueKind] of path, and is bounded, which path is not; label metrics with
+	// kind only.
 	OpaqueObserver interface {
 		// OpaquePassed reports data sent on unsealed because plaintext is allowed.
 		OpaquePassed(kind, path string)

@@ -24,9 +24,9 @@ type AdminVisitOptions struct {
 	// server-internal messages. SkipSearchAttributes applies to both.
 	PayloadOptions *proxy.VisitPayloadsOptions
 	// Opaque is called with the path and contents of every non-empty field whose
-	// payloads cannot be reached, such as HSM and CHASM state. The visitor does
-	// not know which direction it runs in, so the caller decides: an error stops
-	// the visit, nil lets the data through as it is.
+	// payloads cannot be reached, such as HSM state and CHASM state of an unknown
+	// type. The visitor does not know which direction it runs in, so the caller
+	// decides: an error stops the visit, nil lets the data through as it is.
 	Opaque func(path string, data []byte) error
 	// FailureOptions, when set, is passed to proxy.VisitFailures for every public
 	// API message reached and for the history events in every event blob, so
