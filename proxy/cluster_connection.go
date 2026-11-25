@@ -325,7 +325,7 @@ func newEncryptors(
 	}
 
 	if cfg.Enabled && cfg.AllowOpaquePlaintext {
-		logger.Warn("encryption.allowOpaquePlaintext is set: HSM and CHASM state cross to the peer unsealed")
+		logger.Warn("encryption.allowOpaquePlaintext is set: HSM state and CHASM state of unknown types cross to the peer unsealed")
 	}
 
 	observer := newOpaqueObserver(logger)

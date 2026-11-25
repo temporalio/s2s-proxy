@@ -40,44 +40,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 					return err
 				}
 			}
-			for _, val2 := range y1.GetChasmNodes() {
-				y2 := val2.GetData()
-				if err := visitOpaque(opts, "DescribeMutableStateResponse/CacheMutableState/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y2.GetData()); err != nil {
-					return err
-				}
-				y3 := val2.GetMetadata()
-				switch oneof := y3.GetAttributes().(type) {
-				case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-					x1 := oneof.ComponentAttributes
-					for _, item2 := range x1.GetPureTasks() {
-						y4 := item2.GetData()
-						if err := visitOpaque(opts, "DescribeMutableStateResponse/CacheMutableState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y4.GetData()); err != nil {
-							return err
-						}
-					}
-					for _, item3 := range x1.GetSideEffectTasks() {
-						y4 := item3.GetData()
-						if err := visitOpaque(opts, "DescribeMutableStateResponse/CacheMutableState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y4.GetData()); err != nil {
-							return err
-						}
-					}
-					y4 := x1.GetUserMetadata()
-					if err := visitMessage(ctx, opts, y4); err != nil {
-						return err
-					}
-				}
+			if err := visitChasmNodes(ctx, opts, "DescribeMutableStateResponse/CacheMutableState/WorkflowMutableState/ChasmNodes", y1.GetChasmNodes()); err != nil {
+				return err
 			}
 			y2 := y1.GetExecutionInfo()
 			{
 				ctx := withNamespaceID(ctx, y2.GetNamespaceId())
-				for _, val3 := range y2.GetMemo() {
-					if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
+				for _, val2 := range y2.GetMemo() {
+					if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 						return err
 					}
 				}
-				for _, val4 := range y2.GetSearchAttributes() {
+				for _, val3 := range y2.GetSearchAttributes() {
 					if !opts.PayloadOptions.SkipSearchAttributes {
-						if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+						if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 							return err
 						}
 					}
@@ -90,9 +66,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						}
 					}
 				}
-				for _, val5 := range y2.GetSubStateMachinesByType() {
-					for _, val6 := range val5.GetMachinesById() {
-						if err := visitStateMachineNode(ctx, opts, "DescribeMutableStateResponse/CacheMutableState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
+				for _, val4 := range y2.GetSubStateMachinesByType() {
+					for _, val5 := range val4.GetMachinesById() {
+						if err := visitStateMachineNode(ctx, opts, "DescribeMutableStateResponse/CacheMutableState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val5); err != nil {
 							return err
 						}
 					}
@@ -117,44 +93,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 					return err
 				}
 			}
-			for _, val2 := range y2.GetChasmNodes() {
-				y3 := val2.GetData()
-				if err := visitOpaque(opts, "DescribeMutableStateResponse/DatabaseMutableState/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y3.GetData()); err != nil {
-					return err
-				}
-				y4 := val2.GetMetadata()
-				switch oneof := y4.GetAttributes().(type) {
-				case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-					x1 := oneof.ComponentAttributes
-					for _, item2 := range x1.GetPureTasks() {
-						y5 := item2.GetData()
-						if err := visitOpaque(opts, "DescribeMutableStateResponse/DatabaseMutableState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y5.GetData()); err != nil {
-							return err
-						}
-					}
-					for _, item3 := range x1.GetSideEffectTasks() {
-						y5 := item3.GetData()
-						if err := visitOpaque(opts, "DescribeMutableStateResponse/DatabaseMutableState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y5.GetData()); err != nil {
-							return err
-						}
-					}
-					y5 := x1.GetUserMetadata()
-					if err := visitMessage(ctx, opts, y5); err != nil {
-						return err
-					}
-				}
+			if err := visitChasmNodes(ctx, opts, "DescribeMutableStateResponse/DatabaseMutableState/WorkflowMutableState/ChasmNodes", y2.GetChasmNodes()); err != nil {
+				return err
 			}
 			y3 := y2.GetExecutionInfo()
 			{
 				ctx := withNamespaceID(ctx, y3.GetNamespaceId())
-				for _, val3 := range y3.GetMemo() {
-					if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
+				for _, val2 := range y3.GetMemo() {
+					if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 						return err
 					}
 				}
-				for _, val4 := range y3.GetSearchAttributes() {
+				for _, val3 := range y3.GetSearchAttributes() {
 					if !opts.PayloadOptions.SkipSearchAttributes {
-						if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+						if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 							return err
 						}
 					}
@@ -167,9 +119,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						}
 					}
 				}
-				for _, val5 := range y3.GetSubStateMachinesByType() {
-					for _, val6 := range val5.GetMachinesById() {
-						if err := visitStateMachineNode(ctx, opts, "DescribeMutableStateResponse/DatabaseMutableState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
+				for _, val4 := range y3.GetSubStateMachinesByType() {
+					for _, val5 := range val4.GetMachinesById() {
+						if err := visitStateMachineNode(ctx, opts, "DescribeMutableStateResponse/DatabaseMutableState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val5); err != nil {
 							return err
 						}
 					}
@@ -237,7 +189,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 			case *serverapireplication.ReplicationTask_SyncVersionedTransitionTaskAttributes:
 				x1 := oneof.SyncVersionedTransitionTaskAttributes
 				{
-					ctx := withNamespaceID(ctx, x1.GetNamespaceId())
+					ctx := withArchetypeID(withNamespaceID(ctx, x1.GetNamespaceId()), x1.GetArchetypeId())
 					y1 := x1.GetVersionedTransitionArtifact()
 					for _, item2 := range y1.GetEventBatches() {
 						if err := visitEventBlob(ctx, opts, item2); err != nil {
@@ -296,32 +248,8 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 									return err
 								}
 							}
-							for _, val2 := range y4.GetUpdatedChasmNodes() {
-								y6 := val2.GetData()
-								if err := visitOpaque(opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Data", y6.GetData()); err != nil {
-									return err
-								}
-								y7 := val2.GetMetadata()
-								switch oneof := y7.GetAttributes().(type) {
-								case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-									x3 := oneof.ComponentAttributes
-									for _, item3 := range x3.GetPureTasks() {
-										y8 := item3.GetData()
-										if err := visitOpaque(opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-											return err
-										}
-									}
-									for _, item4 := range x3.GetSideEffectTasks() {
-										y8 := item4.GetData()
-										if err := visitOpaque(opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-											return err
-										}
-									}
-									y8 := x3.GetUserMetadata()
-									if err := visitMessage(ctx, opts, y8); err != nil {
-										return err
-									}
-								}
+							if err := visitChasmNodes(ctx, opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes", y4.GetUpdatedChasmNodes()); err != nil {
+								return err
 							}
 							for _, item3 := range y4.GetUpdatedSubStateMachines() {
 								y6 := item3.GetData()
@@ -350,44 +278,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 									return err
 								}
 							}
-							for _, val2 := range y4.GetChasmNodes() {
-								y5 := val2.GetData()
-								if err := visitOpaque(opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y5.GetData()); err != nil {
-									return err
-								}
-								y6 := val2.GetMetadata()
-								switch oneof := y6.GetAttributes().(type) {
-								case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-									x3 := oneof.ComponentAttributes
-									for _, item4 := range x3.GetPureTasks() {
-										y7 := item4.GetData()
-										if err := visitOpaque(opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y7.GetData()); err != nil {
-											return err
-										}
-									}
-									for _, item5 := range x3.GetSideEffectTasks() {
-										y7 := item5.GetData()
-										if err := visitOpaque(opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y7.GetData()); err != nil {
-											return err
-										}
-									}
-									y7 := x3.GetUserMetadata()
-									if err := visitMessage(ctx, opts, y7); err != nil {
-										return err
-									}
-								}
+							if err := visitChasmNodes(ctx, opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes", y4.GetChasmNodes()); err != nil {
+								return err
 							}
 							y5 := y4.GetExecutionInfo()
 							{
 								ctx := withNamespaceID(ctx, y5.GetNamespaceId())
-								for _, val3 := range y5.GetMemo() {
-									if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
+								for _, val2 := range y5.GetMemo() {
+									if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 										return err
 									}
 								}
-								for _, val4 := range y5.GetSearchAttributes() {
+								for _, val3 := range y5.GetSearchAttributes() {
 									if !opts.PayloadOptions.SkipSearchAttributes {
-										if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+										if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 											return err
 										}
 									}
@@ -400,9 +304,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 										}
 									}
 								}
-								for _, val5 := range y5.GetSubStateMachinesByType() {
-									for _, val6 := range val5.GetMachinesById() {
-										if err := visitStateMachineNode(ctx, opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
+								for _, val4 := range y5.GetSubStateMachinesByType() {
+									for _, val5 := range val4.GetMachinesById() {
+										if err := visitStateMachineNode(ctx, opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val5); err != nil {
 											return err
 										}
 									}
@@ -431,44 +335,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 							return err
 						}
 					}
-					for _, val2 := range y1.GetChasmNodes() {
-						y2 := val2.GetData()
-						if err := visitOpaque(opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y2.GetData()); err != nil {
-							return err
-						}
-						y3 := val2.GetMetadata()
-						switch oneof := y3.GetAttributes().(type) {
-						case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-							x2 := oneof.ComponentAttributes
-							for _, item3 := range x2.GetPureTasks() {
-								y4 := item3.GetData()
-								if err := visitOpaque(opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y4.GetData()); err != nil {
-									return err
-								}
-							}
-							for _, item4 := range x2.GetSideEffectTasks() {
-								y4 := item4.GetData()
-								if err := visitOpaque(opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y4.GetData()); err != nil {
-									return err
-								}
-							}
-							y4 := x2.GetUserMetadata()
-							if err := visitMessage(ctx, opts, y4); err != nil {
-								return err
-							}
-						}
+					if err := visitChasmNodes(ctx, opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes", y1.GetChasmNodes()); err != nil {
+						return err
 					}
 					y2 := y1.GetExecutionInfo()
 					{
 						ctx := withNamespaceID(ctx, y2.GetNamespaceId())
-						for _, val3 := range y2.GetMemo() {
-							if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
+						for _, val2 := range y2.GetMemo() {
+							if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 								return err
 							}
 						}
-						for _, val4 := range y2.GetSearchAttributes() {
+						for _, val3 := range y2.GetSearchAttributes() {
 							if !opts.PayloadOptions.SkipSearchAttributes {
-								if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+								if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 									return err
 								}
 							}
@@ -481,9 +361,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 								}
 							}
 						}
-						for _, val5 := range y2.GetSubStateMachinesByType() {
-							for _, val6 := range val5.GetMachinesById() {
-								if err := visitStateMachineNode(ctx, opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
+						for _, val4 := range y2.GetSubStateMachinesByType() {
+							for _, val5 := range val4.GetMachinesById() {
+								if err := visitStateMachineNode(ctx, opts, "GetDLQMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val5); err != nil {
 									return err
 								}
 							}
@@ -557,7 +437,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 			case *serverapireplication.ReplicationTask_SyncVersionedTransitionTaskAttributes:
 				x1 := oneof.SyncVersionedTransitionTaskAttributes
 				{
-					ctx := withNamespaceID(ctx, x1.GetNamespaceId())
+					ctx := withArchetypeID(withNamespaceID(ctx, x1.GetNamespaceId()), x1.GetArchetypeId())
 					y1 := x1.GetVersionedTransitionArtifact()
 					for _, item2 := range y1.GetEventBatches() {
 						if err := visitEventBlob(ctx, opts, item2); err != nil {
@@ -616,32 +496,8 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 									return err
 								}
 							}
-							for _, val2 := range y4.GetUpdatedChasmNodes() {
-								y6 := val2.GetData()
-								if err := visitOpaque(opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Data", y6.GetData()); err != nil {
-									return err
-								}
-								y7 := val2.GetMetadata()
-								switch oneof := y7.GetAttributes().(type) {
-								case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-									x3 := oneof.ComponentAttributes
-									for _, item3 := range x3.GetPureTasks() {
-										y8 := item3.GetData()
-										if err := visitOpaque(opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-											return err
-										}
-									}
-									for _, item4 := range x3.GetSideEffectTasks() {
-										y8 := item4.GetData()
-										if err := visitOpaque(opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-											return err
-										}
-									}
-									y8 := x3.GetUserMetadata()
-									if err := visitMessage(ctx, opts, y8); err != nil {
-										return err
-									}
-								}
+							if err := visitChasmNodes(ctx, opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes", y4.GetUpdatedChasmNodes()); err != nil {
+								return err
 							}
 							for _, item3 := range y4.GetUpdatedSubStateMachines() {
 								y6 := item3.GetData()
@@ -670,44 +526,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 									return err
 								}
 							}
-							for _, val2 := range y4.GetChasmNodes() {
-								y5 := val2.GetData()
-								if err := visitOpaque(opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y5.GetData()); err != nil {
-									return err
-								}
-								y6 := val2.GetMetadata()
-								switch oneof := y6.GetAttributes().(type) {
-								case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-									x3 := oneof.ComponentAttributes
-									for _, item4 := range x3.GetPureTasks() {
-										y7 := item4.GetData()
-										if err := visitOpaque(opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y7.GetData()); err != nil {
-											return err
-										}
-									}
-									for _, item5 := range x3.GetSideEffectTasks() {
-										y7 := item5.GetData()
-										if err := visitOpaque(opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y7.GetData()); err != nil {
-											return err
-										}
-									}
-									y7 := x3.GetUserMetadata()
-									if err := visitMessage(ctx, opts, y7); err != nil {
-										return err
-									}
-								}
+							if err := visitChasmNodes(ctx, opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes", y4.GetChasmNodes()); err != nil {
+								return err
 							}
 							y5 := y4.GetExecutionInfo()
 							{
 								ctx := withNamespaceID(ctx, y5.GetNamespaceId())
-								for _, val3 := range y5.GetMemo() {
-									if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
+								for _, val2 := range y5.GetMemo() {
+									if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 										return err
 									}
 								}
-								for _, val4 := range y5.GetSearchAttributes() {
+								for _, val3 := range y5.GetSearchAttributes() {
 									if !opts.PayloadOptions.SkipSearchAttributes {
-										if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+										if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 											return err
 										}
 									}
@@ -720,9 +552,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 										}
 									}
 								}
-								for _, val5 := range y5.GetSubStateMachinesByType() {
-									for _, val6 := range val5.GetMachinesById() {
-										if err := visitStateMachineNode(ctx, opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
+								for _, val4 := range y5.GetSubStateMachinesByType() {
+									for _, val5 := range val4.GetMachinesById() {
+										if err := visitStateMachineNode(ctx, opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val5); err != nil {
 											return err
 										}
 									}
@@ -751,44 +583,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 							return err
 						}
 					}
-					for _, val2 := range y1.GetChasmNodes() {
-						y2 := val2.GetData()
-						if err := visitOpaque(opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y2.GetData()); err != nil {
-							return err
-						}
-						y3 := val2.GetMetadata()
-						switch oneof := y3.GetAttributes().(type) {
-						case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-							x2 := oneof.ComponentAttributes
-							for _, item3 := range x2.GetPureTasks() {
-								y4 := item3.GetData()
-								if err := visitOpaque(opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y4.GetData()); err != nil {
-									return err
-								}
-							}
-							for _, item4 := range x2.GetSideEffectTasks() {
-								y4 := item4.GetData()
-								if err := visitOpaque(opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y4.GetData()); err != nil {
-									return err
-								}
-							}
-							y4 := x2.GetUserMetadata()
-							if err := visitMessage(ctx, opts, y4); err != nil {
-								return err
-							}
-						}
+					if err := visitChasmNodes(ctx, opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes", y1.GetChasmNodes()); err != nil {
+						return err
 					}
 					y2 := y1.GetExecutionInfo()
 					{
 						ctx := withNamespaceID(ctx, y2.GetNamespaceId())
-						for _, val3 := range y2.GetMemo() {
-							if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
+						for _, val2 := range y2.GetMemo() {
+							if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 								return err
 							}
 						}
-						for _, val4 := range y2.GetSearchAttributes() {
+						for _, val3 := range y2.GetSearchAttributes() {
 							if !opts.PayloadOptions.SkipSearchAttributes {
-								if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+								if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 									return err
 								}
 							}
@@ -801,9 +609,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 								}
 							}
 						}
-						for _, val5 := range y2.GetSubStateMachinesByType() {
-							for _, val6 := range val5.GetMachinesById() {
-								if err := visitStateMachineNode(ctx, opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
+						for _, val4 := range y2.GetSubStateMachinesByType() {
+							for _, val5 := range val4.GetMachinesById() {
+								if err := visitStateMachineNode(ctx, opts, "GetDLQReplicationMessagesResponse/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val5); err != nil {
 									return err
 								}
 							}
@@ -886,7 +694,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 			case *serverapireplication.ReplicationTask_SyncVersionedTransitionTaskAttributes:
 				x1 := oneof.SyncVersionedTransitionTaskAttributes
 				{
-					ctx := withNamespaceID(ctx, x1.GetNamespaceId())
+					ctx := withArchetypeID(withNamespaceID(ctx, x1.GetNamespaceId()), x1.GetArchetypeId())
 					y2 := x1.GetVersionedTransitionArtifact()
 					for _, item2 := range y2.GetEventBatches() {
 						if err := visitEventBlob(ctx, opts, item2); err != nil {
@@ -945,32 +753,8 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 									return err
 								}
 							}
-							for _, val2 := range y5.GetUpdatedChasmNodes() {
-								y7 := val2.GetData()
-								if err := visitOpaque(opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Data", y7.GetData()); err != nil {
-									return err
-								}
-								y8 := val2.GetMetadata()
-								switch oneof := y8.GetAttributes().(type) {
-								case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-									x3 := oneof.ComponentAttributes
-									for _, item3 := range x3.GetPureTasks() {
-										y9 := item3.GetData()
-										if err := visitOpaque(opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y9.GetData()); err != nil {
-											return err
-										}
-									}
-									for _, item4 := range x3.GetSideEffectTasks() {
-										y9 := item4.GetData()
-										if err := visitOpaque(opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y9.GetData()); err != nil {
-											return err
-										}
-									}
-									y9 := x3.GetUserMetadata()
-									if err := visitMessage(ctx, opts, y9); err != nil {
-										return err
-									}
-								}
+							if err := visitChasmNodes(ctx, opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes", y5.GetUpdatedChasmNodes()); err != nil {
+								return err
 							}
 							for _, item3 := range y5.GetUpdatedSubStateMachines() {
 								y7 := item3.GetData()
@@ -999,44 +783,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 									return err
 								}
 							}
-							for _, val2 := range y5.GetChasmNodes() {
-								y6 := val2.GetData()
-								if err := visitOpaque(opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y6.GetData()); err != nil {
-									return err
-								}
-								y7 := val2.GetMetadata()
-								switch oneof := y7.GetAttributes().(type) {
-								case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-									x3 := oneof.ComponentAttributes
-									for _, item4 := range x3.GetPureTasks() {
-										y8 := item4.GetData()
-										if err := visitOpaque(opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-											return err
-										}
-									}
-									for _, item5 := range x3.GetSideEffectTasks() {
-										y8 := item5.GetData()
-										if err := visitOpaque(opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-											return err
-										}
-									}
-									y8 := x3.GetUserMetadata()
-									if err := visitMessage(ctx, opts, y8); err != nil {
-										return err
-									}
-								}
+							if err := visitChasmNodes(ctx, opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes", y5.GetChasmNodes()); err != nil {
+								return err
 							}
 							y6 := y5.GetExecutionInfo()
 							{
 								ctx := withNamespaceID(ctx, y6.GetNamespaceId())
-								for _, val3 := range y6.GetMemo() {
-									if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
+								for _, val2 := range y6.GetMemo() {
+									if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 										return err
 									}
 								}
-								for _, val4 := range y6.GetSearchAttributes() {
+								for _, val3 := range y6.GetSearchAttributes() {
 									if !opts.PayloadOptions.SkipSearchAttributes {
-										if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+										if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 											return err
 										}
 									}
@@ -1049,9 +809,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 										}
 									}
 								}
-								for _, val5 := range y6.GetSubStateMachinesByType() {
-									for _, val6 := range val5.GetMachinesById() {
-										if err := visitStateMachineNode(ctx, opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
+								for _, val4 := range y6.GetSubStateMachinesByType() {
+									for _, val5 := range val4.GetMachinesById() {
+										if err := visitStateMachineNode(ctx, opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val5); err != nil {
 											return err
 										}
 									}
@@ -1080,44 +840,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 							return err
 						}
 					}
-					for _, val2 := range y2.GetChasmNodes() {
-						y3 := val2.GetData()
-						if err := visitOpaque(opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y3.GetData()); err != nil {
-							return err
-						}
-						y4 := val2.GetMetadata()
-						switch oneof := y4.GetAttributes().(type) {
-						case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-							x2 := oneof.ComponentAttributes
-							for _, item3 := range x2.GetPureTasks() {
-								y5 := item3.GetData()
-								if err := visitOpaque(opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y5.GetData()); err != nil {
-									return err
-								}
-							}
-							for _, item4 := range x2.GetSideEffectTasks() {
-								y5 := item4.GetData()
-								if err := visitOpaque(opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y5.GetData()); err != nil {
-									return err
-								}
-							}
-							y5 := x2.GetUserMetadata()
-							if err := visitMessage(ctx, opts, y5); err != nil {
-								return err
-							}
-						}
+					if err := visitChasmNodes(ctx, opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes", y2.GetChasmNodes()); err != nil {
+						return err
 					}
 					y3 := y2.GetExecutionInfo()
 					{
 						ctx := withNamespaceID(ctx, y3.GetNamespaceId())
-						for _, val3 := range y3.GetMemo() {
-							if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
+						for _, val2 := range y3.GetMemo() {
+							if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 								return err
 							}
 						}
-						for _, val4 := range y3.GetSearchAttributes() {
+						for _, val3 := range y3.GetSearchAttributes() {
 							if !opts.PayloadOptions.SkipSearchAttributes {
-								if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+								if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 									return err
 								}
 							}
@@ -1130,9 +866,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 								}
 							}
 						}
-						for _, val5 := range y3.GetSubStateMachinesByType() {
-							for _, val6 := range val5.GetMachinesById() {
-								if err := visitStateMachineNode(ctx, opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
+						for _, val4 := range y3.GetSubStateMachinesByType() {
+							for _, val5 := range val4.GetMachinesById() {
+								if err := visitStateMachineNode(ctx, opts, "GetNamespaceReplicationMessagesResponse/Messages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val5); err != nil {
 									return err
 								}
 							}
@@ -1207,7 +943,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 				case *serverapireplication.ReplicationTask_SyncVersionedTransitionTaskAttributes:
 					x1 := oneof.SyncVersionedTransitionTaskAttributes
 					{
-						ctx := withNamespaceID(ctx, x1.GetNamespaceId())
+						ctx := withArchetypeID(withNamespaceID(ctx, x1.GetNamespaceId()), x1.GetArchetypeId())
 						y1 := x1.GetVersionedTransitionArtifact()
 						for _, item2 := range y1.GetEventBatches() {
 							if err := visitEventBlob(ctx, opts, item2); err != nil {
@@ -1266,32 +1002,8 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 										return err
 									}
 								}
-								for _, val3 := range y4.GetUpdatedChasmNodes() {
-									y6 := val3.GetData()
-									if err := visitOpaque(opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Data", y6.GetData()); err != nil {
-										return err
-									}
-									y7 := val3.GetMetadata()
-									switch oneof := y7.GetAttributes().(type) {
-									case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-										x3 := oneof.ComponentAttributes
-										for _, item3 := range x3.GetPureTasks() {
-											y8 := item3.GetData()
-											if err := visitOpaque(opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-												return err
-											}
-										}
-										for _, item4 := range x3.GetSideEffectTasks() {
-											y8 := item4.GetData()
-											if err := visitOpaque(opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-												return err
-											}
-										}
-										y8 := x3.GetUserMetadata()
-										if err := visitMessage(ctx, opts, y8); err != nil {
-											return err
-										}
-									}
+								if err := visitChasmNodes(ctx, opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes", y4.GetUpdatedChasmNodes()); err != nil {
+									return err
 								}
 								for _, item3 := range y4.GetUpdatedSubStateMachines() {
 									y6 := item3.GetData()
@@ -1320,44 +1032,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 										return err
 									}
 								}
-								for _, val3 := range y4.GetChasmNodes() {
-									y5 := val3.GetData()
-									if err := visitOpaque(opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y5.GetData()); err != nil {
-										return err
-									}
-									y6 := val3.GetMetadata()
-									switch oneof := y6.GetAttributes().(type) {
-									case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-										x3 := oneof.ComponentAttributes
-										for _, item4 := range x3.GetPureTasks() {
-											y7 := item4.GetData()
-											if err := visitOpaque(opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y7.GetData()); err != nil {
-												return err
-											}
-										}
-										for _, item5 := range x3.GetSideEffectTasks() {
-											y7 := item5.GetData()
-											if err := visitOpaque(opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y7.GetData()); err != nil {
-												return err
-											}
-										}
-										y7 := x3.GetUserMetadata()
-										if err := visitMessage(ctx, opts, y7); err != nil {
-											return err
-										}
-									}
+								if err := visitChasmNodes(ctx, opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes", y4.GetChasmNodes()); err != nil {
+									return err
 								}
 								y5 := y4.GetExecutionInfo()
 								{
 									ctx := withNamespaceID(ctx, y5.GetNamespaceId())
-									for _, val4 := range y5.GetMemo() {
-										if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+									for _, val3 := range y5.GetMemo() {
+										if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 											return err
 										}
 									}
-									for _, val5 := range y5.GetSearchAttributes() {
+									for _, val4 := range y5.GetSearchAttributes() {
 										if !opts.PayloadOptions.SkipSearchAttributes {
-											if err := visitPayloadInPlace(ctx, opts, val5); err != nil {
+											if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 												return err
 											}
 										}
@@ -1370,9 +1058,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 											}
 										}
 									}
-									for _, val6 := range y5.GetSubStateMachinesByType() {
-										for _, val7 := range val6.GetMachinesById() {
-											if err := visitStateMachineNode(ctx, opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val7); err != nil {
+									for _, val5 := range y5.GetSubStateMachinesByType() {
+										for _, val6 := range val5.GetMachinesById() {
+											if err := visitStateMachineNode(ctx, opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
 												return err
 											}
 										}
@@ -1401,44 +1089,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 								return err
 							}
 						}
-						for _, val3 := range y1.GetChasmNodes() {
-							y2 := val3.GetData()
-							if err := visitOpaque(opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y2.GetData()); err != nil {
-								return err
-							}
-							y3 := val3.GetMetadata()
-							switch oneof := y3.GetAttributes().(type) {
-							case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-								x2 := oneof.ComponentAttributes
-								for _, item3 := range x2.GetPureTasks() {
-									y4 := item3.GetData()
-									if err := visitOpaque(opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y4.GetData()); err != nil {
-										return err
-									}
-								}
-								for _, item4 := range x2.GetSideEffectTasks() {
-									y4 := item4.GetData()
-									if err := visitOpaque(opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y4.GetData()); err != nil {
-										return err
-									}
-								}
-								y4 := x2.GetUserMetadata()
-								if err := visitMessage(ctx, opts, y4); err != nil {
-									return err
-								}
-							}
+						if err := visitChasmNodes(ctx, opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes", y1.GetChasmNodes()); err != nil {
+							return err
 						}
 						y2 := y1.GetExecutionInfo()
 						{
 							ctx := withNamespaceID(ctx, y2.GetNamespaceId())
-							for _, val4 := range y2.GetMemo() {
-								if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+							for _, val3 := range y2.GetMemo() {
+								if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 									return err
 								}
 							}
-							for _, val5 := range y2.GetSearchAttributes() {
+							for _, val4 := range y2.GetSearchAttributes() {
 								if !opts.PayloadOptions.SkipSearchAttributes {
-									if err := visitPayloadInPlace(ctx, opts, val5); err != nil {
+									if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
 										return err
 									}
 								}
@@ -1451,9 +1115,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 									}
 								}
 							}
-							for _, val6 := range y2.GetSubStateMachinesByType() {
-								for _, val7 := range val6.GetMachinesById() {
-									if err := visitStateMachineNode(ctx, opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val7); err != nil {
+							for _, val5 := range y2.GetSubStateMachinesByType() {
+								for _, val6 := range val5.GetMachinesById() {
+									if err := visitStateMachineNode(ctx, opts, "GetReplicationMessagesResponse/ShardMessages/ReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
 										return err
 									}
 								}
@@ -1571,7 +1235,7 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 				case *serverapireplication.ReplicationTask_SyncVersionedTransitionTaskAttributes:
 					x2 := oneof.SyncVersionedTransitionTaskAttributes
 					{
-						ctx := withNamespaceID(ctx, x2.GetNamespaceId())
+						ctx := withArchetypeID(withNamespaceID(ctx, x2.GetNamespaceId()), x2.GetArchetypeId())
 						y1 := x2.GetVersionedTransitionArtifact()
 						for _, item2 := range y1.GetEventBatches() {
 							if err := visitEventBlob(ctx, opts, item2); err != nil {
@@ -1630,32 +1294,8 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 										return err
 									}
 								}
-								for _, val2 := range y4.GetUpdatedChasmNodes() {
-									y6 := val2.GetData()
-									if err := visitOpaque(opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Data", y6.GetData()); err != nil {
-										return err
-									}
-									y7 := val2.GetMetadata()
-									switch oneof := y7.GetAttributes().(type) {
-									case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-										x4 := oneof.ComponentAttributes
-										for _, item3 := range x4.GetPureTasks() {
-											y8 := item3.GetData()
-											if err := visitOpaque(opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-												return err
-											}
-										}
-										for _, item4 := range x4.GetSideEffectTasks() {
-											y8 := item4.GetData()
-											if err := visitOpaque(opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-												return err
-											}
-										}
-										y8 := x4.GetUserMetadata()
-										if err := visitMessage(ctx, opts, y8); err != nil {
-											return err
-										}
-									}
+								if err := visitChasmNodes(ctx, opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes", y4.GetUpdatedChasmNodes()); err != nil {
+									return err
 								}
 								for _, item3 := range y4.GetUpdatedSubStateMachines() {
 									y6 := item3.GetData()
@@ -1684,44 +1324,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 										return err
 									}
 								}
-								for _, val2 := range y4.GetChasmNodes() {
-									y5 := val2.GetData()
-									if err := visitOpaque(opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y5.GetData()); err != nil {
-										return err
-									}
-									y6 := val2.GetMetadata()
-									switch oneof := y6.GetAttributes().(type) {
-									case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-										x4 := oneof.ComponentAttributes
-										for _, item4 := range x4.GetPureTasks() {
-											y7 := item4.GetData()
-											if err := visitOpaque(opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y7.GetData()); err != nil {
-												return err
-											}
-										}
-										for _, item5 := range x4.GetSideEffectTasks() {
-											y7 := item5.GetData()
-											if err := visitOpaque(opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y7.GetData()); err != nil {
-												return err
-											}
-										}
-										y7 := x4.GetUserMetadata()
-										if err := visitMessage(ctx, opts, y7); err != nil {
-											return err
-										}
-									}
+								if err := visitChasmNodes(ctx, opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes", y4.GetChasmNodes()); err != nil {
+									return err
 								}
 								y5 := y4.GetExecutionInfo()
 								{
 									ctx := withNamespaceID(ctx, y5.GetNamespaceId())
-									for _, val3 := range y5.GetMemo() {
-										if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
+									for _, val2 := range y5.GetMemo() {
+										if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 											return err
 										}
 									}
-									for _, val4 := range y5.GetSearchAttributes() {
+									for _, val3 := range y5.GetSearchAttributes() {
 										if !opts.PayloadOptions.SkipSearchAttributes {
-											if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+											if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 												return err
 											}
 										}
@@ -1734,9 +1350,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 											}
 										}
 									}
-									for _, val5 := range y5.GetSubStateMachinesByType() {
-										for _, val6 := range val5.GetMachinesById() {
-											if err := visitStateMachineNode(ctx, opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
+									for _, val4 := range y5.GetSubStateMachinesByType() {
+										for _, val5 := range val4.GetMachinesById() {
+											if err := visitStateMachineNode(ctx, opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncVersionedTransitionTaskAttributes/SyncVersionedTransitionTaskAttributes/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val5); err != nil {
 												return err
 											}
 										}
@@ -1765,44 +1381,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 								return err
 							}
 						}
-						for _, val2 := range y1.GetChasmNodes() {
-							y2 := val2.GetData()
-							if err := visitOpaque(opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y2.GetData()); err != nil {
-								return err
-							}
-							y3 := val2.GetMetadata()
-							switch oneof := y3.GetAttributes().(type) {
-							case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-								x3 := oneof.ComponentAttributes
-								for _, item3 := range x3.GetPureTasks() {
-									y4 := item3.GetData()
-									if err := visitOpaque(opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y4.GetData()); err != nil {
-										return err
-									}
-								}
-								for _, item4 := range x3.GetSideEffectTasks() {
-									y4 := item4.GetData()
-									if err := visitOpaque(opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y4.GetData()); err != nil {
-										return err
-									}
-								}
-								y4 := x3.GetUserMetadata()
-								if err := visitMessage(ctx, opts, y4); err != nil {
-									return err
-								}
-							}
+						if err := visitChasmNodes(ctx, opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ChasmNodes", y1.GetChasmNodes()); err != nil {
+							return err
 						}
 						y2 := y1.GetExecutionInfo()
 						{
 							ctx := withNamespaceID(ctx, y2.GetNamespaceId())
-							for _, val3 := range y2.GetMemo() {
-								if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
+							for _, val2 := range y2.GetMemo() {
+								if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 									return err
 								}
 							}
-							for _, val4 := range y2.GetSearchAttributes() {
+							for _, val3 := range y2.GetSearchAttributes() {
 								if !opts.PayloadOptions.SkipSearchAttributes {
-									if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+									if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 										return err
 									}
 								}
@@ -1815,9 +1407,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 									}
 								}
 							}
-							for _, val5 := range y2.GetSubStateMachinesByType() {
-								for _, val6 := range val5.GetMachinesById() {
-									if err := visitStateMachineNode(ctx, opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
+							for _, val4 := range y2.GetSubStateMachinesByType() {
+								for _, val5 := range val4.GetMachinesById() {
+									if err := visitStateMachineNode(ctx, opts, "StreamWorkflowReplicationMessagesResponse/Attributes/Messages/WorkflowReplicationMessages/ReplicationTasks/ReplicationTask/Attributes/SyncWorkflowStateTaskAttributes/SyncWorkflowStateTaskAttributes/WorkflowState/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val5); err != nil {
 										return err
 									}
 								}
@@ -1890,32 +1482,8 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						return err
 					}
 				}
-				for _, val2 := range y4.GetUpdatedChasmNodes() {
-					y6 := val2.GetData()
-					if err := visitOpaque(opts, "SyncWorkflowStateResponse/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Data", y6.GetData()); err != nil {
-						return err
-					}
-					y7 := val2.GetMetadata()
-					switch oneof := y7.GetAttributes().(type) {
-					case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-						x2 := oneof.ComponentAttributes
-						for _, item2 := range x2.GetPureTasks() {
-							y8 := item2.GetData()
-							if err := visitOpaque(opts, "SyncWorkflowStateResponse/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-								return err
-							}
-						}
-						for _, item3 := range x2.GetSideEffectTasks() {
-							y8 := item3.GetData()
-							if err := visitOpaque(opts, "SyncWorkflowStateResponse/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y8.GetData()); err != nil {
-								return err
-							}
-						}
-						y8 := x2.GetUserMetadata()
-						if err := visitMessage(ctx, opts, y8); err != nil {
-							return err
-						}
-					}
+				if err := visitChasmNodes(ctx, opts, "SyncWorkflowStateResponse/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateMutationAttributes/SyncWorkflowStateMutationAttributes/StateMutation/WorkflowMutableStateMutation/UpdatedChasmNodes", y4.GetUpdatedChasmNodes()); err != nil {
+					return err
 				}
 				for _, item2 := range y4.GetUpdatedSubStateMachines() {
 					y6 := item2.GetData()
@@ -1944,44 +1512,20 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 						return err
 					}
 				}
-				for _, val2 := range y4.GetChasmNodes() {
-					y5 := val2.GetData()
-					if err := visitOpaque(opts, "SyncWorkflowStateResponse/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Data", y5.GetData()); err != nil {
-						return err
-					}
-					y6 := val2.GetMetadata()
-					switch oneof := y6.GetAttributes().(type) {
-					case *serverapipersistence.ChasmNodeMetadata_ComponentAttributes:
-						x2 := oneof.ComponentAttributes
-						for _, item3 := range x2.GetPureTasks() {
-							y7 := item3.GetData()
-							if err := visitOpaque(opts, "SyncWorkflowStateResponse/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/PureTasks/ChasmComponentAttributes_Task/Data", y7.GetData()); err != nil {
-								return err
-							}
-						}
-						for _, item4 := range x2.GetSideEffectTasks() {
-							y7 := item4.GetData()
-							if err := visitOpaque(opts, "SyncWorkflowStateResponse/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes/ChasmNode/Metadata/ChasmNodeMetadata/Attributes/ComponentAttributes/ChasmComponentAttributes/SideEffectTasks/ChasmComponentAttributes_Task/Data", y7.GetData()); err != nil {
-								return err
-							}
-						}
-						y7 := x2.GetUserMetadata()
-						if err := visitMessage(ctx, opts, y7); err != nil {
-							return err
-						}
-					}
+				if err := visitChasmNodes(ctx, opts, "SyncWorkflowStateResponse/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ChasmNodes", y4.GetChasmNodes()); err != nil {
+					return err
 				}
 				y5 := y4.GetExecutionInfo()
 				{
 					ctx := withNamespaceID(ctx, y5.GetNamespaceId())
-					for _, val3 := range y5.GetMemo() {
-						if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
+					for _, val2 := range y5.GetMemo() {
+						if err := visitPayloadInPlace(ctx, opts, val2); err != nil {
 							return err
 						}
 					}
-					for _, val4 := range y5.GetSearchAttributes() {
+					for _, val3 := range y5.GetSearchAttributes() {
 						if !opts.PayloadOptions.SkipSearchAttributes {
-							if err := visitPayloadInPlace(ctx, opts, val4); err != nil {
+							if err := visitPayloadInPlace(ctx, opts, val3); err != nil {
 								return err
 							}
 						}
@@ -1994,9 +1538,9 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 							}
 						}
 					}
-					for _, val5 := range y5.GetSubStateMachinesByType() {
-						for _, val6 := range val5.GetMachinesById() {
-							if err := visitStateMachineNode(ctx, opts, "SyncWorkflowStateResponse/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val6); err != nil {
+					for _, val4 := range y5.GetSubStateMachinesByType() {
+						for _, val5 := range val4.GetMachinesById() {
+							if err := visitStateMachineNode(ctx, opts, "SyncWorkflowStateResponse/VersionedTransitionArtifact/VersionedTransitionArtifact/StateAttributes/SyncWorkflowStateSnapshotAttributes/SyncWorkflowStateSnapshotAttributes/State/WorkflowMutableState/ExecutionInfo/WorkflowExecutionInfo/SubStateMachinesByType/StateMachineMap/MachinesById/StateMachineNode", val5); err != nil {
 								return err
 							}
 						}
@@ -2005,45 +1549,65 @@ func visitAdminPayloads(ctx context.Context, vAny any, opts AdminVisitOptions) e
 			}
 		}
 	case *serverapipersistence.OutboundTaskInfo:
-		switch oneof := root.GetTaskDetails().(type) {
-		case *serverapipersistence.OutboundTaskInfo_ChasmTaskInfo:
-			x1 := oneof.ChasmTaskInfo
-			y1 := x1.GetData()
-			if err := visitOpaque(opts, "OutboundTaskInfo/TaskDetails/ChasmTaskInfo/ChasmTaskInfo/Data", y1.GetData()); err != nil {
-				return err
-			}
-		case *serverapipersistence.OutboundTaskInfo_StateMachineInfo:
-			x1 := oneof.StateMachineInfo
-			y1 := x1.GetData()
-			if err := visitOpaque(opts, "OutboundTaskInfo/TaskDetails/StateMachineInfo/StateMachineTaskInfo/Data", y1); err != nil {
-				return err
+		{
+			ctx := withNamespaceID(ctx, root.GetNamespaceId())
+			switch oneof := root.GetTaskDetails().(type) {
+			case *serverapipersistence.OutboundTaskInfo_ChasmTaskInfo:
+				x1 := oneof.ChasmTaskInfo
+				{
+					ctx := withArchetypeID(ctx, x1.GetArchetypeId())
+					if err := visitChasmTaskInfo(ctx, opts, "OutboundTaskInfo/TaskDetails/ChasmTaskInfo/ChasmTaskInfo", x1); err != nil {
+						return err
+					}
+				}
+			case *serverapipersistence.OutboundTaskInfo_StateMachineInfo:
+				x1 := oneof.StateMachineInfo
+				y1 := x1.GetData()
+				if err := visitOpaque(opts, "OutboundTaskInfo/TaskDetails/StateMachineInfo/StateMachineTaskInfo/Data", y1); err != nil {
+					return err
+				}
 			}
 		}
 	case *serverapipersistence.TimerTaskInfo:
-		switch oneof := root.GetTaskDetails().(type) {
-		case *serverapipersistence.TimerTaskInfo_ChasmTaskInfo:
-			x1 := oneof.ChasmTaskInfo
-			y1 := x1.GetData()
-			if err := visitOpaque(opts, "TimerTaskInfo/TaskDetails/ChasmTaskInfo/ChasmTaskInfo/Data", y1.GetData()); err != nil {
-				return err
+		{
+			ctx := withNamespaceID(ctx, root.GetNamespaceId())
+			switch oneof := root.GetTaskDetails().(type) {
+			case *serverapipersistence.TimerTaskInfo_ChasmTaskInfo:
+				x1 := oneof.ChasmTaskInfo
+				{
+					ctx := withArchetypeID(ctx, x1.GetArchetypeId())
+					if err := visitChasmTaskInfo(ctx, opts, "TimerTaskInfo/TaskDetails/ChasmTaskInfo/ChasmTaskInfo", x1); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	case *serverapipersistence.TransferTaskInfo:
-		switch oneof := root.GetTaskDetails().(type) {
-		case *serverapipersistence.TransferTaskInfo_ChasmTaskInfo:
-			x1 := oneof.ChasmTaskInfo
-			y1 := x1.GetData()
-			if err := visitOpaque(opts, "TransferTaskInfo/TaskDetails/ChasmTaskInfo/ChasmTaskInfo/Data", y1.GetData()); err != nil {
-				return err
+		{
+			ctx := withNamespaceID(ctx, root.GetNamespaceId())
+			switch oneof := root.GetTaskDetails().(type) {
+			case *serverapipersistence.TransferTaskInfo_ChasmTaskInfo:
+				x1 := oneof.ChasmTaskInfo
+				{
+					ctx := withArchetypeID(ctx, x1.GetArchetypeId())
+					if err := visitChasmTaskInfo(ctx, opts, "TransferTaskInfo/TaskDetails/ChasmTaskInfo/ChasmTaskInfo", x1); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	case *serverapipersistence.VisibilityTaskInfo:
-		switch oneof := root.GetTaskDetails().(type) {
-		case *serverapipersistence.VisibilityTaskInfo_ChasmTaskInfo:
-			x1 := oneof.ChasmTaskInfo
-			y1 := x1.GetData()
-			if err := visitOpaque(opts, "VisibilityTaskInfo/TaskDetails/ChasmTaskInfo/ChasmTaskInfo/Data", y1.GetData()); err != nil {
-				return err
+		{
+			ctx := withNamespaceID(ctx, root.GetNamespaceId())
+			switch oneof := root.GetTaskDetails().(type) {
+			case *serverapipersistence.VisibilityTaskInfo_ChasmTaskInfo:
+				x1 := oneof.ChasmTaskInfo
+				{
+					ctx := withArchetypeID(ctx, x1.GetArchetypeId())
+					if err := visitChasmTaskInfo(ctx, opts, "VisibilityTaskInfo/TaskDetails/ChasmTaskInfo/ChasmTaskInfo", x1); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	}

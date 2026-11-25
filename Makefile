@@ -61,6 +61,7 @@ genvisitor:
 .PHONY: genvisitor-admin-payloads
 genvisitor-admin-payloads:
 	go run ./cmd/tools/genvisitor/ -target admin-payloads -out interceptor/admin_payloads_gen.go
+	go run ./cmd/tools/genchasm/ -out interceptor/chasm_schema_gen.go
 
 # Mocks
 clean-mocks:

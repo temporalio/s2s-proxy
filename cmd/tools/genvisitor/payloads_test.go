@@ -19,6 +19,7 @@ func cloneTables(t payloadTables) payloadTables {
 		EventBlobs: maps.Clone(t.EventBlobs),
 		Opaque:     maps.Clone(t.Opaque),
 		Helpers:    maps.Clone(t.Helpers),
+		MapHelpers: maps.Clone(t.MapHelpers),
 		Ignored:    maps.Clone(t.Ignored),
 
 		NamespaceIDs: maps.Clone(t.NamespaceIDs),
@@ -67,6 +68,14 @@ func TestBuildPayloadsRejectsStaleEntry(t *testing.T) {
 
 	_, err := buildPayloads(log.NewNoopLogger(), tables)
 	require.ErrorContains(t, err, "temporal.server.api.replication.v1.ReplicationTask.nope never matched")
+}
+
+func TestBuildPayloadsRejectsStaleMapHelper(t *testing.T) {
+	tables := cloneTables(adminPayloadTables)
+	tables.MapHelpers["temporal.server.api.persistence.v1.WorkflowMutableState.nope"] = chasmNodesHelper
+
+	_, err := buildPayloads(log.NewNoopLogger(), tables)
+	require.ErrorContains(t, err, "temporal.server.api.persistence.v1.WorkflowMutableState.nope never matched")
 }
 
 func TestBuildPayloadsRejectsUnhandledRecursion(t *testing.T) {

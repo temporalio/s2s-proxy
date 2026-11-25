@@ -38,8 +38,9 @@ type (
 	// EncryptorConfig means what it means for [NewEncryptor].
 	AdminEncryptorConfig struct {
 		EncryptorConfig
-		// AllowOpaquePlaintext lets opaque data, such as HSM and CHASM state, cross
-		// unsealed when sealing. Off, a message carrying any fails instead.
+		// AllowOpaquePlaintext lets opaque data, such as HSM state or CHASM state
+		// of an unknown type, cross unsealed when sealing. Off, a message carrying
+		// any fails instead.
 		AllowOpaquePlaintext bool
 		// Observer hears about opaque data met while sealing. Optional.
 		Observer OpaqueObserver
@@ -179,7 +180,9 @@ func newAdminVisit(
 //
 // A request naming a namespace by ID scopes both visits to it, since replies
 // such as raw history carry payloads but no ID of their own. IDs deeper in
-// either message still take precedence for the parts they cover.
+// either message still take precedence for the parts they cover. An archetype
+// ID on the request scopes them the same way, so CHASM state in the reply can
+// be typed.
 //
 // A failed visit is reported to obs in full, then returned as its
 // [VisitError], so the caller gets the generic status.
@@ -188,6 +191,11 @@ func adminUnary(req, resp *adminVisit, obs VisitErrorObserver) grpc.UnaryClientI
 		if named, ok := request.(interface{ GetNamespaceId() string }); ok {
 			if id := named.GetNamespaceId(); id != "" {
 				ctx = withNamespaceID(ctx, id)
+			}
+		}
+		if typed, ok := request.(interface{ GetArchetypeId() uint32 }); ok {
+			if id := typed.GetArchetypeId(); id != 0 {
+				ctx = withArchetypeID(ctx, id)
 			}
 		}
 

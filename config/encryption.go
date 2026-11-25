@@ -106,10 +106,12 @@ type (
 		// policy rather than per namespace. Unset, admin traffic is sealed under
 		// Default
 		Replication *KeyPolicy `yaml:"replication,omitempty"`
-		// Let data the proxy cannot seal cross to the peer unsealed: HSM and CHASM
-		// state, serialized tasks and the like, which the receiving server decodes
-		// itself. Off, an admin call or replication stream carrying such data fails
-		// rather than leaking it
+		// Let data the proxy cannot seal cross to the peer unsealed: HSM state,
+		// CHASM state of a type the proxy does not know, serialized tasks and the
+		// like, which the receiving server decodes itself. Known CHASM state, such
+		// as schedules and Nexus operations, has the payloads inside it sealed and
+		// needs no flag. Off, an admin call or replication stream carrying data
+		// that cannot be sealed fails rather than leaking it
 		AllowOpaquePlaintext bool `yaml:"allowOpaquePlaintext,omitempty"`
 		// Payload encodings the customer's own codec has already encrypted, which
 		// are passed through rather than sealed again. Our own sealed payloads are

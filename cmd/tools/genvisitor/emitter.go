@@ -72,6 +72,9 @@ type (
 		// Scoped marks code that reads what a scope declares. A message is only
 		// scoped when a scoped handler sits below it. See SetScope.
 		Scoped bool
+		// WholeField makes a handler matched on a map or list field run once,
+		// with the field's whole value, instead of once per element.
+		WholeField bool
 	}
 
 	Mode int
@@ -107,6 +110,13 @@ func (e *Emitter) AddHandler(include func(VisitType, VisitPath) bool, prune bool
 func (e *Emitter) AddScopedHandler(include func(VisitType, VisitPath) bool, prune bool, invocation func(string, VisitPath) string) {
 	e.AddHandler(include, prune, invocation)
 	e.handlers[len(e.handlers)-1].Scoped = true
+}
+
+// AddWholeFieldHandler is AddScopedHandler for a handler that takes a map or
+// list field whole, keys included. See Handler.WholeField.
+func (e *Emitter) AddWholeFieldHandler(include func(VisitType, VisitPath) bool, invocation func(string, VisitPath) string) {
+	e.AddScopedHandler(include, true, invocation)
+	e.handlers[len(e.handlers)-1].WholeField = true
 }
 
 // SetCheck installs a function offered every node after the handlers, with
@@ -285,12 +295,23 @@ func (e *Emitter) emit(out io.Writer, parentVar string, node *Tree) {
 	for _, vt := range node.SortedTypes() {
 		switch desc := vt.Descriptor.(type) {
 		case protoreflect.FieldDescriptor:
+			child := node.Children[vt.GoName()]
+			if desc.IsMap() || desc.IsList() {
+				var whole []boundHandler
+				whole, child = splitWholeField(child)
+				for _, h := range whole {
+					writeln(out, h.handler.Invocation(parentVar+"."+vt.GoGetter(), h.path))
+				}
+				if child == nil {
+					continue
+				}
+			}
 			if desc.IsMap() {
 				varName, freeVar := e.makeVar("val")
 				defer freeVar()
 				writef(out, "for _, %s := range %s.%s {\n", varName, parentVar, vt.GoGetter())
 				e.openBlock()
-				e.emit(out, varName, node.Children[vt.GoName()])
+				e.emit(out, varName, child)
 				e.closeBlock()
 				writeln(out, "}")
 			} else if desc.IsList() {
@@ -298,7 +319,7 @@ func (e *Emitter) emit(out io.Writer, parentVar string, node *Tree) {
 				defer freeVar()
 				writef(out, "for _, %s := range %s.%s {\n", varName, parentVar, vt.GoGetter())
 				e.openBlock()
-				e.emit(out, varName, node.Children[vt.GoName()])
+				e.emit(out, varName, child)
 				e.closeBlock()
 				writeln(out, "}")
 			} else {
@@ -321,6 +342,32 @@ func (e *Emitter) emit(out io.Writer, parentVar string, node *Tree) {
 	for _, h := range node.Handlers {
 		writeln(out, h.handler.Invocation(parentVar, h.path))
 	}
+}
+
+// splitWholeField returns the whole-field handlers of node, a map or list
+// field, and node without them, or nil when nothing else is left to emit
+// per element.
+func splitWholeField(node *Tree) ([]boundHandler, *Tree) {
+	if node == nil {
+		return nil, nil
+	}
+
+	var whole, rest []boundHandler
+	for _, h := range node.Handlers {
+		if h.handler.WholeField {
+			whole = append(whole, h)
+		} else {
+			rest = append(rest, h)
+		}
+	}
+	if len(whole) == 0 {
+		return nil, node
+	}
+	if len(rest) == 0 && len(node.Types) == 0 {
+		return whole, nil
+	}
+
+	return whole, &Tree{Types: node.Types, Children: node.Children, Handlers: rest}
 }
 
 // emitScoped emits node, the subtree of the message vt held in v, inside a

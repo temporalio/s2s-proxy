@@ -170,9 +170,12 @@ profiling:
 #         uri: "extension://hsm/replication"
 #         duration: 1h
 #         renewBefore: 15m
-#       # HSM and CHASM state cannot be sealed, because the receiving server
-#       # decodes it. By default an admin call or replication stream carrying
-#       # it fails. Set this to send it to the peer unsealed instead.
+#       # HSM state, and CHASM state of a type this proxy does not know, cannot
+#       # be sealed, because the receiving server decodes it. Known CHASM state,
+#       # such as schedules and Nexus operations, has the payloads inside it
+#       # sealed. By default an admin call or replication stream carrying data
+#       # that cannot be sealed fails. Set this to send it to the peer unsealed
+#       # instead.
 #       allowOpaquePlaintext: false
 #       # Encodings your own codec has already encrypted, passed through rather
 #       # than sealed again. List only encodings that encrypt; a compression

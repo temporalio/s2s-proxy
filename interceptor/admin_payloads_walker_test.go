@@ -188,8 +188,10 @@ func TestVisitAdminPayloadsReachesEveryPayload(t *testing.T) {
 	}
 }
 
-// opaqueFields are the fields the generator reports to AdminVisitOptions.Opaque.
-// Keep in sync with Opaque in cmd/tools/genvisitor/payloads.go.
+// opaqueFields are the fields the generator reports to AdminVisitOptions.Opaque:
+// Opaque in cmd/tools/genvisitor/payloads.go, plus the CHASM data fields, which
+// the CHASM helpers decode when they know the type and report otherwise. The
+// test sets them with no type, so they must be reported.
 var opaqueFields = map[protoreflect.FullName]bool{
 	"temporal.server.api.persistence.v1.ChasmNode.data":                                             true,
 	"temporal.server.api.replication.v1.ReplicationTask.data":                                       true,
