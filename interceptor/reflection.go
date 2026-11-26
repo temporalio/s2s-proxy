@@ -10,6 +10,8 @@ import (
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	persistencespb "go.temporal.io/server/api/persistence/v1"
+	replicationspb "go.temporal.io/server/api/replication/v1"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
 	"go.temporal.io/server/common/persistence/serialization"
@@ -136,6 +138,47 @@ type stringMatcher func(name string) (string, bool)
 // visitor visits each field in obj matching the matcher.
 // It returns whether anything was matched and any error it encountered.
 type visitor func(logger log.Logger, obj any, match stringMatcher) (bool, error)
+
+// resolveNamespaceID walks UP from vwp to the nearest enclosing message that owns a namespace, and
+// returns that message's NamespaceId.
+//
+// Only these four message types count as owners. Other messages carry a NamespaceId naming a
+// DIFFERENT namespace, so matching on the field name would pick the wrong one. The clearest example
+// is history.StartChildWorkflowExecutionInitiatedEventAttributes, which holds the *child's*
+// NamespaceId right beside the parent's SearchAttributes.
+//
+// Walking upward, rather than remembering the last NamespaceId seen on the way down, keeps the
+// answer independent of traversal order. Order is unspecified: visit.ValuesUnsafe pops the front of
+// its worklist but swaps in the last element, so it is neither breadth first nor depth first.
+//
+// fallback is returned when the walk reaches no owner. It exists to carry the namespace across the
+// two boundaries the parent chain cannot cross: a data blob, whose events are visited in a fresh
+// traversal, and a response whose namespace is only on the request it was paired with.
+func resolveNamespaceID(vwp visit.ValueWithParent, fallback string) string {
+	for p := vwp.Parent; p != nil; p = p.Parent {
+		// Protobuf messages are always reached through a pointer, and the walk queues the
+		// dereferenced struct, so an owner is always addressable here. If that ever stops being
+		// true the owner is skipped and the fallback is returned, which the caller can see.
+		if p.Kind() != reflect.Struct || !p.CanAddr() {
+			continue
+		}
+		var nsID string
+		switch owner := p.Addr().Interface().(type) {
+		case *replicationspb.HistoryTaskAttributes:
+			nsID = owner.NamespaceId
+		case *replicationspb.BackfillHistoryTaskAttributes:
+			nsID = owner.NamespaceId
+		case *replicationspb.SyncVersionedTransitionTaskAttributes:
+			nsID = owner.NamespaceId
+		case *persistencespb.WorkflowExecutionInfo:
+			nsID = owner.NamespaceId
+		}
+		if nsID != "" {
+			return nsID
+		}
+	}
+	return fallback
+}
 
 // visitNamespace uses reflection to recursively visit all fields
 // in the given object. When it finds namespace string fields, it invokes
