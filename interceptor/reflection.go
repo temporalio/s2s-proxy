@@ -40,6 +40,7 @@ var (
 		"EventBatches":   true, // BackfillHistoryTaskAttributes, VersionedTransitionArtifact
 		"EventsBatches":  true, // HistoryTaskAttributes
 		"HistoryBatches": true, // GetWorkflowExecutionRawHistoryV2
+		"RawHistory":     true, // GetWorkflowExecutionHistoryResponse
 	}
 
 	searchAttributeFieldNames = map[string]bool{

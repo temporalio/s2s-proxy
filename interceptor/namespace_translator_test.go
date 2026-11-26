@@ -205,6 +205,16 @@ func generateNamespaceObjCases() []objCase {
 			},
 		},
 		{
+			objName:     "GetWorkflowExecutionHistoryResponse with RawHistory",
+			containsObj: true,
+			makeType: func(ns string) any {
+				return &workflowservice.GetWorkflowExecutionHistoryResponse{
+					RawHistory:    []*common.DataBlob{makeHistoryEventsBlobWithNamespaceField(ns)},
+					NextPageToken: []byte("some-token"),
+				}
+			},
+		},
+		{
 			objName:     "GetWorkflowExecutionRawHistoryV2Response with invalid utf8",
 			containsObj: true,
 			makeType: func(ns string) any {
