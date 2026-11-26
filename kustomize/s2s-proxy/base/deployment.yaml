@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s2s-proxy
+  labels:
+    app.kubernetes.io/name: s2s-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: s2s-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: s2s-proxy
+    spec:
+      containers:
+        - name: s2s-proxy
+          image: temporalio/s2s-proxy:v0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: rpc-egress
+              containerPort: 9233
+              protocol: TCP
+            - name: rpc-healthcheck
+              containerPort: 8234
+              protocol: TCP
+            - name: rpc-metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: CONFIG_YML
+              value: "/config/config.yaml"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8234
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8234
+          volumeMounts:
+            - name: config-volume
+              mountPath: /config
+      volumes:
+        - name: config-volume
+          configMap:
+            name: s2s-proxy-config # This should match the ConfigMap name
+            defaultMode: 420 
